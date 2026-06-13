@@ -102,14 +102,14 @@ func TestDecodeDataSourceID(t *testing.T) {
 func TestDecodeTimeOfDay(t *testing.T) {
 	// Record with I062/010 (FRN1) and I062/070 (FRN4)
 	// FSPEC bits for FRN 1,4 present: bits 7,4 set -> 0b10010000 = 0x90
-	// At 6:00 UTC: 6*3600 = 21600 seconds = 21600*128 ticks = 2764800 = 0x2A1A00
+	// At 6:00 UTC: 6*3600 = 21600 seconds = 21600*128 ticks = 2764800 = 0x2A3000
 	// Total: 1 (CAT) + 2 (LEN) + 1 (FSPEC) + 2 (I062/010) + 3 (I062/070) = 9 bytes
 	data := []byte{
 		0x3E,       // CAT
 		0x00, 0x09, // LEN (9 bytes)
 		0x90,       // FSPEC: FRN1,4 present
 		0x19, 0x02, // I062/010 (SAC=0x19, SIC=0x02)
-		0x2A, 0x1A, 0x00, // I062/070 (21600 s = 0x2A1A00)
+		0x2A, 0x30, 0x00, // I062/070 (21600 s = 0x2A3000)
 	}
 
 	tracks, err := DecodeDataBlock(data)
@@ -132,18 +132,18 @@ func TestDecodeTimeOfDay(t *testing.T) {
 // 45.0° -> ticks ≈ 45 / (180/2^25) = 45 * 2^25 / 180 = 2^24 * 2 = 33554432
 // 11.25° -> ticks ≈ 11.25 * 2^25 / 180 = 2^24 / 2 = 8388608
 func TestDecodeWGS84Position(t *testing.T) {
-	// FSPEC: FRN1,5 -> bits 7,5 set -> 0b10100000 = 0xA0
+	// FSPEC: FRN1 (bit 7), FRN5 (bit 3) -> 0b10001000 = 0x88
 	// SAC/SIC: 0x19, 0x02
-	// Lat=45.0°: ticks=0x02000000 (i32 big-endian)
-	// Lon=11.25°: ticks=0x00800000 (i32 big-endian)
+	// Lat=45.0°: ticks=0x00800000 (i32 big-endian)
+	// Lon=11.25°: ticks=0x00200000 (i32 big-endian)
 	// Total: 1 (CAT) + 2 (LEN) + 1 (FSPEC) + 2 (I062/010) + 8 (I062/105) = 14 bytes
 	data := []byte{
 		0x3E,       // CAT
 		0x00, 0x0E, // LEN (14 bytes)
-		0xA0,       // FSPEC: FRN1,5
+		0x88,       // FSPEC: FRN1,5 (bits 7,3)
 		0x19, 0x02, // I062/010
-		0x02, 0x00, 0x00, 0x00, // I062/105 Latitude (45°, i32 BE)
-		0x00, 0x80, 0x00, 0x00, // I062/105 Longitude (11.25°, i32 BE)
+		0x00, 0x80, 0x00, 0x00, // I062/105 Latitude (45°, i32 BE)
+		0x00, 0x20, 0x00, 0x00, // I062/105 Longitude (11.25°, i32 BE)
 	}
 
 	tracks, err := DecodeDataBlock(data)
