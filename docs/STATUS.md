@@ -5,12 +5,11 @@
 > Claude liest sie zu Sitzungsbeginn (siehe `CLAUDE.md`).
 
 - **Zuletzt aktualisiert:** 2026-06-13 (Branch `claude/loving-turing-2obzk6`:
-  **M1.2 abgeschlossen** — UDP-Multicast-Receiver implementiert mit
-  Health-/Readiness-Probes; Live-Datenfeed von Firefly zum ersten Mal
-  empfangen und dekodiert; nächster Schritt M1.3 (WebSocket-Server für
-  Browser-Push))
-- **Branch:** `claude/loving-turing-2obzk6` — Receiver läuft, CAT062-Decoder
-  ist integriert; bereit für WebSocket-Server
+  **M1.3 abgeschlossen** — WebSocket-Server implementiert; Live-Tracks
+  broadcasten an Browser-Clients als JSON; ganze Pipeline funktioniert:
+  CAT062 Multicast → Decoder → Broadcaster → WebSocket-Clients)
+- **Branch:** `claude/loving-turing-2obzk6` — Volle Backend-Pipeline läuft;
+  nächster Schritt M1.4 (Frontend/MapLibre)
 
 > 🔁 **Pivot vollzogen: Wayfinder konsumiert CAT062/UDP-Multicast statt
 > JSON/WebSocket.** `CLAUDE.md` wurde komplett neu gefasst (Produktionsbetrieb,
@@ -26,6 +25,28 @@
 ---
 
 ## 1. Wo wir gerade stehen
+
+**M1.3 (WebSocket-Server — Browser-Push): ✅ Abgeschlossen**
+
+Implementiert:
+- ✅ `pkg/broadcast/broadcast.go` — Broadcaster mit Channel-basierter Architektur
+  - Track-Channel-Input: `broadcaster.TracksChan() <- tracks`
+  - Client-Registry (sync.Map) für non-blocking Broadcast
+  - Automatische Eviction bei vollem Client-Channel
+  - Message-Format: JSON mit Track-Array
+- ✅ `pkg/ws/handler.go` — HTTP-Handler für WebSocket-Upgrade
+  - Client-Lifecycle: register → readLoop + writeLoop → unregister
+  - Ping/Pong für Keepalive
+  - WriteJSON für Message-Serialisierung
+- ✅ Integration in `main.go`:
+  - Receiver → Broadcaster → WebSocket-Clients (volle Pipeline)
+  - Graceful shutdown mit Goroutine-Sync (sync.WaitGroup)
+  - Readiness probe: ready wenn Clients verbunden ODER Blocks empfangen
+  - WebSocket auf `:8081` (/ws endpoint)
+
+**Qualitäts-Gates:** `go build ./cmd/wayfinder` ✅, `go test ./...` ✅
+
+---
 
 **M1.2 (UDP-Multicast-Receiver): ✅ Abgeschlossen**
 
