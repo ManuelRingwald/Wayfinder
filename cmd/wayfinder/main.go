@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"sync/atomic"
 	"syscall"
 
+	"github.com/manuelringwald/wayfinder/internal/webui"
 	"github.com/manuelringwald/wayfinder/pkg/broadcast"
 	"github.com/manuelringwald/wayfinder/pkg/cat062"
 	"github.com/manuelringwald/wayfinder/pkg/receiver"
@@ -105,6 +107,15 @@ func main() {
 	wsHandler := ws.New(broadcaster, logger)
 	http.Handle("/ws", wsHandler)
 
+	// Serve the ASD frontend (static HTML/JS/CSS) and its map configuration.
+	frontend, err := webui.Handler()
+	if err != nil {
+		logger.Error("create frontend handler", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+	http.Handle("/", frontend)
+	http.HandleFunc("/api/map-config", mapConfigHandler(cfg))
+
 	go func() {
 		logger.Info("starting websocket server", slog.String("addr", ":8081"))
 		if err := http.ListenAndServe(":8081", nil); err != nil && err != http.ErrServerClosed {
@@ -131,7 +142,26 @@ type Config struct {
 	MulticastGroup string
 	MulticastPort  int
 	ProbePort      int
+	MapCenterLat   float64
+	MapCenterLon   float64
+	MapZoom        float64
+	MapStyleURL    string
 }
+
+// defaultMapStyle is a minimal MapLibre style using OpenStreetMap raster
+// tiles. It needs no API key, which keeps the demo self-contained.
+const defaultMapStyle = `{
+	"version": 8,
+	"sources": {
+		"osm": {
+			"type": "raster",
+			"tiles": ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+			"tileSize": 256,
+			"attribution": "© OpenStreetMap contributors"
+		}
+	},
+	"layers": [{"id": "osm", "type": "raster", "source": "osm"}]
+}`
 
 // loadConfig loads configuration from environment variables.
 func loadConfig() Config {
@@ -139,6 +169,11 @@ func loadConfig() Config {
 		MulticastGroup: os.Getenv("FIREFLY_CAT062_GROUP"),
 		MulticastPort:  8600,
 		ProbePort:      8080,
+		// Default map center: Frankfurt am Main, matching Firefly's demo scenario.
+		MapCenterLat: 50.0379,
+		MapCenterLon: 8.5622,
+		MapZoom:      8,
+		MapStyleURL:  "",
 	}
 
 	if cfg.MulticastGroup == "" {
@@ -157,7 +192,46 @@ func loadConfig() Config {
 		}
 	}
 
+	if v := os.Getenv("WAYFINDER_MAP_CENTER_LAT"); v != "" {
+		if lat, err := strconv.ParseFloat(v, 64); err == nil {
+			cfg.MapCenterLat = lat
+		}
+	}
+
+	if v := os.Getenv("WAYFINDER_MAP_CENTER_LON"); v != "" {
+		if lon, err := strconv.ParseFloat(v, 64); err == nil {
+			cfg.MapCenterLon = lon
+		}
+	}
+
+	if v := os.Getenv("WAYFINDER_MAP_ZOOM"); v != "" {
+		if zoom, err := strconv.ParseFloat(v, 64); err == nil {
+			cfg.MapZoom = zoom
+		}
+	}
+
+	cfg.MapStyleURL = os.Getenv("WAYFINDER_MAP_STYLE_URL")
+
 	return cfg
+}
+
+// mapConfigHandler serves the map center/zoom/style as JSON for the frontend.
+func mapConfigHandler(cfg Config) http.HandlerFunc {
+	style := cfg.MapStyleURL
+	var styleValue any = style
+	if style == "" {
+		styleValue = json.RawMessage(defaultMapStyle)
+	}
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"center_lat": cfg.MapCenterLat,
+			"center_lon": cfg.MapCenterLon,
+			"zoom":       cfg.MapZoom,
+			"style":      styleValue,
+		})
+	}
 }
 
 // startProbeServer starts an HTTP server for health and readiness checks.

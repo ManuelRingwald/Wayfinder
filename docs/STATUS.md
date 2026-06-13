@@ -5,13 +5,14 @@
 > Claude liest sie zu Sitzungsbeginn (siehe `CLAUDE.md`).
 
 - **Zuletzt aktualisiert:** 2026-06-13 (Branch `claude/serene-heisenberg-xq4rla`:
-  Aufräumen — `claude/loving-turing-2obzk6` per PR #2 nach `main` gemergt)
-- **Branch:** `main` — grün und stabil. **M1.1–M1.3 abgeschlossen**:
-  WebSocket-Server implementiert; Live-Tracks broadcasten an Browser-Clients
-  als JSON; ganze Pipeline funktioniert: CAT062 Multicast → Decoder →
-  Broadcaster → WebSocket-Clients. Nächster Schritt: M1.4 (Frontend/MapLibre).
-  Im Zuge des Merges wurde eine versehentlich eingecheckte Binärdatei
-  (`wayfinder`) entfernt und `.gitignore` ergänzt.
+  M1.4.a — statische Karte implementiert)
+- **Branch:** `claude/serene-heisenberg-xq4rla` — **M1.1–M1.3 abgeschlossen**
+  (CAT062 Multicast → Decoder → Broadcaster → WebSocket-Clients, in `main`).
+  **M1.4.a abgeschlossen**: `internal/webui` (eingebettetes Frontend),
+  MapLibre GL JS zeigt eine konfigurierbare 2D-Karte (`/`, `/app.js`,
+  `/api/map-config`), Default Frankfurt/OSM-Raster. Siehe
+  `docs/milestones/M1.4.a_Static_Map.md`. Nächster Schritt: **M1.4.b** —
+  WebSocket-Client im Frontend, der `/ws`-Tracks empfängt.
 
 > 🔁 **Pivot vollzogen: Wayfinder konsumiert CAT062/UDP-Multicast statt
 > JSON/WebSocket.** `CLAUDE.md` wurde komplett neu gefasst (Produktionsbetrieb,
