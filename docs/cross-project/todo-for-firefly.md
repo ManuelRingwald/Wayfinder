@@ -1,107 +1,45 @@
-# Rückmeldungen an Firefly – Produktionsreife der WebSocket-Schnittstelle
+# Rückmeldungen an Firefly – Produktionsreife der Schnittstelle
 
-> Diese Datei sammelt Beobachtungen aus der Wayfinder-Entwicklung (Stand: M1,
-> 2026-06-13), die für den **produktiven Einsatz von Firefly bei einem ANSP**
-> relevant sind. Sie betreffen die `/ws`-Schnittstelle, die Wayfinder als ASD
-> konsumiert. Gedacht zum Übertragen ins Firefly-Projekt (eigenes Repo) und dort
-> als ADRs/Requirements/Issues weiterzuverfolgen.
->
-> Wayfinder baut seinen WebSocket-Client robust gegenüber diesen Lücken (siehe
-> ADR 0001), aber die eigentliche Lösung liegt im Firefly-Server.
+> Diese Datei sammelt Beobachtungen aus der Wayfinder-Entwicklung, die für den
+> **produktiven Einsatz von Firefly bei einem ANSP** relevant sind. Gedacht zum
+> Übertragen ins Firefly-Projekt (eigenes Repo) und dort als ADRs/Requirements/
+> Issues weiterzuverfolgen.
 >
 > Siehe `docs/cross-project/README.md` für den Übertragungs-Workflow.
 
 ---
 
-## 1. Replay statt echtem Live-Broadcast
+## Stand nach Fireflys ADR 0014 (Pivot Lernprojekt → Produktion, CAT062-Konsum)
 
-**Beobachtung:** `firefly-server` berechnet den Frame-Stream einmal beim Start
-(deterministisch, vom `Player`) und spielt ihn **jedem neu verbundenen Client
-einzeln von Frame-Index 0 ab** (`pump_frames` in `crates/firefly-server/src/app.rs`).
+Die ursprünglichen Issues #6–#10 wurden formuliert, als Wayfinder noch gegen den
+JSON/WebSocket-Pfad (`firefly-server`, `/ws`) geplant war. Mit ADR 0014
+konsumiert Wayfinder stattdessen **ASTERIX CAT062 über UDP-Multicast** (Fireflys
+ADR 0006) als produktiven ASD-Kontrakt. Das verändert die Relevanz der Punkte
+unten grundlegend:
 
-**Problem für den Produktivbetrieb:** Eine ASD zeigt die *aktuelle* Luftlage.
-Bei mehreren gleichzeitigen Arbeitsplätzen (mehrere Lotsen, mehrere ASDs) müsste
-jeder Client den **gleichen, aktuellen** Zustand sehen — nicht eine eigene
-Wiederholung der gesamten Szenario-Historie ab Sekunde 0. Ein neu verbundener
-Client (z.B. nach Reconnect) sollte den **aktuellen Stand** bekommen (Snapshot),
-danach die laufenden Updates (Deltas/Broadcast).
-
-**Empfehlung:** Architektur auf Pub/Sub-Fan-out umstellen: ein zentraler
-"aktueller Frame" wird an alle verbundenen Clients gebroadcastet; neu
-verbindende Clients erhalten zunächst einen Snapshot des aktuellen Zustands.
-
-**GitHub Issue:** [Firefly #6](https://github.com/manuelringwald/firefly/issues/6) `from-wayfinder`
+| # | Thema | Status | Begründung |
+|---|-------|--------|------------|
+| [#6](https://github.com/manuelringwald/firefly/issues/6) | Pub/Sub-Fan-out statt Replay | **geschlossen** | Multicast ist nativ Fan-out — mehrere ASD-Instanzen hören unabhängig dieselbe Gruppe; das Replay-Problem entsteht für CAT062 nicht. |
+| [#7](https://github.com/manuelringwald/firefly/issues/7) | Auth/Autorisierung auf `/ws` | **transformiert** | Multicast hat keine Verbindungs-/Token-Authentifizierung. Die Sicherheitsfrage verschiebt sich auf **Netz-Isolation des Multicast-Pfads** (Firefly-seitig) und den **Browser-Rand von Wayfinder** (Wayfinder-seitig, eigener ADR dort). |
+| [#8](https://github.com/manuelringwald/firefly/issues/8) | Nachrichtentyp-Diskriminator im JSON | **geschlossen** | ASTERIX ist selbstbeschreibend (CAT/LEN/FSPEC) — ein zusätzlicher Typ-Diskriminator ist für CAT062 gegenstandslos. |
+| [#9](https://github.com/manuelringwald/firefly/issues/9) | `time` ohne Wandzeit-/UTC-Bezug | **bleibt offen, wird zentraler** | CAT062 I062/070 *ist* das ASTERIX-Time-of-Day-Feld, das Wayfinder direkt konsumiert. Solange Firefly dort "Sekunden seit Szenario-Start" statt echter UTC-Tageszeit einträgt, kann Wayfinder dem Lotsen keine korrekte UTC-Uhrzeit am Track anzeigen. |
+| [#10](https://github.com/manuelringwald/firefly/issues/10) | Schema-Versionierung | **geschlossen** | Wird Teil der für CAT062 vorgesehenen ICD-Dokumentation (versionierter Schnittstellen-Vertrag) statt eines JSON-Schema-Felds. |
 
 ---
 
-## 2. Keine Authentifizierung/Autorisierung auf `/ws`
+## Offen für Firefly: #9 (UTC Time-of-Day)
 
-**Beobachtung:** Die WebSocket-Route ist offen, jeder kann sich verbinden und
-den Frame-Stream empfangen.
+**Beobachtung:** `Timestamp` (`crates/firefly-core/src/time.rs`) ist aktuell
+"Sekunden seit Szenario-Start", auch im CAT062-Adapter (I062/070).
 
-**Problem für den Produktivbetrieb:** Eine ASD zeigt sicherheitsrelevante
-Live-Luftlage. Der Zugriff muss authentifiziert und autorisiert sein
-(wer darf welche ASD/welchen Sektor sehen).
+**Problem für den Produktivbetrieb:** Eine ASD muss dem Lotsen eine **UTC-Uhrzeit**
+am Track anzeigen können. I062/070 muss dafür echte ASTERIX-Time-of-Day
+(Sekunden seit UTC-Mitternacht, 1/128 s) enthalten.
 
-**Empfehlung:** Auth-Schicht vor/auf `/ws` (z.B. Token-basiert), Rollen-/
-Sektor-Konzept klären.
-
-**GitHub Issue:** [Firefly #7](https://github.com/manuelringwald/firefly/issues/7) `from-wayfinder`
-
----
-
-## 3. Kein Nachrichtentyp-Diskriminator im JSON
-
-**Beobachtung:** Aktuell gibt es zwei Arten von WebSocket-Nachrichten:
-- `Frame` (Plots + Tracks) — kein Typ-Feld
-- `{"event":"delay_triggered", ...}` — nur dieses hat ein `"event"`-Feld
-
-Ein Konsument muss raten/prüfen, ob `"event"` vorhanden ist, um den Typ zu
-bestimmen.
-
-**Problem für den Produktivbetrieb:** Fragil bei Schema-Erweiterungen — neue
-Nachrichtentypen sind nicht klar unterscheidbar, Versionierung schwierig.
-
-**Empfehlung:** Einheitliches Hülle-Format mit explizitem Typ-Feld, z.B.
-`{"type": "frame", "data": {...}}` bzw. `{"type": "delay_triggered", "data": {...}}`.
-
-**GitHub Issue:** [Firefly #8](https://github.com/manuelringwald/firefly/issues/8) `from-wayfinder`
-
----
-
-## 4. `time` ohne Wandzeit-/UTC-Bezug
-
-**Beobachtung:** `Timestamp` (in `crates/firefly-core/src/time.rs`) ist
-"Sekunden seit einem willkürlichen, aber festen Epoch" — für die Simulation
-einfach Sekunden seit Szenario-Start. Laut Doku-Kommentar später für ASTERIX
-"Time of Day" (Sekunden seit UTC-Mitternacht) vorgesehen.
-
-**Problem für den Produktivbetrieb:** Eine ASD muss dem Lotsen eine
-**UTC-Uhrzeit** am Track anzeigen können. "Sekunden seit Szenario-Start" ist für
-einen Live-Betrieb nicht direkt verwertbar.
-
-**Empfehlung:** Umstellung auf ASTERIX Time-of-Day (UTC-Bezug) wie in den
-Doku-Kommentaren bereits angedacht — diese Migration früh einplanen, da
-Wayfinder (und jeder andere Konsument) sich darauf verlassen wird.
+**Empfehlung:** Migration auf echtes UTC-Time-of-Day in I062/070, wie in Fireflys
+Roadmap (ADR 0014, Produktions-Phase) bereits vorgesehen.
 
 **GitHub Issue:** [Firefly #9](https://github.com/manuelringwald/firefly/issues/9) `from-wayfinder`
-
----
-
-## 5. Keine Protokoll-Versionierung
-
-**Beobachtung:** Die JSON-Wire-Formate (`Frame`, `FrameTrack`, `FramePlot`,
-Event-Messages) haben kein Versionsfeld.
-
-**Problem für den Produktivbetrieb:** Server und Client(s) müssen synchron
-aktualisiert werden; ohne Versionsfeld ist nicht erkennbar, ob ein Client eine
-inkompatible Server-Version anspricht (insbesondere bei mehreren
-ASD-Instanzen/Rollouts).
-
-**Empfehlung:** Ein `"schema_version"`-Feld (oder Teil der vorgeschlagenen
-Hülle aus Punkt 3) einführen, das Konsumenten prüfen können.
-
-**GitHub Issue:** [Firefly #10](https://github.com/manuelringwald/firefly/issues/10) `from-wayfinder`
 
 ---
 
@@ -109,12 +47,13 @@ Hülle aus Punkt 3) einführen, das Konsumenten prüfen können.
 
 - **Sicherheitsrelevante Statusfelder werden bereits durchgereicht**:
   `confirmed`, `coasting`, `update_age_s`, `position_uncertainty_m` (ADR 0008
-  bei Firefly) — genau das, was eine ASD für die Darstellung von
-  Unsicherheits-Ringen und Tentative/Coasting-Zuständen braucht.
+  bei Firefly, kodiert u.a. in I062/080, I062/290, I062/500) — genau das, was
+  eine ASD für die Darstellung von Unsicherheits-Ringen und
+  Tentative/Coasting-Zuständen braucht.
 - **Health-/Readiness-Probes** (`/health`, `/ready`) sind vorhanden
   (Kubernetes-tauglich, ADR 0003 bei Firefly).
-- **12-Factor-Konfiguration** über Env-Vars (`FIREFLY_PORT`, `FIREFLY_SPEED`,
-  `FIREFLY_SCENE`) ist bereits umgesetzt.
-- **Format ist flach und selbstbeschreibend** (Feldnamen klar, Newtypes als
-  bare scalars) — gute Grundlage für Punkt 3 (Hülle drumherum, statt alles
-  umzubauen).
+- **12-Factor-Konfiguration** über Env-Vars (`FIREFLY_CAT062_GROUP`,
+  `FIREFLY_CAT062_PORT`, …) ist bereits umgesetzt.
+- **CAT062-Empfänger-Seite bereits bewiesen** (Fireflys ADR 0006, Häppchen
+  D.1–D.3): Decoder, Rückprojektion und echter Multicast-Empfänger sind
+  Ende-zu-Ende getestet — gute Referenz für den Wayfinder-Decoder.
