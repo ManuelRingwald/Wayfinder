@@ -5,11 +5,12 @@
 > Claude liest sie zu Sitzungsbeginn (siehe `CLAUDE.md`).
 
 - **Zuletzt aktualisiert:** 2026-06-13 (Branch `claude/loving-turing-2obzk6`:
-  **M1.1 abgeschlossen** — CAT062-Decoder vollständig implementiert (FRN
-  1,4,5,6,7,9,11,12,13,14,16), alle Tests grün, gegen byte-genauen
-  Firefly-Referenz-Vektor validiert)
-- **Branch:** `claude/loving-turing-2obzk6` — CAT062-Decoder-Grundgerüst fertig
-  und validiert; nächster Schritt M1.2 (UDP-Multicast-Receiver)
+  **M1.2 abgeschlossen** — UDP-Multicast-Receiver implementiert mit
+  Health-/Readiness-Probes; Live-Datenfeed von Firefly zum ersten Mal
+  empfangen und dekodiert; nächster Schritt M1.3 (WebSocket-Server für
+  Browser-Push))
+- **Branch:** `claude/loving-turing-2obzk6` — Receiver läuft, CAT062-Decoder
+  ist integriert; bereit für WebSocket-Server
 
 > 🔁 **Pivot vollzogen: Wayfinder konsumiert CAT062/UDP-Multicast statt
 > JSON/WebSocket.** `CLAUDE.md` wurde komplett neu gefasst (Produktionsbetrieb,
@@ -25,6 +26,24 @@
 ---
 
 ## 1. Wo wir gerade stehen
+
+**M1.2 (UDP-Multicast-Receiver): ✅ Abgeschlossen**
+
+Implementiert:
+- ✅ `pkg/receiver/receiver.go` — UDP-Multicast-Listener mit CAT062-Decoder-Integration
+  - Multicast-Bindung auf `239.255.0.62:8600` (oder env. konfigurierbar via `FIREFLY_CAT062_GROUP`/`FIREFLY_CAT062_PORT`)
+  - Handler-Pattern für Track-Verarbeitung (jedes Datagramm = ein Block mit 0+ Tracks)
+  - Fehlerbehandlung: truncated/malformed Blöcke werden geloggt und ignoriert (kein Panic)
+- ✅ `cmd/wayfinder/main.go` — Server-Einstieg mit
+  - Umgebungs-Konfiguration (12-Factor)
+  - `/health` (Liveness) und `/ready` (Readiness) probes für Container/Kubernetes
+  - Graceful shutdown auf SIGINT/SIGTERM
+  - Strukturiertes JSON-Logging (stderr)
+- ✅ `pkg/receiver/receiver_test.go` — 5 Tests (Config, Invalid Group, Run/Listen, Context Cancellation)
+
+**Integrationen:** CAT062-Decoder ist direkt in den Receiver-Handler verdrahtet — die ersten Datenpakete von Firefly können jetzt empfangen und dekodiert werden.
+
+---
 
 **M1.1 (CAT062-Decoder-Grundgerüst): ✅ Abgeschlossen**
 
@@ -67,16 +86,16 @@ Implementiert:
 
 ## 3. Nächster Schritt (hier geht es weiter!)
 
-➡️ **M1.2 (UDP-Multicast-Receiver)**
-- Netzwerk-Binding auf `239.255.0.62:8600` (oder Env-Konfiguration via
-  `FIREFLY_CAT062_GROUP`/`FIREFLY_CAT062_PORT`)
-- Empfangsschleife: ein Datagramm = ein CAT062-Datenblock → `DecodeDataBlock`
-- Loopback-Test gegen Fireflys `firefly-multicast`-Sender
-- Fehlerbehandlung für truncated/malformed Datagramme (Decoder ist bereits
-  robust — verwerfen statt Panic)
-- Health-/Readiness-Probes (12-Factor, `CLAUDE.md` Abschnitt 7)
+➡️ **M1.3 (WebSocket-Server — Browser-Push für Live-Tracks)**
 
-Danach M1.3 (WebSocket-Server) und M1.4 (Frontend/MapLibre).
+Live-Tracks vom Receiver an Browser-Clients über WebSocket:
+- Go-WebSocket-Server (mit gorilla/websocket oder stdlib `net/http/httputil/reverseproxy`)
+- Receiver → Channel → WebSocket-Broadcast-Loop
+- Message format: JSON mit Track-Array (lat, lon, vx, vy, track_num, status, …)
+- Client-Verbindung: `/ws`, optional mit Cookie/Bearer-Auth
+- Health: WebSocket-Clients zählen als Readiness-Indikator
+
+Danach M1.4 (Frontend mit MapLibre GL JS).
 
 Erst Erklärung → Rückfragen/Go → dann kleine, testbare Umsetzung
 (`CLAUDE.md` Abschnitt 3).
