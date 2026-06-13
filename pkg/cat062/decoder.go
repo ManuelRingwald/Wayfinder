@@ -99,17 +99,10 @@ func DecodeRecord(data []byte, offset int) (DecodedTrack, int, error) {
 				return track, offset, NewDecodeError("truncated I062/100")
 			}
 
-			// i24 big-endian: 3 bytes + padding for sign extension
-			xVal := (int32(data[offset]) << 16) | (int32(data[offset+1]) << 8) | int32(data[offset+2])
-			yVal := (int32(data[offset+3]) << 16) | (int32(data[offset+4]) << 8) | int32(data[offset+5])
-
-			// Sign extend from 24 bits to 32 bits
-			if xVal&(1<<23) != 0 {
-				xVal |= -1 ^ ((1 << 24) - 1) // sign extend
-			}
-			if yVal&(1<<23) != 0 {
-				yVal |= -1 ^ ((1 << 24) - 1) // sign extend
-			}
+			// i24 big-endian (3 bytes each, signed)
+			// Extract as 32-bit value, then shift left to align sign bit at 31, then arithmetic shift right
+			xVal := signExtendI24((int32(data[offset]) << 16) | (int32(data[offset+1]) << 8) | int32(data[offset+2]))
+			yVal := signExtendI24((int32(data[offset+3]) << 16) | (int32(data[offset+4]) << 8) | int32(data[offset+5]))
 
 			const cartLSB = 0.5
 			track.Cartesian.X = float64(xVal) * cartLSB
@@ -201,7 +194,7 @@ func DecodeRecord(data []byte, offset int) (DecodedTrack, int, error) {
 				// APC: X and Y components (u16 BE each), LSB = 0.5 m
 				xTicks := (uint16(data[offset]) << 8) | uint16(data[offset+1])
 				yTicks := (uint16(data[offset+2]) << 8) | uint16(data[offset+3])
-				track.Accuracy.APC = float64((xTicks + yTicks) / 2) * 0.5 // Average for simplicity
+				track.Accuracy.APC = float64((xTicks+yTicks)/2) * 0.5 // Average for simplicity
 				offset += 4
 			}
 		}
@@ -247,4 +240,16 @@ func decodeTrackStatus(data []byte, offset int) (TrackStatus, int, error) {
 	}
 
 	return status, offset, nil
+}
+
+// signExtendI24 converts a 24-bit signed value (stored in bits 0-23 of a 32-bit int)
+// to a proper 32-bit signed integer with sign extension.
+// Bit 23 is the sign bit; if set, all upper bits (24-31) are set to 1.
+func signExtendI24(val int32) int32 {
+	// If sign bit (bit 23) is set, this is a negative number in 24-bit representation.
+	// Subtract 2^24 to convert to proper 32-bit signed two's complement.
+	if (val & 0x800000) != 0 {
+		val -= (1 << 24)
+	}
+	return val
 }

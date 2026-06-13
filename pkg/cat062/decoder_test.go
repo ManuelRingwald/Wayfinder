@@ -4,6 +4,31 @@ import (
 	"testing"
 )
 
+// TestSignExtendI24 tests 24-bit sign extension to 32-bit.
+func TestSignExtendI24(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    int32
+		expected int32
+	}{
+		{"positive max 24-bit", 0x7FFFFF, 0x7FFFFF}, // 2^23 - 1
+		{"negative -1", 0xFFFFFF, -1},               // all 24 bits set
+		{"negative -8388608", 0x800000, -8388608},   // -(2^23)
+		{"zero", 0x000000, 0},
+		{"small positive", 0x000001, 1},
+		{"small negative", 0xFFFFFF, -1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := signExtendI24(tt.input)
+			if result != tt.expected {
+				t.Errorf("input 0x%X: expected %d, got %d", tt.input, tt.expected, result)
+			}
+		})
+	}
+}
+
 // TestFSPECParser tests FSPEC parsing with FX chaining.
 func TestFSPECParser(t *testing.T) {
 	tests := []struct {
@@ -80,11 +105,11 @@ func TestDecodeTimeOfDay(t *testing.T) {
 	// At 6:00 UTC: 6*3600 = 21600 seconds = 21600*128 ticks = 2764800 = 0x2A1A00
 	// Total: 1 (CAT) + 2 (LEN) + 1 (FSPEC) + 2 (I062/010) + 3 (I062/070) = 9 bytes
 	data := []byte{
-		0x3E,                // CAT
-		0x00, 0x09,          // LEN (9 bytes)
-		0x90,                // FSPEC: FRN1,4 present
-		0x19, 0x02,          // I062/010 (SAC=0x19, SIC=0x02)
-		0x2A, 0x1A, 0x00,    // I062/070 (21600 s = 0x2A1A00)
+		0x3E,       // CAT
+		0x00, 0x09, // LEN (9 bytes)
+		0x90,       // FSPEC: FRN1,4 present
+		0x19, 0x02, // I062/010 (SAC=0x19, SIC=0x02)
+		0x2A, 0x1A, 0x00, // I062/070 (21600 s = 0x2A1A00)
 	}
 
 	tracks, err := DecodeDataBlock(data)
@@ -113,12 +138,12 @@ func TestDecodeWGS84Position(t *testing.T) {
 	// Lon=11.25°: ticks=0x00800000 (i32 big-endian)
 	// Total: 1 (CAT) + 2 (LEN) + 1 (FSPEC) + 2 (I062/010) + 8 (I062/105) = 14 bytes
 	data := []byte{
-		0x3E,                                    // CAT
-		0x00, 0x0E,                              // LEN (14 bytes)
-		0xA0,                                    // FSPEC: FRN1,5
-		0x19, 0x02,                              // I062/010
-		0x02, 0x00, 0x00, 0x00,                  // I062/105 Latitude (45°, i32 BE)
-		0x00, 0x80, 0x00, 0x00,                  // I062/105 Longitude (11.25°, i32 BE)
+		0x3E,       // CAT
+		0x00, 0x0E, // LEN (14 bytes)
+		0xA0,       // FSPEC: FRN1,5
+		0x19, 0x02, // I062/010
+		0x02, 0x00, 0x00, 0x00, // I062/105 Latitude (45°, i32 BE)
+		0x00, 0x80, 0x00, 0x00, // I062/105 Longitude (11.25°, i32 BE)
 	}
 
 	tracks, err := DecodeDataBlock(data)
@@ -146,12 +171,12 @@ func TestDecodeVelocity(t *testing.T) {
 	// FSPEC: FRN1,7 -> bits 7,1 set -> 0b10000010 = 0x82
 	// Total: 1 (CAT) + 2 (LEN) + 1 (FSPEC) + 2 (I062/010) + 4 (I062/185) = 10 bytes
 	data := []byte{
-		0x3E,                     // CAT
-		0x00, 0x0A,               // LEN (10 bytes)
-		0x82,                     // FSPEC: FRN1,7
-		0x19, 0x02,               // I062/010
-		0x01, 0x90,               // I062/185 Vx=400 ticks=100m/s (i16 BE)
-		0x00, 0xC8,               // I062/185 Vy=200 ticks=50m/s (i16 BE)
+		0x3E,       // CAT
+		0x00, 0x0A, // LEN (10 bytes)
+		0x82,       // FSPEC: FRN1,7
+		0x19, 0x02, // I062/010
+		0x01, 0x90, // I062/185 Vx=400 ticks=100m/s (i16 BE)
+		0x00, 0xC8, // I062/185 Vy=200 ticks=50m/s (i16 BE)
 	}
 
 	tracks, err := DecodeDataBlock(data)
@@ -167,6 +192,40 @@ func TestDecodeVelocity(t *testing.T) {
 	}
 	if tracks[0].Velocity.Vy < 49.99 || tracks[0].Velocity.Vy > 50.01 {
 		t.Errorf("Vy mismatch: expected ≈50, got %v", tracks[0].Velocity.Vy)
+	}
+}
+
+// TestDecodeCartesianPosition tests I062/100 parsing with sign-extended i24 values.
+func TestDecodeCartesianPosition(t *testing.T) {
+	// FSPEC: FRN1 (bit 7), FRN6 (bit 2) -> 0b10000100 = 0x84
+	// SAC/SIC: 0x19, 0x02
+	// X = 1000.0 meters -> ticks = 1000 / 0.5 = 2000 = 0x0007D0 (i24 BE)
+	// Y = -500.0 meters -> ticks = -500 / 0.5 = -1000 = 0xFFFC18 (i24 BE, two's complement)
+	// Total: 1 (CAT) + 2 (LEN) + 1 (FSPEC) + 2 (I062/010) + 6 (I062/100) = 12 bytes
+	data := []byte{
+		0x3E,       // CAT
+		0x00, 0x0C, // LEN (12 bytes)
+		0x84,       // FSPEC: FRN1,6 (bits 7,2 set)
+		0x19, 0x02, // I062/010
+		0x00, 0x07, 0xD0, // I062/100 X = 2000 ticks = 1000.0 m (i24 BE)
+		0xFF, 0xFC, 0x18, // I062/100 Y = -1000 ticks = -500.0 m (i24 BE)
+	}
+
+	tracks, err := DecodeDataBlock(data)
+	if err != nil {
+		t.Fatalf("DecodeDataBlock failed: %v", err)
+	}
+	if len(tracks) != 1 {
+		t.Fatalf("expected 1 track, got %d", len(tracks))
+	}
+
+	// Check X (tolerance: 0.01 m)
+	if tracks[0].Cartesian.X < 999.99 || tracks[0].Cartesian.X > 1000.01 {
+		t.Errorf("X mismatch: expected ≈1000.0, got %v", tracks[0].Cartesian.X)
+	}
+	// Check Y (tolerance: 0.01 m)
+	if tracks[0].Cartesian.Y < -500.01 || tracks[0].Cartesian.Y > -499.99 {
+		t.Errorf("Y mismatch: expected ≈-500.0, got %v", tracks[0].Cartesian.Y)
 	}
 }
 
