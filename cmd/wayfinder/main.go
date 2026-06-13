@@ -7,11 +7,14 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"syscall"
 
+	"github.com/manuelringwald/wayfinder/pkg/broadcast"
 	"github.com/manuelringwald/wayfinder/pkg/cat062"
 	"github.com/manuelringwald/wayfinder/pkg/receiver"
+	"github.com/manuelringwald/wayfinder/pkg/ws"
 )
 
 func main() {
@@ -24,12 +27,15 @@ func main() {
 	// Load configuration from environment.
 	cfg := loadConfig()
 
+	// Create broadcaster.
+	broadcaster := broadcast.New(logger)
+
 	// Track reception state for health checks.
 	var blockCount atomic.Int64
 	var trackCount atomic.Int64
 	var lastError atomic.Pointer[string]
 
-	// Create receiver with handler that tracks statistics.
+	// Create receiver with handler that feeds broadcaster.
 	recv, err := receiver.New(receiver.Config{
 		Group:  cfg.MulticastGroup,
 		Port:   cfg.MulticastPort,
@@ -37,6 +43,12 @@ func main() {
 		Handler: func(tracks []cat062.DecodedTrack) error {
 			blockCount.Add(1)
 			trackCount.Add(int64(len(tracks)))
+			// Feed tracks to broadcaster (non-blocking).
+			select {
+			case broadcaster.TracksChan() <- tracks:
+			default:
+				logger.Warn("broadcaster channel full, dropping block")
+			}
 			return nil
 		},
 	})
@@ -52,9 +64,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Start health/readiness probe server.
-	go startProbeServer(logger, &blockCount, &lastError)
-
 	// Graceful shutdown on SIGTERM/SIGINT.
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -62,19 +71,57 @@ func main() {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
+	// Run receiver and broadcaster in parallel.
+	var wg sync.WaitGroup
+
+	// Receiver goroutine.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := recv.Run(ctx); err != nil && err != context.Canceled {
+			msg := err.Error()
+			lastError.Store(&msg)
+			logger.Error("receiver error", slog.String("error", err.Error()))
+			cancel()
+		}
+	}()
+
+	// Broadcaster goroutine.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := broadcaster.Run(ctx); err != nil && err != context.Canceled {
+			msg := err.Error()
+			lastError.Store(&msg)
+			logger.Error("broadcaster error", slog.String("error", err.Error()))
+			cancel()
+		}
+	}()
+
+	// Start health/readiness probe server.
+	go startProbeServer(logger, &blockCount, broadcaster, &lastError)
+
+	// Start WebSocket server.
+	wsHandler := ws.New(broadcaster, logger)
+	http.Handle("/ws", wsHandler)
+
+	go func() {
+		logger.Info("starting websocket server", slog.String("addr", ":8081"))
+		if err := http.ListenAndServe(":8081", nil); err != nil && err != http.ErrServerClosed {
+			logger.Error("websocket server error", slog.String("error", err.Error()))
+			cancel()
+		}
+	}()
+
+	// Wait for shutdown signal.
 	go func() {
 		sig := <-sigChan
 		logger.Info("signal received", slog.String("signal", sig.String()))
 		cancel()
 	}()
 
-	// Run receiver (blocks until context is cancelled).
-	if err := recv.Run(ctx); err != nil && err != context.Canceled {
-		msg := err.Error()
-		lastError.Store(&msg)
-		logger.Error("receiver error", slog.String("error", err.Error()))
-		os.Exit(1)
-	}
+	// Wait for goroutines to finish.
+	wg.Wait()
 
 	logger.Info("shutdown complete")
 }
@@ -114,7 +161,7 @@ func loadConfig() Config {
 }
 
 // startProbeServer starts an HTTP server for health and readiness checks.
-func startProbeServer(logger *slog.Logger, blockCount *atomic.Int64, lastError *atomic.Pointer[string]) {
+func startProbeServer(logger *slog.Logger, blockCount *atomic.Int64, broadcaster *broadcast.Broadcaster, lastError *atomic.Pointer[string]) {
 	mux := http.NewServeMux()
 
 	// /health — liveness check (always ready unless startup failed).
@@ -124,17 +171,18 @@ func startProbeServer(logger *slog.Logger, blockCount *atomic.Int64, lastError *
 		w.Write([]byte(`{"status":"ok"}`))
 	})
 
-	// /ready — readiness check (ready once we've received at least one block).
+	// /ready — readiness check (ready once we have clients or blocks received).
 	mux.HandleFunc("/ready", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		count := blockCount.Load()
-		if count > 0 {
+		clients := broadcaster.ClientCount()
+		if count > 0 || clients > 0 {
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(`{"status":"ready","blocks":` + strconv.FormatInt(count, 10) + `}`))
+			w.Write([]byte(`{"status":"ready","blocks":` + strconv.FormatInt(count, 10) + `,"clients":` + strconv.Itoa(clients) + `}`))
 			return
 		}
 		w.WriteHeader(http.StatusServiceUnavailable)
-		w.Write([]byte(`{"status":"not_ready","blocks":0}`))
+		w.Write([]byte(`{"status":"not_ready","blocks":0,"clients":0}`))
 	})
 
 	addr := ":8080"
