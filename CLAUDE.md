@@ -48,6 +48,11 @@ JSON/WebSocket-Implementierung wird **nicht** gebaut.
 Dies ist das Herzstück und der einzige Berührungspunkt mit Firefly. Wayfinder
 **hält sich an diesen Vertrag**, statt Firefly-Code zu importieren.
 
+> 📖 **Maßgebliche Quelle:** `docs/ICD-CAT062.md` im Firefly-Repo (versioniert,
+> mit Changelog). Diese Sektion ist eine **Kurzfassung** für den schnellen
+> Überblick — bei Abweichungen gilt die ICD. Änderungen an der ICD werden per
+> Issue (Label `from-firefly`) angekündigt und hier nachgezogen.
+
 - **Transport:** UDP-Multicast. Default-Gruppe `239.255.0.62`, Port `8600`
   (Firefly-Env: `FIREFLY_CAT062_GROUP` / `FIREFLY_CAT062_PORT`). Multicast-TTL
   ist standardmäßig 1 (subnetz-lokal). Ein Datagramm = ein vollständiger
