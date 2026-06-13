@@ -271,10 +271,76 @@ func BenchmarkDecodeRecord(b *testing.B) {
 	}
 }
 
-// TestReferenceVector tests against a known Firefly encoder output.
-// (Placeholder for M1.1.d when we integrate actual Firefly reference vectors.)
+// TestReferenceVector decodes the byte-exact CAT062 dump from Firefly's
+// firefly-asterix encoder test `single_track_matches_reference_dump`
+// (crates/firefly-asterix/src/cat062.rs). This is the ground truth for the
+// wire contract between Firefly (encoder) and Wayfinder (decoder).
+//
+// Reference track: SAC/SIC=0x19/0x02, time=12.0s, lat=45°, lon=11.25°,
+// system-cartesian at the reference point (0,0), Vx=100 m/s, Vy=-50 m/s,
+// track #1, confirmed/fresh, PSR age=2s, position accuracy (APC)=100m.
 func TestReferenceVector(t *testing.T) {
-	// TODO: Embed a byte-exact reference dump from Firefly's encoder.
-	// Example: single_track_matches_reference_dump from firefly-asterix tests.
-	t.Skip("Firefly reference vector integration pending (M1.1.d)")
+	data := []byte{
+		0x3E,       // CAT 62
+		0x00, 0x27, // LEN = 39
+		0x9F, 0x0F, 0x40, // FSPEC {1, 4, 5, 6, 7, 12, 13, 14, 16}
+		0x19, 0x02, // I062/010 SAC/SIC
+		0x00, 0x06, 0x00, // I062/070 time = 1536 ticks (12.0 s)
+		0x00, 0x80, 0x00, 0x00, // I062/105 latitude 45°
+		0x00, 0x20, 0x00, 0x00, // I062/105 longitude 11.25°
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // I062/100 X=0, Y=0 (reference point)
+		0x01, 0x90, // I062/185 Vx = 100 m/s
+		0xFF, 0x38, // I062/185 Vy = -50 m/s
+		0x00, 0x01, // I062/040 track number 1
+		0x00,       // I062/080 confirmed, fresh
+		0x40, 0x08, // I062/290 PSR age = 2 s
+		0x80, 0x00, 0xC8, 0x00, 0xC8, // I062/500 APC = 100 m
+	}
+
+	tracks, err := DecodeDataBlock(data)
+	if err != nil {
+		t.Fatalf("DecodeDataBlock failed: %v", err)
+	}
+	if len(tracks) != 1 {
+		t.Fatalf("expected 1 track, got %d", len(tracks))
+	}
+
+	track := tracks[0]
+
+	if track.Source.SAC != 0x19 || track.Source.SIC != 0x02 {
+		t.Errorf("Source mismatch: got %v", track.Source)
+	}
+	if track.TimeOfDay.Seconds < 11.99 || track.TimeOfDay.Seconds > 12.01 {
+		t.Errorf("TimeOfDay mismatch: expected ≈12.0, got %v", track.TimeOfDay.Seconds)
+	}
+	if track.WGS84.Latitude < 44.999 || track.WGS84.Latitude > 45.001 {
+		t.Errorf("Latitude mismatch: expected ≈45.0, got %v", track.WGS84.Latitude)
+	}
+	if track.WGS84.Longitude < 11.249 || track.WGS84.Longitude > 11.251 {
+		t.Errorf("Longitude mismatch: expected ≈11.25, got %v", track.WGS84.Longitude)
+	}
+	if track.Cartesian.X != 0.0 || track.Cartesian.Y != 0.0 {
+		t.Errorf("Cartesian mismatch: expected (0,0), got (%v,%v)", track.Cartesian.X, track.Cartesian.Y)
+	}
+	if track.Velocity.Vx < 99.99 || track.Velocity.Vx > 100.01 {
+		t.Errorf("Vx mismatch: expected ≈100, got %v", track.Velocity.Vx)
+	}
+	if track.Velocity.Vy < -50.01 || track.Velocity.Vy > -49.99 {
+		t.Errorf("Vy mismatch: expected ≈-50, got %v", track.Velocity.Vy)
+	}
+	if track.TrackNum != 1 {
+		t.Errorf("TrackNum mismatch: expected 1, got %d", track.TrackNum)
+	}
+	if !track.Status.Confirmed {
+		t.Errorf("Status.Confirmed mismatch: expected true, got %v", track.Status.Confirmed)
+	}
+	if track.Status.Coasting {
+		t.Errorf("Status.Coasting mismatch: expected false, got %v", track.Status.Coasting)
+	}
+	if track.UpdateAge.PSRAge < 1.99 || track.UpdateAge.PSRAge > 2.01 {
+		t.Errorf("PSRAge mismatch: expected ≈2.0, got %v", track.UpdateAge.PSRAge)
+	}
+	if track.Accuracy.APC < 99.99 || track.Accuracy.APC > 100.01 {
+		t.Errorf("Accuracy.APC mismatch: expected ≈100.0, got %v", track.Accuracy.APC)
+	}
 }
