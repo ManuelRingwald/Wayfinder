@@ -5,14 +5,14 @@
 > Claude liest sie zu Sitzungsbeginn (siehe `CLAUDE.md`).
 
 - **Zuletzt aktualisiert:** 2026-06-13 (Branch `claude/serene-heisenberg-xq4rla`:
-  M1.4.a — statische Karte implementiert)
+  M1.4.b — WebSocket-Client im Frontend)
 - **Branch:** `claude/serene-heisenberg-xq4rla` — **M1.1–M1.3 abgeschlossen**
   (CAT062 Multicast → Decoder → Broadcaster → WebSocket-Clients, in `main`).
   **M1.4.a abgeschlossen**: `internal/webui` (eingebettetes Frontend),
-  MapLibre GL JS zeigt eine konfigurierbare 2D-Karte (`/`, `/app.js`,
-  `/api/map-config`), Default Frankfurt/OSM-Raster. Siehe
-  `docs/milestones/M1.4.a_Static_Map.md`. Nächster Schritt: **M1.4.b** —
-  WebSocket-Client im Frontend, der `/ws`-Tracks empfängt.
+  MapLibre GL JS Karte. **M1.4.b abgeschlossen**: `app.js` WebSocket-Client,
+  verbindet sich mit `/ws`, parst `TrackMessage`-JSON, loggt zu Konsole,
+  Reconnect-Logik (2s Wartezeit). Siehe `docs/milestones/M1.4.b_WebSocket_Client.md`.
+  Nächster Schritt: **M1.4.c** — Tracks als Kartensymbole rendern.
 
 > 🔁 **Pivot vollzogen: Wayfinder konsumiert CAT062/UDP-Multicast statt
 > JSON/WebSocket.** `CLAUDE.md` wurde komplett neu gefasst (Produktionsbetrieb,
