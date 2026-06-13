@@ -139,20 +139,24 @@ Bei Sicherheits- oder Schnittstellen-Wirkung lieber das stärkere Modell.
 
 ---
 
-## 5. Technologie-Stack (Stand: in Ratifizierung)
+## 5. Technologie-Stack (ADR 0001: ratifiziert ✅)
 
-Wayfinder ist noch Greenfield. Folgende Wahl ist **vorgeschlagen** und wird mit
-**ADR 0001 (Wayfinder)** ratifiziert, bevor Code entsteht:
+Folgende Wahl ist **akzeptiert** (ADR 0001, 2026-06-13):
 
-- **Sprache: Go** — gut geeignet für netz-nahe Dienste (UDP/Multicast,
-  Nebenläufigkeit, statische Binaries, Container).
-- **Karten-Frontend:** offene, anbieter-neutrale 2D-Vektorkarte (Kandidat:
-  MapLibre GL, konsistent mit Fireflys Frontend-Linie) — eigener ADR.
-- **Transport zum Browser:** offen (z.B. WebSocket-Push der dekodierten Tracks
-  vom Wayfinder-Backend an den Browser — getrennt vom CAT062-Eingangs-Pfad) —
-  eigener ADR.
+- **Sprache: Go** — netz-nativ (UDP/Multicast, Goroutines), statische Binaries,
+  Cloud-native Standard.
+- **Karten-Frontend: MapLibre GL JS** — anbieter-neutral, Open-Source, WebGL,
+  konsistent mit Firefly (ADR 0009 dort).
+- **Transport zum Browser: WebSocket-Server-Push** — decodierte Tracks vom
+  Backend asynchron an den Browser, getrennt vom CAT062-Eingangs-Pfad.
 
-Bis ADR 0001 (Wayfinder) steht, gilt keiner dieser Punkte als fixiert.
+Damit kann der erste Code entstehen.
+
+**Noch nicht ratifiziert (folgen später):**
+- Frontend-UI-Framework (Vue/React/Svelte) — ADR 0002
+- Browser-Authentifizierung / Sicherheit — ADR 0003
+- Observability (Logs, Metriken) — ADR 0004
+- Deployment & Konfiguration — ADR 0005
 
 ---
 
