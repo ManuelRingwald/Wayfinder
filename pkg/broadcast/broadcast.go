@@ -59,9 +59,9 @@ func New(logger *slog.Logger) *Broadcaster {
 	return &Broadcaster{
 		trackChan:      make(chan []cat062.DecodedTrack, 10),
 		logger:         logger,
-		registerChan:   make(chan *Client),
-		unregisterChan: make(chan *Client),
-		messageChan:    make(chan Message),
+		registerChan:   make(chan *Client, 10),
+		unregisterChan: make(chan *Client, 10),
+		messageChan:    make(chan Message, 10),
 	}
 }
 
