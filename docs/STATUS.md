@@ -4,12 +4,14 @@
 > Handy. Sie wird am Ende jeder Arbeitssitzung aktualisiert und committet.
 > Claude liest sie zu Sitzungsbeginn (siehe `CLAUDE.md`).
 
-- **Zuletzt aktualisiert:** 2026-06-13 (Branch `claude/loving-turing-2obzk6`:
-  **M1.3 abgeschlossen** — WebSocket-Server implementiert; Live-Tracks
-  broadcasten an Browser-Clients als JSON; ganze Pipeline funktioniert:
-  CAT062 Multicast → Decoder → Broadcaster → WebSocket-Clients)
-- **Branch:** `claude/loving-turing-2obzk6` — Volle Backend-Pipeline läuft;
-  nächster Schritt M1.4 (Frontend/MapLibre)
+- **Zuletzt aktualisiert:** 2026-06-13 (Branch `claude/serene-heisenberg-xq4rla`:
+  Aufräumen — `claude/loving-turing-2obzk6` per PR #2 nach `main` gemergt)
+- **Branch:** `main` — grün und stabil. **M1.1–M1.3 abgeschlossen**:
+  WebSocket-Server implementiert; Live-Tracks broadcasten an Browser-Clients
+  als JSON; ganze Pipeline funktioniert: CAT062 Multicast → Decoder →
+  Broadcaster → WebSocket-Clients. Nächster Schritt: M1.4 (Frontend/MapLibre).
+  Im Zuge des Merges wurde eine versehentlich eingecheckte Binärdatei
+  (`wayfinder`) entfernt und `.gitignore` ergänzt.
 
 > 🔁 **Pivot vollzogen: Wayfinder konsumiert CAT062/UDP-Multicast statt
 > JSON/WebSocket.** `CLAUDE.md` wurde komplett neu gefasst (Produktionsbetrieb,
