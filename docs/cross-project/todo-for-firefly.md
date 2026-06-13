@@ -22,24 +22,31 @@ unten grundlegend:
 | [#6](https://github.com/manuelringwald/firefly/issues/6) | Pub/Sub-Fan-out statt Replay | **geschlossen** | Multicast ist nativ Fan-out — mehrere ASD-Instanzen hören unabhängig dieselbe Gruppe; das Replay-Problem entsteht für CAT062 nicht. |
 | [#7](https://github.com/manuelringwald/firefly/issues/7) | Auth/Autorisierung auf `/ws` | **transformiert** | Multicast hat keine Verbindungs-/Token-Authentifizierung. Die Sicherheitsfrage verschiebt sich auf **Netz-Isolation des Multicast-Pfads** (Firefly-seitig) und den **Browser-Rand von Wayfinder** (Wayfinder-seitig, eigener ADR dort). |
 | [#8](https://github.com/manuelringwald/firefly/issues/8) | Nachrichtentyp-Diskriminator im JSON | **geschlossen** | ASTERIX ist selbstbeschreibend (CAT/LEN/FSPEC) — ein zusätzlicher Typ-Diskriminator ist für CAT062 gegenstandslos. |
-| [#9](https://github.com/manuelringwald/firefly/issues/9) | `time` ohne Wandzeit-/UTC-Bezug | **bleibt offen, wird zentraler** | CAT062 I062/070 *ist* das ASTERIX-Time-of-Day-Feld, das Wayfinder direkt konsumiert. Solange Firefly dort "Sekunden seit Szenario-Start" statt echter UTC-Tageszeit einträgt, kann Wayfinder dem Lotsen keine korrekte UTC-Uhrzeit am Track anzeigen. |
+| [#9](https://github.com/manuelringwald/firefly/issues/9) | `time` ohne Wandzeit-/UTC-Bezug | **erledigt** | Firefly implementiert echtes ASTERIX UTC-Time-of-Day in I062/070 (Firefly PR #11, Commit `a2449cf`). |
 | [#10](https://github.com/manuelringwald/firefly/issues/10) | Schema-Versionierung | **geschlossen** | Wird Teil der für CAT062 vorgesehenen ICD-Dokumentation (versionierter Schnittstellen-Vertrag) statt eines JSON-Schema-Felds. |
 
 ---
 
-## Offen für Firefly: #9 (UTC Time-of-Day)
+## #9 (UTC Time-of-Day) — erledigt ✅
 
-**Beobachtung:** `Timestamp` (`crates/firefly-core/src/time.rs`) ist aktuell
-"Sekunden seit Szenario-Start", auch im CAT062-Adapter (I062/070).
+Firefly liefert jetzt echtes ASTERIX UTC-Time-of-Day in I062/070 (statt
+"Sekunden seit Szenario-Start"). Damit kann eine ASD dem Lotsen eine korrekte
+UTC-Uhrzeit am Track anzeigen. **GitHub Issue:**
+[Firefly #9](https://github.com/manuelringwald/firefly/issues/9) `from-wayfinder`
+— kann geschlossen werden.
 
-**Problem für den Produktivbetrieb:** Eine ASD muss dem Lotsen eine **UTC-Uhrzeit**
-am Track anzeigen können. I062/070 muss dafür echte ASTERIX-Time-of-Day
-(Sekunden seit UTC-Mitternacht, 1/128 s) enthalten.
+---
 
-**Empfehlung:** Migration auf echtes UTC-Time-of-Day in I062/070, wie in Fireflys
-Roadmap (ADR 0014, Produktions-Phase) bereits vorgesehen.
+## Stand nach Wayfinder M1 (CAT062-Pipeline + Live-Karte, abgeschlossen 2026-06-13)
 
-**GitHub Issue:** [Firefly #9](https://github.com/manuelringwald/firefly/issues/9) `from-wayfinder`
+Wayfinder konsumiert jetzt den vollen CAT062-Vertrag produktiv: `latitude`,
+`longitude`, `track_num`, `confirmed`, `coasting`, `vx`, `vy` werden auf einer
+MapLibre-Karte als farbige Symbole mit Labels dargestellt (M1.4.a–c). Keine
+neuen Schnittstellen-Probleme dabei aufgefallen — der CAT062-Vertrag (ICD
+v1.0.0) deckt den aktuellen Wayfinder-Bedarf vollständig ab. Noch nicht
+genutzt, aber bereits im Vertrag vorhanden: `update_age_s`,
+`position_uncertainty_m`, `mode_3a`, `icao_addr` (geplant für spätere
+ASD-Elemente wie Unsicherheits-Ringe und Label-Inhalte).
 
 ---
 
