@@ -10,21 +10,26 @@
 
 - ✅ Projekt-Charter (`CLAUDE.md`) angelegt
 - ✅ Doku-Grundstruktur (`docs/`, Glossar, Decisions, Requirements, Milestones)
-- ⏳ **M1 – WebSocket-Client + Datenmodell** – nächster konkreter Baustein
+- ✅ ADR0001 – Tech-Stack (Go) & Firefly-Integration (WebSocket via `coder/websocket`)
+- ✅ Firefly-Schnittstelle recherchiert (`Frame`/`FrameTrack`/`FramePlot`-Wireformat),
+  Produktionslücken in `docs/cross-project/todo-for-firefly.md` notiert
+- ✅ **M1, Schritt 1:** Go-Projekt-Grundgerüst (`go.mod`, `cmd/wayfinder`,
+  `/healthz`, `/readyz`, Config über Env-Vars, Graceful Shutdown, slog-Logging)
+- ⏳ **M1, Schritt 2:** Track-Datenmodell (Go-Structs passend zu Firefly's `Frame`) – nächster Baustein
 
 ---
 
 ## Nächste Schritte
 
-1. **ADR 0001 – Tech-Stack & Firefly-Integration:** Entscheidung dokumentieren (Go + WebSocket-Client, Datenmodell für Firefly Tracks).
-2. **Glossar füllen:** Kern-Begriffe erklären (ASD, Track, WebSocket-Feed, etc.).
-3. **Go-Projekt initialisieren:** `go mod init`, Ordnerstruktur für M1.
-4. **WebSocket-Client bauen:** Firefly empfangen und parsen.
-5. **Datenmodell:** Go-Structs für Tracks definieren.
+1. **M1, Schritt 2 – Datenmodell:** Go-Structs `Frame`, `FrameTrack`, `FramePlot`
+   mit JSON-Tags passend zu Firefly's Wire-Format (siehe ADR0001).
+2. **M1, Schritt 3 – WebSocket-Client:** Verbindung zu Firefly (`/ws`),
+   Reconnect-Handling, Unterscheidung Frame vs. `delay_triggered`-Event,
+   `/readyz` an Verbindungsstatus koppeln.
+3. **M1, Schritt 4:** Konfiguration um `FIREFLY_ADDR` erweitern.
 
 ---
 
 ## Offene Fragen
 
-- Firefly-WebSocket-Schnittstelle: Welches Format (JSON? ASTERIX über WebSocket)? Von wo die API-Spezifikation?
-- Kartendarstellung: Canvas/WebGL oder Web-Framework (z.B. leaflet.js für Basismap)?
+- Kartendarstellung (M2): Canvas/WebGL oder Web-Framework (z.B. leaflet.js/MapLibre für Basismap)?
