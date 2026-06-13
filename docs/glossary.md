@@ -77,6 +77,17 @@ Tracks.
 
 ---
 
+## MapLibre GL JS
+
+Open-Source-Bibliothek (WebGL) zum Rendern von Vektor- und Raster-Karten im
+Browser — eine Art "Motor" für die Kartendarstellung. Anbieter-neutraler Fork
+von Mapbox GL JS, daher gut geeignet für ein Cloud-native-Projekt ohne
+Bindung an einen bestimmten Karten-Anbieter. Wayfinder nutzt MapLibre für die
+2D-Kartendarstellung; die Kachel-Quelle (z.B. OpenStreetMap) und der
+Kartenausschnitt (Mittelpunkt/Zoom) sind über Umgebungsvariablen konfigurierbar.
+
+---
+
 ## Zoom / Pan
 
 - **Zoom:** Vergrößerung/Verkleinerung des Kartenausschnitts (z.B. von Heimatflughafen auf ganze Region).

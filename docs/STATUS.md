@@ -4,12 +4,17 @@
 > Handy. Sie wird am Ende jeder Arbeitssitzung aktualisiert und committet.
 > Claude liest sie zu Sitzungsbeginn (siehe `CLAUDE.md`).
 
-- **Zuletzt aktualisiert:** 2026-06-13 (Branch `claude/loving-turing-2obzk6`:
-  **M1.3 abgeschlossen** — WebSocket-Server implementiert; Live-Tracks
-  broadcasten an Browser-Clients als JSON; ganze Pipeline funktioniert:
-  CAT062 Multicast → Decoder → Broadcaster → WebSocket-Clients)
-- **Branch:** `claude/loving-turing-2obzk6` — Volle Backend-Pipeline läuft;
-  nächster Schritt M1.4 (Frontend/MapLibre)
+- **Zuletzt aktualisiert:** 2026-06-13 (Branch `claude/serene-heisenberg-xq4rla`:
+  M1.4.c — Tracks als Kartensymbole)
+- **Branch:** `claude/serene-heisenberg-xq4rla` — **M1.1–M1.3 abgeschlossen**
+  (CAT062 Multicast → Decoder → Broadcaster → WebSocket-Clients, in `main`).
+  **M1.4.a/b/c abgeschlossen**: `internal/webui` (eingebettetes Frontend),
+  MapLibre GL JS Karte, WebSocket-Client mit Reconnect, Live-Tracks als
+  farbige Kartensymbole (grün=confirmed, grau=tentativ, orange=coasting) mit
+  Track-Nummern-Labels. Siehe `docs/milestones/M1.4.c_Track_Rendering.md`.
+  **M1 ist funktional abgeschlossen** (Backend-Pipeline + Live-Kartendarstellung).
+  Nächster Schritt: offen — z.B. Kurs-Pfeile/Trails, Interaktion, oder
+  Firefly-Produktions-Roadmap (Issue #9 ist bereits erledigt).
 
 > 🔁 **Pivot vollzogen: Wayfinder konsumiert CAT062/UDP-Multicast statt
 > JSON/WebSocket.** `CLAUDE.md` wurde komplett neu gefasst (Produktionsbetrieb,
