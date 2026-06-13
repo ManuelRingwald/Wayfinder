@@ -5,8 +5,11 @@
 > Claude liest sie zu Sitzungsbeginn (siehe `CLAUDE.md`).
 
 - **Zuletzt aktualisiert:** 2026-06-13 (Branch `claude/loving-turing-2obzk6`:
-  M1.1.b (i24 sign-extension) abgeschlossen; CAT062-Decoder mit FRN1,4,5,6,7,9,11,12,13,14,16 implementiert)
-- **Branch:** `claude/loving-turing-2obzk6` — CAT062-Decoder-Grundgerüst funktional
+  **M1.1 abgeschlossen** — CAT062-Decoder vollständig implementiert (FRN
+  1,4,5,6,7,9,11,12,13,14,16), alle Tests grün, gegen byte-genauen
+  Firefly-Referenz-Vektor validiert)
+- **Branch:** `claude/loving-turing-2obzk6` — CAT062-Decoder-Grundgerüst fertig
+  und validiert; nächster Schritt M1.2 (UDP-Multicast-Receiver)
 
 > 🔁 **Pivot vollzogen: Wayfinder konsumiert CAT062/UDP-Multicast statt
 > JSON/WebSocket.** `CLAUDE.md` wurde komplett neu gefasst (Produktionsbetrieb,
@@ -23,7 +26,7 @@
 
 ## 1. Wo wir gerade stehen
 
-**M1.1 (CAT062-Decoder-Grundgerüst): In Progress**
+**M1.1 (CAT062-Decoder-Grundgerüst): ✅ Abgeschlossen**
 
 Implementiert:
 - ✅ `pkg/cat062/types.go` — DecodedTrack, DataSourceID, TimeOfDay, WGS84Position, CartesianPosition, Velocity, TrackStatus, UpdateAge, PositionAccuracy
@@ -32,7 +35,7 @@ Implementiert:
   - FRN1 (I062/010): SAC/SIC ✅
   - FRN4 (I062/070): Time-of-Day ✅
   - FRN5 (I062/105): WGS84-Position ✅
-  - FRN6 (I062/100): System-Cartesian (i24 **sign-extension** neu hinzugefügt) ✅
+  - FRN6 (I062/100): System-Cartesian (i24 **sign-extension**) ✅
   - FRN7 (I062/185): Velocity ✅
   - FRN9 (I062/060): Mode 3/A ✅
   - FRN11 (I062/380): ICAO-Adresse ✅
@@ -40,12 +43,18 @@ Implementiert:
   - FRN13 (I062/080): Track-Status (variable FX, vereinfacht) ✅
   - FRN14 (I062/290): PSR-Age ✅
   - FRN16 (I062/500): Position-Genauigkeit (APC) ✅
-- ✅ `pkg/cat062/decoder_test.go` — 9 Tests, 6 davon grün (TestSignExtendI24, TestFSPECParser, TestDecodeDataSourceID, TestDecodeVelocity, TestDecodeCartesianPosition, TestDecodeMultipleTracks)
+- ✅ `pkg/cat062/decoder_test.go` — **alle 10 Tests grün** (TestSignExtendI24,
+  TestFSPECParser, TestDecodeDataSourceID, TestDecodeTimeOfDay,
+  TestDecodeWGS84Position, TestDecodeVelocity, TestDecodeCartesianPosition,
+  TestDecodeMultipleTracks, TestReferenceVector, BenchmarkDecodeRecord)
 
-**Bekannte Test-Fehler (Test-Daten-Probleme, nicht Code):**
-- TestDecodeTimeOfDay: Test-Bytes falsch (Berechnung 0x2A1A00 vs. echter Wert)
-- TestDecodeWGS84Position: Test-Daten führen zu 3 Records statt 1 (Analyse ausstehend)
-- TestReferenceVector: Placeholder, wartet auf byte-genaue Vektoren aus Firefly (M1.1.d)
+**Validierung gegen Firefly (M1.1.d):**
+- `TestReferenceVector` dekodiert den byte-exakten Dump aus Fireflys
+  `single_track_matches_reference_dump` (firefly-asterix/src/cat062.rs) und
+  prüft alle Felder gegen die dort erzeugten Werte — der Wire-Vertrag zwischen
+  Firefly (Encoder) und Wayfinder (Decoder) ist somit Ende-zu-Ende verifiziert.
+
+**Qualitäts-Gates:** `go test ./...` ✅, `go vet ./...` ✅, `gofmt` ✅
 
 ## 2. Gesetzte Entscheidungen (Fundament)
 
@@ -58,20 +67,19 @@ Implementiert:
 
 ## 3. Nächster Schritt (hier geht es weiter!)
 
-**M1.1 abschließen (ausstehend):**
+➡️ **M1.2 (UDP-Multicast-Receiver)**
+- Netzwerk-Binding auf `239.255.0.62:8600` (oder Env-Konfiguration via
+  `FIREFLY_CAT062_GROUP`/`FIREFLY_CAT062_PORT`)
+- Empfangsschleife: ein Datagramm = ein CAT062-Datenblock → `DecodeDataBlock`
+- Loopback-Test gegen Fireflys `firefly-multicast`-Sender
+- Fehlerbehandlung für truncated/malformed Datagramme (Decoder ist bereits
+  robust — verwerfen statt Panic)
+- Health-/Readiness-Probes (12-Factor, `CLAUDE.md` Abschnitt 7)
 
-1. **M1.1.c** — Test-Daten für TestDecodeTimeOfDay/TestDecodeWGS84Position korrigieren
-   - Byte-Berechnung überprüfen
-   - Tests grün machen
-   
-2. **M1.1.d** — Byte-genaue Referenz-Vektoren aus Firefly integrieren
-   - `firefly-asterix::cat062` Encoder-Tests als Validierungs-Quelle
-   - Minimum: `single_track_matches_reference_dump` gegen bekannten Dump
-   
-3. ➡️ **Danach: M1.2 (UDP-Multicast-Receiver)**
-   - Netzwerk-Binding auf `239.255.0.62:8600` (oder Env-Konfiguration)
-   - Loopback-Test gegen Firefly Multicast-Sender
-   - Fehlerbehandlung für truncated/malformed Datagramme
+Danach M1.3 (WebSocket-Server) und M1.4 (Frontend/MapLibre).
+
+Erst Erklärung → Rückfragen/Go → dann kleine, testbare Umsetzung
+(`CLAUDE.md` Abschnitt 3).
 
 ## 4. So steige ich wieder ein (Kurzbefehle)
 
