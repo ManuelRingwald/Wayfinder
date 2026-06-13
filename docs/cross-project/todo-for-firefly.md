@@ -8,6 +8,8 @@
 >
 > Wayfinder baut seinen WebSocket-Client robust gegenüber diesen Lücken (siehe
 > ADR 0001), aber die eigentliche Lösung liegt im Firefly-Server.
+>
+> Siehe `docs/cross-project/README.md` für den Übertragungs-Workflow.
 
 ---
 
