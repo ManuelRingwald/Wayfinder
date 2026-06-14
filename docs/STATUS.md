@@ -4,8 +4,8 @@
 > Handy. Sie wird am Ende jeder Arbeitssitzung aktualisiert und committet.
 > Claude liest sie zu Sitzungsbeginn (siehe `CLAUDE.md`).
 
-- **Zuletzt aktualisiert:** 2026-06-13 (Branch `claude/serene-heisenberg-xq4rla`:
-  M1.4.c — Tracks als Kartensymbole)
+- **Zuletzt aktualisiert:** 2026-06-14 (Branch `claude/serene-heisenberg-xq4rla`:
+  Kurs-Pfeile / Speed Vector Line)
 - **Branch:** `claude/serene-heisenberg-xq4rla` — **M1.1–M1.3 abgeschlossen**
   (CAT062 Multicast → Decoder → Broadcaster → WebSocket-Clients, in `main`).
   **M1.4.a/b/c abgeschlossen**: `internal/webui` (eingebettetes Frontend),
@@ -13,7 +13,12 @@
   farbige Kartensymbole (grün=confirmed, grau=tentativ, orange=coasting) mit
   Track-Nummern-Labels. Siehe `docs/milestones/M1.4.c_Track_Rendering.md`.
   **M1 ist funktional abgeschlossen** (Backend-Pipeline + Live-Kartendarstellung).
-  Nächster Schritt: offen — z.B. Kurs-Pfeile/Trails, Interaktion, oder
+  **Neu (post-M1, UI-Häppchen A.1)**: Kurs-Pfeile (ASD-Speed-Vector-Line,
+  60s-Vorausschau) je Track in `internal/webui/static/app.js` — eigene
+  GeoJSON-Quelle `track-vectors`/Layer `track-vectors-lines`, berechnet aus
+  `vx`/`vy` (m/s, Ost/Nord) per flacher Erdnäherung. Live gegen Firefly
+  (CAT062-Multicast) verifiziert.
+  Nächster Schritt: weitere UI-Häppchen (Trails, Style-Verbesserungen) oder
   Firefly-Produktions-Roadmap (Issue #9 ist bereits erledigt).
 
 > 🔁 **Pivot vollzogen: Wayfinder konsumiert CAT062/UDP-Multicast statt

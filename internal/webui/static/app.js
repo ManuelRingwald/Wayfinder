@@ -5,6 +5,16 @@
 const TRACKS_SOURCE_ID = "tracks";
 const TRACKS_LAYER_ID = "tracks-points";
 const TRACKS_LABEL_LAYER_ID = "tracks-labels";
+const VECTORS_SOURCE_ID = "track-vectors";
+const VECTORS_LAYER_ID = "track-vectors-lines";
+
+// Speed-vector look-ahead: how many seconds of travel the vector line
+// represents (standard ASD-style speed vector line, SVL).
+const VECTOR_LOOKAHEAD_S = 60;
+
+// Mean Earth radius (m), used for the local meters-to-degrees conversion of
+// the vector endpoint. Sufficient accuracy for display purposes.
+const EARTH_RADIUS_M = 6371000;
 
 const state = {
   map: null,
@@ -28,6 +38,7 @@ async function main() {
   state.map = map;
 
   map.on("load", () => {
+    addVectorsLayer(map);
     addTracksLayer(map);
     state.mapLoaded = true;
     if (state.pendingTracks) {
@@ -85,10 +96,51 @@ function addTracksLayer(map) {
   });
 }
 
-// updateTracksLayer converts a Message (see pkg/broadcast.Message) into a
-// GeoJSON FeatureCollection and pushes it into the map source.
+// addVectorsLayer registers a GeoJSON source and a line layer for rendering
+// each track's speed vector (a short line from the current position towards
+// where the track will be in VECTOR_LOOKAHEAD_S seconds, ASD-style SVL).
+// Added before the tracks layer so the track symbols draw on top.
+function addVectorsLayer(map) {
+  map.addSource(VECTORS_SOURCE_ID, {
+    type: "geojson",
+    data: { type: "FeatureCollection", features: [] },
+  });
+
+  map.addLayer({
+    id: VECTORS_LAYER_ID,
+    type: "line",
+    source: VECTORS_SOURCE_ID,
+    paint: {
+      "line-color": "#212121",
+      "line-width": 1.5,
+    },
+  });
+}
+
+// vectorEndpoint computes the geographic point reached after
+// VECTOR_LOOKAHEAD_S seconds of travel at constant velocity (vx/vy in m/s,
+// East/North), starting from (lat, lon). Uses a local flat-Earth
+// approximation, which is sufficient for the short look-ahead distances
+// involved.
+function vectorEndpoint(lat, lon, vx, vy) {
+  const dEast = vx * VECTOR_LOOKAHEAD_S;
+  const dNorth = vy * VECTOR_LOOKAHEAD_S;
+
+  const dLat = (dNorth / EARTH_RADIUS_M) * (180 / Math.PI);
+  const dLon =
+    (dEast / (EARTH_RADIUS_M * Math.cos((lat * Math.PI) / 180))) *
+    (180 / Math.PI);
+
+  return [lon + dLon, lat + dLat];
+}
+
+// updateTracksLayer converts a Message (see pkg/broadcast.Message) into
+// GeoJSON FeatureCollections and pushes them into the map sources: track
+// symbols/labels and their speed-vector lines.
 function updateTracksLayer(msg) {
-  const features = (msg.tracks || []).map((track) => ({
+  const tracks = msg.tracks || [];
+
+  const features = tracks.map((track) => ({
     type: "Feature",
     geometry: {
       type: "Point",
@@ -103,9 +155,28 @@ function updateTracksLayer(msg) {
     },
   }));
 
+  const vectorFeatures = tracks.map((track) => ({
+    type: "Feature",
+    geometry: {
+      type: "LineString",
+      coordinates: [
+        [track.longitude, track.latitude],
+        vectorEndpoint(track.latitude, track.longitude, track.vx, track.vy),
+      ],
+    },
+    properties: {
+      track_num: track.track_num,
+    },
+  }));
+
   state.map.getSource(TRACKS_SOURCE_ID).setData({
     type: "FeatureCollection",
     features,
+  });
+
+  state.map.getSource(VECTORS_SOURCE_ID).setData({
+    type: "FeatureCollection",
+    features: vectorFeatures,
   });
 }
 
