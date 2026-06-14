@@ -18,7 +18,12 @@
   GeoJSON-Quelle `track-vectors`/Layer `track-vectors-lines`, berechnet aus
   `vx`/`vy` (m/s, Ost/Nord) per flacher Erdnäherung. Live gegen Firefly
   (CAT062-Multicast) verifiziert.
-  Nächster Schritt: weitere UI-Häppchen (Trails, Style-Verbesserungen) oder
+  **Neu (post-M1, UI-Häppchen A.2)**: Track-Trails — die letzten 20 Positionen
+  je Track werden im Frontend-State (`state.trackHistory`) gehalten und als
+  blassgraue Spur (`track-trails`/`track-trails-lines`) gerendert; History wird
+  bereinigt, sobald ein Track aus dem Update verschwindet. Live gegen Firefly
+  verifiziert.
+  Nächster Schritt: weitere UI-Häppchen (Style-Verbesserungen, Interaktion) oder
   Firefly-Produktions-Roadmap (Issue #9 ist bereits erledigt).
 
 > 🔁 **Pivot vollzogen: Wayfinder konsumiert CAT062/UDP-Multicast statt
