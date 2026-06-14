@@ -58,6 +58,9 @@ Dies ist das Herzstück und der einzige Berührungspunkt mit Firefly. Wayfinder
   ist standardmäßig 1 (subnetz-lokal). Ein Datagramm = ein vollständiger
   CAT062-Datenblock = ein Scan; **keine** zusätzliche Anwendungs-Rahmung (keine
   Sequenznummern, keine Extra-Header).
+- **Update-Rate:** Keine feste, globale Periode — jeder Sensor hat seine eigene
+  `scan_period` (typisch 4–12 s, ADR 0013 in Firefly). Datenblöcke treffen also
+  in unregelmäßigem Takt ein, nicht in festen Intervallen.
 - **Format:** ASTERIX **CAT062** (System-Tracks). Block = `[CAT=0x3E]
   [LEN: u16 BE] [Record]…`; LEN inkl. 3-Byte-Header. Mehrere Track-Records ohne
   Trenner hintereinander; jeder Record ist über sein **FSPEC** selbst-begrenzend.
@@ -79,9 +82,18 @@ Dies ist das Herzstück und der einzige Berührungspunkt mit Firefly. Wayfinder
 
 - **Koordinaten:** I062/105 liefert **WGS84 direkt** — Wayfinder rendert daraus,
   eine stereografische Rückprojektion ist **nicht** nötig. I062/100 ist die
-  zusätzliche System-Ebene (optional verwertbar).
-- **Referenz-Spezifikation:** EUROCONTROL CAT062 (ASTERIX) sowie die
-  byte-genauen Encoder-Tests in Fireflys `firefly-asterix` (u.a.
+  zusätzliche System-Ebene (optional verwertbar); ihr Referenzpunkt ist
+  aktuell der Firefly-Demo-Ursprung (Frankfurt) und damit nur im Demo-Kontext
+  sinnvoll interpretierbar (offener Punkt: "Konfigurierbarer
+  System-Referenzpunkt" in Fireflys Roadmap).
+- **Zeit (I062/070):** 24-Bit-Zähler in 1/128-s-Ticks seit UTC-Mitternacht —
+  **springt bei Mitternacht auf 0 zurück**. Wayfinder darf daraus keinen
+  monoton steigenden Zeitstempel über Mitternacht hinweg ableiten; ein Sprung
+  von nahe 86 400 s auf einen kleinen Wert ist ein normaler Tageswechsel,
+  kein Datenfehler.
+- **Referenz-Spezifikation:** EUROCONTROL **SUR.ET1.ST05.2000-STD-09-01,
+  Edition 1.10** ("CAT062 System Track Data") sowie die byte-genauen
+  Encoder-Tests in Fireflys `firefly-asterix` (u.a.
   `single_track_matches_reference_dump`) sind die Grundwahrheit für den
   Wayfinder-Decoder.
 - **Versionierung:** Änderungen am Vertrag sind **schnittstellen-relevant** und
