@@ -78,8 +78,12 @@ Dies ist das Herzstück und der einzige Berührungspunkt mit Firefly. Wayfinder
   | 12 | I062/040 | Track-Nummer | — |
   | 13 | I062/080 | Track-Status | variabel mit FX |
   | 14 | I062/290 | Update-Alter | — |
-  | 16 | I062/500 | Genauigkeit | — |
+  | 17 | I062/136 | Flugfläche (nur wenn vorhanden) | signed i16, LSB 1/4 FL = 25 ft |
+  | 27 | I062/500 | Genauigkeit | — |
 
+  Die FRNs folgen der **echten EUROCONTROL-CAT062-UAP** (ICD ab v2.0.0,
+  Fireflys ADR 0015): I062/500 sitzt auf FRN 27 (nicht 16), I062/295 (FRN 16)
+  ist reserviert/ungenutzt. Ein Standard-Record hat damit ≥ 4 FSPEC-Oktette.
 - **Koordinaten:** I062/105 liefert **WGS84 direkt** — Wayfinder rendert daraus,
   eine stereografische Rückprojektion ist **nicht** nötig. I062/100 ist die
   zusätzliche System-Ebene (optional verwertbar); ihr Referenzpunkt ist

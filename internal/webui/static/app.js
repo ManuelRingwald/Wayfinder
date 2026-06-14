@@ -91,7 +91,9 @@ function addTracksLayer(map) {
     type: "symbol",
     source: TRACKS_SOURCE_ID,
     layout: {
-      "text-field": ["to-string", ["get", "track_num"]],
+      // Precomputed two-line label: track number, and flight level when known
+      // (ASD-style data block). See buildLabel in updateTracksLayer.
+      "text-field": ["get", "label"],
       "text-size": 11,
       "text-offset": [0, 1.2],
       "text-anchor": "top",
@@ -163,6 +165,18 @@ function vectorEndpoint(lat, lon, vx, vy) {
   return [lon + dLon, lat + dLat];
 }
 
+// buildLabel produces the track's data-block label: the track number, and —
+// when the track carries a measured flight level (I062/136) — a second line
+// "FLnnn" (flight level in hundreds of feet, ASD convention).
+function buildLabel(track) {
+  const num = String(track.track_num);
+  if (typeof track.flight_level_ft === "number") {
+    const fl = Math.round(track.flight_level_ft / 100);
+    return `${num}\nFL${String(fl).padStart(3, "0")}`;
+  }
+  return num;
+}
+
 // updateTrackHistory appends each track's current position to its trail
 // history (capped at TRAIL_MAX_POINTS) and drops history for tracks that are
 // no longer present in the latest update.
@@ -209,6 +223,7 @@ function updateTracksLayer(msg) {
       coasting: track.coasting,
       vx: track.vx,
       vy: track.vy,
+      label: buildLabel(track),
     },
   }));
 

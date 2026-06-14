@@ -10,27 +10,30 @@ import (
 
 // Message is sent to all WebSocket clients.
 type Message struct {
-	Tracks  []TrackMessage `json:"tracks"`
-	TimeMs  int64          `json:"time_ms"`
+	Tracks []TrackMessage `json:"tracks"`
+	TimeMs int64          `json:"time_ms"`
 }
 
 // TrackMessage represents a single track in JSON format.
 type TrackMessage struct {
-	TrackNum   uint16  `json:"track_num"`
-	SAC        uint8   `json:"sac"`
-	SIC        uint8   `json:"sic"`
-	Latitude   float64 `json:"latitude"`
-	Longitude  float64 `json:"longitude"`
-	Vx         float64 `json:"vx"`
-	Vy         float64 `json:"vy"`
-	CartX      float64 `json:"cart_x"`
-	CartY      float64 `json:"cart_y"`
-	Confirmed  bool    `json:"confirmed"`
-	Coasting   bool    `json:"coasting"`
-	PSRAge     float64 `json:"psr_age"`
-	Accuracy   float64 `json:"accuracy"`
-	Mode3A     *uint16 `json:"mode_3a,omitempty"`
-	ICAOAddr   *uint32 `json:"icao_addr,omitempty"`
+	TrackNum  uint16  `json:"track_num"`
+	SAC       uint8   `json:"sac"`
+	SIC       uint8   `json:"sic"`
+	Latitude  float64 `json:"latitude"`
+	Longitude float64 `json:"longitude"`
+	Vx        float64 `json:"vx"`
+	Vy        float64 `json:"vy"`
+	CartX     float64 `json:"cart_x"`
+	CartY     float64 `json:"cart_y"`
+	Confirmed bool    `json:"confirmed"`
+	Coasting  bool    `json:"coasting"`
+	PSRAge    float64 `json:"psr_age"`
+	Accuracy  float64 `json:"accuracy"`
+	Mode3A    *uint16 `json:"mode_3a,omitempty"`
+	ICAOAddr  *uint32 `json:"icao_addr,omitempty"`
+	// FlightLevelFt is the measured barometric flight level in feet (I062/136),
+	// present only for tracks carrying a Mode C reply.
+	FlightLevelFt *float64 `json:"flight_level_ft,omitempty"`
 }
 
 // Sender can send messages to all connected clients.
@@ -133,21 +136,22 @@ func (b *Broadcaster) tracksToMessage(tracks []cat062.DecodedTrack) Message {
 
 	for i, track := range tracks {
 		msg.Tracks[i] = TrackMessage{
-			TrackNum:  track.TrackNum,
-			SAC:       track.Source.SAC,
-			SIC:       track.Source.SIC,
-			Latitude:  track.WGS84.Latitude,
-			Longitude: track.WGS84.Longitude,
-			Vx:        track.Velocity.Vx,
-			Vy:        track.Velocity.Vy,
-			CartX:     track.Cartesian.X,
-			CartY:     track.Cartesian.Y,
-			Confirmed: track.Status.Confirmed,
-			Coasting:  track.Status.Coasting,
-			PSRAge:    track.UpdateAge.PSRAge,
-			Accuracy:  track.Accuracy.APC,
-			Mode3A:    track.Mode3A,
-			ICAOAddr:  track.ICAOAddr,
+			TrackNum:      track.TrackNum,
+			SAC:           track.Source.SAC,
+			SIC:           track.Source.SIC,
+			Latitude:      track.WGS84.Latitude,
+			Longitude:     track.WGS84.Longitude,
+			Vx:            track.Velocity.Vx,
+			Vy:            track.Velocity.Vy,
+			CartX:         track.Cartesian.X,
+			CartY:         track.Cartesian.Y,
+			Confirmed:     track.Status.Confirmed,
+			Coasting:      track.Status.Coasting,
+			PSRAge:        track.UpdateAge.PSRAge,
+			Accuracy:      track.Accuracy.APC,
+			Mode3A:        track.Mode3A,
+			ICAOAddr:      track.ICAOAddr,
+			FlightLevelFt: track.FlightLevelFt,
 		}
 	}
 
