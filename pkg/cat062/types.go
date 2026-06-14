@@ -71,6 +71,10 @@ type DecodedTrack struct {
 	Accuracy  PositionAccuracy
 	Mode3A    *uint16 // optional, I062/060
 	ICAOAddr  *uint32 // optional, I062/380 Target Address
+
+	// FlightLevelFt is the measured barometric flight level in feet, decoded
+	// from I062/136 when present (the track carries a Mode C reply). Optional.
+	FlightLevelFt *float64 // optional, I062/136 Measured Flight Level
 }
 
 func (t DecodedTrack) String() string {

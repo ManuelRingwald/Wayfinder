@@ -52,8 +52,10 @@ func DecodeRecord(data []byte, offset int) (DecodedTrack, int, error) {
 		return track, offset, err
 	}
 
-	// Decode items in UAP order (FRN 1, 4, 5, 6, 7, 9, 11, 12, 13, 14, 16)
-	uapOrder := []uint8{1, 4, 5, 6, 7, 9, 11, 12, 13, 14, 16}
+	// Decode items in standard EUROCONTROL UAP order. FRNs follow the real
+	// CAT062 UAP (ICD v2.0.0): I062/136 (Measured Flight Level) at FRN 17,
+	// I062/500 (Estimated Accuracies) at FRN 27 (not the old non-standard 16).
+	uapOrder := []uint8{1, 4, 5, 6, 7, 9, 11, 12, 13, 14, 17, 27}
 
 	for _, frn := range uapOrder {
 		if !fspec.HasItem(frn) {
@@ -179,7 +181,16 @@ func DecodeRecord(data []byte, offset int) (DecodedTrack, int, error) {
 				offset++
 			}
 
-		case 16: // I062/500: Estimated Accuracies (compound, currently just APC)
+		case 17: // I062/136: Measured Flight Level (2 bytes, signed i16, LSB 1/4 FL = 25 ft)
+			if offset+2 > len(data) {
+				return track, offset, NewDecodeError("truncated I062/136")
+			}
+			flTicks := int16((uint16(data[offset]) << 8) | uint16(data[offset+1]))
+			fl := float64(flTicks) * 25.0 // LSB = 1/4 FL = 25 ft
+			track.FlightLevelFt = &fl
+			offset += 2
+
+		case 27: // I062/500: Estimated Accuracies (compound, currently just APC)
 			if offset+1 > len(data) {
 				return track, offset, NewDecodeError("truncated I062/500 primary")
 			}

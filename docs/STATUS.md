@@ -4,8 +4,8 @@
 > Handy. Sie wird am Ende jeder Arbeitssitzung aktualisiert und committet.
 > Claude liest sie zu Sitzungsbeginn (siehe `CLAUDE.md`).
 
-- **Zuletzt aktualisiert:** 2026-06-13 (Branch `claude/serene-heisenberg-xq4rla`:
-  M1.4.c — Tracks als Kartensymbole)
+- **Zuletzt aktualisiert:** 2026-06-14 (Branch `claude/serene-heisenberg-xq4rla`:
+  AP2 — Vertikallage I062/136 + UAP-Standardtreue; davor Kurs-Pfeile + Trails)
 - **Branch:** `claude/serene-heisenberg-xq4rla` — **M1.1–M1.3 abgeschlossen**
   (CAT062 Multicast → Decoder → Broadcaster → WebSocket-Clients, in `main`).
   **M1.4.a/b/c abgeschlossen**: `internal/webui` (eingebettetes Frontend),
@@ -13,8 +13,28 @@
   farbige Kartensymbole (grün=confirmed, grau=tentativ, orange=coasting) mit
   Track-Nummern-Labels. Siehe `docs/milestones/M1.4.c_Track_Rendering.md`.
   **M1 ist funktional abgeschlossen** (Backend-Pipeline + Live-Kartendarstellung).
-  Nächster Schritt: offen — z.B. Kurs-Pfeile/Trails, Interaktion, oder
-  Firefly-Produktions-Roadmap (Issue #9 ist bereits erledigt).
+  **Neu (post-M1, UI-Häppchen A.1)**: Kurs-Pfeile (ASD-Speed-Vector-Line,
+  60s-Vorausschau) je Track in `internal/webui/static/app.js` — eigene
+  GeoJSON-Quelle `track-vectors`/Layer `track-vectors-lines`, berechnet aus
+  `vx`/`vy` (m/s, Ost/Nord) per flacher Erdnäherung. Live gegen Firefly
+  (CAT062-Multicast) verifiziert.
+  **Neu (post-M1, UI-Häppchen A.2)**: Track-Trails — die letzten 20 Positionen
+  je Track werden im Frontend-State (`state.trackHistory`) gehalten und als
+  blassgraue Spur (`track-trails`/`track-trails-lines`) gerendert; History wird
+  bereinigt, sobald ein Track aus dem Update verschwindet. Live gegen Firefly
+  verifiziert.
+  **Neu (AP2, ICD-Thema): Vertikallage I062/136 + UAP-Standardtreue** (lockstep
+  zu Fireflys ADR 0015 / ICD 2.0.0, Issue #5 `from-firefly`). Decoder
+  (`pkg/cat062`) zieht nach: **I062/500 von FRN 16 → FRN 27** und neues
+  optionales **I062/136** (FRN 17, signed i16, LSB 1/4 FL = 25 ft).
+  `DecodedTrack.FlightLevelFt` + `broadcast.TrackMessage.flight_level_ft`
+  durchgereicht; `app.js` zeigt die Flugfläche als zweite Label-Zeile „FLnnn"
+  (ASD-Datablock-Stil). Referenz-Vektor-Test aktualisiert (FSPEC
+  `[0x9F,0x0F,0x01,0x04]`, LEN 40) + neuer `TestDecodeFlightLevel`. Live gegen
+  Firefly verifiziert (FL372/FL340 im WS-Strom). → Issue #5 kann nach Merge
+  geschlossen werden.
+  Nächster Schritt: AP7/AP8 (Callsign I062/245), AP5/AP6 (CAT065 Heartbeat),
+  weitere UI-Häppchen.
 
 > 🔁 **Pivot vollzogen: Wayfinder konsumiert CAT062/UDP-Multicast statt
 > JSON/WebSocket.** `CLAUDE.md` wurde komplett neu gefasst (Produktionsbetrieb,

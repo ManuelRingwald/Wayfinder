@@ -282,8 +282,8 @@ func BenchmarkDecodeRecord(b *testing.B) {
 func TestReferenceVector(t *testing.T) {
 	data := []byte{
 		0x3E,       // CAT 62
-		0x00, 0x27, // LEN = 39
-		0x9F, 0x0F, 0x40, // FSPEC {1, 4, 5, 6, 7, 12, 13, 14, 16}
+		0x00, 0x28, // LEN = 40
+		0x9F, 0x0F, 0x01, 0x04, // FSPEC {1, 4, 5, 6, 7, 12, 13, 14, 27}
 		0x19, 0x02, // I062/010 SAC/SIC
 		0x00, 0x06, 0x00, // I062/070 time = 1536 ticks (12.0 s)
 		0x00, 0x80, 0x00, 0x00, // I062/105 latitude 45°
@@ -294,7 +294,7 @@ func TestReferenceVector(t *testing.T) {
 		0x00, 0x01, // I062/040 track number 1
 		0x00,       // I062/080 confirmed, fresh
 		0x40, 0x08, // I062/290 PSR age = 2 s
-		0x80, 0x00, 0xC8, 0x00, 0xC8, // I062/500 APC = 100 m
+		0x80, 0x00, 0xC8, 0x00, 0xC8, // I062/500 APC = 100 m (FRN 27)
 	}
 
 	tracks, err := DecodeDataBlock(data)
@@ -339,6 +339,56 @@ func TestReferenceVector(t *testing.T) {
 	}
 	if track.UpdateAge.PSRAge < 1.99 || track.UpdateAge.PSRAge > 2.01 {
 		t.Errorf("PSRAge mismatch: expected ≈2.0, got %v", track.UpdateAge.PSRAge)
+	}
+	if track.Accuracy.APC < 99.99 || track.Accuracy.APC > 100.01 {
+		t.Errorf("Accuracy.APC mismatch: expected ≈100.0, got %v", track.Accuracy.APC)
+	}
+	// The reference track carries no Mode C reply, so I062/136 is absent.
+	if track.FlightLevelFt != nil {
+		t.Errorf("FlightLevelFt mismatch: expected nil, got %v", *track.FlightLevelFt)
+	}
+}
+
+// TestDecodeFlightLevel decodes a record that includes I062/136 (Measured
+// Flight Level, FRN 17), per ICD v2.0.0. The reference track plus a flight
+// level of FL350 (35000 ft = 1400 * 25-ft steps = 0x0578).
+func TestDecodeFlightLevel(t *testing.T) {
+	data := []byte{
+		0x3E,       // CAT 62
+		0x00, 0x2A, // LEN = 42
+		0x9F, 0x0F, 0x21, 0x04, // FSPEC {1, 4, 5, 6, 7, 12, 13, 14, 17, 27}
+		0x19, 0x02, // I062/010 SAC/SIC
+		0x00, 0x06, 0x00, // I062/070 time
+		0x00, 0x80, 0x00, 0x00, // I062/105 latitude 45°
+		0x00, 0x20, 0x00, 0x00, // I062/105 longitude 11.25°
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // I062/100 X=0, Y=0
+		0x01, 0x90, // I062/185 Vx = 100 m/s
+		0xFF, 0x38, // I062/185 Vy = -50 m/s
+		0x00, 0x01, // I062/040 track number 1
+		0x00,       // I062/080 confirmed, fresh
+		0x40, 0x08, // I062/290 PSR age = 2 s
+		0x05, 0x78, // I062/136 flight level = 1400 * 25 ft = 35000 ft
+		0x80, 0x00, 0xC8, 0x00, 0xC8, // I062/500 APC = 100 m (FRN 27)
+	}
+
+	tracks, err := DecodeDataBlock(data)
+	if err != nil {
+		t.Fatalf("DecodeDataBlock failed: %v", err)
+	}
+	if len(tracks) != 1 {
+		t.Fatalf("expected 1 track, got %d", len(tracks))
+	}
+
+	track := tracks[0]
+	if track.FlightLevelFt == nil {
+		t.Fatalf("FlightLevelFt mismatch: expected ≈35000, got nil")
+	}
+	if *track.FlightLevelFt < 34999.0 || *track.FlightLevelFt > 35001.0 {
+		t.Errorf("FlightLevelFt mismatch: expected ≈35000, got %v", *track.FlightLevelFt)
+	}
+	// The other items must still decode correctly around the new one.
+	if track.TrackNum != 1 {
+		t.Errorf("TrackNum mismatch: expected 1, got %d", track.TrackNum)
 	}
 	if track.Accuracy.APC < 99.99 || track.Accuracy.APC > 100.01 {
 		t.Errorf("Accuracy.APC mismatch: expected ≈100.0, got %v", track.Accuracy.APC)
