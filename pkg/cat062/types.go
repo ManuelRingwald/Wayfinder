@@ -44,8 +44,9 @@ type Velocity struct {
 
 // TrackStatus holds I062/080 flags (variable length with FX).
 type TrackStatus struct {
-	Confirmed bool // CNF bit: set = confirmed, unset = tentative
-	Coasting  bool // CST bit: set = coasting (no recent update)
+	Confirmed bool // CNF bit (octet 1): set = confirmed, unset = tentative
+	Coasting  bool // CST bit (octet 4): set = coasting (no recent update)
+	Ended     bool // TSE bit (octet 2): set = last report, track is being deleted
 }
 
 // UpdateAge is I062/290: time since last update, in seconds.

@@ -443,3 +443,54 @@ func TestDecodeCallsign(t *testing.T) {
 		t.Errorf("Accuracy.APC mismatch: expected ≈100.0, got %v", track.Accuracy.APC)
 	}
 }
+
+// TestDecodeTrackEnd decodes a record whose I062/080 carries the TSE bit
+// (Track Service End, octet 2 bit 7 = 0x40), per ICD v2.2.0 — the final report
+// for a track being deleted. The reference vector's one-octet status (0x00) is
+// extended to two octets [0x01, 0x40]: octet 1 FX-set, octet 2 TSE. The decoder
+// must recover Status.Ended while still reading the rest of the record. This
+// mirrors Firefly's encoder test `track_status_carries_tse_when_ended`.
+func TestDecodeTrackEnd(t *testing.T) {
+	data := []byte{
+		0x3E,       // CAT 62
+		0x00, 0x29, // LEN = 41 (one byte more than the reference: I062/080 grew to 2 octets)
+		0x9F, 0x0F, 0x01, 0x04, // FSPEC {1, 4, 5, 6, 7, 12, 13, 14, 27}
+		0x19, 0x02, // I062/010 SAC/SIC
+		0x00, 0x06, 0x00, // I062/070 time
+		0x00, 0x80, 0x00, 0x00, // I062/105 latitude 45°
+		0x00, 0x20, 0x00, 0x00, // I062/105 longitude 11.25°
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // I062/100 X=0, Y=0
+		0x01, 0x90, // I062/185 Vx = 100 m/s
+		0xFF, 0x38, // I062/185 Vy = -50 m/s
+		0x00, 0x01, // I062/040 track number 1
+		0x01, 0x40, // I062/080 octet 1 (FX) + octet 2 (TSE) — ended, confirmed, fresh
+		0x40, 0x08, // I062/290 PSR age = 2 s
+		0x80, 0x00, 0xC8, 0x00, 0xC8, // I062/500 APC = 100 m (FRN 27)
+	}
+
+	tracks, err := DecodeDataBlock(data)
+	if err != nil {
+		t.Fatalf("DecodeDataBlock failed: %v", err)
+	}
+	if len(tracks) != 1 {
+		t.Fatalf("expected 1 track, got %d", len(tracks))
+	}
+
+	track := tracks[0]
+	if !track.Status.Ended {
+		t.Errorf("Status.Ended mismatch: expected true (TSE set), got false")
+	}
+	if !track.Status.Confirmed {
+		t.Errorf("Status.Confirmed mismatch: expected true, got false")
+	}
+	if track.Status.Coasting {
+		t.Errorf("Status.Coasting mismatch: expected false, got true")
+	}
+	// The items after I062/080 must still decode correctly around the longer item.
+	if track.TrackNum != 1 {
+		t.Errorf("TrackNum mismatch: expected 1, got %d", track.TrackNum)
+	}
+	if track.Accuracy.APC < 99.99 || track.Accuracy.APC > 100.01 {
+		t.Errorf("Accuracy.APC mismatch: expected ≈100.0, got %v", track.Accuracy.APC)
+	}
+}
