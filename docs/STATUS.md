@@ -4,7 +4,18 @@
 > Handy. Sie wird am Ende jeder Arbeitssitzung aktualisiert und committet.
 > Claude liest sie zu Sitzungsbeginn (siehe `CLAUDE.md`).
 
-- **Zuletzt aktualisiert:** 2026-06-14 (Branch `claude/serene-heisenberg-xq4rla`:
+- **Zuletzt aktualisiert:** 2026-06-15 (Branch `claude/callsign-i062-245`:
+  Doku-/Docker-Vorbereitung fürs Testen. `README.md` komplett neu (Quickstart
+  Docker/lokal, Architektur-Übersicht, Konfig-Tabelle, Build & Test, Links).
+  Neu: `Dockerfile` (Multi-Stage `golang:1.23-bookworm` → `debian:bookworm-
+  slim`, Healthcheck `/health`), `docker-compose.yml` (`network_mode: host` —
+  notwendig für CAT062-Multicast-Empfang), `.dockerignore`, `DOCKER.md`
+  (Standalone + End-to-End mit Firefly, inkl. `FIREFLY_CAT062_ENABLED=true` und
+  macOS/Windows-Docker-Desktop-Hinweis). Firefly-seitig analoger Abschnitt in
+  README/DOCKER.md ergänzt. Docker-Build konnte in dieser Sitzung nicht
+  getestet werden (kein Docker-Daemon verfügbar) — `go build`/`go vet`/
+  `go test ./...` sind grün. Nächster Schritt: AP7/AP8 (Callsign I062/245).)
+- **Vorherige Aktualisierung:** 2026-06-14 (Branch `claude/serene-heisenberg-xq4rla`:
   AP2 — Vertikallage I062/136 + UAP-Standardtreue; davor Kurs-Pfeile + Trails)
 - **Branch:** `claude/serene-heisenberg-xq4rla` — **M1.1–M1.3 abgeschlossen**
   (CAT062 Multicast → Decoder → Broadcaster → WebSocket-Clients, in `main`).
