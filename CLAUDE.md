@@ -77,7 +77,7 @@ Dies ist das Herzstück und der einzige Berührungspunkt mit Firefly. Wayfinder
   | 10 | I062/245 | Target Identification / Callsign (nur wenn vorhanden) | STI/spare-Oktett + 8 × 6-Bit-IA-5-Zeichen |
   | 11 | I062/380 | ICAO-Adresse (nur wenn vorhanden) | — |
   | 12 | I062/040 | Track-Nummer | — |
-  | 13 | I062/080 | Track-Status | variabel mit FX |
+  | 13 | I062/080 | Track-Status (CNF Oktett 1, **TSE** Oktett 2 = Track-Ende, CST Oktett 4) | variabel mit FX |
   | 14 | I062/290 | Update-Alter | — |
   | 17 | I062/136 | Flugfläche (nur wenn vorhanden) | signed i16, LSB 1/4 FL = 25 ft |
   | 27 | I062/500 | Genauigkeit | — |
@@ -87,7 +87,10 @@ Dies ist das Herzstück und der einzige Berührungspunkt mit Firefly. Wayfinder
   ist reserviert/ungenutzt. Ein Standard-Record hat damit ≥ 4 FSPEC-Oktette.
   Seit ICD 2.1.0 (additiv, AP7) wird zusätzlich I062/245 auf FRN 10 gesendet —
   FRN 10 liegt im bereits vorhandenen 2. FSPEC-Oktett, also ohne
-  Wire-Format-Bruch.
+  Wire-Format-Bruch. Seit ICD 2.2.0 (additiv, ADR 0016 in Firefly) trägt
+  I062/080 das **TSE-Bit** (Oktett 2, Bit 7, `0x40`): die letzte Meldung für
+  einen gelöschten Track. Wayfinder **entfernt** den Track beim Empfang sofort,
+  statt auf einen Timeout zu warten.
 - **Koordinaten:** I062/105 liefert **WGS84 direkt** — Wayfinder rendert daraus,
   eine stereografische Rückprojektion ist **nicht** nötig. I062/100 ist die
   zusätzliche System-Ebene (optional verwertbar); ihr Referenzpunkt ist

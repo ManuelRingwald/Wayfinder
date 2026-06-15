@@ -4,7 +4,20 @@
 > Handy. Sie wird am Ende jeder Arbeitssitzung aktualisiert und committet.
 > Claude liest sie zu Sitzungsbeginn (siehe `CLAUDE.md`).
 
-- **Zuletzt aktualisiert:** 2026-06-15 (Branch `claude/callsign-i062-245`:
+- **Zuletzt aktualisiert:** 2026-06-15 (Branch `claude/tse-i062-080`:
+  **T5 — CAT062 Track-Ende (TSE, I062/080) dekodiert + Track-Entfernung, ICD
+  2.2.0.** AP8 (Callsign) ist nach `main` gemergt — PR #7.) `decodeTrackStatus`
+  liest die FX-Kette jetzt oktett-genau (CNF Oktett 1, **TSE Oktett 2 Bit 7
+  `0x40`**, CST Oktett 4) und füllt `TrackStatus.Ended`; robust gegen früher
+  endende Records. Durchgereicht via `broadcast.TrackMessage.Ended`
+  (`json:"ended,omitempty"`); das Frontend (`updateTracksLayer`) **filtert**
+  Ende-Records heraus → Symbol/Label/Vektor/Trail verschwinden sofort (statt
+  Timeout). Test: `pkg/cat062/decoder_test.go::TestDecodeTrackEnd` (Referenz
+  aus Fireflys `track_status_carries_tse_when_ended`). `CLAUDE.md` §2 und
+  `docs/requirements/README.md` (FR-DATA-003) aktualisiert. Gates grün
+  (`go build`/`go vet`/`go test ./...`; `gofmt` für geänderte Dateien). **TSE
+  (Firefly T1–T4 + Wayfinder T5) damit beidseitig abgeschlossen.**
+- **Vorherige Aktualisierung:** 2026-06-15 (Branch `claude/callsign-i062-245`:
   **AP8 — CAT062 Target Identification I062/245 (Callsign) dekodiert, ICD
   2.1.0.**) `pkg/cat062/decoder.go` zieht FRN 10 nach: 7-Byte-Item
   (STI/spare-Oktett + 8 × 6-Bit-IA-5), `decodeTargetIdentification`/
@@ -23,7 +36,7 @@
   `pkg/receiver/receiver_test.go` ist unverändert und nicht Teil dieser
   Änderung). **AP7 (Firefly-Encoder) und AP8 (dieser Schritt) sind damit
   beide abgeschlossen.**
-- **Vorherige Aktualisierung:** 2026-06-15 (Branch `claude/callsign-i062-245`:
+- **Frühere Aktualisierung:** 2026-06-15 (Branch `claude/callsign-i062-245`:
   Doku-/Docker-Vorbereitung fürs Testen. `README.md` komplett neu (Quickstart
   Docker/lokal, Architektur-Übersicht, Konfig-Tabelle, Build & Test, Links).
   Neu: `Dockerfile` (Multi-Stage `golang:1.23-bookworm` → `debian:bookworm-

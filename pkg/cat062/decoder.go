@@ -224,41 +224,30 @@ func DecodeRecord(data []byte, offset int) (DecodedTrack, int, error) {
 	return track, offset, nil
 }
 
-// decodeTrackStatus parses I062/080 (variable length with FX chaining).
+// decodeTrackStatus parses I062/080 (variable length, FX-chained). It reads the
+// whole FX chain, then decodes the flags by octet position — mirroring Firefly's
+// encoder: CNF in octet 1 (bit 2), TSE in octet 2 (bit 7), CST in octet 4
+// (bit 8). Octets the record did not include are simply absent (the item
+// extends only as far as the highest set flag), so each read is length-guarded.
 func decodeTrackStatus(data []byte, offset int) (TrackStatus, int, error) {
 	status := TrackStatus{}
 
-	if offset >= len(data) {
-		return status, offset, NewDecodeError("truncated I062/080")
-	}
-
-	// Octet 1
-	oct1 := data[offset]
-	status.Confirmed = (oct1 & 0x02) == 0 // CNF bit: 0=confirmed, 1=tentative
-	offset++
-
-	// Check FX bit in octet 1
-	if (oct1 & 0x01) == 0 {
-		// No further octets
-		return status, offset, nil
-	}
-
-	// Octet 2+
+	start := offset
 	for {
 		if offset >= len(data) {
-			return status, offset, NewDecodeError("truncated I062/080 continuation")
+			return status, offset, NewDecodeError("truncated I062/080")
 		}
 		oct := data[offset]
 		offset++
-
-		// Example: octet 4, bit 7 (0x80) = CST (coasting)
-		// In practice, octet positions vary; simplify for now.
-		status.Coasting = (oct & 0x80) != 0
-
-		if (oct & 0x01) == 0 {
+		if (oct & 0x01) == 0 { // FX clear: end of chain
 			break
 		}
 	}
+	octets := data[start:offset]
+
+	status.Confirmed = (octets[0] & 0x02) == 0                  // octet 1, CNF (1=tentative)
+	status.Ended = len(octets) >= 2 && (octets[1]&0x40) != 0    // octet 2, TSE
+	status.Coasting = len(octets) >= 4 && (octets[3]&0x80) != 0 // octet 4, CST
 
 	return status, offset, nil
 }

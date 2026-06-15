@@ -211,7 +211,11 @@ function updateTrackHistory(tracks) {
 // GeoJSON FeatureCollections and pushes them into the map sources: track
 // symbols/labels, their speed-vector lines, and their recent-position trails.
 function updateTracksLayer(msg) {
-  const tracks = msg.tracks || [];
+  // Drop tracks flagged `ended` (CAT062 I062/080 TSE): this is their final
+  // report, signalling deletion. Excluding them here makes the symbol, label
+  // and speed vector disappear at once, and — since they fall out of the
+  // "seen" set in updateTrackHistory — their trail history is purged too.
+  const tracks = (msg.tracks || []).filter((track) => !track.ended);
 
   updateTrackHistory(tracks);
 
