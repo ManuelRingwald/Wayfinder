@@ -229,6 +229,11 @@ type Config struct {
 	MapCenterLon   float64
 	MapZoom        float64
 	MapStyleURL    string
+	// MapTheme selects the built-in base map theme when no explicit
+	// MapStyleURL is configured: "dark" (Radar Dark Mode, the controller
+	// default) or "osm" (the bright OpenStreetMap raster). `WAYFINDER_MAP_THEME`,
+	// default "dark". An explicit MapStyleURL always overrides the theme.
+	MapTheme       string
 	AllowedOrigins []string
 	AuthToken      string
 	TLSCertFile    string
@@ -255,6 +260,33 @@ const defaultMapStyle = `{
 	"layers": [{"id": "osm", "type": "raster", "source": "osm"}]
 }`
 
+// darkMapStyle is the "Radar Dark Mode" base: a low-contrast dark raster
+// (CARTO dark, no labels) on a dark background. Like OSM it needs no API key,
+// which keeps the demo self-contained. The dark, label-free base lets the
+// track symbols and aeronautical overlays dominate, the way a controller's
+// radar scope does. ASD-003 Häppchen 3a.
+const darkMapStyle = `{
+	"version": 8,
+	"sources": {
+		"carto-dark": {
+			"type": "raster",
+			"tiles": ["https://basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}.png"],
+			"tileSize": 256,
+			"attribution": "© OpenStreetMap contributors © CARTO"
+		}
+	},
+	"layers": [
+		{"id": "background", "type": "background", "paint": {"background-color": "#0b0f14"}},
+		{"id": "carto-dark", "type": "raster", "source": "carto-dark"}
+	]
+}`
+
+// mapThemeDark and mapThemeOSM are the recognised built-in theme names.
+const (
+	mapThemeDark = "dark"
+	mapThemeOSM  = "osm"
+)
+
 // loadConfig loads configuration from environment variables.
 func loadConfig() Config {
 	cfg := Config{
@@ -266,6 +298,7 @@ func loadConfig() Config {
 		MapCenterLon:     8.5622,
 		MapZoom:          8,
 		MapStyleURL:      "",
+		MapTheme:         mapThemeDark,
 		LogLevel:         slog.LevelInfo,
 		FeedStaleTimeout: 3 * time.Second,
 	}
@@ -305,6 +338,13 @@ func loadConfig() Config {
 	}
 
 	cfg.MapStyleURL = os.Getenv("WAYFINDER_MAP_STYLE_URL")
+
+	// Map theme: only the documented built-in names are accepted; anything else
+	// falls back to the default (FR-CFG-002: invalid config falls back rather
+	// than crashing).
+	if v := strings.ToLower(strings.TrimSpace(os.Getenv("WAYFINDER_MAP_THEME"))); v == mapThemeDark || v == mapThemeOSM {
+		cfg.MapTheme = v
+	}
 
 	if v := os.Getenv("WAYFINDER_ALLOWED_ORIGINS"); v != "" {
 		for _, origin := range strings.Split(v, ",") {
@@ -373,12 +413,24 @@ func authMiddleware(token string, next http.Handler) http.Handler {
 	})
 }
 
-// mapConfigHandler serves the map center/zoom/style as JSON for the frontend.
+// mapConfigHandler serves the map center/zoom/style/theme as JSON for the
+// frontend. The style is chosen as follows: an explicit WAYFINDER_MAP_STYLE_URL
+// always wins; otherwise the built-in theme decides ("osm" → bright OSM raster,
+// "dark" → Radar Dark Mode). The reported `theme` lets the frontend pick a
+// matching foreground palette (light labels on the dark base, dark on OSM).
 func mapConfigHandler(cfg Config) http.HandlerFunc {
-	style := cfg.MapStyleURL
-	var styleValue any = style
-	if style == "" {
+	var styleValue any
+	theme := cfg.MapTheme
+	switch {
+	case cfg.MapStyleURL != "":
+		// A custom style is opaque to us; report the configured theme so the
+		// operator can still steer the palette via WAYFINDER_MAP_THEME.
+		styleValue = cfg.MapStyleURL
+	case cfg.MapTheme == mapThemeOSM:
 		styleValue = json.RawMessage(defaultMapStyle)
+	default:
+		styleValue = json.RawMessage(darkMapStyle)
+		theme = mapThemeDark
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -388,6 +440,7 @@ func mapConfigHandler(cfg Config) http.HandlerFunc {
 			"center_lon": cfg.MapCenterLon,
 			"zoom":       cfg.MapZoom,
 			"style":      styleValue,
+			"theme":      theme,
 		})
 	}
 }

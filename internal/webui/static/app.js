@@ -21,6 +21,27 @@ const TRAIL_MAX_POINTS = 20;
 // the vector endpoint. Sufficient accuracy for display purposes.
 const EARTH_RADIUS_M = 6371000;
 
+// Foreground palettes per base-map theme (ASD-003 Häppchen 3a). On the dark
+// "Radar Dark Mode" base, labels are light with a dark halo so they stay
+// legible; on the bright OSM base the original dark-on-white palette is used.
+// Track-status colours (confirmed/coasting/tentative) read well on both bases.
+const PALETTES = {
+  dark: {
+    label: "#e8eef5",
+    labelHalo: "#000000",
+    vector: "#cfd8dc",
+    trail: "#607d8b",
+    symbolStroke: "#000000",
+  },
+  osm: {
+    label: "#212121",
+    labelHalo: "#ffffff",
+    vector: "#212121",
+    trail: "#90a4ae",
+    symbolStroke: "#000000",
+  },
+};
+
 const state = {
   map: null,
   mapLoaded: false,
@@ -30,11 +51,17 @@ const state = {
   pendingTracks: null,
   // Per-track history of past positions ([lon, lat]), for the trail display.
   trackHistory: new Map(),
+  // Active foreground palette, selected from the configured map theme.
+  palette: PALETTES.dark,
 };
 
 async function main() {
   const res = await fetch("/api/map-config");
   const cfg = await res.json();
+
+  // Select the foreground palette to match the base-map theme (dark by
+  // default). An unknown theme falls back to the dark palette.
+  state.palette = PALETTES[cfg.theme] || PALETTES.dark;
 
   const map = new maplibregl.Map({
     container: "map",
@@ -82,7 +109,7 @@ function addTracksLayer(map) {
         "#9e9e9e", // grey: tentative track
       ],
       "circle-stroke-width": 1,
-      "circle-stroke-color": "#000000",
+      "circle-stroke-color": state.palette.symbolStroke,
     },
   });
 
@@ -99,8 +126,8 @@ function addTracksLayer(map) {
       "text-anchor": "top",
     },
     paint: {
-      "text-color": "#212121",
-      "text-halo-color": "#ffffff",
+      "text-color": state.palette.label,
+      "text-halo-color": state.palette.labelHalo,
       "text-halo-width": 1,
     },
   });
@@ -120,7 +147,7 @@ function addTrailsLayer(map) {
     type: "line",
     source: TRAILS_SOURCE_ID,
     paint: {
-      "line-color": "#90a4ae",
+      "line-color": state.palette.trail,
       "line-width": 1,
       "line-opacity": 0.6,
     },
@@ -142,7 +169,7 @@ function addVectorsLayer(map) {
     type: "line",
     source: VECTORS_SOURCE_ID,
     paint: {
-      "line-color": "#212121",
+      "line-color": state.palette.vector,
       "line-width": 1.5,
     },
   });
