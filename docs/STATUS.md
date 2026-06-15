@@ -8,6 +8,40 @@
 > `docs/ROADMAP.md` (Stichwort „Roadmap" im Chat zeigt diese Liste).
 
 - **Zuletzt aktualisiert:** 2026-06-15 — Paket #1 „Multicast-Feed-Sicherheit",
+  Häppchen 1.3: **Browser-Rand-Implementierung gemäß ADR 0003.**
+  `pkg/ws/handler.go`: globales `CheckOrigin: func(r) bool { return true }`
+  entfernt; `Handler` bekommt ein `allowedOrigins []string`-Feld und eine neue
+  `checkOrigin`-Methode — Requests ohne `Origin`-Header (Nicht-Browser-Clients)
+  und Same-Origin-Requests sind weiterhin erlaubt, Cross-Origin-Requests nur
+  noch, wenn der `Origin`-Header in `WAYFINDER_ALLOWED_ORIGINS` steht (sonst
+  fail-closed mit Warn-Log). `cmd/wayfinder/main.go`: neue `Config`-Felder
+  `AllowedOrigins`, `AuthToken`, `TLSCertFile`, `TLSKeyFile`, alle per
+  `loadConfig()` aus `WAYFINDER_ALLOWED_ORIGINS` (kommasepariert),
+  `WAYFINDER_AUTH_TOKEN`, `WAYFINDER_TLS_CERT`/`_KEY` gelesen (Default: leer).
+  Neue `authMiddleware`: greift nur, wenn `WAYFINDER_AUTH_TOKEN` gesetzt ist
+  (sonst Pass-through + Warn-Log "relies on network isolation / reverse
+  proxy"); prüft Bearer-Header oder `?token=`-Query-Param (Browser-WS kann
+  keine Custom-Header beim Handshake setzen) via
+  `crypto/subtle.ConstantTimeCompare`, sonst `401` + `WWW-Authenticate:
+  Bearer`. Server-Setup von globalem `http.Handle`/`DefaultServeMux` auf
+  lokalen `http.NewServeMux()` umgestellt, durch `authMiddleware` gewrappt;
+  optionales TLS (`http.ListenAndServeTLS`, wenn `WAYFINDER_TLS_CERT`/`_KEY`
+  beide gesetzt sind, sonst Klartext-HTTP wie bisher). Health-/Readiness-Probes
+  (`:8080`) bleiben bewusst unauthentifiziert (separater Mux). Neue Tests:
+  `pkg/ws/handler_test.go` (`TestCheckOrigin*`, 6 Fälle: ohne Origin,
+  Same-Origin, Cross-Origin ohne/mit Allowlist, ungültiger Origin-Header) und
+  `cmd/wayfinder/main_test.go` (`TestAuthMiddleware*` — deaktiviert/fehlender
+  Token/falscher Token/Query-Param/Bearer-Header; `TestLoadConfig*SecurityEnvVars*`
+  — Parsing und Default-Leerwerte). `docs/requirements/README.md` (NFR-SEC-001):
+  Implementierung/Tests für den Browser-Rand jetzt eingetragen. Alle Gates
+  grün (`go build`/`go vet`/`go test ./...`; `gofmt` clean außer dem
+  vorbestehenden, unveränderten Befund in `pkg/receiver/receiver_test.go`).
+  Damit ist **Paket #1 inhaltlich abgeschlossen** (1.4 — optionale
+  Sender-Härtung in Firefly — bleibt als unabhängiges Nice-to-have offen).
+  Nächster Schritt: mit dem Projektverantwortlichen das nächste Paket
+  abstimmen (Vorschlag: Paket #2 „Observability-Grundgerüst", **S3 · Sonnet
+  4.6**) oder optional 1.4 angehen.
+- **Vorherige Aktualisierung:** 2026-06-15 — Paket #1 „Multicast-Feed-Sicherheit",
   Häppchen 1.2: **ADR 0003 „Sicherheit: Vertrauensgrenze des Empfangspfads und
   Browser-Rand"** erstellt (`docs/decisions/0003-sicherheit-empfangspfad-und-browser-rand.md`).
   Zwei Entscheidungen: (1) **Empfangspfad** spiegelt Fireflys ADR 0017 — Netz-

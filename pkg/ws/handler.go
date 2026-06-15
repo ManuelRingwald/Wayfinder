@@ -3,6 +3,8 @@ package ws
 import (
 	"log/slog"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -23,32 +25,66 @@ const (
 	messageBufferSize = 256
 )
 
-var upgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
-	CheckOrigin: func(r *http.Request) bool {
-		// For now, accept all origins. In production, restrict to known hosts.
-		return true
-	},
-}
-
 // Handler is an HTTP handler for WebSocket connections.
 type Handler struct {
-	broadcaster *broadcast.Broadcaster
-	logger      *slog.Logger
+	broadcaster    *broadcast.Broadcaster
+	logger         *slog.Logger
+	allowedOrigins []string
+	upgrader       websocket.Upgrader
 }
 
-// New creates a new WebSocket handler.
-func New(broadcaster *broadcast.Broadcaster, logger *slog.Logger) *Handler {
-	return &Handler{
-		broadcaster: broadcaster,
-		logger:      logger,
+// New creates a new WebSocket handler. allowedOrigins is an additional
+// allowlist of origins (scheme://host[:port]) permitted to open a WebSocket
+// connection, beyond same-origin requests, which are always allowed (ADR
+// 0003: fail-closed origin check on /ws).
+func New(broadcaster *broadcast.Broadcaster, logger *slog.Logger, allowedOrigins []string) *Handler {
+	h := &Handler{
+		broadcaster:    broadcaster,
+		logger:         logger,
+		allowedOrigins: allowedOrigins,
 	}
+	h.upgrader = websocket.Upgrader{
+		ReadBufferSize:  1024,
+		WriteBufferSize: 1024,
+		CheckOrigin:     h.checkOrigin,
+	}
+	return h
+}
+
+// checkOrigin rejects cross-site WebSocket connection attempts (CSWSH).
+// Requests without an Origin header (non-browser clients) and same-origin
+// requests are always allowed; cross-origin requests are allowed only if
+// the Origin is present in allowedOrigins.
+func (h *Handler) checkOrigin(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true
+	}
+
+	originURL, err := url.Parse(origin)
+	if err != nil {
+		h.logger.Warn("websocket upgrade rejected: invalid Origin header", slog.String("origin", origin))
+		return false
+	}
+
+	if strings.EqualFold(originURL.Host, r.Host) {
+		return true
+	}
+
+	for _, allowed := range h.allowedOrigins {
+		if strings.EqualFold(origin, allowed) {
+			return true
+		}
+	}
+
+	h.logger.Warn("websocket upgrade rejected: origin not allowed",
+		slog.String("origin", origin), slog.String("host", r.Host))
+	return false
 }
 
 // ServeHTTP upgrades HTTP connections to WebSocket and manages the client.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	conn, err := upgrader.Upgrade(w, r, nil)
+	conn, err := h.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		h.logger.Error("upgrade websocket", slog.String("error", err.Error()))
 		return

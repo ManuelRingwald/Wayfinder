@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -104,8 +106,16 @@ func main() {
 	go startProbeServer(logger, &blockCount, broadcaster, &lastError)
 
 	// Start WebSocket server.
-	wsHandler := ws.New(broadcaster, logger)
-	http.Handle("/ws", wsHandler)
+	if cfg.AuthToken == "" {
+		logger.Warn("WAYFINDER_AUTH_TOKEN not set — browser edge relies on " +
+			"network isolation / a TLS+auth reverse proxy in front of this " +
+			"service (ADR 0003)")
+	}
+
+	mux := http.NewServeMux()
+
+	wsHandler := ws.New(broadcaster, logger, cfg.AllowedOrigins)
+	mux.Handle("/ws", wsHandler)
 
 	// Serve the ASD frontend (static HTML/JS/CSS) and its map configuration.
 	frontend, err := webui.Handler()
@@ -113,12 +123,24 @@ func main() {
 		logger.Error("create frontend handler", slog.String("error", err.Error()))
 		os.Exit(1)
 	}
-	http.Handle("/", frontend)
-	http.HandleFunc("/api/map-config", mapConfigHandler(cfg))
+	mux.Handle("/", frontend)
+	mux.HandleFunc("/api/map-config", mapConfigHandler(cfg))
+
+	handler := authMiddleware(cfg.AuthToken, mux)
 
 	go func() {
-		logger.Info("starting websocket server", slog.String("addr", ":8081"))
-		if err := http.ListenAndServe(":8081", nil); err != nil && err != http.ErrServerClosed {
+		addr := ":8081"
+		if cfg.TLSCertFile != "" && cfg.TLSKeyFile != "" {
+			logger.Info("starting websocket server (TLS)", slog.String("addr", addr))
+			if err := http.ListenAndServeTLS(addr, cfg.TLSCertFile, cfg.TLSKeyFile, handler); err != nil && err != http.ErrServerClosed {
+				logger.Error("websocket server error", slog.String("error", err.Error()))
+				cancel()
+			}
+			return
+		}
+
+		logger.Info("starting websocket server", slog.String("addr", addr))
+		if err := http.ListenAndServe(addr, handler); err != nil && err != http.ErrServerClosed {
 			logger.Error("websocket server error", slog.String("error", err.Error()))
 			cancel()
 		}
@@ -146,6 +168,10 @@ type Config struct {
 	MapCenterLon   float64
 	MapZoom        float64
 	MapStyleURL    string
+	AllowedOrigins []string
+	AuthToken      string
+	TLSCertFile    string
+	TLSKeyFile     string
 }
 
 // defaultMapStyle is a minimal MapLibre style using OpenStreetMap raster
@@ -212,7 +238,49 @@ func loadConfig() Config {
 
 	cfg.MapStyleURL = os.Getenv("WAYFINDER_MAP_STYLE_URL")
 
+	if v := os.Getenv("WAYFINDER_ALLOWED_ORIGINS"); v != "" {
+		for _, origin := range strings.Split(v, ",") {
+			origin = strings.TrimSpace(origin)
+			if origin != "" {
+				cfg.AllowedOrigins = append(cfg.AllowedOrigins, origin)
+			}
+		}
+	}
+
+	cfg.AuthToken = os.Getenv("WAYFINDER_AUTH_TOKEN")
+	cfg.TLSCertFile = os.Getenv("WAYFINDER_TLS_CERT")
+	cfg.TLSKeyFile = os.Getenv("WAYFINDER_TLS_KEY")
+
 	return cfg
+}
+
+// authMiddleware enforces WAYFINDER_AUTH_TOKEN (if configured) on every
+// request: a bearer token via the Authorization header, or a "token" query
+// parameter (since browsers cannot set custom headers on the WebSocket
+// handshake). If no token is configured, requests pass through unchanged
+// (ADR 0003: this is a fail-closed *opt-in* on top of the primary
+// TLS/Auth-at-the-proxy mechanism).
+func authMiddleware(token string, next http.Handler) http.Handler {
+	if token == "" {
+		return next
+	}
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		provided := r.URL.Query().Get("token")
+		if provided == "" {
+			if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
+				provided = strings.TrimPrefix(auth, "Bearer ")
+			}
+		}
+
+		if subtle.ConstantTimeCompare([]byte(provided), []byte(token)) != 1 {
+			w.Header().Set("WWW-Authenticate", `Bearer realm="wayfinder"`)
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
 }
 
 // mapConfigHandler serves the map center/zoom/style as JSON for the frontend.
