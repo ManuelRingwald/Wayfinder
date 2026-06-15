@@ -7,7 +7,28 @@
 > 🗺️ **Roadmap:** Arbeitspakete, Findings und empfohlene Reihenfolge stehen in
 > `docs/ROADMAP.md` (Stichwort „Roadmap" im Chat zeigt diese Liste).
 
-- **Zuletzt aktualisiert:** 2026-06-15 — **Paket #3 „CAT065 Heartbeat"
+- **Zuletzt aktualisiert:** 2026-06-15 — **Paket #13 / ASD-003 „Aeronautical
+  Map Layer" abgeschlossen.** Vier Häppchen: **3a Radar Dark Mode** —
+  `WAYFINDER_MAP_THEME` (`dark`|`osm`, Default dark), `darkMapStyle` (CARTO
+  `dark_nolabels`, key-frei), `mapConfigHandler` liefert Style + `theme`;
+  Frontend `PALETTES` wählt helle Labels/Vektoren/Trails auf dunklem Grund
+  (FR-MAP-001). **3b OpenAIP-Backend** (ADR 0004) — neues Paket
+  `pkg/aeronautical`: defensiver OpenAIP-Client (Timeout, 32-MiB-Limit,
+  `validGeometry`), best-effort `Service` mit Last-Good-Cache + nicht-
+  blockierendem Refresh (`WAYFINDER_OPENAIP_*`), Endpoints
+  `/api/airspace|navaids|waypoints`, `/metrics`-Kennzahlen
+  `wayfinder_openaip_*` (FR-MAP-002, NFR-OPS-004/SEC-002/OBS-004). Track-Pfad
+  und `/ready` bleiben **vollständig entkoppelt**. **3c/3d Overlays** —
+  Luftraum (fill/line/label, schaltbar), VOR/NDB + Waypoints als Symbol-Layer
+  mit laufzeit-gezeichneten Icons (kein Sprite-Asset), Zoom-Böden gegen
+  Clutter, Layer-Steuerungs-Panel (`#layer-control`); `loadAeronautical`
+  zieht alle 5 min nach, Fehler nicht-fatal (FR-MAP-003/004). Gates grün
+  (`go build/vet/test`, `gofmt`, `node --check app.js`); Rauchtest des Binaries
+  bestätigt Dark-Theme, leere Collections ohne Key (graceful) und die Metriken.
+  Modell: Opus 4.8 (S4 wegen 3b). Datenquellen-Entscheidung „Live-OpenAIP" vom
+  Projektverantwortlichen getroffen. Nächster Schritt: nächstes Roadmap-Paket
+  nach Abstimmung.
+- **Vorherige Aktualisierung:** 2026-06-15 — **Paket #3 „CAT065 Heartbeat"
   abgeschlossen (beide Seiten).** Wayfinder-Teil: neues Paket `pkg/cat065`
   (Decoder für CAT065 SDPS-Status, byte-genau gegen Fireflys Referenz-Dump,
   robust gegen Truncation/falsche Kategorie). Receiver dispatcht den
