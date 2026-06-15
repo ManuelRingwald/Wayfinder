@@ -22,14 +22,14 @@ import (
 )
 
 func main() {
-	// Setup logging.
-	logger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
-		Level: slog.LevelInfo,
-	}))
-	slog.SetDefault(logger)
-
 	// Load configuration from environment.
 	cfg := loadConfig()
+
+	// Setup logging.
+	logger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
+		Level: cfg.LogLevel,
+	}))
+	slog.SetDefault(logger)
 
 	// Create broadcaster.
 	broadcaster := broadcast.New(logger)
@@ -172,6 +172,7 @@ type Config struct {
 	AuthToken      string
 	TLSCertFile    string
 	TLSKeyFile     string
+	LogLevel       slog.Level
 }
 
 // defaultMapStyle is a minimal MapLibre style using OpenStreetMap raster
@@ -200,6 +201,7 @@ func loadConfig() Config {
 		MapCenterLon: 8.5622,
 		MapZoom:      8,
 		MapStyleURL:  "",
+		LogLevel:     slog.LevelInfo,
 	}
 
 	if cfg.MulticastGroup == "" {
@@ -251,7 +253,23 @@ func loadConfig() Config {
 	cfg.TLSCertFile = os.Getenv("WAYFINDER_TLS_CERT")
 	cfg.TLSKeyFile = os.Getenv("WAYFINDER_TLS_KEY")
 
+	if v := os.Getenv("WAYFINDER_LOG_LEVEL"); v != "" {
+		if level, err := parseLogLevel(v); err == nil {
+			cfg.LogLevel = level
+		}
+	}
+
 	return cfg
+}
+
+// parseLogLevel parses the documented slog level names ("debug", "info",
+// "warn", "error", case-insensitive). Invalid values are rejected so callers
+// can fall back to the default (FR-CFG-002: invalid config falls back to
+// defaults rather than crashing).
+func parseLogLevel(v string) (slog.Level, error) {
+	var level slog.Level
+	err := level.UnmarshalText([]byte(v))
+	return level, err
 }
 
 // authMiddleware enforces WAYFINDER_AUTH_TOKEN (if configured) on every

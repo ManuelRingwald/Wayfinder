@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -199,6 +200,47 @@ func TestLoadConfigParsesSecurityEnvVars(t *testing.T) {
 	}
 	if cfg.TLSKeyFile != "/tmp/key.pem" {
 		t.Errorf("expected TLSKeyFile %q, got %q", "/tmp/key.pem", cfg.TLSKeyFile)
+	}
+}
+
+func TestLoadConfigParsesLogLevel(t *testing.T) {
+	for _, tc := range []struct {
+		env  string
+		want slog.Level
+	}{
+		{"debug", slog.LevelDebug},
+		{"info", slog.LevelInfo},
+		{"warn", slog.LevelWarn},
+		{"error", slog.LevelError},
+		{"WARN", slog.LevelWarn},
+	} {
+		t.Setenv("WAYFINDER_LOG_LEVEL", tc.env)
+
+		cfg := loadConfig()
+
+		if cfg.LogLevel != tc.want {
+			t.Errorf("WAYFINDER_LOG_LEVEL=%q: expected level %v, got %v", tc.env, tc.want, cfg.LogLevel)
+		}
+	}
+}
+
+func TestLoadConfigLogLevelDefaultsToInfo(t *testing.T) {
+	os.Unsetenv("WAYFINDER_LOG_LEVEL")
+
+	cfg := loadConfig()
+
+	if cfg.LogLevel != slog.LevelInfo {
+		t.Errorf("expected default log level info, got %v", cfg.LogLevel)
+	}
+}
+
+func TestLoadConfigInvalidLogLevelFallsBackToDefault(t *testing.T) {
+	t.Setenv("WAYFINDER_LOG_LEVEL", "not-a-level")
+
+	cfg := loadConfig()
+
+	if cfg.LogLevel != slog.LevelInfo {
+		t.Errorf("expected default log level info for invalid input, got %v", cfg.LogLevel)
 	}
 }
 

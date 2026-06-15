@@ -177,6 +177,7 @@ func (b *Broadcaster) broadcast(msg Message) {
 		case c.send <- msg:
 		default:
 			// Client's send channel is full; unregister it.
+			b.logger.Warn("client send channel full, evicting client")
 			b.UnregisterClient(c)
 		}
 		return true

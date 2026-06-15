@@ -7,7 +7,31 @@
 > 🗺️ **Roadmap:** Arbeitspakete, Findings und empfohlene Reihenfolge stehen in
 > `docs/ROADMAP.md` (Stichwort „Roadmap" im Chat zeigt diese Liste).
 
-- **Zuletzt aktualisiert:** 2026-06-15 — Paket #1 „Multicast-Feed-Sicherheit",
+- **Zuletzt aktualisiert:** 2026-06-15 — Paket #2 „Observability-Grundgerüst",
+  Häppchen 2.1 (Wayfinder): **totes `internal/config` entfernt, Log-Level
+  konfigurierbar, Client-Eviction geloggt.** Das unbenutzte Paket
+  `internal/config` (auf das FR-CFG-001/002 fälschlich zeigten) wurde
+  entfernt; `cmd/wayfinder/main.go` ist die einzige Config-Quelle. Neues
+  `Config.LogLevel` (`slog.Level`, Default `info`) wird via
+  `WAYFINDER_LOG_LEVEL` (debug/info/warn/error, case-insensitive über
+  `slog.Level.UnmarshalText`) gesetzt; ungültige Werte fallen auf `info`
+  zurück (`parseLogLevel`, FR-CFG-002). Die Logger-Initialisierung in `main()`
+  liest jetzt zuerst `loadConfig()` und nutzt `cfg.LogLevel` für den
+  JSON-Handler. In `pkg/broadcast/broadcast.go` loggt `broadcast()` jetzt eine
+  `Warn`-Meldung, wenn ein Client wegen vollem Sende-Channel evicted wird
+  (war zuvor stillschweigend) — neue Anforderung **NFR-OBS-001**. Neue Tests:
+  `cmd/wayfinder/main_test.go` (`TestLoadConfigParsesLogLevel`,
+  `TestLoadConfigLogLevelDefaultsToInfo`,
+  `TestLoadConfigInvalidLogLevelFallsBackToDefault`) und
+  `pkg/broadcast/broadcast_test.go::TestBroadcastEvictsClientWithFullSendChannel`.
+  `docs/requirements/README.md`: FR-CFG-001/002 zeigen jetzt korrekt auf
+  `cmd/wayfinder/main.go`/`main_test.go`, neue Zeile NFR-OBS-001. Alle Gates
+  grün (`go build`/`go vet`/`go test ./...`; `gofmt` clean außer dem
+  vorbestehenden, unveränderten Befund in `pkg/receiver/receiver_test.go`).
+  Nächster Schritt: Häppchen 2.2 (Firefly) — `tracing` in
+  `firefly-multicast`/`firefly-asterix` für Decode-/Socket-Fehler, danach 2.3
+  (gemeinsam) `/metrics`-Endpoint, **S3 · Sonnet 4.6**.
+- **Vorherige Aktualisierung:** 2026-06-15 — Paket #1 „Multicast-Feed-Sicherheit",
   Häppchen 1.3: **Browser-Rand-Implementierung gemäß ADR 0003.**
   `pkg/ws/handler.go`: globales `CheckOrigin: func(r) bool { return true }`
   entfernt; `Handler` bekommt ein `allowedOrigins []string`-Feld und eine neue
