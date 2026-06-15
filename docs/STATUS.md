@@ -7,30 +7,30 @@
 > 🗺️ **Roadmap:** Arbeitspakete, Findings und empfohlene Reihenfolge stehen in
 > `docs/ROADMAP.md` (Stichwort „Roadmap" im Chat zeigt diese Liste).
 
-- **Zuletzt aktualisiert:** 2026-06-15 — Paket #2 „Observability-Grundgerüst",
-  Häppchen 2.1 (Wayfinder): **totes `internal/config` entfernt, Log-Level
-  konfigurierbar, Client-Eviction geloggt.** Das unbenutzte Paket
-  `internal/config` (auf das FR-CFG-001/002 fälschlich zeigten) wurde
-  entfernt; `cmd/wayfinder/main.go` ist die einzige Config-Quelle. Neues
-  `Config.LogLevel` (`slog.Level`, Default `info`) wird via
-  `WAYFINDER_LOG_LEVEL` (debug/info/warn/error, case-insensitive über
-  `slog.Level.UnmarshalText`) gesetzt; ungültige Werte fallen auf `info`
-  zurück (`parseLogLevel`, FR-CFG-002). Die Logger-Initialisierung in `main()`
-  liest jetzt zuerst `loadConfig()` und nutzt `cfg.LogLevel` für den
-  JSON-Handler. In `pkg/broadcast/broadcast.go` loggt `broadcast()` jetzt eine
-  `Warn`-Meldung, wenn ein Client wegen vollem Sende-Channel evicted wird
-  (war zuvor stillschweigend) — neue Anforderung **NFR-OBS-001**. Neue Tests:
-  `cmd/wayfinder/main_test.go` (`TestLoadConfigParsesLogLevel`,
-  `TestLoadConfigLogLevelDefaultsToInfo`,
-  `TestLoadConfigInvalidLogLevelFallsBackToDefault`) und
-  `pkg/broadcast/broadcast_test.go::TestBroadcastEvictsClientWithFullSendChannel`.
-  `docs/requirements/README.md`: FR-CFG-001/002 zeigen jetzt korrekt auf
-  `cmd/wayfinder/main.go`/`main_test.go`, neue Zeile NFR-OBS-001. Alle Gates
-  grün (`go build`/`go vet`/`go test ./...`; `gofmt` clean außer dem
+- **Zuletzt aktualisiert:** 2026-06-15 — Paket #2 „Observability-Grundgerüst"
+  **abgeschlossen** mit Häppchen 2.3: gemeinsamer `/metrics`-Endpoint
+  (Prometheus-Textformat). Wayfinder-Teil (NFR-OBS-002): neues Paket
+  `pkg/metrics` (`Handler`/`Counter`/`Gauge`, hand-gerollte Prometheus-
+  Exposition ohne externe Abhängigkeit). `Broadcaster` bekommt
+  `EvictedCount()` (Eviction-Zähler, `pkg/broadcast/broadcast.go`),
+  `Receiver` bekommt `DecodeErrorCount()` (`pkg/receiver/receiver.go`).
+  `startProbeServer` (Port `:8080`) bekommt eine neue `/metrics`-Route neben
+  `/health`/`/ready`: `wayfinder_cat062_blocks_received_total`/
+  `wayfinder_cat062_tracks_received_total` (Counter),
+  `wayfinder_cat062_decode_errors_total` (Counter),
+  `wayfinder_tracks_current` (Gauge), `wayfinder_ws_clients_connected`
+  (Gauge), `wayfinder_ws_clients_evicted_total` (Counter). Neue Tests:
+  `pkg/metrics/metrics_test.go::TestHandlerRendersPrometheusExpositionFormat`,
+  `pkg/broadcast/broadcast_test.go::TestBroadcastEvictsClientWithFullSendChannel`
+  (jetzt zusätzlich `EvictedCount()`-Assertion),
+  `pkg/receiver/receiver_test.go::TestReceiverDecodeErrorCountStartsAtZero`.
+  Neue Anforderung NFR-OBS-002 im Register. Alle Gates grün
+  (`go build`/`go vet`/`go test ./...`; `gofmt` clean außer dem
   vorbestehenden, unveränderten Befund in `pkg/receiver/receiver_test.go`).
-  Nächster Schritt: Häppchen 2.2 (Firefly) — `tracing` in
-  `firefly-multicast`/`firefly-asterix` für Decode-/Socket-Fehler, danach 2.3
-  (gemeinsam) `/metrics`-Endpoint, **S3 · Sonnet 4.6**.
+  Firefly-Teil (Häppchen 2.2, `tracing` in `firefly-multicast`, und 2.3,
+  `firefly-server::metrics`) ist ebenfalls erledigt — **Paket #2 vollständig
+  abgeschlossen.** Nächster Schritt: nächstes Roadmap-Paket nach Abstimmung
+  mit dem Projektverantwortlichen.
 - **Vorherige Aktualisierung:** 2026-06-15 — Paket #1 „Multicast-Feed-Sicherheit",
   Häppchen 1.3: **Browser-Rand-Implementierung gemäß ADR 0003.**
   `pkg/ws/handler.go`: globales `CheckOrigin: func(r) bool { return true }`

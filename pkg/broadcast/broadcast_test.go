@@ -205,4 +205,7 @@ func TestBroadcastEvictsClientWithFullSendChannel(t *testing.T) {
 	if b.ClientCount() != 0 {
 		t.Errorf("expected client to be evicted, got %d clients", b.ClientCount())
 	}
+	if got := b.EvictedCount(); got != 1 {
+		t.Errorf("EvictedCount: got %d, want 1", got)
+	}
 }

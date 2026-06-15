@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"sync/atomic"
 
 	"github.com/manuelringwald/wayfinder/pkg/cat062"
 )
@@ -17,6 +18,8 @@ type Receiver struct {
 	conn    *net.UDPConn
 	logger  *slog.Logger
 	handler func(tracks []cat062.DecodedTrack) error
+
+	decodeErrors atomic.Int64
 }
 
 // Config holds receiver configuration.
@@ -101,6 +104,7 @@ func (r *Receiver) Run(ctx context.Context) error {
 		// Decode the CAT062 block.
 		tracks, err := cat062.DecodeDataBlock(buffer[:n])
 		if err != nil {
+			r.decodeErrors.Add(1)
 			r.logger.Error("decode CAT062 block",
 				slog.String("remote", remoteAddr.String()),
 				slog.Int("bytes", n),
@@ -125,6 +129,12 @@ func (r *Receiver) Run(ctx context.Context) error {
 			// Don't return; keep listening for more blocks.
 		}
 	}
+}
+
+// DecodeErrorCount returns the total number of CAT062 blocks that failed to
+// decode so far (REQ NFR-OBS-002, exposed via /metrics).
+func (r *Receiver) DecodeErrorCount() int64 {
+	return r.decodeErrors.Load()
 }
 
 // Close closes the UDP connection.

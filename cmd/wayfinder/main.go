@@ -17,6 +17,7 @@ import (
 	"github.com/manuelringwald/wayfinder/internal/webui"
 	"github.com/manuelringwald/wayfinder/pkg/broadcast"
 	"github.com/manuelringwald/wayfinder/pkg/cat062"
+	"github.com/manuelringwald/wayfinder/pkg/metrics"
 	"github.com/manuelringwald/wayfinder/pkg/receiver"
 	"github.com/manuelringwald/wayfinder/pkg/ws"
 )
@@ -34,9 +35,10 @@ func main() {
 	// Create broadcaster.
 	broadcaster := broadcast.New(logger)
 
-	// Track reception state for health checks.
+	// Track reception state for health checks and /metrics.
 	var blockCount atomic.Int64
 	var trackCount atomic.Int64
+	var tracksCurrent atomic.Int64
 	var lastError atomic.Pointer[string]
 
 	// Create receiver with handler that feeds broadcaster.
@@ -47,6 +49,7 @@ func main() {
 		Handler: func(tracks []cat062.DecodedTrack) error {
 			blockCount.Add(1)
 			trackCount.Add(int64(len(tracks)))
+			tracksCurrent.Store(int64(len(tracks)))
 			// Feed tracks to broadcaster (non-blocking).
 			select {
 			case broadcaster.TracksChan() <- tracks:
@@ -102,8 +105,8 @@ func main() {
 		}
 	}()
 
-	// Start health/readiness probe server.
-	go startProbeServer(logger, &blockCount, broadcaster, &lastError)
+	// Start health/readiness/metrics probe server.
+	go startProbeServer(logger, &blockCount, &trackCount, &tracksCurrent, broadcaster, recv, &lastError)
 
 	// Start WebSocket server.
 	if cfg.AuthToken == "" {
@@ -320,8 +323,8 @@ func mapConfigHandler(cfg Config) http.HandlerFunc {
 	}
 }
 
-// startProbeServer starts an HTTP server for health and readiness checks.
-func startProbeServer(logger *slog.Logger, blockCount *atomic.Int64, broadcaster *broadcast.Broadcaster, lastError *atomic.Pointer[string]) {
+// startProbeServer starts an HTTP server for health, readiness and metrics.
+func startProbeServer(logger *slog.Logger, blockCount, trackCount, tracksCurrent *atomic.Int64, broadcaster *broadcast.Broadcaster, recv *receiver.Receiver, lastError *atomic.Pointer[string]) {
 	mux := http.NewServeMux()
 
 	// /health — liveness check (always ready unless startup failed).
@@ -343,6 +346,19 @@ func startProbeServer(logger *slog.Logger, blockCount *atomic.Int64, broadcaster
 		}
 		w.WriteHeader(http.StatusServiceUnavailable)
 		w.Write([]byte(`{"status":"not_ready","blocks":0,"clients":0}`))
+	})
+
+	// /metrics — Prometheus text exposition (REQ NFR-OBS-002): track
+	// throughput, decode errors, and WebSocket client counts/drops.
+	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
+		metrics.Handler(
+			metrics.Counter("wayfinder_cat062_blocks_received_total", "Total number of CAT062 data blocks received via multicast.", blockCount.Load()),
+			metrics.Counter("wayfinder_cat062_tracks_received_total", "Total number of track records received across all CAT062 blocks.", trackCount.Load()),
+			metrics.Counter("wayfinder_cat062_decode_errors_total", "Total number of CAT062 data blocks that failed to decode.", recv.DecodeErrorCount()),
+			metrics.Gauge("wayfinder_tracks_current", "Number of tracks in the most recently received CAT062 block.", tracksCurrent.Load()),
+			metrics.Gauge("wayfinder_ws_clients_connected", "Number of currently connected WebSocket clients.", int64(broadcaster.ClientCount())),
+			metrics.Counter("wayfinder_ws_clients_evicted_total", "Total number of WebSocket clients evicted due to a full send channel.", broadcaster.EvictedCount()),
+		)(w, r)
 	})
 
 	addr := ":8080"

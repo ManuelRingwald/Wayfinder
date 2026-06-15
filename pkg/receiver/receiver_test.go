@@ -55,6 +55,20 @@ func TestReceiverConfigDefaults(t *testing.T) {
 	}
 }
 
+// TestReceiverDecodeErrorCountStartsAtZero verifies that a fresh receiver
+// reports no decode errors yet (REQ NFR-OBS-002, exposed via /metrics).
+func TestReceiverDecodeErrorCountStartsAtZero(t *testing.T) {
+	recv, err := New(Config{})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer recv.Close()
+
+	if got := recv.DecodeErrorCount(); got != 0 {
+		t.Errorf("DecodeErrorCount: got %d, want 0", got)
+	}
+}
+
 // TestReceiverInvalidGroup verifies error on invalid multicast group.
 func TestReceiverInvalidGroup(t *testing.T) {
 	_, err := New(Config{
