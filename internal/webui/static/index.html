@@ -30,11 +30,40 @@
       #feed-status.ok { background: #1a7f37; display: block; }
       #feed-status.stale { background: #b42318; display: block; }
       #feed-status.unknown { background: #6c757d; display: block; }
+
+      /* Aeronautical layer control (ASD-003): toggle map overlays. */
+      #layer-control {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        z-index: 10;
+        padding: 8px 10px;
+        border-radius: 4px;
+        background: rgba(11, 15, 20, 0.82);
+        color: #e8eef5;
+        font: 12px/1.4 system-ui, sans-serif;
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+      }
+      #layer-control .title {
+        font-weight: 600;
+        margin-bottom: 4px;
+        opacity: 0.8;
+      }
+      #layer-control label {
+        display: block;
+        cursor: pointer;
+      }
     </style>
   </head>
   <body>
     <div id="map"></div>
     <div id="feed-status"></div>
+    <div id="layer-control">
+      <div class="title">Layer</div>
+      <label><input type="checkbox" id="toggle-airspace" checked /> Lufträume</label>
+      <label><input type="checkbox" id="toggle-navaids" checked /> VOR/NDB</label>
+      <label><input type="checkbox" id="toggle-waypoints" checked /> Waypoints</label>
+    </div>
     <script src="https://unpkg.com/maplibre-gl@4/dist/maplibre-gl.js"></script>
     <script src="app.js"></script>
   </body>
