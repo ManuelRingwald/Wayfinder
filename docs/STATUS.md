@@ -4,9 +4,10 @@
 > Handy. Sie wird am Ende jeder Arbeitssitzung aktualisiert und committet.
 > Claude liest sie zu Sitzungsbeginn (siehe `CLAUDE.md`).
 
-- **Zuletzt aktualisiert:** 2026-06-15 (Branch `claude/tse-i062-080`:
+- **Zuletzt aktualisiert:** 2026-06-15 (Branch `claude/tse-i062-080`, nach
+  `main` gemergt — PR #8 (Wayfinder) / PR #16 (Firefly):
   **T5 — CAT062 Track-Ende (TSE, I062/080) dekodiert + Track-Entfernung, ICD
-  2.2.0.** AP8 (Callsign) ist nach `main` gemergt — PR #7.) `decodeTrackStatus`
+  2.2.0.** AP8 (Callsign) war bereits zuvor nach `main` gemergt — PR #7.) `decodeTrackStatus`
   liest die FX-Kette jetzt oktett-genau (CNF Oktett 1, **TSE Oktett 2 Bit 7
   `0x40`**, CST Oktett 4) und füllt `TrackStatus.Ended`; robust gegen früher
   endende Records. Durchgereicht via `broadcast.TrackMessage.Ended`
