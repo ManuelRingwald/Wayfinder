@@ -75,6 +75,11 @@ type DecodedTrack struct {
 	// FlightLevelFt is the measured barometric flight level in feet, decoded
 	// from I062/136 when present (the track carries a Mode C reply). Optional.
 	FlightLevelFt *float64 // optional, I062/136 Measured Flight Level
+
+	// Callsign is the target identification (flight ID), decoded from I062/245
+	// when present (the track carries a Mode S identification reply). Trailing
+	// spaces are trimmed. Optional.
+	Callsign *string // optional, I062/245 Target Identification
 }
 
 func (t DecodedTrack) String() string {

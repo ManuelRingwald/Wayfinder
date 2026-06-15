@@ -5,6 +5,25 @@
 > Claude liest sie zu Sitzungsbeginn (siehe `CLAUDE.md`).
 
 - **Zuletzt aktualisiert:** 2026-06-15 (Branch `claude/callsign-i062-245`:
+  **AP8 — CAT062 Target Identification I062/245 (Callsign) dekodiert, ICD
+  2.1.0.**) `pkg/cat062/decoder.go` zieht FRN 10 nach: 7-Byte-Item
+  (STI/spare-Oktett + 8 × 6-Bit-IA-5), `decodeTargetIdentification`/
+  `ia5Decode` (fremde Codes defensiv → Leerzeichen, robust gegen
+  Fehl-Datagramme). `DecodedTrack.Callsign *string` (trailing spaces
+  getrimmt), durchgereicht über `broadcast.TrackMessage.Callsign`
+  (`json:"callsign,omitempty"`) bis ins Frontend. `app.js::buildLabel` zeigt
+  das Callsign jetzt als primäre Label-Zeile (Track-Nummer als Fallback), FL
+  weiterhin als zweite Zeile. FRN 10 liegt im bereits vorhandenen 2.
+  FSPEC-Oktett → additiv, kein Wire-Format-Bruch. Test:
+  `pkg/cat062/decoder_test.go::TestDecodeCallsign` (Referenzwerte aus Fireflys
+  `target_identification_packs_eight_six_bit_ia5_codes`). `CLAUDE.md`
+  Abschnitt 2 (FRN-Tabelle) und `docs/requirements/README.md` (FR-DATA-002)
+  aktualisiert. Alle Gates grün (`go build`/`go vet`/`go test ./...`/`gofmt`
+  für die geänderten Dateien; ein vorbestehender `gofmt`-Befund in
+  `pkg/receiver/receiver_test.go` ist unverändert und nicht Teil dieser
+  Änderung). **AP7 (Firefly-Encoder) und AP8 (dieser Schritt) sind damit
+  beide abgeschlossen.**
+- **Vorherige Aktualisierung:** 2026-06-15 (Branch `claude/callsign-i062-245`:
   Doku-/Docker-Vorbereitung fürs Testen. `README.md` komplett neu (Quickstart
   Docker/lokal, Architektur-Übersicht, Konfig-Tabelle, Build & Test, Links).
   Neu: `Dockerfile` (Multi-Stage `golang:1.23-bookworm` → `debian:bookworm-
@@ -14,8 +33,8 @@
   macOS/Windows-Docker-Desktop-Hinweis). Firefly-seitig analoger Abschnitt in
   README/DOCKER.md ergänzt. Docker-Build konnte in dieser Sitzung nicht
   getestet werden (kein Docker-Daemon verfügbar) — `go build`/`go vet`/
-  `go test ./...` sind grün. Nächster Schritt: AP7/AP8 (Callsign I062/245).)
-- **Vorherige Aktualisierung:** 2026-06-14 (Branch `claude/serene-heisenberg-xq4rla`:
+  `go test ./...` sind grün.)
+- **Frühere Aktualisierung:** 2026-06-14 (Branch `claude/serene-heisenberg-xq4rla`:
   AP2 — Vertikallage I062/136 + UAP-Standardtreue; davor Kurs-Pfeile + Trails)
 - **Branch:** `claude/serene-heisenberg-xq4rla` — **M1.1–M1.3 abgeschlossen**
   (CAT062 Multicast → Decoder → Broadcaster → WebSocket-Clients, in `main`).
