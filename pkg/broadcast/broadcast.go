@@ -4,14 +4,27 @@ import (
 	"context"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 
 	"github.com/manuelringwald/wayfinder/pkg/cat062"
 )
 
-// Message is sent to all WebSocket clients.
+// Message is sent to all WebSocket clients. It carries either a track update
+// (Tracks) or a feed-health update (FeedStatus, from the CAT065 heartbeat,
+// Firefly ADR 0018) — the two are routed separately by the frontend.
 type Message struct {
-	Tracks []TrackMessage `json:"tracks"`
-	TimeMs int64          `json:"time_ms"`
+	Tracks     []TrackMessage     `json:"tracks"`
+	TimeMs     int64              `json:"time_ms"`
+	FeedStatus *FeedStatusMessage `json:"feed_status,omitempty"`
+}
+
+// FeedStatusMessage carries the CAT065 feed-health state to the browser.
+type FeedStatusMessage struct {
+	// State is "ok" (heartbeat fresh), "stale" (heartbeat lost) or "unknown"
+	// (no heartbeat seen yet).
+	State string `json:"state"`
+	// ServiceID is the CAT065 I065/015 service identification, when known.
+	ServiceID uint8 `json:"service_id,omitempty"`
 }
 
 // TrackMessage represents a single track in JSON format.
@@ -57,6 +70,8 @@ type Broadcaster struct {
 	registerChan   chan *Client
 	unregisterChan chan *Client
 	messageChan    chan Message
+
+	evicted atomic.Int64
 }
 
 // Client represents a connected WebSocket client.
@@ -134,6 +149,12 @@ func (b *Broadcaster) ClientCount() int {
 	return b.clientCount()
 }
 
+// EvictedCount returns the total number of clients evicted so far because
+// their send channel was full (REQ NFR-OBS-002, exposed via /metrics).
+func (b *Broadcaster) EvictedCount() int64 {
+	return b.evicted.Load()
+}
+
 // tracksToMessage converts CAT062 decoded tracks to a broadcast message.
 func (b *Broadcaster) tracksToMessage(tracks []cat062.DecodedTrack) Message {
 	msg := Message{
@@ -177,6 +198,8 @@ func (b *Broadcaster) broadcast(msg Message) {
 		case c.send <- msg:
 		default:
 			// Client's send channel is full; unregister it.
+			b.logger.Warn("client send channel full, evicting client")
+			b.evicted.Add(1)
 			b.UnregisterClient(c)
 		}
 		return true

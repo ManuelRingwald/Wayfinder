@@ -2,11 +2,14 @@ package receiver
 
 import (
 	"context"
+	"io"
 	"log/slog"
+	"net"
 	"testing"
 	"time"
 
 	"github.com/manuelringwald/wayfinder/pkg/cat062"
+	"github.com/manuelringwald/wayfinder/pkg/cat065"
 )
 
 // TestReceiverLoopback tests the receiver with a loopback UDP sender.
@@ -16,8 +19,8 @@ func TestReceiverLoopback(t *testing.T) {
 	var decodedTracks int
 
 	recv, err := New(Config{
-		Group: "127.0.0.1", // Loopback
-		Port:  0,           // Ephemeral port
+		Group:  "127.0.0.1", // Loopback
+		Port:   0,           // Ephemeral port
 		Logger: slog.New(slog.NewTextHandler(nil, nil)),
 		Handler: func(tracks []cat062.DecodedTrack) error {
 			decodedBlocks++
@@ -52,6 +55,56 @@ func TestReceiverConfigDefaults(t *testing.T) {
 	}
 	if recv.port != 8600 {
 		t.Errorf("port: got %d, want 8600", recv.port)
+	}
+}
+
+// TestReceiverDecodeErrorCountStartsAtZero verifies that a fresh receiver
+// reports no decode errors yet (REQ NFR-OBS-002, exposed via /metrics).
+func TestReceiverDecodeErrorCountStartsAtZero(t *testing.T) {
+	recv, err := New(Config{})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer recv.Close()
+
+	if got := recv.DecodeErrorCount(); got != 0 {
+		t.Errorf("DecodeErrorCount: got %d, want 0", got)
+	}
+}
+
+// TestDispatchRoutesByCategory verifies that the receiver routes a CAT062 block
+// to the track handler, a CAT065 block to the status handler, and an unknown
+// category to the decode-error counter (Firefly ADR 0018, shared multicast feed).
+func TestDispatchRoutesByCategory(t *testing.T) {
+	var gotTracks int
+	var gotStatus int
+	recv, err := New(Config{
+		Logger:        slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Handler:       func(tracks []cat062.DecodedTrack) error { gotTracks += len(tracks); return nil },
+		StatusHandler: func(cat065.ServiceStatus) error { gotStatus++; return nil },
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	remote := &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 1234}
+
+	// A CAT065 heartbeat (Firefly's byte-exact reference dump) → status handler.
+	heartbeat := []byte{0x41, 0x00, 0x0C, 0xF4, 0x19, 0x02, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00}
+	recv.dispatch(heartbeat, remote)
+	if gotStatus != 1 {
+		t.Errorf("CAT065: status handler called %d times, want 1", gotStatus)
+	}
+	if recv.DecodeErrorCount() != 0 {
+		t.Errorf("CAT065: unexpected decode errors %d", recv.DecodeErrorCount())
+	}
+
+	// An unknown category → decode error, no handler.
+	recv.dispatch([]byte{0x22, 0x00, 0x03}, remote)
+	if recv.DecodeErrorCount() != 1 {
+		t.Errorf("unknown CAT: decode errors %d, want 1", recv.DecodeErrorCount())
+	}
+	if gotTracks != 0 || gotStatus != 1 {
+		t.Errorf("unknown CAT must not call handlers (tracks=%d status=%d)", gotTracks, gotStatus)
 	}
 }
 

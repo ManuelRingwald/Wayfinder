@@ -2,42 +2,71 @@ package main
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
+	"time"
 
 	"github.com/manuelringwald/wayfinder/internal/webui"
 	"github.com/manuelringwald/wayfinder/pkg/broadcast"
 	"github.com/manuelringwald/wayfinder/pkg/cat062"
+	"github.com/manuelringwald/wayfinder/pkg/cat065"
+	"github.com/manuelringwald/wayfinder/pkg/health"
+	"github.com/manuelringwald/wayfinder/pkg/metrics"
 	"github.com/manuelringwald/wayfinder/pkg/receiver"
 	"github.com/manuelringwald/wayfinder/pkg/ws"
 )
 
 func main() {
-	// Setup logging.
-	logger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
-		Level: slog.LevelInfo,
-	}))
-	slog.SetDefault(logger)
-
 	// Load configuration from environment.
 	cfg := loadConfig()
+
+	// Setup logging.
+	logger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
+		Level: cfg.LogLevel,
+	}))
+	slog.SetDefault(logger)
 
 	// Create broadcaster.
 	broadcaster := broadcast.New(logger)
 
-	// Track reception state for health checks.
+	// Track reception state for health checks and /metrics.
 	var blockCount atomic.Int64
 	var trackCount atomic.Int64
+	var tracksCurrent atomic.Int64
+	var heartbeatCount atomic.Int64
+	var lastServiceID atomic.Uint32
 	var lastError atomic.Pointer[string]
 
-	// Create receiver with handler that feeds broadcaster.
+	// Feed-health tracker (CAT065 heartbeat staleness, Firefly ADR 0018).
+	feedHealth := health.New(cfg.FeedStaleTimeout)
+
+	// broadcastFeedStatus pushes the current feed-health state to the browser.
+	broadcastFeedStatus := func(status health.Status) {
+		state := "unknown"
+		if status.EverSeen {
+			state = "ok"
+			if status.Stale {
+				state = "stale"
+			}
+		}
+		_ = broadcaster.Send(broadcast.Message{
+			FeedStatus: &broadcast.FeedStatusMessage{
+				State:     state,
+				ServiceID: uint8(lastServiceID.Load()),
+			},
+		})
+	}
+
+	// Create receiver with handlers that feed the broadcaster and feed health.
 	recv, err := receiver.New(receiver.Config{
 		Group:  cfg.MulticastGroup,
 		Port:   cfg.MulticastPort,
@@ -45,11 +74,23 @@ func main() {
 		Handler: func(tracks []cat062.DecodedTrack) error {
 			blockCount.Add(1)
 			trackCount.Add(int64(len(tracks)))
+			tracksCurrent.Store(int64(len(tracks)))
 			// Feed tracks to broadcaster (non-blocking).
 			select {
 			case broadcaster.TracksChan() <- tracks:
 			default:
 				logger.Warn("broadcaster channel full, dropping block")
+			}
+			return nil
+		},
+		StatusHandler: func(status cat065.ServiceStatus) error {
+			heartbeatCount.Add(1)
+			lastServiceID.Store(uint32(status.ServiceID))
+			feedHealth.RecordHeartbeat(time.Now())
+			// Notify the browser only on a state transition (e.g. first
+			// heartbeat, or recovery from stale).
+			if s, changed := feedHealth.Observe(time.Now()); changed {
+				broadcastFeedStatus(s)
 			}
 			return nil
 		},
@@ -100,12 +141,42 @@ func main() {
 		}
 	}()
 
-	// Start health/readiness probe server.
-	go startProbeServer(logger, &blockCount, broadcaster, &lastError)
+	// Monitor feed staleness: even with no traffic, periodically re-evaluate
+	// the heartbeat age and notify the browser when the feed flips ok→stale
+	// (or recovers). Webhook-style pushes alone can't detect "nothing arrived".
+	go func() {
+		interval := cfg.FeedStaleTimeout / 3
+		if interval < 250*time.Millisecond {
+			interval = 250 * time.Millisecond
+		}
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if s, changed := feedHealth.Observe(time.Now()); changed {
+					broadcastFeedStatus(s)
+				}
+			}
+		}
+	}()
+
+	// Start health/readiness/metrics probe server.
+	go startProbeServer(logger, &blockCount, &trackCount, &tracksCurrent, &heartbeatCount, broadcaster, recv, feedHealth, &lastError)
 
 	// Start WebSocket server.
-	wsHandler := ws.New(broadcaster, logger)
-	http.Handle("/ws", wsHandler)
+	if cfg.AuthToken == "" {
+		logger.Warn("WAYFINDER_AUTH_TOKEN not set — browser edge relies on " +
+			"network isolation / a TLS+auth reverse proxy in front of this " +
+			"service (ADR 0003)")
+	}
+
+	mux := http.NewServeMux()
+
+	wsHandler := ws.New(broadcaster, logger, cfg.AllowedOrigins)
+	mux.Handle("/ws", wsHandler)
 
 	// Serve the ASD frontend (static HTML/JS/CSS) and its map configuration.
 	frontend, err := webui.Handler()
@@ -113,12 +184,24 @@ func main() {
 		logger.Error("create frontend handler", slog.String("error", err.Error()))
 		os.Exit(1)
 	}
-	http.Handle("/", frontend)
-	http.HandleFunc("/api/map-config", mapConfigHandler(cfg))
+	mux.Handle("/", frontend)
+	mux.HandleFunc("/api/map-config", mapConfigHandler(cfg))
+
+	handler := authMiddleware(cfg.AuthToken, mux)
 
 	go func() {
-		logger.Info("starting websocket server", slog.String("addr", ":8081"))
-		if err := http.ListenAndServe(":8081", nil); err != nil && err != http.ErrServerClosed {
+		addr := ":8081"
+		if cfg.TLSCertFile != "" && cfg.TLSKeyFile != "" {
+			logger.Info("starting websocket server (TLS)", slog.String("addr", addr))
+			if err := http.ListenAndServeTLS(addr, cfg.TLSCertFile, cfg.TLSKeyFile, handler); err != nil && err != http.ErrServerClosed {
+				logger.Error("websocket server error", slog.String("error", err.Error()))
+				cancel()
+			}
+			return
+		}
+
+		logger.Info("starting websocket server", slog.String("addr", addr))
+		if err := http.ListenAndServe(addr, handler); err != nil && err != http.ErrServerClosed {
 			logger.Error("websocket server error", slog.String("error", err.Error()))
 			cancel()
 		}
@@ -146,6 +229,15 @@ type Config struct {
 	MapCenterLon   float64
 	MapZoom        float64
 	MapStyleURL    string
+	AllowedOrigins []string
+	AuthToken      string
+	TLSCertFile    string
+	TLSKeyFile     string
+	LogLevel       slog.Level
+	// FeedStaleTimeout is how long without a CAT065 heartbeat before the feed
+	// is considered stale (Firefly ADR 0018). `WAYFINDER_FEED_STALE_TIMEOUT`
+	// in seconds, default 3 s (~3× the 1 s heartbeat period).
+	FeedStaleTimeout time.Duration
 }
 
 // defaultMapStyle is a minimal MapLibre style using OpenStreetMap raster
@@ -170,10 +262,12 @@ func loadConfig() Config {
 		MulticastPort:  8600,
 		ProbePort:      8080,
 		// Default map center: Frankfurt am Main, matching Firefly's demo scenario.
-		MapCenterLat: 50.0379,
-		MapCenterLon: 8.5622,
-		MapZoom:      8,
-		MapStyleURL:  "",
+		MapCenterLat:     50.0379,
+		MapCenterLon:     8.5622,
+		MapZoom:          8,
+		MapStyleURL:      "",
+		LogLevel:         slog.LevelInfo,
+		FeedStaleTimeout: 3 * time.Second,
 	}
 
 	if cfg.MulticastGroup == "" {
@@ -212,7 +306,71 @@ func loadConfig() Config {
 
 	cfg.MapStyleURL = os.Getenv("WAYFINDER_MAP_STYLE_URL")
 
+	if v := os.Getenv("WAYFINDER_ALLOWED_ORIGINS"); v != "" {
+		for _, origin := range strings.Split(v, ",") {
+			origin = strings.TrimSpace(origin)
+			if origin != "" {
+				cfg.AllowedOrigins = append(cfg.AllowedOrigins, origin)
+			}
+		}
+	}
+
+	cfg.AuthToken = os.Getenv("WAYFINDER_AUTH_TOKEN")
+	cfg.TLSCertFile = os.Getenv("WAYFINDER_TLS_CERT")
+	cfg.TLSKeyFile = os.Getenv("WAYFINDER_TLS_KEY")
+
+	if v := os.Getenv("WAYFINDER_LOG_LEVEL"); v != "" {
+		if level, err := parseLogLevel(v); err == nil {
+			cfg.LogLevel = level
+		}
+	}
+
+	if v := os.Getenv("WAYFINDER_FEED_STALE_TIMEOUT"); v != "" {
+		if secs, err := strconv.ParseFloat(v, 64); err == nil && secs > 0 {
+			cfg.FeedStaleTimeout = time.Duration(secs * float64(time.Second))
+		}
+	}
+
 	return cfg
+}
+
+// parseLogLevel parses the documented slog level names ("debug", "info",
+// "warn", "error", case-insensitive). Invalid values are rejected so callers
+// can fall back to the default (FR-CFG-002: invalid config falls back to
+// defaults rather than crashing).
+func parseLogLevel(v string) (slog.Level, error) {
+	var level slog.Level
+	err := level.UnmarshalText([]byte(v))
+	return level, err
+}
+
+// authMiddleware enforces WAYFINDER_AUTH_TOKEN (if configured) on every
+// request: a bearer token via the Authorization header, or a "token" query
+// parameter (since browsers cannot set custom headers on the WebSocket
+// handshake). If no token is configured, requests pass through unchanged
+// (ADR 0003: this is a fail-closed *opt-in* on top of the primary
+// TLS/Auth-at-the-proxy mechanism).
+func authMiddleware(token string, next http.Handler) http.Handler {
+	if token == "" {
+		return next
+	}
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		provided := r.URL.Query().Get("token")
+		if provided == "" {
+			if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
+				provided = strings.TrimPrefix(auth, "Bearer ")
+			}
+		}
+
+		if subtle.ConstantTimeCompare([]byte(provided), []byte(token)) != 1 {
+			w.Header().Set("WWW-Authenticate", `Bearer realm="wayfinder"`)
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
 }
 
 // mapConfigHandler serves the map center/zoom/style as JSON for the frontend.
@@ -234,8 +392,8 @@ func mapConfigHandler(cfg Config) http.HandlerFunc {
 	}
 }
 
-// startProbeServer starts an HTTP server for health and readiness checks.
-func startProbeServer(logger *slog.Logger, blockCount *atomic.Int64, broadcaster *broadcast.Broadcaster, lastError *atomic.Pointer[string]) {
+// startProbeServer starts an HTTP server for health, readiness and metrics.
+func startProbeServer(logger *slog.Logger, blockCount, trackCount, tracksCurrent, heartbeatCount *atomic.Int64, broadcaster *broadcast.Broadcaster, recv *receiver.Receiver, feedHealth *health.FeedHealth, lastError *atomic.Pointer[string]) {
 	mux := http.NewServeMux()
 
 	// /health — liveness check (always ready unless startup failed).
@@ -245,18 +403,42 @@ func startProbeServer(logger *slog.Logger, blockCount *atomic.Int64, broadcaster
 		w.Write([]byte(`{"status":"ok"}`))
 	})
 
-	// /ready — readiness check (ready once we have clients or blocks received).
+	// /ready — readiness check. Ready once we have clients or blocks received,
+	// and — if the CAT065 heartbeat has ever been seen — only while the feed is
+	// not stale (Firefly ADR 0018). A feed that never heartbeats (CAT062-only)
+	// falls back to the traffic-based check.
 	mux.HandleFunc("/ready", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		count := blockCount.Load()
 		clients := broadcaster.ClientCount()
-		if count > 0 || clients > 0 {
+		status := feedHealth.Status(time.Now())
+		healthy := !status.EverSeen || !status.Stale
+		if (count > 0 || clients > 0) && healthy {
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(`{"status":"ready","blocks":` + strconv.FormatInt(count, 10) + `,"clients":` + strconv.Itoa(clients) + `}`))
+			w.Write([]byte(`{"status":"ready","blocks":` + strconv.FormatInt(count, 10) + `,"clients":` + strconv.Itoa(clients) + `,"feed_stale":` + strconv.FormatBool(status.Stale) + `}`))
 			return
 		}
 		w.WriteHeader(http.StatusServiceUnavailable)
-		w.Write([]byte(`{"status":"not_ready","blocks":0,"clients":0}`))
+		w.Write([]byte(`{"status":"not_ready","blocks":` + strconv.FormatInt(count, 10) + `,"clients":` + strconv.Itoa(clients) + `,"feed_stale":` + strconv.FormatBool(status.Stale) + `}`))
+	})
+
+	// /metrics — Prometheus text exposition (REQ NFR-OBS-002): track
+	// throughput, decode errors, WebSocket client counts/drops, and feed health.
+	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
+		feedStale := int64(0)
+		if feedHealth.Status(time.Now()).Stale {
+			feedStale = 1
+		}
+		metrics.Handler(
+			metrics.Counter("wayfinder_cat062_blocks_received_total", "Total number of CAT062 data blocks received via multicast.", blockCount.Load()),
+			metrics.Counter("wayfinder_cat062_tracks_received_total", "Total number of track records received across all CAT062 blocks.", trackCount.Load()),
+			metrics.Counter("wayfinder_cat062_decode_errors_total", "Total number of CAT062 data blocks that failed to decode.", recv.DecodeErrorCount()),
+			metrics.Gauge("wayfinder_tracks_current", "Number of tracks in the most recently received CAT062 block.", tracksCurrent.Load()),
+			metrics.Gauge("wayfinder_ws_clients_connected", "Number of currently connected WebSocket clients.", int64(broadcaster.ClientCount())),
+			metrics.Counter("wayfinder_ws_clients_evicted_total", "Total number of WebSocket clients evicted due to a full send channel.", broadcaster.EvictedCount()),
+			metrics.Counter("wayfinder_cat065_heartbeats_received_total", "Total number of CAT065 SDPS-status heartbeats received.", heartbeatCount.Load()),
+			metrics.Gauge("wayfinder_feed_stale", "1 if the CAT065 heartbeat feed is currently stale, else 0.", feedStale),
+		)(w, r)
 	})
 
 	addr := ":8080"

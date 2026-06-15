@@ -2,6 +2,7 @@ package broadcast
 
 import (
 	"context"
+	"io"
 	"log/slog"
 	"testing"
 	"time"
@@ -167,5 +168,44 @@ func TestTracksToMessage(t *testing.T) {
 	}
 	if tm.CartX < 999.9 || tm.CartX > 1000.1 {
 		t.Errorf("CartX: got %f, want ~1000.0", tm.CartX)
+	}
+}
+
+// TestBroadcastEvictsClientWithFullSendChannel verifies that a client whose
+// send channel is full (i.e., not being drained) is evicted instead of
+// blocking the broadcaster.
+func TestBroadcastEvictsClientWithFullSendChannel(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	b := New(logger)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+	go b.Run(ctx)
+
+	// Unbuffered channel that nobody reads from, so the first broadcast fills it.
+	sendChan := make(chan Message)
+	b.RegisterClient(sendChan)
+
+	// Wait for registration to be processed.
+	for i := 0; i < 100 && b.ClientCount() != 1; i++ {
+		time.Sleep(time.Millisecond)
+	}
+	if b.ClientCount() != 1 {
+		t.Fatalf("expected 1 client, got %d", b.ClientCount())
+	}
+
+	if err := b.Send(Message{Tracks: []TrackMessage{{TrackNum: 1}}}); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+
+	// Wait for the broadcaster to evict the unresponsive client.
+	for i := 0; i < 100 && b.ClientCount() != 0; i++ {
+		time.Sleep(time.Millisecond)
+	}
+	if b.ClientCount() != 0 {
+		t.Errorf("expected client to be evicted, got %d clients", b.ClientCount())
+	}
+	if got := b.EvictedCount(); got != 1 {
+		t.Errorf("EvictedCount: got %d, want 1", got)
 	}
 }

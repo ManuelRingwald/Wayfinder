@@ -7,7 +7,108 @@
 > 🗺️ **Roadmap:** Arbeitspakete, Findings und empfohlene Reihenfolge stehen in
 > `docs/ROADMAP.md` (Stichwort „Roadmap" im Chat zeigt diese Liste).
 
-- **Zuletzt aktualisiert:** 2026-06-15 (Branch `claude/tse-i062-080`, nach
+- **Zuletzt aktualisiert:** 2026-06-15 — **Paket #3 „CAT065 Heartbeat"
+  abgeschlossen (beide Seiten).** Wayfinder-Teil: neues Paket `pkg/cat065`
+  (Decoder für CAT065 SDPS-Status, byte-genau gegen Fireflys Referenz-Dump,
+  robust gegen Truncation/falsche Kategorie). Receiver dispatcht den
+  gemeinsamen Multicast-Strom am führenden **CAT-Oktett** (`0x3E` → Track,
+  `0x41` → Status, sonst Decode-Fehler) — neuer `dispatch`/`handleStatus`,
+  `StatusHandler` in der Config, Test `TestDispatchRoutesByCategory`. Neues
+  Paket `pkg/health` (`FeedHealth`): verfolgt Heartbeat-Ankunft, erkennt
+  Staleness (kein Heartbeat seit > `WAYFINDER_FEED_STALE_TIMEOUT`, Default 3 s),
+  `Observe` liefert nur Zustandswechsel. `main.go`: StatusHandler füttert
+  Health + Heartbeat-Zähler, Monitor-Goroutine erkennt Staleness ohne Verkehr,
+  `broadcastFeedStatus` pusht `feed_status`-WS-Nachricht (separater Pfad, leert
+  **nicht** das Lagebild). Frontend: Feed-Banner (grün/rot/grau,
+  `updateFeedBanner` in `app.js`, `#feed-status` in `index.html`). `/ready`
+  wird bei stale Feed **nicht ready** (nur wenn je Heartbeat gesehen); `/metrics`
+  um `wayfinder_cat065_heartbeats_received_total` + `wayfinder_feed_stale`
+  ergänzt. `Message.FeedStatus`/`FeedStatusMessage` im Broadcaster. Doku:
+  CLAUDE.md §2 (CAT065-Kurzfassung), Register FR-DATA-004/FR-OPS-004/NFR-OBS-003,
+  ROADMAP/STATUS. Architektur-Entscheidung (gleiche Multicast-Gruppe, Dispatch
+  am CAT-Oktett) vom Projektverantwortlichen bestätigt. **Firefly-Teil** (Sender:
+  `firefly-asterix::cat065`, `run_heartbeat`, ADR 0018, ICD 2.3.0) ebenfalls
+  fertig. Alle Gates grün (`go build/vet/test`, `gofmt`). Cross-Project-Issue
+  (`from-firefly`) zum CAT065-Vertrag wird erstellt + nach beidseitiger
+  Umsetzung geschlossen. Nächster Schritt: nächstes Roadmap-Paket nach
+  Abstimmung (z. B. #4 Konfigurierbarer System-Referenzpunkt).
+- **Vorherige Aktualisierung:** 2026-06-15 — Paket #2 „Observability-Grundgerüst"
+  **abgeschlossen** mit Häppchen 2.3: gemeinsamer `/metrics`-Endpoint
+  (Prometheus-Textformat). Wayfinder-Teil (NFR-OBS-002): neues Paket
+  `pkg/metrics` (`Handler`/`Counter`/`Gauge`, hand-gerollte Prometheus-
+  Exposition ohne externe Abhängigkeit). `Broadcaster` bekommt
+  `EvictedCount()` (Eviction-Zähler, `pkg/broadcast/broadcast.go`),
+  `Receiver` bekommt `DecodeErrorCount()` (`pkg/receiver/receiver.go`).
+  `startProbeServer` (Port `:8080`) bekommt eine neue `/metrics`-Route neben
+  `/health`/`/ready`: `wayfinder_cat062_blocks_received_total`/
+  `wayfinder_cat062_tracks_received_total` (Counter),
+  `wayfinder_cat062_decode_errors_total` (Counter),
+  `wayfinder_tracks_current` (Gauge), `wayfinder_ws_clients_connected`
+  (Gauge), `wayfinder_ws_clients_evicted_total` (Counter). Neue Tests:
+  `pkg/metrics/metrics_test.go::TestHandlerRendersPrometheusExpositionFormat`,
+  `pkg/broadcast/broadcast_test.go::TestBroadcastEvictsClientWithFullSendChannel`
+  (jetzt zusätzlich `EvictedCount()`-Assertion),
+  `pkg/receiver/receiver_test.go::TestReceiverDecodeErrorCountStartsAtZero`.
+  Neue Anforderung NFR-OBS-002 im Register. Alle Gates grün
+  (`go build`/`go vet`/`go test ./...`; `gofmt` clean außer dem
+  vorbestehenden, unveränderten Befund in `pkg/receiver/receiver_test.go`).
+  Firefly-Teil (Häppchen 2.2, `tracing` in `firefly-multicast`, und 2.3,
+  `firefly-server::metrics`) ist ebenfalls erledigt — **Paket #2 vollständig
+  abgeschlossen.** Nächster Schritt: nächstes Roadmap-Paket nach Abstimmung
+  mit dem Projektverantwortlichen.
+- **Vorherige Aktualisierung:** 2026-06-15 — Paket #1 „Multicast-Feed-Sicherheit",
+  Häppchen 1.3: **Browser-Rand-Implementierung gemäß ADR 0003.**
+  `pkg/ws/handler.go`: globales `CheckOrigin: func(r) bool { return true }`
+  entfernt; `Handler` bekommt ein `allowedOrigins []string`-Feld und eine neue
+  `checkOrigin`-Methode — Requests ohne `Origin`-Header (Nicht-Browser-Clients)
+  und Same-Origin-Requests sind weiterhin erlaubt, Cross-Origin-Requests nur
+  noch, wenn der `Origin`-Header in `WAYFINDER_ALLOWED_ORIGINS` steht (sonst
+  fail-closed mit Warn-Log). `cmd/wayfinder/main.go`: neue `Config`-Felder
+  `AllowedOrigins`, `AuthToken`, `TLSCertFile`, `TLSKeyFile`, alle per
+  `loadConfig()` aus `WAYFINDER_ALLOWED_ORIGINS` (kommasepariert),
+  `WAYFINDER_AUTH_TOKEN`, `WAYFINDER_TLS_CERT`/`_KEY` gelesen (Default: leer).
+  Neue `authMiddleware`: greift nur, wenn `WAYFINDER_AUTH_TOKEN` gesetzt ist
+  (sonst Pass-through + Warn-Log "relies on network isolation / reverse
+  proxy"); prüft Bearer-Header oder `?token=`-Query-Param (Browser-WS kann
+  keine Custom-Header beim Handshake setzen) via
+  `crypto/subtle.ConstantTimeCompare`, sonst `401` + `WWW-Authenticate:
+  Bearer`. Server-Setup von globalem `http.Handle`/`DefaultServeMux` auf
+  lokalen `http.NewServeMux()` umgestellt, durch `authMiddleware` gewrappt;
+  optionales TLS (`http.ListenAndServeTLS`, wenn `WAYFINDER_TLS_CERT`/`_KEY`
+  beide gesetzt sind, sonst Klartext-HTTP wie bisher). Health-/Readiness-Probes
+  (`:8080`) bleiben bewusst unauthentifiziert (separater Mux). Neue Tests:
+  `pkg/ws/handler_test.go` (`TestCheckOrigin*`, 6 Fälle: ohne Origin,
+  Same-Origin, Cross-Origin ohne/mit Allowlist, ungültiger Origin-Header) und
+  `cmd/wayfinder/main_test.go` (`TestAuthMiddleware*` — deaktiviert/fehlender
+  Token/falscher Token/Query-Param/Bearer-Header; `TestLoadConfig*SecurityEnvVars*`
+  — Parsing und Default-Leerwerte). `docs/requirements/README.md` (NFR-SEC-001):
+  Implementierung/Tests für den Browser-Rand jetzt eingetragen. Alle Gates
+  grün (`go build`/`go vet`/`go test ./...`; `gofmt` clean außer dem
+  vorbestehenden, unveränderten Befund in `pkg/receiver/receiver_test.go`).
+  Damit ist **Paket #1 inhaltlich abgeschlossen** (1.4 — optionale
+  Sender-Härtung in Firefly — bleibt als unabhängiges Nice-to-have offen).
+  Nächster Schritt: mit dem Projektverantwortlichen das nächste Paket
+  abstimmen (Vorschlag: Paket #2 „Observability-Grundgerüst", **S3 · Sonnet
+  4.6**) oder optional 1.4 angehen.
+- **Vorherige Aktualisierung:** 2026-06-15 — Paket #1 „Multicast-Feed-Sicherheit",
+  Häppchen 1.2: **ADR 0003 „Sicherheit: Vertrauensgrenze des Empfangspfads und
+  Browser-Rand"** erstellt (`docs/decisions/0003-sicherheit-empfangspfad-und-browser-rand.md`).
+  Zwei Entscheidungen: (1) **Empfangspfad** spiegelt Fireflys ADR 0017 — Netz-
+  Isolation auf der Netzwerk-Schicht, kein App-Krypto auf CAT062, robuster
+  Decoder bleibt App-Schutzschicht (keine Code-Änderung). (2) **Browser-Rand**
+  (`/`, `/ws`, `/api/map-config` auf `:8081`, heute ohne TLS/Auth, `CheckOrigin
+  → true`): TLS+Auth primär am Reverse-Proxy/Ingress (OIDC/mTLS, cloud-native,
+  kein Krypto-Eigenbau im ASD); ergänzend fail-closed in Wayfinder — strikter
+  Origin-Check (`WAYFINDER_ALLOWED_ORIGINS`), optionale Token-Middleware
+  (`WAYFINDER_AUTH_TOKEN`, Default aus + Warn-Log), optionales TLS
+  (`WAYFINDER_TLS_CERT`/`_KEY`); Health-/Readiness-Probes (`:8080`) bleiben
+  unauthentifiziert. Schließt das transformierte ehem. Issue #7. Neue
+  Anforderung **NFR-SEC-001** im Register (Empfangspfad: dokumentiert;
+  Browser-Rand: Implementierung folgt Häppchen 1.3). Reine Doku, kein
+  Code-Diff. Nächster Schritt: Häppchen 1.3 — Implementierung Browser-Rand
+  (Origin-Check, Token-Middleware, optionales TLS) in
+  `pkg/ws/handler.go`/`cmd/wayfinder/main.go`, **S4 · Opus 4.8**.
+- **Vorherige Aktualisierung:** 2026-06-15 (Branch `claude/tse-i062-080`, nach
   `main` gemergt — PR #8 (Wayfinder) / PR #16 (Firefly):
   **T5 — CAT062 Track-Ende (TSE, I062/080) dekodiert + Track-Entfernung, ICD
   2.2.0.** AP8 (Callsign) war bereits zuvor nach `main` gemergt — PR #7.) `decodeTrackStatus`
