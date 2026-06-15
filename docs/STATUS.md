@@ -7,7 +7,25 @@
 > 🗺️ **Roadmap:** Arbeitspakete, Findings und empfohlene Reihenfolge stehen in
 > `docs/ROADMAP.md` (Stichwort „Roadmap" im Chat zeigt diese Liste).
 
-- **Zuletzt aktualisiert:** 2026-06-15 (Branch `claude/tse-i062-080`, nach
+- **Zuletzt aktualisiert:** 2026-06-15 — Paket #1 „Multicast-Feed-Sicherheit",
+  Häppchen 1.2: **ADR 0003 „Sicherheit: Vertrauensgrenze des Empfangspfads und
+  Browser-Rand"** erstellt (`docs/decisions/0003-sicherheit-empfangspfad-und-browser-rand.md`).
+  Zwei Entscheidungen: (1) **Empfangspfad** spiegelt Fireflys ADR 0017 — Netz-
+  Isolation auf der Netzwerk-Schicht, kein App-Krypto auf CAT062, robuster
+  Decoder bleibt App-Schutzschicht (keine Code-Änderung). (2) **Browser-Rand**
+  (`/`, `/ws`, `/api/map-config` auf `:8081`, heute ohne TLS/Auth, `CheckOrigin
+  → true`): TLS+Auth primär am Reverse-Proxy/Ingress (OIDC/mTLS, cloud-native,
+  kein Krypto-Eigenbau im ASD); ergänzend fail-closed in Wayfinder — strikter
+  Origin-Check (`WAYFINDER_ALLOWED_ORIGINS`), optionale Token-Middleware
+  (`WAYFINDER_AUTH_TOKEN`, Default aus + Warn-Log), optionales TLS
+  (`WAYFINDER_TLS_CERT`/`_KEY`); Health-/Readiness-Probes (`:8080`) bleiben
+  unauthentifiziert. Schließt das transformierte ehem. Issue #7. Neue
+  Anforderung **NFR-SEC-001** im Register (Empfangspfad: dokumentiert;
+  Browser-Rand: Implementierung folgt Häppchen 1.3). Reine Doku, kein
+  Code-Diff. Nächster Schritt: Häppchen 1.3 — Implementierung Browser-Rand
+  (Origin-Check, Token-Middleware, optionales TLS) in
+  `pkg/ws/handler.go`/`cmd/wayfinder/main.go`, **S4 · Opus 4.8**.
+- **Vorherige Aktualisierung:** 2026-06-15 (Branch `claude/tse-i062-080`, nach
   `main` gemergt — PR #8 (Wayfinder) / PR #16 (Firefly):
   **T5 — CAT062 Track-Ende (TSE, I062/080) dekodiert + Track-Entfernung, ICD
   2.2.0.** AP8 (Callsign) war bereits zuvor nach `main` gemergt — PR #7.) `decodeTrackStatus`
