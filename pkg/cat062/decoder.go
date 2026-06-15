@@ -2,6 +2,7 @@ package cat062
 
 import (
 	"fmt"
+	"strings"
 )
 
 // DecodeDataBlock parses a CAT062 data block.
@@ -55,7 +56,8 @@ func DecodeRecord(data []byte, offset int) (DecodedTrack, int, error) {
 	// Decode items in standard EUROCONTROL UAP order. FRNs follow the real
 	// CAT062 UAP (ICD v2.0.0): I062/136 (Measured Flight Level) at FRN 17,
 	// I062/500 (Estimated Accuracies) at FRN 27 (not the old non-standard 16).
-	uapOrder := []uint8{1, 4, 5, 6, 7, 9, 11, 12, 13, 14, 17, 27}
+	// I062/245 (Target Identification / Callsign, ICD v2.1.0) sits at FRN 10.
+	uapOrder := []uint8{1, 4, 5, 6, 7, 9, 10, 11, 12, 13, 14, 17, 27}
 
 	for _, frn := range uapOrder {
 		if !fspec.HasItem(frn) {
@@ -131,6 +133,14 @@ func DecodeRecord(data []byte, offset int) (DecodedTrack, int, error) {
 			code &= 0x0FFF // low 12 bits
 			track.Mode3A = &code
 			offset += 2
+
+		case 10: // I062/245: Target Identification (Callsign, 7 bytes)
+			if offset+7 > len(data) {
+				return track, offset, NewDecodeError("truncated I062/245")
+			}
+			callsign := decodeTargetIdentification(data[offset : offset+7])
+			track.Callsign = &callsign
+			offset += 7
 
 		case 11: // I062/380: Aircraft Derived Data (variable, Target Address in ADR subfield)
 			if offset+1 > len(data) {
@@ -251,6 +261,40 @@ func decodeTrackStatus(data []byte, offset int) (TrackStatus, int, error) {
 	}
 
 	return status, offset, nil
+}
+
+// decodeTargetIdentification decodes I062/245 (7 bytes): octet 1 is the
+// STI/spare primary subfield and is dropped; octets 2-7 pack 8 characters as
+// 8x6-bit IA-5 codes (48 bits), MSB-first. Trailing spaces are trimmed.
+func decodeTargetIdentification(b []byte) string {
+	var bits uint64
+	for _, v := range b[1:7] {
+		bits = (bits << 8) | uint64(v)
+	}
+
+	chars := make([]byte, 8)
+	for i := range chars {
+		shift := uint(7-i) * 6
+		code := byte((bits >> shift) & 0x3F)
+		chars[i] = ia5Decode(code)
+	}
+
+	return strings.TrimRight(string(chars), " ")
+}
+
+// ia5Decode decodes one 6-bit ASTERIX IA-5 code to ASCII (ICAO Annex 10):
+// 1-26 -> 'A'-'Z', 48-57 -> '0'-'9', anything else (including 32, space)
+// defensively maps to space. A foreign/malformed datagram can send any
+// 6-bit value; never let it produce an unexpected byte.
+func ia5Decode(code byte) byte {
+	switch {
+	case code >= 1 && code <= 26:
+		return 'A' + (code - 1)
+	case code >= 48 && code <= 57:
+		return '0' + (code - 48)
+	default:
+		return ' '
+	}
 }
 
 // signExtendI24 converts a 24-bit signed value (stored in bits 0-23 of a 32-bit int)

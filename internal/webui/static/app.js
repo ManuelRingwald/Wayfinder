@@ -165,16 +165,20 @@ function vectorEndpoint(lat, lon, vx, vy) {
   return [lon + dLon, lat + dLat];
 }
 
-// buildLabel produces the track's data-block label: the track number, and —
-// when the track carries a measured flight level (I062/136) — a second line
-// "FLnnn" (flight level in hundreds of feet, ASD convention).
+// buildLabel produces the track's data-block label: the callsign (I062/245),
+// or the track number if no callsign is known, and — when the track carries a
+// measured flight level (I062/136) — a second line "FLnnn" (flight level in
+// hundreds of feet, ASD convention).
 function buildLabel(track) {
-  const num = String(track.track_num);
+  const line1 =
+    typeof track.callsign === "string" && track.callsign !== ""
+      ? track.callsign
+      : String(track.track_num);
   if (typeof track.flight_level_ft === "number") {
     const fl = Math.round(track.flight_level_ft / 100);
-    return `${num}\nFL${String(fl).padStart(3, "0")}`;
+    return `${line1}\nFL${String(fl).padStart(3, "0")}`;
   }
-  return num;
+  return line1;
 }
 
 // updateTrackHistory appends each track's current position to its trail

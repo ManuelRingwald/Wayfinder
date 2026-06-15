@@ -1,0 +1,14 @@
+.git/
+.gitignore
+.env
+.env.local
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+.DS_Store
+README.md
+CLAUDE.md
+docs/
+wayfinder

@@ -34,6 +34,9 @@ type TrackMessage struct {
 	// FlightLevelFt is the measured barometric flight level in feet (I062/136),
 	// present only for tracks carrying a Mode C reply.
 	FlightLevelFt *float64 `json:"flight_level_ft,omitempty"`
+	// Callsign is the target identification / flight ID (I062/245), present
+	// only for tracks carrying a Mode S identification reply.
+	Callsign *string `json:"callsign,omitempty"`
 }
 
 // Sender can send messages to all connected clients.
@@ -152,6 +155,7 @@ func (b *Broadcaster) tracksToMessage(tracks []cat062.DecodedTrack) Message {
 			Mode3A:        track.Mode3A,
 			ICAOAddr:      track.ICAOAddr,
 			FlightLevelFt: track.FlightLevelFt,
+			Callsign:      track.Callsign,
 		}
 	}
 

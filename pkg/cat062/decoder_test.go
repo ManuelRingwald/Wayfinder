@@ -394,3 +394,52 @@ func TestDecodeFlightLevel(t *testing.T) {
 		t.Errorf("Accuracy.APC mismatch: expected ≈100.0, got %v", track.Accuracy.APC)
 	}
 }
+
+// TestDecodeCallsign decodes a record that includes I062/245 (Target
+// Identification / Callsign, FRN 10), per ICD v2.1.0. FRN 10 sits in the
+// second FSPEC octet, which is already present in every record (additive,
+// non-breaking). The callsign "DLH123" is packed as 8x6-bit IA-5 codes
+// (D=4, L=12, H=8, '1'=49, '2'=50, '3'=51, space=32, space=32), matching
+// Firefly's encoder test `target_identification_packs_eight_six_bit_ia5_codes`.
+func TestDecodeCallsign(t *testing.T) {
+	data := []byte{
+		0x3E,       // CAT 62
+		0x00, 0x2F, // LEN = 47
+		0x9F, 0x2F, 0x01, 0x04, // FSPEC {1, 4, 5, 6, 7, 10, 12, 13, 14, 27}
+		0x19, 0x02, // I062/010 SAC/SIC
+		0x00, 0x06, 0x00, // I062/070 time
+		0x00, 0x80, 0x00, 0x00, // I062/105 latitude 45°
+		0x00, 0x20, 0x00, 0x00, // I062/105 longitude 11.25°
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // I062/100 X=0, Y=0
+		0x01, 0x90, // I062/185 Vx = 100 m/s
+		0xFF, 0x38, // I062/185 Vy = -50 m/s
+		0x00, 0x10, 0xC2, 0x31, 0xCB, 0x38, 0x20, // I062/245 "DLH123  "
+		0x00, 0x01, // I062/040 track number 1
+		0x00,       // I062/080 confirmed, fresh
+		0x40, 0x08, // I062/290 PSR age = 2 s
+		0x80, 0x00, 0xC8, 0x00, 0xC8, // I062/500 APC = 100 m (FRN 27)
+	}
+
+	tracks, err := DecodeDataBlock(data)
+	if err != nil {
+		t.Fatalf("DecodeDataBlock failed: %v", err)
+	}
+	if len(tracks) != 1 {
+		t.Fatalf("expected 1 track, got %d", len(tracks))
+	}
+
+	track := tracks[0]
+	if track.Callsign == nil {
+		t.Fatalf("Callsign mismatch: expected \"DLH123\", got nil")
+	}
+	if *track.Callsign != "DLH123" {
+		t.Errorf("Callsign mismatch: expected \"DLH123\", got %q", *track.Callsign)
+	}
+	// The other items must still decode correctly around the new one.
+	if track.TrackNum != 1 {
+		t.Errorf("TrackNum mismatch: expected 1, got %d", track.TrackNum)
+	}
+	if track.Accuracy.APC < 99.99 || track.Accuracy.APC > 100.01 {
+		t.Errorf("Accuracy.APC mismatch: expected ≈100.0, got %v", track.Accuracy.APC)
+	}
+}
