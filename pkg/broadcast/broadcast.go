@@ -9,10 +9,22 @@ import (
 	"github.com/manuelringwald/wayfinder/pkg/cat062"
 )
 
-// Message is sent to all WebSocket clients.
+// Message is sent to all WebSocket clients. It carries either a track update
+// (Tracks) or a feed-health update (FeedStatus, from the CAT065 heartbeat,
+// Firefly ADR 0018) — the two are routed separately by the frontend.
 type Message struct {
-	Tracks []TrackMessage `json:"tracks"`
-	TimeMs int64          `json:"time_ms"`
+	Tracks     []TrackMessage     `json:"tracks"`
+	TimeMs     int64              `json:"time_ms"`
+	FeedStatus *FeedStatusMessage `json:"feed_status,omitempty"`
+}
+
+// FeedStatusMessage carries the CAT065 feed-health state to the browser.
+type FeedStatusMessage struct {
+	// State is "ok" (heartbeat fresh), "stale" (heartbeat lost) or "unknown"
+	// (no heartbeat seen yet).
+	State string `json:"state"`
+	// ServiceID is the CAT065 I065/015 service identification, when known.
+	ServiceID uint8 `json:"service_id,omitempty"`
 }
 
 // TrackMessage represents a single track in JSON format.

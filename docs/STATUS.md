@@ -7,7 +7,32 @@
 > 🗺️ **Roadmap:** Arbeitspakete, Findings und empfohlene Reihenfolge stehen in
 > `docs/ROADMAP.md` (Stichwort „Roadmap" im Chat zeigt diese Liste).
 
-- **Zuletzt aktualisiert:** 2026-06-15 — Paket #2 „Observability-Grundgerüst"
+- **Zuletzt aktualisiert:** 2026-06-15 — **Paket #3 „CAT065 Heartbeat"
+  abgeschlossen (beide Seiten).** Wayfinder-Teil: neues Paket `pkg/cat065`
+  (Decoder für CAT065 SDPS-Status, byte-genau gegen Fireflys Referenz-Dump,
+  robust gegen Truncation/falsche Kategorie). Receiver dispatcht den
+  gemeinsamen Multicast-Strom am führenden **CAT-Oktett** (`0x3E` → Track,
+  `0x41` → Status, sonst Decode-Fehler) — neuer `dispatch`/`handleStatus`,
+  `StatusHandler` in der Config, Test `TestDispatchRoutesByCategory`. Neues
+  Paket `pkg/health` (`FeedHealth`): verfolgt Heartbeat-Ankunft, erkennt
+  Staleness (kein Heartbeat seit > `WAYFINDER_FEED_STALE_TIMEOUT`, Default 3 s),
+  `Observe` liefert nur Zustandswechsel. `main.go`: StatusHandler füttert
+  Health + Heartbeat-Zähler, Monitor-Goroutine erkennt Staleness ohne Verkehr,
+  `broadcastFeedStatus` pusht `feed_status`-WS-Nachricht (separater Pfad, leert
+  **nicht** das Lagebild). Frontend: Feed-Banner (grün/rot/grau,
+  `updateFeedBanner` in `app.js`, `#feed-status` in `index.html`). `/ready`
+  wird bei stale Feed **nicht ready** (nur wenn je Heartbeat gesehen); `/metrics`
+  um `wayfinder_cat065_heartbeats_received_total` + `wayfinder_feed_stale`
+  ergänzt. `Message.FeedStatus`/`FeedStatusMessage` im Broadcaster. Doku:
+  CLAUDE.md §2 (CAT065-Kurzfassung), Register FR-DATA-004/FR-OPS-004/NFR-OBS-003,
+  ROADMAP/STATUS. Architektur-Entscheidung (gleiche Multicast-Gruppe, Dispatch
+  am CAT-Oktett) vom Projektverantwortlichen bestätigt. **Firefly-Teil** (Sender:
+  `firefly-asterix::cat065`, `run_heartbeat`, ADR 0018, ICD 2.3.0) ebenfalls
+  fertig. Alle Gates grün (`go build/vet/test`, `gofmt`). Cross-Project-Issue
+  (`from-firefly`) zum CAT065-Vertrag wird erstellt + nach beidseitiger
+  Umsetzung geschlossen. Nächster Schritt: nächstes Roadmap-Paket nach
+  Abstimmung (z. B. #4 Konfigurierbarer System-Referenzpunkt).
+- **Vorherige Aktualisierung:** 2026-06-15 — Paket #2 „Observability-Grundgerüst"
   **abgeschlossen** mit Häppchen 2.3: gemeinsamer `/metrics`-Endpoint
   (Prometheus-Textformat). Wayfinder-Teil (NFR-OBS-002): neues Paket
   `pkg/metrics` (`Handler`/`Counter`/`Gauge`, hand-gerollte Prometheus-

@@ -56,8 +56,11 @@ Dies ist das Herzstück und der einzige Berührungspunkt mit Firefly. Wayfinder
 - **Transport:** UDP-Multicast. Default-Gruppe `239.255.0.62`, Port `8600`
   (Firefly-Env: `FIREFLY_CAT062_GROUP` / `FIREFLY_CAT062_PORT`). Multicast-TTL
   ist standardmäßig 1 (subnetz-lokal). Ein Datagramm = ein vollständiger
-  CAT062-Datenblock = ein Scan; **keine** zusätzliche Anwendungs-Rahmung (keine
-  Sequenznummern, keine Extra-Header).
+  ASTERIX-Datenblock **einer Kategorie**; **keine** zusätzliche Anwendungs-Rahmung
+  (keine Sequenznummern, keine Extra-Header). Seit ICD 2.3.0 (Fireflys ADR 0018)
+  trägt derselbe Strom **zwei Kategorien**: **CAT062** (Tracks, `0x3E`) und
+  **CAT065** (SDPS-Service-Status / Heartbeat, `0x41`). Wayfinder **dispatcht am
+  führenden CAT-Oktett** und überspringt unbekannte Kategorien (robuster Decoder).
 - **Update-Rate:** Keine feste, globale Periode — jeder Sensor hat seine eigene
   `scan_period` (typisch 4–12 s, ADR 0013 in Firefly). Datenblöcke treffen also
   in unregelmäßigem Takt ein, nicht in festen Intervallen.
@@ -102,6 +105,15 @@ Dies ist das Herzstück und der einzige Berührungspunkt mit Firefly. Wayfinder
   monoton steigenden Zeitstempel über Mitternacht hinweg ableiten; ein Sprung
   von nahe 86 400 s auf einen kleinen Wert ist ein normaler Tageswechsel,
   kein Datenfehler.
+- **CAT065 — SDPS-Heartbeat (ICD 2.3.0, ADR 0018):** Derselbe Strom trägt
+  periodisch (Default 1 s, wall-clock) eine **CAT065-SDPS-Status-Meldung**
+  (`0x41`): I065/010 (SAC/SIC), I065/000 (Message Type = 1), I065/015
+  (Service-ID), I065/030 (Time of Day, 1/128 s wie I062/070) und I065/040
+  (NOGO operationell/degradiert). Zweck: „leerer Himmel" von „totem Feed"
+  unterscheiden. Wayfinder erkennt **Staleness** (kein Heartbeat seit
+  > `WAYFINDER_FEED_STALE_TIMEOUT`), zeigt ein Feed-Banner, exponiert
+  `wayfinder_feed_stale`/`wayfinder_cat065_heartbeats_received_total` und lässt
+  `/ready` bei stale Feed **nicht ready** werden.
 - **Referenz-Spezifikation:** EUROCONTROL **SUR.ET1.ST05.2000-STD-09-01,
   Edition 1.10** ("CAT062 System Track Data") sowie die byte-genauen
   Encoder-Tests in Fireflys `firefly-asterix` (u.a.

@@ -210,6 +210,25 @@ function updateTrackHistory(tracks) {
 // updateTracksLayer converts a Message (see pkg/broadcast.Message) into
 // GeoJSON FeatureCollections and pushes them into the map sources: track
 // symbols/labels, their speed-vector lines, and their recent-position trails.
+// updateFeedBanner reflects the CAT065 feed-health state (Firefly ADR 0018)
+// in the top-right banner: green "FEED OK", red "FEED STALE" (heartbeat lost),
+// or grey "FEED ?" until the first heartbeat arrives.
+function updateFeedBanner(feedStatus) {
+  const el = document.getElementById("feed-status");
+  if (!el) {
+    return;
+  }
+  const state = feedStatus.state;
+  el.className = state;
+  if (state === "ok") {
+    el.textContent = "● FEED OK";
+  } else if (state === "stale") {
+    el.textContent = "▲ FEED STALE — kein Heartbeat";
+  } else {
+    el.textContent = "● FEED ?";
+  }
+}
+
 function updateTracksLayer(msg) {
   // Drop tracks flagged `ended` (CAT062 I062/080 TSE): this is their final
   // report, signalling deletion. Excluding them here makes the symbol, label
@@ -302,6 +321,13 @@ function connectWebSocket() {
   ws.addEventListener("message", (event) => {
     try {
       const msg = JSON.parse(event.data);
+      // Feed-health updates (CAT065 heartbeat) are separate from the track
+      // stream; route them to the banner and never through the track layer,
+      // so a heartbeat message doesn't clear the air picture.
+      if (msg.feed_status) {
+        updateFeedBanner(msg.feed_status);
+        return;
+      }
       if (state.mapLoaded) {
         updateTracksLayer(msg);
       } else {
