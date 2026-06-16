@@ -7,7 +7,22 @@
 > 🗺️ **Roadmap:** Arbeitspakete, Findings und empfohlene Reihenfolge stehen in
 > `docs/ROADMAP.md` (Stichwort „Roadmap" im Chat zeigt diese Liste).
 
-- **Zuletzt aktualisiert:** 2026-06-15 — **Paket #13 / ASD-003 „Aeronautical
+- **Zuletzt aktualisiert:** 2026-06-16 — **Paket #12 / ASD-001 „Erweiterter
+  Data Block" abgeschlossen.** Rein Frontend (`app.js`), kein Backend-Change.
+  **ASD-001a Ground Speed:** `buildLabel(track, vTrend)` erhält neue dritte
+  Zeile mit Bodengeschwindigkeit in Knoten (`Math.hypot(vx, vy) × 1.9438`,
+  gerundet, nur wenn > 0). **ASD-001b Steig-/Sinkflug-Indikator:**
+  `state.trackFlHistory: Map` speichert letzte bekannte FL pro Track;
+  `updateTracksLayer` berechnet FL-Delta, zeigt `▲` bei > +50 ft oder `▼`
+  bei < −50 ft gegenüber dem Vorgänger-Scan (Schwellwert 50 ft = 2 LSB,
+  filtert Mode-C-Quantisierungsrauschen). History wird parallel zu
+  `trackHistory` bereinigt (Einträge verschwundener Tracks gelöscht).
+  Alle vier Data-Block-Elemente gebündelt in `buildLabel`:
+  `DLH123 / FL350 ▲ / 247`. Anforderung FR-ASD-001 im Register.
+  Meilenstein `docs/milestones/ASD-001_Extended_Data_Block.md`. Gates grün
+  (`go test ./...`, `go vet ./...`, `node --check app.js`). S2 · Sonnet 4.6.
+  Nächster Schritt: nächstes Roadmap-Paket nach Abstimmung.
+- **Vorherige Aktualisierung:** 2026-06-15 — **Paket #13 / ASD-003 „Aeronautical
   Map Layer" abgeschlossen.** Vier Häppchen: **3a Radar Dark Mode** —
   `WAYFINDER_MAP_THEME` (`dark`|`osm`, Default dark), `darkMapStyle` (CARTO
   `dark_nolabels`, key-frei), `mapConfigHandler` liefert Style + `theme`;

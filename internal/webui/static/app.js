@@ -74,6 +74,9 @@ const state = {
   pendingTracks: null,
   // Per-track history of past positions ([lon, lat]), for the trail display.
   trackHistory: new Map(),
+  // Per-track last-known flight level in feet, for the vertical-tendency
+  // indicator (ASD-001b). Pruned in updateTracksLayer alongside trackHistory.
+  trackFlHistory: new Map(),
   // Active foreground palette, selected from the configured map theme.
   palette: PALETTES.dark,
 };
@@ -487,20 +490,28 @@ function vectorEndpoint(lat, lon, vx, vy) {
   return [lon + dLon, lat + dLat];
 }
 
-// buildLabel produces the track's data-block label: the callsign (I062/245),
-// or the track number if no callsign is known, and — when the track carries a
-// measured flight level (I062/136) — a second line "FLnnn" (flight level in
-// hundreds of feet, ASD convention).
-function buildLabel(track) {
+// buildLabel produces the track's ASD data-block label (ASD-001).
+//   Line 1: callsign (I062/245) or track number as fallback.
+//   Line 2: "FLnnn" (flight level, I062/136) + vertical-tendency indicator
+//            (▲ climbing / ▼ descending / empty for level), when FL is known.
+//   Line 3: ground speed in knots (from Vx/Vy, I062/185), when non-zero.
+// vTrend is "▲", "▼", or "" — computed by updateTracksLayer (ASD-001b).
+function buildLabel(track, vTrend) {
   const line1 =
     typeof track.callsign === "string" && track.callsign !== ""
       ? track.callsign
       : String(track.track_num);
+
+  // Ground speed: sqrt(Vx²+Vy²) m/s → kt (1 m/s ≈ 1.9438 kt).
+  const gs = Math.round(Math.hypot(track.vx, track.vy) * 1.9438);
+  const gsLine = gs > 0 ? `\n${gs}` : "";
+
   if (typeof track.flight_level_ft === "number") {
     const fl = Math.round(track.flight_level_ft / 100);
-    return `${line1}\nFL${String(fl).padStart(3, "0")}`;
+    const trend = vTrend ? ` ${vTrend}` : "";
+    return `${line1}\nFL${String(fl).padStart(3, "0")}${trend}${gsLine}`;
   }
-  return line1;
+  return `${line1}${gsLine}`;
 }
 
 // updateTrackHistory appends each track's current position to its trail
@@ -560,21 +571,44 @@ function updateTracksLayer(msg) {
 
   updateTrackHistory(tracks);
 
-  const features = tracks.map((track) => ({
-    type: "Feature",
-    geometry: {
-      type: "Point",
-      coordinates: [track.longitude, track.latitude],
-    },
-    properties: {
-      track_num: track.track_num,
-      confirmed: track.confirmed,
-      coasting: track.coasting,
-      vx: track.vx,
-      vy: track.vy,
-      label: buildLabel(track),
-    },
-  }));
+  // Prune FL history for tracks no longer present (mirrors updateTrackHistory).
+  const seenNums = new Set(tracks.map((t) => t.track_num));
+  for (const num of state.trackFlHistory.keys()) {
+    if (!seenNums.has(num)) {
+      state.trackFlHistory.delete(num);
+    }
+  }
+
+  const features = tracks.map((track) => {
+    // Vertical-tendency indicator (ASD-001b): compare current FL to the last
+    // known FL for this track. Threshold 50 ft (2 LSBs of I062/136 at 25 ft
+    // each) filters single-quantisation-step noise from Mode-C encoding.
+    let vTrend = "";
+    if (typeof track.flight_level_ft === "number") {
+      const prevFl = state.trackFlHistory.get(track.track_num);
+      if (typeof prevFl === "number") {
+        const delta = track.flight_level_ft - prevFl;
+        if (delta > 50) vTrend = "▲";
+        else if (delta < -50) vTrend = "▼";
+      }
+      state.trackFlHistory.set(track.track_num, track.flight_level_ft);
+    }
+    return {
+      type: "Feature",
+      geometry: {
+        type: "Point",
+        coordinates: [track.longitude, track.latitude],
+      },
+      properties: {
+        track_num: track.track_num,
+        confirmed: track.confirmed,
+        coasting: track.coasting,
+        vx: track.vx,
+        vy: track.vy,
+        label: buildLabel(track, vTrend),
+      },
+    };
+  });
 
   const vectorFeatures = tracks.map((track) => ({
     type: "Feature",
