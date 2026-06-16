@@ -6,7 +6,7 @@
 > Arbeit neue Findings/Pakete ergeben. **Stichwort „Roadmap" im Chat zeigt
 > diese Liste.**
 >
-> Stand: 2026-06-16 (Pakete #1–#3, #10–#15 abgeschlossen; Pakete #10–#20
+> Stand: 2026-06-16 (Pakete #1–#3, #10–#16 abgeschlossen; Pakete #10–#20
 > aus den Backlogs „Firefly SDPS Core Features" und „Wayfinder" übernommen).
 
 ## Empfohlene Reihenfolge
@@ -28,7 +28,7 @@
 | 13 | **ASD-003 — Aeronautical Map Layer** ✅ *abgeschlossen* | Wayfinder | "Radar Dark Mode"-Basistheme (3a), **Live-OpenAIP**-Backend (3b, ADR 0004), Luftraumstrukturen + Waypoints/VOR/NDB als schaltbare Layer (3c/3d). Setzt die Wayfinder-Seite von #9 (Live-OpenAIP) um. | **S4 · Opus 4.8** |
 | 14 | **ASD-004 — Track-Lebenszyklus & History-Darstellung** ✅ *abgeschlossen* | Wayfinder | History-Dots als diskreter Circle-Layer über der Trail-Linie (4a), Coasting-Abdunkeln auf allen Layern via MapLibre-Expressions (4b), Graceful Fade-Out (1,5 s) bei TSE via `fadingTracks`-Map + `setInterval`-Loop (4c); FR-ASD-004. | **S3 · Sonnet 4.6** |
 | 15 | **ASD-005 — Höhen- und Filter-Tools** ✅ *abgeschlossen* | Wayfinder | Min/Max-FL-Inputs + Ausblenden-Checkbox im Layer-Panel; `isFlFiltered`/`flOpacity`; sofortiger Re-Render via `setupFlFilter`; `fl_opacity`-Property in allen 5 Layer-Expressions (Prio: fade > FL > coasting > normal); FR-ASD-005. | **S2 · Sonnet 4.6** |
-| 16 | **ASD-002 — Anti-Garbling (Label-Vermeidung)** | Wayfinder | Algorithmus zur automatischen Label-Umpositionierung bei Überlappung (Leader Line); optional Drag&Drop | **S4 · Opus 4.8** |
+| 16 | **ASD-002 — Anti-Garbling (Label-Deconfliction + Drag&Drop)** ✅ *abgeschlossen* | Wayfinder | Greedy 8-Slot-Deconfliction (screen-space, deterministisch nach `track_num`); Leader Lines (0.7 px); `text-allow-overlap:true` — kein Label wird je versteckt. Drag&Drop-Pinning (`state.labelPins`), Doppelklick-Reset; Viewport-Nachführung via `requestAnimationFrame`-Throttle auf `map.on("move")`; FR-ASD-002. | **S4 · Opus 4.8** |
 | 17 | **SDPS-003 — Environment & Meteo Data Service** | Firefly | Zyklisches QNH für barometrische Höhenkorrektur (I062/136), statische DTM-Daten als Basis für Bodenannäherungswarnungen | **S3 · Sonnet 4.6** |
 | 18 | **SDPS-004 + ASD-006 — STCA (gekoppeltes Paar)** | Firefly + Wayfinder | **Firefly:** serverseitige Konflikterkennung im Tracker (Vorausschau, Staffelungsminima), setzt Alarm-Flag in CAT062 (I062/340), ICD-Bump. **Wayfinder:** ASD-006 reformuliert als reiner Flag-Konsum — Data Block blinkt rot, keine eigene Geometrie-Berechnung (kein doppelter Determinismus-Pfad). Abhängigkeit: Wayfinder-Teil erst nach Firefly-ICD-Update | **S4 · Opus 4.8** |
 | 19 | **SDPS-001 — FEP Sensor Ingestion** | Firefly | UDP-Receiver für ASTERIX CAT048/CAT001, dynamische Sensor-Konfiguration, Koordinatentransformation Polar→kartesisch; löst Simulator als Eingangsquelle ab | **S5 · Fable 5 / Opus 4.8** |
