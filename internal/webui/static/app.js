@@ -4,7 +4,6 @@
 
 const TRACKS_SOURCE_ID = "tracks";
 const TRACKS_LAYER_ID = "tracks-points";
-const TRACKS_LABEL_LAYER_ID = "tracks-labels";
 const VECTORS_SOURCE_ID = "track-vectors";
 const VECTORS_LAYER_ID = "track-vectors-lines";
 const TRAILS_SOURCE_ID = "track-trails";
@@ -43,6 +42,38 @@ const EARTH_RADIUS_M = 6371000;
 
 // ASD-004c: duration of the TSE graceful fade-out animation in milliseconds.
 const FADE_DURATION_MS = 1500;
+
+// ASD-002: Anti-Garbling — separate GeoJSON sources for deconflicted labels
+// and leader lines (lines from symbol to data-block anchor).
+const LABELS_SOURCE_ID = "track-labels";
+const LABELS_LAYER_ID = "track-labels-text";
+const LEADER_LINES_SOURCE_ID = "track-leader-lines";
+const LEADER_LINES_LAYER_ID = "track-leader-lines-lines";
+
+// ASD-002: Deconfliction geometry constants (all values in screen pixels).
+// LABEL_SLOT_RADIUS_PX : distance from symbol centre to label anchor candidate.
+// LABEL_W/H_PX         : conservative bounding box for a 3-line data block at text-size 11.
+// SYMBOL_BBOX_R_PX     : symbol footprint reserved so OTHER tracks' labels avoid this dot.
+// LEADER_THRESHOLD_PX  : minimum symbol→label distance before a leader line is drawn.
+const LABEL_SLOT_RADIUS_PX = 20;
+const LABEL_W_PX = 62;
+const LABEL_H_PX = 46;
+const SYMBOL_BBOX_R_PX = 8;
+const LEADER_THRESHOLD_PX = 10;
+
+// ASD-002: Eight candidate placement slots as normalised screen-space direction
+// vectors, ordered right-first following ATC scope convention. Each vector is
+// scaled by LABEL_SLOT_RADIUS_PX to get the candidate label centre in pixels.
+const LABEL_SLOTS = [
+  [ 1.2,  0.3],  // right (ATC default)
+  [ 0,    1.4],  // below
+  [-1.2,  0.3],  // left
+  [ 0,   -1.4],  // above
+  [ 1.2, -0.5],  // upper-right
+  [-1.2, -0.5],  // upper-left
+  [ 1.2,  1.0],  // lower-right
+  [-1.2,  1.0],  // lower-left
+];
 
 // Foreground palettes per base-map theme (ASD-003 Häppchen 3a). On the dark
 // "Radar Dark Mode" base, labels are light with a dark halo so they stay
@@ -100,6 +131,9 @@ const state = {
   // ASD-005: active FL filter. minFL/maxFL are in FL units (e.g. 100 = FL100);
   // null means no limit. hide=true makes filtered tracks invisible; false dims them.
   flFilter: { minFL: null, maxFL: null, hide: false },
+  // ASD-002 B2: per-track manual label-position overrides set by Drag&Drop.
+  // Map<track_num, {dx, dy}> in screen pixels relative to the symbol centre.
+  labelPins: new Map(),
   // Active foreground palette, selected from the configured map theme.
   palette: PALETTES.dark,
 };
@@ -127,11 +161,13 @@ async function main() {
     addNavaidLayers(map);
     addWaypointLayers(map);
     // Track layers from bottom to top: trail line → history dots → speed
-    // vectors → track symbols → labels.
+    // vectors → leader lines → track symbols → deconflicted labels (ASD-002).
     addTrailsLayer(map);
     addHistoryDotsLayer(map);
     addVectorsLayer(map);
+    addLeaderLinesLayer(map); // ASD-002: under track circles
     addTracksLayer(map);
+    addLabelsLayer(map);      // ASD-002: above track circles
     state.mapLoaded = true;
     if (state.pendingTracks) {
       updateTracksLayer(state.pendingTracks);
@@ -144,6 +180,19 @@ async function main() {
 
     setupLayerControl(map);
     setupFlFilter();
+    setupLabelDrag(map); // ASD-002 B2: Drag&Drop label pinning
+
+    // ASD-002: re-deconflict label positions whenever the viewport moves, so
+    // labels correctly track their symbols during pan and zoom. Throttled to
+    // one deconfliction per animation frame to avoid redundant work.
+    let deconflictFrame = null;
+    map.on("move", () => {
+      if (deconflictFrame) return;
+      deconflictFrame = requestAnimationFrame(() => {
+        deconflictFrame = null;
+        if (state.mapLoaded) renderSources();
+      });
+    });
   });
 
   connectWebSocket();
@@ -449,17 +498,54 @@ function addTracksLayer(map) {
     },
   });
 
+}
+
+// addLeaderLinesLayer registers the GeoJSON source and line layer for ASD-002
+// leader lines — thin lines from each track symbol to its deconflicted data-block
+// anchor. Registered before addTracksLayer so lines render behind the dots.
+function addLeaderLinesLayer(map) {
+  map.addSource(LEADER_LINES_SOURCE_ID, {
+    type: "geojson",
+    data: { type: "FeatureCollection", features: [] },
+  });
   map.addLayer({
-    id: TRACKS_LABEL_LAYER_ID,
+    id: LEADER_LINES_LAYER_ID,
+    type: "line",
+    source: LEADER_LINES_SOURCE_ID,
+    paint: {
+      "line-color": state.palette.label,
+      "line-width": 0.7,
+      "line-opacity": [
+        "case",
+        ["has", "fade_opacity"], ["get", "fade_opacity"],
+        ["has", "fl_opacity"],   ["get", "fl_opacity"],
+        ["get", "coasting"], 0.3,
+        0.55,
+      ],
+    },
+  });
+}
+
+// addLabelsLayer registers the GeoJSON source and symbol layer for ASD-002
+// deconflicted data-block labels. Label geo positions are computed in screen
+// space by deconflictLabels() and pushed here on every render. Setting
+// text-allow-overlap:true means MapLibre's placement engine never hides a
+// label — our deconfliction engine is solely responsible for placement quality.
+function addLabelsLayer(map) {
+  map.addSource(LABELS_SOURCE_ID, {
+    type: "geojson",
+    data: { type: "FeatureCollection", features: [] },
+  });
+  map.addLayer({
+    id: LABELS_LAYER_ID,
     type: "symbol",
-    source: TRACKS_SOURCE_ID,
+    source: LABELS_SOURCE_ID,
     layout: {
-      // Precomputed multi-line label: callsign/track-num, FL+tendency, ground
-      // speed (ASD-001). See buildLabel in updateTracksLayer.
       "text-field": ["get", "label"],
       "text-size": 11,
-      "text-offset": [0, 1.2],
-      "text-anchor": "top",
+      "text-anchor": "center",
+      "text-allow-overlap": true,
+      "text-ignore-placement": true,
     },
     paint: {
       "text-color": state.palette.label,
@@ -473,6 +559,210 @@ function addTracksLayer(map) {
         1.0,
       ],
     },
+  });
+}
+
+// bboxCollides returns true when bbox overlaps any rectangle in occupied.
+function bboxCollides(occupied, bbox) {
+  for (const o of occupied) {
+    if (bbox.x1 < o.x2 && bbox.x2 > o.x1 && bbox.y1 < o.y2 && bbox.y2 > o.y1) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// deconflictLabels computes deconflicted screen-space positions for all track
+// data-block labels (ASD-002 B1) and returns GeoJSON features for both the
+// labels and their leader lines.
+//
+// Algorithm — greedy in track_num order (deterministic):
+//   For each track, try LABEL_SLOTS in order and pick the first slot whose
+//   bounding box does not overlap already-placed labels or OTHER tracks' symbols.
+//   The current track's own symbol is intentionally excluded from the collision
+//   check so a label can sit right next to its dot — the leader line makes the
+//   symbol↔block association explicit. If all 8 slots collide, slot 0 is used
+//   as a guaranteed fallback: no label is ever hidden.
+//
+// Manual pins from state.labelPins (ASD-002 B2) override auto-placement.
+function deconflictLabels(allTrackFeatures) {
+  const map = state.map;
+  const symbolOccupied = []; // circle footprints of already-processed tracks
+  const labelOccupied = [];  // bounding boxes of already-placed labels
+
+  const sorted = [...allTrackFeatures].sort(
+    (a, b) => a.properties.track_num - b.properties.track_num,
+  );
+
+  const labelFeatures = [];
+  const leaderLineFeatures = [];
+
+  for (const feature of sorted) {
+    const [lon, lat] = feature.geometry.coordinates;
+    const trackNum = feature.properties.track_num;
+    const sym = map.project([lon, lat]);
+
+    let lx, ly;
+
+    if (state.labelPins.has(trackNum)) {
+      // B2: manual pin overrides auto-placement.
+      const pin = state.labelPins.get(trackNum);
+      lx = sym.x + pin.dx;
+      ly = sym.y + pin.dy;
+    } else {
+      // B1: greedy slot search, excluding own symbol from collision set.
+      lx = null;
+      for (const [ux, uy] of LABEL_SLOTS) {
+        const cx = sym.x + ux * LABEL_SLOT_RADIUS_PX;
+        const cy = sym.y + uy * LABEL_SLOT_RADIUS_PX;
+        const bbox = {
+          x1: cx - LABEL_W_PX / 2,
+          y1: cy - LABEL_H_PX / 2,
+          x2: cx + LABEL_W_PX / 2,
+          y2: cy + LABEL_H_PX / 2,
+        };
+        if (!bboxCollides(symbolOccupied, bbox) && !bboxCollides(labelOccupied, bbox)) {
+          lx = cx;
+          ly = cy;
+          break;
+        }
+      }
+      // Fallback: slot 0, even if colliding — a label is never suppressed.
+      if (lx === null) {
+        lx = sym.x + LABEL_SLOTS[0][0] * LABEL_SLOT_RADIUS_PX;
+        ly = sym.y + LABEL_SLOTS[0][1] * LABEL_SLOT_RADIUS_PX;
+      }
+    }
+
+    // Register this track's symbol and placed label for subsequent iterations.
+    symbolOccupied.push({
+      x1: sym.x - SYMBOL_BBOX_R_PX,
+      y1: sym.y - SYMBOL_BBOX_R_PX,
+      x2: sym.x + SYMBOL_BBOX_R_PX,
+      y2: sym.y + SYMBOL_BBOX_R_PX,
+    });
+    labelOccupied.push({
+      x1: lx - LABEL_W_PX / 2,
+      y1: ly - LABEL_H_PX / 2,
+      x2: lx + LABEL_W_PX / 2,
+      y2: ly + LABEL_H_PX / 2,
+    });
+
+    const labelLngLat = map.unproject([lx, ly]);
+
+    // Carry opacity side-car properties so label paint expressions work.
+    const opProps = {};
+    if (feature.properties.fade_opacity !== undefined) opProps.fade_opacity = feature.properties.fade_opacity;
+    if (feature.properties.fl_opacity !== undefined) opProps.fl_opacity = feature.properties.fl_opacity;
+
+    labelFeatures.push({
+      type: "Feature",
+      geometry: { type: "Point", coordinates: [labelLngLat.lng, labelLngLat.lat] },
+      properties: {
+        track_num: trackNum,
+        label: feature.properties.label,
+        coasting: feature.properties.coasting,
+        ...opProps,
+      },
+    });
+
+    // Leader line: always drawn when label is offset from its symbol, to make
+    // the symbol↔block association unambiguous in dense traffic (ATC convention).
+    if (Math.hypot(lx - sym.x, ly - sym.y) > LEADER_THRESHOLD_PX) {
+      leaderLineFeatures.push({
+        type: "Feature",
+        geometry: {
+          type: "LineString",
+          coordinates: [
+            [lon, lat],
+            [labelLngLat.lng, labelLngLat.lat],
+          ],
+        },
+        properties: {
+          track_num: trackNum,
+          coasting: feature.properties.coasting,
+          ...opProps,
+        },
+      });
+    }
+  }
+
+  return { labelFeatures, leaderLineFeatures };
+}
+
+// setupLabelDrag wires ASD-002 B2 Drag&Drop label pinning.
+//   mousedown on a label → disable map pan, begin drag
+//   mousemove            → update state.labelPins and re-render in real time
+//   mouseup              → commit pin, re-enable map pan
+//   dblclick on label    → delete pin, revert to auto-deconflicted placement
+function setupLabelDrag(map) {
+  let drag = null;
+
+  map.on("mouseenter", LABELS_LAYER_ID, () => {
+    if (!drag) map.getCanvas().style.cursor = "move";
+  });
+  map.on("mouseleave", LABELS_LAYER_ID, () => {
+    if (!drag) map.getCanvas().style.cursor = "";
+  });
+
+  map.on("mousedown", LABELS_LAYER_ID, (e) => {
+    e.preventDefault();
+    const feat = (map.queryRenderedFeatures(e.point, { layers: [LABELS_LAYER_ID] }) || [])[0];
+    if (!feat) return;
+    const trackNum = feat.properties.track_num;
+
+    // Find the track's SYMBOL position (geo), not the label's position.
+    const trackFeature =
+      state.liveTrackFeatures.find((f) => f.properties.track_num === trackNum) ||
+      (() => {
+        const fd = state.fadingTracks.get(trackNum);
+        return fd ? { geometry: { coordinates: [fd.track.longitude, fd.track.latitude] } } : null;
+      })();
+    if (!trackFeature) return;
+
+    const [lon, lat] = trackFeature.geometry.coordinates;
+    const sym = map.project([lon, lat]);
+
+    // If already pinned, use existing offset as the drag start point.
+    const currentPin = state.labelPins.get(trackNum) ?? {
+      dx: e.point.x - sym.x,
+      dy: e.point.y - sym.y,
+    };
+
+    drag = {
+      trackNum,
+      sym,
+      startMouse: { x: e.point.x, y: e.point.y },
+      startPin: currentPin,
+    };
+    map.dragPan.disable();
+
+    const onMove = (moveE) => {
+      const dx = drag.startPin.dx + (moveE.point.x - drag.startMouse.x);
+      const dy = drag.startPin.dy + (moveE.point.y - drag.startMouse.y);
+      state.labelPins.set(drag.trackNum, { dx, dy });
+      renderSources();
+    };
+
+    const onUp = () => {
+      drag = null;
+      map.dragPan.enable();
+      map.getCanvas().style.cursor = "";
+      map.off("mousemove", onMove);
+      map.off("mouseup", onUp);
+    };
+
+    map.on("mousemove", onMove);
+    map.on("mouseup", onUp);
+  });
+
+  // Double-click clears the pin and returns the label to auto-placement.
+  map.on("dblclick", LABELS_LAYER_ID, (e) => {
+    e.preventDefault();
+    const feat = (map.queryRenderedFeatures(e.point, { layers: [LABELS_LAYER_ID] }) || [])[0];
+    if (!feat) return;
+    state.labelPins.delete(feat.properties.track_num);
+    renderSources();
   });
 }
 
@@ -919,6 +1209,22 @@ function renderSources() {
     type: "FeatureCollection",
     features: trailFeatures,
   });
+
+  // ASD-002: deconflict label positions in screen space and push to the
+  // dedicated label + leader-line sources. Labels never disappear — the
+  // greedy algorithm always places every label in the least-colliding slot.
+  const { labelFeatures, leaderLineFeatures } = deconflictLabels([
+    ...liveTrackFeatures,
+    ...fadingTrackFeatures,
+  ]);
+  state.map.getSource(LABELS_SOURCE_ID).setData({
+    type: "FeatureCollection",
+    features: labelFeatures,
+  });
+  state.map.getSource(LEADER_LINES_SOURCE_ID).setData({
+    type: "FeatureCollection",
+    features: leaderLineFeatures,
+  });
 }
 
 // tickFade advances the TSE fade-out animation (ASD-004c). Runs every 50 ms
@@ -931,6 +1237,7 @@ function tickFade() {
       state.fadingTracks.delete(num);
       state.trackHistory.delete(num);
       state.trackCoasting.delete(num);
+      state.labelPins.delete(num); // ASD-002: drop pin for expired track
     }
   }
 

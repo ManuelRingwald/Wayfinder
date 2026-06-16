@@ -7,7 +7,29 @@
 > 🗺️ **Roadmap:** Arbeitspakete, Findings und empfohlene Reihenfolge stehen in
 > `docs/ROADMAP.md` (Stichwort „Roadmap" im Chat zeigt diese Liste).
 
-- **Zuletzt aktualisiert:** 2026-06-16 — **Paket #15 / ASD-005 „Höhen- und
+- **Zuletzt aktualisiert:** 2026-06-16 — **Paket #16 / ASD-002 „Anti-Garbling
+  (Label-Deconfliction + Drag&Drop)" abgeschlossen.** Rein Frontend (`app.js`),
+  kein Backend- oder ICD-Change. **B1 Auto-Deconfliction:** `deconflictLabels()`
+  berechnet in Screen-Space für jeden Track (deterministisch nach `track_num`) die
+  optimale Label-Position per greedy 8-Slot-Algorithmus (Slots rechts-priorisiert,
+  ATC-konform); Kollision gegen BBoxen bereits platzierter Labels und anderer
+  Tracks' Kreis-Footprints geprüft; eigenes Symbol absichtlich ausgeschlossen damit
+  Label neben seinem Punkt sitzen kann; Fallback auf Slot 0 — kein Label verschwindet
+  je. Labels in neuer `LABELS_SOURCE_ID` (`text-allow-overlap:true`,
+  `text-ignore-placement:true`). Leader Lines (`LEADER_LINES_SOURCE_ID`, 0.7 px,
+  label-farbig) wenn Abstand > 10 px. Viewport-Nachführung via
+  `requestAnimationFrame`-Throttle auf `map.on("move")`. Alle Opacity-Properties
+  (`fade_opacity`, `fl_opacity`, `coasting`) aus Track-Features durchgereicht.
+  `TRACKS_LABEL_LAYER_ID` aus `addTracksLayer()` entfernt; neue Funktionen:
+  `addLeaderLinesLayer`, `addLabelsLayer`, `bboxCollides`, `deconflictLabels`.
+  **B2 Drag&Drop-Pinning:** `setupLabelDrag()` — `mousedown` auf Label →
+  `map.dragPan.disable()` + Offset in `state.labelPins`; `mousemove` → Live-Update
+  + `renderSources()`; `mouseup` → commit; `dblclick` → Pin löschen (Auto-Reset).
+  `tickFade()` räumt Pins für abgelaufene Tracks aus. FR-ASD-002 im Register.
+  Milestone `docs/milestones/ASD-002_Anti_Garbling.md`. `node --check app.js` ✅,
+  `go test ./...` ✅, `go vet ./...` ✅. S4 · Opus 4.8.
+  Nächster Schritt: nächstes Roadmap-Paket nach Abstimmung.
+- **Vorherige Aktualisierung:** 2026-06-16 — **Paket #15 / ASD-005 „Höhen- und
   Filter-Tools" abgeschlossen.** Frontend-only (`index.html` + `app.js`). Min/Max-FL
   Number-Inputs + Ausblenden-Checkbox in `#layer-control`. `isFlFiltered(flightLevelFt)`
   prüft ob bekannte FL außerhalb [minFL, maxFL] liegt (unbekannte FL = immer passiert).
