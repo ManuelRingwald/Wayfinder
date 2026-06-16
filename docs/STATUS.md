@@ -7,7 +7,27 @@
 > 🗺️ **Roadmap:** Arbeitspakete, Findings und empfohlene Reihenfolge stehen in
 > `docs/ROADMAP.md` (Stichwort „Roadmap" im Chat zeigt diese Liste).
 
-- **Zuletzt aktualisiert:** 2026-06-16 — **Paket #12 / ASD-001 „Erweiterter
+- **Zuletzt aktualisiert:** 2026-06-16 — **Paket #14 / ASD-004 „Track-Lebenszyklus
+  & History-Darstellung" abgeschlossen.** Rein Frontend (`app.js`), kein Backend-Change.
+  **ASD-004a History-Dots:** Neuer Source `track-history-dots` + `circle`-Layer
+  `track-history-dots-circles` (Radius 2 px, Trail-Farbe); rendert jeden
+  `state.trackHistory`-Eintrag als einzelnen Punkt zwischen Trail-Linie und
+  Speed-Vector — klassisches Radar-Instrument (Punktabstand = Geschwindigkeit,
+  Krümmung = Drehrate). **ASD-004b Coasting-Abdunkeln:** Alle fünf Track-Layer
+  erhalten datengesteuerte Opacity-`case`-Expressions: coasting → circle-opacity
+  0.5, text/vector-opacity 0.35, trail/dot-opacity 0.2; `state.trackCoasting:
+  Map<track_num, boolean>` führt den Zustand für Trail/Dot-Features mit.
+  **ASD-004c Graceful Fade-Out bei TSE:** TSE-Tracks landen in
+  `state.fadingTracks: Map<track_num, {deadline, track}>` statt sofort weggefiltert
+  zu werden; `renderSources()` mischt sie mit `fade_opacity`-Property (0–1) in alle
+  vier GeoJSON-Sources; `tickFade()` läuft per `setInterval` (~50 ms) und räumt
+  abgelaufene Tracks + ihre History auf. Paint-Expressions: `["has", "fade_opacity"]`
+  hat Vorrang vor Coasting-Dimming. `updateTrackHistory` lässt Fading-Track-
+  History stehen. Anforderung FR-ASD-004 im Register. Milestone
+  `docs/milestones/ASD-004_Track_Lifecycle_History.md`. Gates grün
+  (`go test ./...`, `go vet ./...`). S3 · Sonnet 4.6.
+  Nächster Schritt: nächstes Roadmap-Paket nach Abstimmung.
+- **Vorherige Aktualisierung:** 2026-06-16 — **Paket #12 / ASD-001 „Erweiterter
   Data Block" abgeschlossen.** Rein Frontend (`app.js`), kein Backend-Change.
   **ASD-001a Ground Speed:** `buildLabel(track, vTrend)` erhält neue dritte
   Zeile mit Bodengeschwindigkeit in Knoten (`Math.hypot(vx, vy) × 1.9438`,
