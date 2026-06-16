@@ -139,15 +139,40 @@ wird aber selbst nicht gegen `symbolOccupied` oder `labelOccupied` geprüft.
 
 Bei TSE (Track-Ende) räumt `tickFade()` den Pin aus `labelPins` aus.
 
+## Nachtrag — Label-Sichtbarkeit (glyphs)
+
+Beim Rauchtest blieben **alle** Text-Labels unsichtbar (Track-Data-Blocks wie
+auch die Aero-Beschriftungen), während Kreise, Speed-Vektoren und Leader Lines
+korrekt zeichneten. Ursache war **nicht** die Deconfliction, sondern die
+Karten-Styles in `cmd/wayfinder/main.go`: beide eingebauten Styles (`darkMapStyle`,
+`defaultMapStyle`) hatten **keine `glyphs`-Quelle**. Ein MapLibre-`symbol`-Layer
+mit `text-field` rendert ohne Font-Endpoint **gar keinen** Text — `circle`- und
+`line`-Layer brauchen keine Glyphs und zeichneten deshalb normal.
+
+Fix:
+- `"glyphs": "https://fonts.openmaptiles.org/{fontstack}/{range}.pbf"` (keyless)
+  in beide Styles aufgenommen.
+- `"text-font": ["Open Sans Regular"]` explizit auf allen Symbol-Layern gesetzt
+  (Track-Labels + Aero), damit nicht der Default-Fallback `Arial Unicode MS`
+  greift, den der Endpoint nicht ausliefert.
+- Regressionstest in `main_test.go`: der eingebaute Style muss eine nicht-leere
+  `glyphs`-URL führen.
+
+Zudem werden die Labels jetzt direkt an ihrer deconflicteten **Geo-Position**
+platziert (Mercator-Näherung des Screen-Space-Offsets, identisch zum
+Leader-Line-Endpunkt) statt über eine datengetriebene `text-offset`-Property —
+letztere wurde von MapLibre GL JS v4 nicht angewendet.
+
 ## Schnittstellen-Wirkung
 
-Keine. Kein CAT062-ICD-Change, kein Backend-Change.
+Keine. Kein CAT062-ICD-Change. Der einzige Backend-Touch ist die `glyphs`-Zeile
+in den eingebauten Karten-Styles (kein Vertrags-/ICD-Bezug).
 
 ## Qualitäts-Gates
 
 - `node --check app.js` ✅ (Syntax)
-- `go test ./...` ✅ (unberührt — rein Frontend)
-- `go vet ./...` ✅
+- `go test ./...` ✅ (inkl. neuem glyphs-Regressionstest)
+- `go vet ./...` ✅ · `gofmt` ✅
 - FR-ASD-002 im Anforderungs-Register eingetragen ✅
 - Manueller Rauchtest: Frankfurt-Szene starten, Labels sichtbar, kein Garbling,
   Drag repositioniert, Doppelklick setzt zurück ✅ (zu verifizieren)
