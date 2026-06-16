@@ -51,10 +51,13 @@ const LEADER_LINES_SOURCE_ID = "track-leader-lines";
 const LEADER_LINES_LAYER_ID = "track-leader-lines-lines";
 
 // ASD-002: Deconfliction geometry constants (all values in screen pixels).
+// LABEL_TEXT_SIZE      : must match the "text-size" in addLabelsLayer — used to convert
+//                        pixel offsets to em units for the data-driven text-offset property.
 // LABEL_SLOT_RADIUS_PX : distance from symbol centre to label anchor candidate.
 // LABEL_W/H_PX         : conservative bounding box for a 3-line data block at text-size 11.
 // SYMBOL_BBOX_R_PX     : symbol footprint reserved so OTHER tracks' labels avoid this dot.
 // LEADER_THRESHOLD_PX  : minimum symbol→label distance before a leader line is drawn.
+const LABEL_TEXT_SIZE = 11;
 const LABEL_SLOT_RADIUS_PX = 20;
 const LABEL_W_PX = 62;
 const LABEL_H_PX = 46;
@@ -542,8 +545,13 @@ function addLabelsLayer(map) {
     source: LABELS_SOURCE_ID,
     layout: {
       "text-field": ["get", "label"],
-      "text-size": 11,
+      "text-size": LABEL_TEXT_SIZE,
       "text-anchor": "center",
+      // text-offset carries the per-feature deconflicted displacement in em units.
+      // Keeping labels at track geo-position and offsetting via this property avoids
+      // the round-trip map.project → deconflict → map.unproject, which can throw on
+      // some MapLibre GL JS v4 builds when called outside a render frame.
+      "text-offset": ["get", "text_offset"],
       "text-allow-overlap": true,
       "text-ignore-placement": true,
     },
@@ -585,6 +593,14 @@ function bboxCollides(occupied, bbox) {
 //   as a guaranteed fallback: no label is ever hidden.
 //
 // Manual pins from state.labelPins (ASD-002 B2) override auto-placement.
+//
+// Label positioning: labels are kept at the track's geo-position and the
+// screen-space pixel offset is converted to em units stored in the
+// "text_offset" property. MapLibre's "text-offset" layout property picks this
+// up data-driven (["get","text_offset"]). This avoids a map.unproject() call
+// in the hot path, which was found to produce silent errors in certain
+// MapLibre GL JS v4 build/camera combinations. Leader line end-points use a
+// Mercator approximation for the same reason.
 function deconflictLabels(allTrackFeatures) {
   const map = state.map;
   const symbolOccupied = []; // circle footprints of already-processed tracks
@@ -597,21 +613,31 @@ function deconflictLabels(allTrackFeatures) {
   const labelFeatures = [];
   const leaderLineFeatures = [];
 
+  // Mercator scale: pixels per geographic degree at this zoom level.
+  // Used to convert pixel offsets to lng/lat deltas for leader-line endpoints.
+  // Formula: pixelsPerDeg = (tileSize * 2^zoom) / 360 — valid for Web Mercator.
+  const zoom = map.getZoom();
+  const pixelsPerDeg = (256 * Math.pow(2, zoom)) / 360;
+
   for (const feature of sorted) {
     const [lon, lat] = feature.geometry.coordinates;
     const trackNum = feature.properties.track_num;
     const sym = map.project([lon, lat]);
 
-    let lx, ly;
+    // sym may be undefined / lack .x/.y for tracks outside the valid projection
+    // range. Skip the track rather than propagating NaN into GeoJSON features.
+    if (!sym || typeof sym.x !== "number" || isNaN(sym.x)) continue;
+
+    let dx, dy; // pixel offsets from symbol centre to label anchor
 
     if (state.labelPins.has(trackNum)) {
       // B2: manual pin overrides auto-placement.
       const pin = state.labelPins.get(trackNum);
-      lx = sym.x + pin.dx;
-      ly = sym.y + pin.dy;
+      dx = pin.dx;
+      dy = pin.dy;
     } else {
       // B1: greedy slot search, excluding own symbol from collision set.
-      lx = null;
+      dx = null;
       for (const [ux, uy] of LABEL_SLOTS) {
         const cx = sym.x + ux * LABEL_SLOT_RADIUS_PX;
         const cy = sym.y + uy * LABEL_SLOT_RADIUS_PX;
@@ -622,17 +648,20 @@ function deconflictLabels(allTrackFeatures) {
           y2: cy + LABEL_H_PX / 2,
         };
         if (!bboxCollides(symbolOccupied, bbox) && !bboxCollides(labelOccupied, bbox)) {
-          lx = cx;
-          ly = cy;
+          dx = ux * LABEL_SLOT_RADIUS_PX;
+          dy = uy * LABEL_SLOT_RADIUS_PX;
           break;
         }
       }
       // Fallback: slot 0, even if colliding — a label is never suppressed.
-      if (lx === null) {
-        lx = sym.x + LABEL_SLOTS[0][0] * LABEL_SLOT_RADIUS_PX;
-        ly = sym.y + LABEL_SLOTS[0][1] * LABEL_SLOT_RADIUS_PX;
+      if (dx === null) {
+        dx = LABEL_SLOTS[0][0] * LABEL_SLOT_RADIUS_PX;
+        dy = LABEL_SLOTS[0][1] * LABEL_SLOT_RADIUS_PX;
       }
     }
+
+    const lx = sym.x + dx;
+    const ly = sym.y + dy;
 
     // Register this track's symbol and placed label for subsequent iterations.
     symbolOccupied.push({
@@ -648,34 +677,45 @@ function deconflictLabels(allTrackFeatures) {
       y2: ly + LABEL_H_PX / 2,
     });
 
-    const labelLngLat = map.unproject([lx, ly]);
+    // Convert pixel offset to em units for the data-driven text-offset property.
+    // text-offset [x, y] values are multiples of text-size (= LABEL_TEXT_SIZE).
+    const textOffsetEm = [dx / LABEL_TEXT_SIZE, dy / LABEL_TEXT_SIZE];
 
     // Carry opacity side-car properties so label paint expressions work.
     const opProps = {};
     if (feature.properties.fade_opacity !== undefined) opProps.fade_opacity = feature.properties.fade_opacity;
     if (feature.properties.fl_opacity !== undefined) opProps.fl_opacity = feature.properties.fl_opacity;
 
+    // Labels are anchored at the TRACK geo-position; text-offset displaces the
+    // rendered text in screen space. This avoids a map.unproject() call and keeps
+    // the label precisely aligned regardless of floating-point projection edge cases.
     labelFeatures.push({
       type: "Feature",
-      geometry: { type: "Point", coordinates: [labelLngLat.lng, labelLngLat.lat] },
+      geometry: { type: "Point", coordinates: [lon, lat] },
       properties: {
         track_num: trackNum,
         label: feature.properties.label,
         coasting: feature.properties.coasting,
+        text_offset: textOffsetEm,
         ...opProps,
       },
     });
 
-    // Leader line: always drawn when label is offset from its symbol, to make
-    // the symbol↔block association unambiguous in dense traffic (ATC convention).
-    if (Math.hypot(lx - sym.x, ly - sym.y) > LEADER_THRESHOLD_PX) {
+    // Leader line: drawn when label is visibly offset from its symbol. End-point
+    // is computed via Mercator approximation (pixel → lon/lat delta), avoiding
+    // map.unproject(). At <30 px offset the error is sub-metre; imperceptible.
+    if (Math.hypot(dx, dy) > LEADER_THRESHOLD_PX) {
+      const latRad = lat * Math.PI / 180;
+      const labelLon = lon + dx / pixelsPerDeg;
+      // Mercator: dy_pixel → dlat uses cos(lat) scaling (north-up, y positive down).
+      const labelLat = lat - dy * Math.cos(latRad) / pixelsPerDeg;
       leaderLineFeatures.push({
         type: "Feature",
         geometry: {
           type: "LineString",
           coordinates: [
             [lon, lat],
-            [labelLngLat.lng, labelLngLat.lat],
+            [labelLon, labelLat],
           ],
         },
         properties: {
@@ -1213,18 +1253,20 @@ function renderSources() {
   // ASD-002: deconflict label positions in screen space and push to the
   // dedicated label + leader-line sources. Labels never disappear — the
   // greedy algorithm always places every label in the least-colliding slot.
-  const { labelFeatures, leaderLineFeatures } = deconflictLabels([
-    ...liveTrackFeatures,
-    ...fadingTrackFeatures,
-  ]);
-  state.map.getSource(LABELS_SOURCE_ID).setData({
-    type: "FeatureCollection",
-    features: labelFeatures,
-  });
-  state.map.getSource(LEADER_LINES_SOURCE_ID).setData({
-    type: "FeatureCollection",
-    features: leaderLineFeatures,
-  });
+  // Wrapped in try/catch: a deconfliction failure must never abort the rest
+  // of renderSources() (circles / vectors would disappear if it propagated).
+  try {
+    const { labelFeatures, leaderLineFeatures } = deconflictLabels([
+      ...liveTrackFeatures,
+      ...fadingTrackFeatures,
+    ]);
+    const labSrc = state.map.getSource(LABELS_SOURCE_ID);
+    const llSrc  = state.map.getSource(LEADER_LINES_SOURCE_ID);
+    if (labSrc) labSrc.setData({ type: "FeatureCollection", features: labelFeatures });
+    if (llSrc)  llSrc.setData({ type: "FeatureCollection", features: leaderLineFeatures });
+  } catch (err) {
+    console.error("[ASD-002] label deconfliction error:", err);
+  }
 }
 
 // tickFade advances the TSE fade-out animation (ASD-004c). Runs every 50 ms
