@@ -47,6 +47,11 @@ func TestMapConfigHandlerDefaultStyle(t *testing.T) {
 	if style["version"] != float64(8) {
 		t.Errorf("expected style version 8, got %v", style["version"])
 	}
+	// A glyphs endpoint is mandatory: a symbol layer with a text-field renders
+	// no text without one, which previously left all track/aero labels invisible.
+	if glyphs, ok := style["glyphs"].(string); !ok || glyphs == "" {
+		t.Errorf("expected non-empty glyphs URL in built-in style, got %v", style["glyphs"])
+	}
 }
 
 func TestMapConfigHandlerCustomStyleURL(t *testing.T) {

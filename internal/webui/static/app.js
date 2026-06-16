@@ -51,8 +51,7 @@ const LEADER_LINES_SOURCE_ID = "track-leader-lines";
 const LEADER_LINES_LAYER_ID = "track-leader-lines-lines";
 
 // ASD-002: Deconfliction geometry constants (all values in screen pixels).
-// LABEL_TEXT_SIZE      : must match the "text-size" in addLabelsLayer — used to convert
-//                        pixel offsets to em units for the data-driven text-offset property.
+// LABEL_TEXT_SIZE      : data-block text size; used as the symbol layer's "text-size".
 // LABEL_SLOT_RADIUS_PX : distance from symbol centre to label anchor candidate.
 // LABEL_W/H_PX         : conservative bounding box for a 3-line data block at text-size 11.
 // SYMBOL_BBOX_R_PX     : symbol footprint reserved so OTHER tracks' labels avoid this dot.
@@ -328,6 +327,7 @@ function addAirspaceLayers(map) {
     minzoom: 6,
     layout: {
       "text-field": ["coalesce", ["get", "name"], ""],
+      "text-font": ["Open Sans Regular"],
       "text-size": 10,
       "symbol-placement": "line",
     },
@@ -366,6 +366,7 @@ function addNavaidLayers(map) {
       "icon-size": 1,
       "icon-allow-overlap": true,
       "text-field": ["coalesce", ["get", "ident"], ["get", "name"], ""],
+      "text-font": ["Open Sans Regular"],
       "text-size": 10,
       "text-offset": [0, 1.1],
       "text-anchor": "top",
@@ -396,6 +397,7 @@ function addWaypointLayers(map) {
       "icon-size": 1,
       "icon-allow-overlap": false,
       "text-field": ["coalesce", ["get", "name"], ""],
+      "text-font": ["Open Sans Regular"],
       "text-size": 9,
       "text-offset": [0, 1.0],
       "text-anchor": "top",
@@ -545,13 +547,16 @@ function addLabelsLayer(map) {
     source: LABELS_SOURCE_ID,
     layout: {
       "text-field": ["get", "label"],
+      // Explicit font from the style's glyphs endpoint (fonts.openmaptiles.org).
+      // Without a glyphs source AND a served font, a symbol layer renders no text
+      // at all — which is exactly why labels were invisible while the circle and
+      // line layers (needing no glyphs) drew fine.
+      "text-font": ["Open Sans Regular"],
       "text-size": LABEL_TEXT_SIZE,
+      // The label point is placed at its deconflicted geo-position by
+      // deconflictLabels() (Mercator approximation of the screen-space offset),
+      // so the anchor is centred with no further offset.
       "text-anchor": "center",
-      // text-offset carries the per-feature deconflicted displacement in em units.
-      // Keeping labels at track geo-position and offsetting via this property avoids
-      // the round-trip map.project → deconflict → map.unproject, which can throw on
-      // some MapLibre GL JS v4 builds when called outside a render frame.
-      "text-offset": ["get", "text_offset"],
       "text-allow-overlap": true,
       "text-ignore-placement": true,
     },
@@ -677,38 +682,38 @@ function deconflictLabels(allTrackFeatures) {
       y2: ly + LABEL_H_PX / 2,
     });
 
-    // Convert pixel offset to em units for the data-driven text-offset property.
-    // text-offset [x, y] values are multiples of text-size (= LABEL_TEXT_SIZE).
-    const textOffsetEm = [dx / LABEL_TEXT_SIZE, dy / LABEL_TEXT_SIZE];
+    // Convert the screen-space pixel offset (dx, dy) to a geo-position via a
+    // Web-Mercator approximation, then place the label point THERE. This keeps
+    // the label at a normal centred anchor (which renders reliably) instead of
+    // relying on a data-driven text-offset, which MapLibre GL JS v4 did not
+    // apply (labels stayed invisible while leader lines drew). The same
+    // labelLon/labelLat is reused as the leader-line endpoint, so symbol,
+    // line and block stay perfectly consistent. Error at <30 px offset is
+    // sub-metre — imperceptible at ASD zoom levels.
+    const latRad = lat * Math.PI / 180;
+    const labelLon = lon + dx / pixelsPerDeg;
+    // Mercator: dy_pixel → dlat uses cos(lat) scaling (north-up, y positive down).
+    const labelLat = lat - dy * Math.cos(latRad) / pixelsPerDeg;
 
     // Carry opacity side-car properties so label paint expressions work.
     const opProps = {};
     if (feature.properties.fade_opacity !== undefined) opProps.fade_opacity = feature.properties.fade_opacity;
     if (feature.properties.fl_opacity !== undefined) opProps.fl_opacity = feature.properties.fl_opacity;
 
-    // Labels are anchored at the TRACK geo-position; text-offset displaces the
-    // rendered text in screen space. This avoids a map.unproject() call and keeps
-    // the label precisely aligned regardless of floating-point projection edge cases.
     labelFeatures.push({
       type: "Feature",
-      geometry: { type: "Point", coordinates: [lon, lat] },
+      geometry: { type: "Point", coordinates: [labelLon, labelLat] },
       properties: {
         track_num: trackNum,
         label: feature.properties.label,
         coasting: feature.properties.coasting,
-        text_offset: textOffsetEm,
         ...opProps,
       },
     });
 
-    // Leader line: drawn when label is visibly offset from its symbol. End-point
-    // is computed via Mercator approximation (pixel → lon/lat delta), avoiding
-    // map.unproject(). At <30 px offset the error is sub-metre; imperceptible.
+    // Leader line: drawn when label is visibly offset from its symbol, to make
+    // the symbol↔block association unambiguous in dense traffic (ATC convention).
     if (Math.hypot(dx, dy) > LEADER_THRESHOLD_PX) {
-      const latRad = lat * Math.PI / 180;
-      const labelLon = lon + dx / pixelsPerDeg;
-      // Mercator: dy_pixel → dlat uses cos(lat) scaling (north-up, y positive down).
-      const labelLat = lat - dy * Math.cos(latRad) / pixelsPerDeg;
       leaderLineFeatures.push({
         type: "Feature",
         geometry: {

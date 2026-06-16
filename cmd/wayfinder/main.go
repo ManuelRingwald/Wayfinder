@@ -274,9 +274,13 @@ type Config struct {
 }
 
 // defaultMapStyle is a minimal MapLibre style using OpenStreetMap raster
-// tiles. It needs no API key, which keeps the demo self-contained.
+// tiles. It needs no API key, which keeps the demo self-contained. The "glyphs"
+// endpoint (keyless fonts.openmaptiles.org) is required for any text to render:
+// a symbol layer with a text-field draws nothing without a font source. For a
+// fully air-gapped deployment, self-host glyphs and tiles via WAYFINDER_MAP_STYLE_URL.
 const defaultMapStyle = `{
 	"version": 8,
+	"glyphs": "https://fonts.openmaptiles.org/{fontstack}/{range}.pbf",
 	"sources": {
 		"osm": {
 			"type": "raster",
@@ -295,6 +299,7 @@ const defaultMapStyle = `{
 // radar scope does. ASD-003 Häppchen 3a.
 const darkMapStyle = `{
 	"version": 8,
+	"glyphs": "https://fonts.openmaptiles.org/{fontstack}/{range}.pbf",
 	"sources": {
 		"carto-dark": {
 			"type": "raster",
