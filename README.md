@@ -133,4 +133,4 @@ stehen in [DOCKER.md](DOCKER.md).
 
 ## Lizenz
 
-MIT
+Apache-2.0
