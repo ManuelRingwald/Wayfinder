@@ -93,8 +93,13 @@ const state = {
   fadeInterval: null,
   // Precomputed GeoJSON features for the current live-track frame; reused by
   // renderSources() on each fade-loop tick to avoid redundant computation.
+  // flight_level_ft is stored alongside so renderSources() can re-evaluate
+  // the FL filter whenever the user moves the slider (ASD-005).
   liveTrackFeatures: [],
   liveVectorFeatures: [],
+  // ASD-005: active FL filter. minFL/maxFL are in FL units (e.g. 100 = FL100);
+  // null means no limit. hide=true makes filtered tracks invisible; false dims them.
+  flFilter: { minFL: null, maxFL: null, hide: false },
   // Active foreground palette, selected from the configured map theme.
   palette: PALETTES.dark,
 };
@@ -138,6 +143,7 @@ async function main() {
     setInterval(() => loadAeronautical(map), AERO_REFRESH_MS);
 
     setupLayerControl(map);
+    setupFlFilter();
   });
 
   connectWebSocket();
@@ -423,6 +429,8 @@ function addTracksLayer(map) {
       "circle-radius": 5,
       "circle-color": [
         "case",
+        ["get", "filtered"],
+        "#455a64", // blue-grey: outside FL filter range (ASD-005)
         ["get", "coasting"],
         "#ff9800", // orange: coasting (no recent update)
         ["get", "confirmed"],
@@ -434,6 +442,7 @@ function addTracksLayer(map) {
       "circle-opacity": [
         "case",
         ["has", "fade_opacity"], ["get", "fade_opacity"],
+        ["has", "fl_opacity"],   ["get", "fl_opacity"],
         ["get", "coasting"], 0.5,
         1.0,
       ],
@@ -459,6 +468,7 @@ function addTracksLayer(map) {
       "text-opacity": [
         "case",
         ["has", "fade_opacity"], ["get", "fade_opacity"],
+        ["has", "fl_opacity"],   ["get", "fl_opacity"],
         ["get", "coasting"], 0.35,
         1.0,
       ],
@@ -486,6 +496,7 @@ function addTrailsLayer(map) {
       "line-opacity": [
         "case",
         ["has", "fade_opacity"], ["*", 0.6, ["get", "fade_opacity"]],
+        ["has", "fl_opacity"],   ["get", "fl_opacity"],
         ["get", "coasting"], 0.2,
         0.6,
       ],
@@ -514,6 +525,7 @@ function addHistoryDotsLayer(map) {
       "circle-opacity": [
         "case",
         ["has", "fade_opacity"], ["*", 0.6, ["get", "fade_opacity"]],
+        ["has", "fl_opacity"],   ["get", "fl_opacity"],
         ["get", "coasting"], 0.2,
         0.6,
       ],
@@ -542,6 +554,7 @@ function addVectorsLayer(map) {
       "line-opacity": [
         "case",
         ["has", "fade_opacity"], ["get", "fade_opacity"],
+        ["has", "fl_opacity"],   ["get", "fl_opacity"],
         ["get", "coasting"], 0.35,
         1.0,
       ],
@@ -588,6 +601,44 @@ function buildLabel(track, vTrend) {
     return `${line1}\nFL${String(fl).padStart(3, "0")}${trend}${gsLine}`;
   }
   return `${line1}${gsLine}`;
+}
+
+// isFlFiltered returns true when a known flight level falls outside the active
+// FL filter window (ASD-005). Tracks with unknown FL always pass through the
+// filter — hiding unknown-altitude traffic would be operationally unsafe.
+function isFlFiltered(flightLevelFt) {
+  if (typeof flightLevelFt !== "number") return false;
+  const fl = Math.round(flightLevelFt / 100);
+  const { minFL, maxFL } = state.flFilter;
+  if (minFL !== null && fl < minFL) return true;
+  if (maxFL !== null && fl > maxFL) return true;
+  return false;
+}
+
+// flOpacity returns the fl_opacity value to attach to a filtered feature, or
+// undefined when the feature passes the filter. hide=true → 0 (invisible);
+// hide=false → 0.15 (entsättigt / heavily dimmed).
+function flOpacity(flightLevelFt) {
+  if (!isFlFiltered(flightLevelFt)) return undefined;
+  return state.flFilter.hide ? 0.0 : 0.15;
+}
+
+// setupFlFilter wires the FL-filter panel (ASD-005) so slider/checkbox changes
+// immediately re-render all map sources without waiting for a new WSS update.
+function setupFlFilter() {
+  const minInput = document.getElementById("fl-min");
+  const maxInput = document.getElementById("fl-max");
+  const hideCheck = document.getElementById("fl-hide");
+  if (!minInput || !maxInput || !hideCheck) return;
+  const apply = () => {
+    state.flFilter.minFL = minInput.value !== "" ? parseInt(minInput.value, 10) : null;
+    state.flFilter.maxFL = maxInput.value !== "" ? parseInt(maxInput.value, 10) : null;
+    state.flFilter.hide = hideCheck.checked;
+    if (state.mapLoaded) renderSources();
+  };
+  minInput.addEventListener("input", apply);
+  maxInput.addEventListener("input", apply);
+  hideCheck.addEventListener("change", apply);
 }
 
 // updateTrackHistory appends each track's current position to its trail
@@ -702,6 +753,9 @@ function updateTracksLayer(msg) {
         vx: track.vx,
         vy: track.vy,
         label: buildLabel(track, vTrend),
+        // Stored so renderSources() can re-evaluate the FL filter on UI change
+        // (ASD-005) without waiting for a new WebSocket update.
+        flight_level_ft: typeof track.flight_level_ft === "number" ? track.flight_level_ft : null,
       },
     };
   });
@@ -738,24 +792,46 @@ function updateTracksLayer(msg) {
 function renderSources() {
   const now = Date.now();
 
+  // Live-track features: re-evaluate FL filter (ASD-005) each render call so
+  // a slider change takes effect immediately, not only on the next WSS update.
+  const liveTrackFeatures = state.liveTrackFeatures.map((f) => {
+    const flFt = f.properties.flight_level_ft;
+    const filtered = isFlFiltered(flFt);
+    const flOp = flOpacity(flFt);
+    const props = { ...f.properties, filtered };
+    if (flOp !== undefined) props.fl_opacity = flOp;
+    return { ...f, properties: props };
+  });
+
   // Fading-track features: same shape as live features but carry fade_opacity.
+  // FL filter is also applied so that a filtering track fades out invisibly.
   const fadingTrackFeatures = [];
   const fadingVectorFeatures = [];
   for (const [, { deadline, track }] of state.fadingTracks) {
     const fadeOpacity = Math.max(0, (deadline - now) / FADE_DURATION_MS);
+    const flOp = flOpacity(track.flight_level_ft);
+    const trackProps = {
+      track_num: track.track_num,
+      confirmed: track.confirmed,
+      coasting: track.coasting,
+      vx: track.vx,
+      vy: track.vy,
+      label: buildLabel(track, ""),
+      filtered: isFlFiltered(track.flight_level_ft),
+      fade_opacity: fadeOpacity,
+    };
+    if (flOp !== undefined) trackProps.fl_opacity = flOp;
     fadingTrackFeatures.push({
       type: "Feature",
       geometry: { type: "Point", coordinates: [track.longitude, track.latitude] },
-      properties: {
-        track_num: track.track_num,
-        confirmed: track.confirmed,
-        coasting: track.coasting,
-        vx: track.vx,
-        vy: track.vy,
-        label: buildLabel(track, ""),
-        fade_opacity: fadeOpacity,
-      },
+      properties: trackProps,
     });
+    const vecProps = {
+      track_num: track.track_num,
+      coasting: track.coasting,
+      fade_opacity: fadeOpacity,
+    };
+    if (flOp !== undefined) vecProps.fl_opacity = flOp;
     fadingVectorFeatures.push({
       type: "Feature",
       geometry: {
@@ -765,27 +841,32 @@ function renderSources() {
           vectorEndpoint(track.latitude, track.longitude, track.vx, track.vy),
         ],
       },
-      properties: {
-        track_num: track.track_num,
-        coasting: track.coasting,
-        fade_opacity: fadeOpacity,
-      },
+      properties: vecProps,
     });
   }
 
+  // Live vector features also need FL filter re-evaluation.
+  const liveVectorFeatures = state.liveVectorFeatures.map((f) => {
+    const flFt = state.trackFlHistory.get(f.properties.track_num);
+    const flOp = flOpacity(flFt);
+    if (flOp === undefined) return f;
+    return { ...f, properties: { ...f.properties, fl_opacity: flOp } };
+  });
+
   state.map.getSource(TRACKS_SOURCE_ID).setData({
     type: "FeatureCollection",
-    features: [...state.liveTrackFeatures, ...fadingTrackFeatures],
+    features: [...liveTrackFeatures, ...fadingTrackFeatures],
   });
 
   state.map.getSource(VECTORS_SOURCE_ID).setData({
     type: "FeatureCollection",
-    features: [...state.liveVectorFeatures, ...fadingVectorFeatures],
+    features: [...liveVectorFeatures, ...fadingVectorFeatures],
   });
 
   // History dots (ASD-004a): one Point per entry in trackHistory. The coasting
   // flag comes from trackCoasting (updated in updateTracksLayer). Fading tracks
   // keep their history alive and carry fade_opacity so dots fade with the track.
+  // ASD-005: fl_opacity is derived from the last known FL for this track.
   const dotsFeatures = [];
   for (const [trackNum, hist] of state.trackHistory) {
     const isCoasting = state.trackCoasting.get(trackNum) || false;
@@ -793,11 +874,12 @@ function renderSources() {
     const fadeOpacity = fadingEntry
       ? Math.max(0, (fadingEntry.deadline - now) / FADE_DURATION_MS)
       : undefined;
+    const flFt = state.trackFlHistory.get(trackNum);
+    const flOp = flOpacity(flFt);
     for (const coord of hist) {
       const props = { track_num: trackNum, coasting: isCoasting };
-      if (fadeOpacity !== undefined) {
-        props.fade_opacity = fadeOpacity;
-      }
+      if (fadeOpacity !== undefined) props.fade_opacity = fadeOpacity;
+      if (flOp !== undefined) props.fl_opacity = flOp;
       dotsFeatures.push({
         type: "Feature",
         geometry: { type: "Point", coordinates: coord },
@@ -811,17 +893,20 @@ function renderSources() {
     features: dotsFeatures,
   });
 
-  // Trails: one LineString per track, with coasting and fade_opacity for the
-  // same dimming/fading behaviour as the other layers.
+  // Trails: one LineString per track, with coasting, fade_opacity and fl_opacity
+  // for consistent dimming/fading/filtering across all layers (ASD-004/ASD-005).
   const trailFeatures = [];
   for (const [trackNum, hist] of state.trackHistory) {
     if (hist.length >= 2) {
       const isCoasting = state.trackCoasting.get(trackNum) || false;
       const fadingEntry = state.fadingTracks.get(trackNum);
+      const flFt = state.trackFlHistory.get(trackNum);
+      const flOp = flOpacity(flFt);
       const props = { track_num: trackNum, coasting: isCoasting };
       if (fadingEntry) {
         props.fade_opacity = Math.max(0, (fadingEntry.deadline - now) / FADE_DURATION_MS);
       }
+      if (flOp !== undefined) props.fl_opacity = flOp;
       trailFeatures.push({
         type: "Feature",
         geometry: { type: "LineString", coordinates: hist },

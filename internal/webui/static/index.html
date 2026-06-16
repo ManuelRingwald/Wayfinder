@@ -53,6 +53,26 @@
         display: block;
         cursor: pointer;
       }
+      /* ASD-005: FL-filter number inputs, styled to match the dark scope. */
+      .fl-inputs {
+        display: flex;
+        gap: 4px;
+        align-items: center;
+        margin-bottom: 4px;
+      }
+      .fl-inputs input[type="number"] {
+        width: 46px;
+        background: #1a2030;
+        color: #e8eef5;
+        border: 1px solid #3a4a60;
+        border-radius: 3px;
+        padding: 2px 4px;
+        font-size: 11px;
+        -moz-appearance: textfield;
+      }
+      .fl-inputs input[type="number"]::-webkit-outer-spin-button,
+      .fl-inputs input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; }
+      #layer-control hr { border: none; border-top: 1px solid rgba(255,255,255,0.15); margin: 6px 0; }
     </style>
   </head>
   <body>
@@ -63,6 +83,15 @@
       <label><input type="checkbox" id="toggle-airspace" checked /> Lufträume</label>
       <label><input type="checkbox" id="toggle-navaids" checked /> VOR/NDB</label>
       <label><input type="checkbox" id="toggle-waypoints" checked /> Waypoints</label>
+      <hr>
+      <div class="title">FL-Filter</div>
+      <div class="fl-inputs">
+        <input type="number" id="fl-min" placeholder="min" min="0" max="999" step="10">
+        <span>–</span>
+        <input type="number" id="fl-max" placeholder="max" min="0" max="999" step="10">
+        <span style="opacity:0.7">FL</span>
+      </div>
+      <label><input type="checkbox" id="fl-hide"> Ausblenden</label>
     </div>
     <script src="https://unpkg.com/maplibre-gl@4/dist/maplibre-gl.js"></script>
     <script src="app.js"></script>

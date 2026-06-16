@@ -7,7 +7,21 @@
 > 🗺️ **Roadmap:** Arbeitspakete, Findings und empfohlene Reihenfolge stehen in
 > `docs/ROADMAP.md` (Stichwort „Roadmap" im Chat zeigt diese Liste).
 
-- **Zuletzt aktualisiert:** 2026-06-16 — **Paket #14 / ASD-004 „Track-Lebenszyklus
+- **Zuletzt aktualisiert:** 2026-06-16 — **Paket #15 / ASD-005 „Höhen- und
+  Filter-Tools" abgeschlossen.** Frontend-only (`index.html` + `app.js`). Min/Max-FL
+  Number-Inputs + Ausblenden-Checkbox in `#layer-control`. `isFlFiltered(flightLevelFt)`
+  prüft ob bekannte FL außerhalb [minFL, maxFL] liegt (unbekannte FL = immer passiert).
+  `flOpacity()` liefert 0.0 (hide) / 0.15 (dim) / undefined (nicht gefiltert).
+  `setupFlFilter()` verdrahtet die Inputs und ruft bei Änderung sofort `renderSources()`
+  auf — Filteränderungen wirken ohne WSS-Update. `flight_level_ft` nun in
+  `liveTrackFeatures`-Properties gespeichert. `fl_opacity`-Bedingung (`["has",
+  "fl_opacity"] → ["get", "fl_opacity"]`) in allen 5 Layer-Paint-Expressions
+  ergänzt (Priorität: fade_opacity > fl_opacity > coasting > normal).
+  `filtered: boolean` auf Track-Symbol-Features für circle-color-Expression
+  (blau-grau für gefilterte Tracks). Firefly-ROADMAP synchronisiert.
+  Anforderung FR-ASD-005 im Register. S2 · Sonnet 4.6.
+  Nächster Schritt: nächstes Roadmap-Paket nach Abstimmung.
+- **Vorherige Aktualisierung:** 2026-06-16 — **Paket #14 / ASD-004 „Track-Lebenszyklus
   & History-Darstellung" abgeschlossen.** Rein Frontend (`app.js`), kein Backend-Change.
   **ASD-004a History-Dots:** Neuer Source `track-history-dots` + `circle`-Layer
   `track-history-dots-circles` (Radius 2 px, Trail-Farbe); rendert jeden
