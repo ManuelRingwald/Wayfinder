@@ -244,6 +244,112 @@ func TestLoadConfigInvalidLogLevelFallsBackToDefault(t *testing.T) {
 	}
 }
 
+func TestMapConfigHandlerDarkThemeByDefault(t *testing.T) {
+	cfg := Config{MapTheme: mapThemeDark}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/map-config", nil)
+	rec := httptest.NewRecorder()
+	mapConfigHandler(cfg)(rec, req)
+
+	var body struct {
+		Theme string          `json:"theme"`
+		Style json.RawMessage `json:"style"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body.Theme != mapThemeDark {
+		t.Errorf("expected theme %q, got %q", mapThemeDark, body.Theme)
+	}
+
+	var style map[string]any
+	if err := json.Unmarshal(body.Style, &style); err != nil {
+		t.Fatalf("expected style object, got %s: %v", body.Style, err)
+	}
+	sources, ok := style["sources"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected sources object, got %v", style["sources"])
+	}
+	if _, ok := sources["carto-dark"]; !ok {
+		t.Errorf("expected dark theme to use the carto-dark source, got sources %v", sources)
+	}
+}
+
+func TestMapConfigHandlerOSMTheme(t *testing.T) {
+	cfg := Config{MapTheme: mapThemeOSM}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/map-config", nil)
+	rec := httptest.NewRecorder()
+	mapConfigHandler(cfg)(rec, req)
+
+	var body struct {
+		Theme string          `json:"theme"`
+		Style json.RawMessage `json:"style"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body.Theme != mapThemeOSM {
+		t.Errorf("expected theme %q, got %q", mapThemeOSM, body.Theme)
+	}
+
+	var style map[string]any
+	if err := json.Unmarshal(body.Style, &style); err != nil {
+		t.Fatalf("expected style object, got %s: %v", body.Style, err)
+	}
+	sources := style["sources"].(map[string]any)
+	if _, ok := sources["osm"]; !ok {
+		t.Errorf("expected osm theme to use the osm source, got sources %v", sources)
+	}
+}
+
+func TestMapConfigHandlerCustomStyleURLReportsTheme(t *testing.T) {
+	cfg := Config{MapStyleURL: "https://example.com/style.json", MapTheme: mapThemeDark}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/map-config", nil)
+	rec := httptest.NewRecorder()
+	mapConfigHandler(cfg)(rec, req)
+
+	var body struct {
+		Theme string `json:"theme"`
+		Style string `json:"style"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body.Style != cfg.MapStyleURL {
+		t.Errorf("expected custom style URL %q, got %q", cfg.MapStyleURL, body.Style)
+	}
+	if body.Theme != mapThemeDark {
+		t.Errorf("expected reported theme %q, got %q", mapThemeDark, body.Theme)
+	}
+}
+
+func TestLoadConfigMapTheme(t *testing.T) {
+	for _, tc := range []struct {
+		env  string
+		want string
+	}{
+		{"", mapThemeDark},         // default
+		{"dark", mapThemeDark},     //
+		{"osm", mapThemeOSM},       //
+		{"OSM", mapThemeOSM},       // case-insensitive
+		{"nonsense", mapThemeDark}, // invalid → default
+	} {
+		if tc.env == "" {
+			os.Unsetenv("WAYFINDER_MAP_THEME")
+		} else {
+			t.Setenv("WAYFINDER_MAP_THEME", tc.env)
+		}
+
+		cfg := loadConfig()
+
+		if cfg.MapTheme != tc.want {
+			t.Errorf("WAYFINDER_MAP_THEME=%q: expected theme %q, got %q", tc.env, tc.want, cfg.MapTheme)
+		}
+	}
+}
+
 func TestLoadConfigSecurityEnvVarsDefaultEmpty(t *testing.T) {
 	for _, key := range []string{"WAYFINDER_ALLOWED_ORIGINS", "WAYFINDER_AUTH_TOKEN", "WAYFINDER_TLS_CERT", "WAYFINDER_TLS_KEY"} {
 		os.Unsetenv(key)

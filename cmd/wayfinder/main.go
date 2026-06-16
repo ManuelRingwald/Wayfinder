@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/manuelringwald/wayfinder/internal/webui"
+	"github.com/manuelringwald/wayfinder/pkg/aeronautical"
 	"github.com/manuelringwald/wayfinder/pkg/broadcast"
 	"github.com/manuelringwald/wayfinder/pkg/cat062"
 	"github.com/manuelringwald/wayfinder/pkg/cat065"
@@ -48,6 +49,19 @@ func main() {
 
 	// Feed-health tracker (CAT065 heartbeat staleness, Firefly ADR 0018).
 	feedHealth := health.New(cfg.FeedStaleTimeout)
+
+	// Aeronautical layers (ASD-003, ADR 0004): best-effort OpenAIP overlays.
+	// Enabled only when an API key is configured; never affects the track path
+	// or readiness. The query window is a box around the configured map center.
+	aeroService := aeronautical.NewService(
+		aeronautical.NewClient(&http.Client{Timeout: 15 * time.Second}, cfg.OpenAIPBaseURL, cfg.OpenAIPAPIKey),
+		aeronautical.Config{
+			Enabled: cfg.OpenAIPAPIKey != "",
+			BBox:    aeronautical.BoundingBoxFromCenter(cfg.MapCenterLat, cfg.MapCenterLon, cfg.OpenAIPRadiusKM),
+			Refresh: cfg.OpenAIPRefresh,
+		},
+		logger,
+	)
 
 	// broadcastFeedStatus pushes the current feed-health state to the browser.
 	broadcastFeedStatus := func(status health.Status) {
@@ -163,8 +177,11 @@ func main() {
 		}
 	}()
 
+	// Start the aeronautical refresh loop (best-effort, ADR 0004).
+	go aeroService.Run(ctx)
+
 	// Start health/readiness/metrics probe server.
-	go startProbeServer(logger, &blockCount, &trackCount, &tracksCurrent, &heartbeatCount, broadcaster, recv, feedHealth, &lastError)
+	go startProbeServer(logger, &blockCount, &trackCount, &tracksCurrent, &heartbeatCount, broadcaster, recv, feedHealth, aeroService, &lastError)
 
 	// Start WebSocket server.
 	if cfg.AuthToken == "" {
@@ -186,6 +203,10 @@ func main() {
 	}
 	mux.Handle("/", frontend)
 	mux.HandleFunc("/api/map-config", mapConfigHandler(cfg))
+
+	// Aeronautical GeoJSON endpoints (/api/airspace, /api/navaids,
+	// /api/waypoints), served from the OpenAIP cache (ADR 0004).
+	aeroService.Register(mux)
 
 	handler := authMiddleware(cfg.AuthToken, mux)
 
@@ -229,6 +250,11 @@ type Config struct {
 	MapCenterLon   float64
 	MapZoom        float64
 	MapStyleURL    string
+	// MapTheme selects the built-in base map theme when no explicit
+	// MapStyleURL is configured: "dark" (Radar Dark Mode, the controller
+	// default) or "osm" (the bright OpenStreetMap raster). `WAYFINDER_MAP_THEME`,
+	// default "dark". An explicit MapStyleURL always overrides the theme.
+	MapTheme       string
 	AllowedOrigins []string
 	AuthToken      string
 	TLSCertFile    string
@@ -238,6 +264,13 @@ type Config struct {
 	// is considered stale (Firefly ADR 0018). `WAYFINDER_FEED_STALE_TIMEOUT`
 	// in seconds, default 3 s (~3× the 1 s heartbeat period).
 	FeedStaleTimeout time.Duration
+
+	// OpenAIP aeronautical layers (ASD-003, ADR 0004). The feature is enabled
+	// only when an API key is configured; otherwise the map shows no overlays.
+	OpenAIPAPIKey   string        // WAYFINDER_OPENAIP_API_KEY (secret)
+	OpenAIPBaseURL  string        // WAYFINDER_OPENAIP_BASE_URL (optional override)
+	OpenAIPRefresh  time.Duration // WAYFINDER_OPENAIP_REFRESH (Go duration, default 24h)
+	OpenAIPRadiusKM float64       // WAYFINDER_OPENAIP_RADIUS_KM (default 250)
 }
 
 // defaultMapStyle is a minimal MapLibre style using OpenStreetMap raster
@@ -255,6 +288,33 @@ const defaultMapStyle = `{
 	"layers": [{"id": "osm", "type": "raster", "source": "osm"}]
 }`
 
+// darkMapStyle is the "Radar Dark Mode" base: a low-contrast dark raster
+// (CARTO dark, no labels) on a dark background. Like OSM it needs no API key,
+// which keeps the demo self-contained. The dark, label-free base lets the
+// track symbols and aeronautical overlays dominate, the way a controller's
+// radar scope does. ASD-003 Häppchen 3a.
+const darkMapStyle = `{
+	"version": 8,
+	"sources": {
+		"carto-dark": {
+			"type": "raster",
+			"tiles": ["https://basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}.png"],
+			"tileSize": 256,
+			"attribution": "© OpenStreetMap contributors © CARTO"
+		}
+	},
+	"layers": [
+		{"id": "background", "type": "background", "paint": {"background-color": "#0b0f14"}},
+		{"id": "carto-dark", "type": "raster", "source": "carto-dark"}
+	]
+}`
+
+// mapThemeDark and mapThemeOSM are the recognised built-in theme names.
+const (
+	mapThemeDark = "dark"
+	mapThemeOSM  = "osm"
+)
+
 // loadConfig loads configuration from environment variables.
 func loadConfig() Config {
 	cfg := Config{
@@ -266,8 +326,11 @@ func loadConfig() Config {
 		MapCenterLon:     8.5622,
 		MapZoom:          8,
 		MapStyleURL:      "",
+		MapTheme:         mapThemeDark,
 		LogLevel:         slog.LevelInfo,
 		FeedStaleTimeout: 3 * time.Second,
+		OpenAIPRefresh:   24 * time.Hour,
+		OpenAIPRadiusKM:  250,
 	}
 
 	if cfg.MulticastGroup == "" {
@@ -306,6 +369,13 @@ func loadConfig() Config {
 
 	cfg.MapStyleURL = os.Getenv("WAYFINDER_MAP_STYLE_URL")
 
+	// Map theme: only the documented built-in names are accepted; anything else
+	// falls back to the default (FR-CFG-002: invalid config falls back rather
+	// than crashing).
+	if v := strings.ToLower(strings.TrimSpace(os.Getenv("WAYFINDER_MAP_THEME"))); v == mapThemeDark || v == mapThemeOSM {
+		cfg.MapTheme = v
+	}
+
 	if v := os.Getenv("WAYFINDER_ALLOWED_ORIGINS"); v != "" {
 		for _, origin := range strings.Split(v, ",") {
 			origin = strings.TrimSpace(origin)
@@ -328,6 +398,21 @@ func loadConfig() Config {
 	if v := os.Getenv("WAYFINDER_FEED_STALE_TIMEOUT"); v != "" {
 		if secs, err := strconv.ParseFloat(v, 64); err == nil && secs > 0 {
 			cfg.FeedStaleTimeout = time.Duration(secs * float64(time.Second))
+		}
+	}
+
+	cfg.OpenAIPAPIKey = os.Getenv("WAYFINDER_OPENAIP_API_KEY")
+	cfg.OpenAIPBaseURL = os.Getenv("WAYFINDER_OPENAIP_BASE_URL")
+
+	if v := os.Getenv("WAYFINDER_OPENAIP_REFRESH"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			cfg.OpenAIPRefresh = d
+		}
+	}
+
+	if v := os.Getenv("WAYFINDER_OPENAIP_RADIUS_KM"); v != "" {
+		if km, err := strconv.ParseFloat(v, 64); err == nil && km > 0 {
+			cfg.OpenAIPRadiusKM = km
 		}
 	}
 
@@ -373,12 +458,24 @@ func authMiddleware(token string, next http.Handler) http.Handler {
 	})
 }
 
-// mapConfigHandler serves the map center/zoom/style as JSON for the frontend.
+// mapConfigHandler serves the map center/zoom/style/theme as JSON for the
+// frontend. The style is chosen as follows: an explicit WAYFINDER_MAP_STYLE_URL
+// always wins; otherwise the built-in theme decides ("osm" → bright OSM raster,
+// "dark" → Radar Dark Mode). The reported `theme` lets the frontend pick a
+// matching foreground palette (light labels on the dark base, dark on OSM).
 func mapConfigHandler(cfg Config) http.HandlerFunc {
-	style := cfg.MapStyleURL
-	var styleValue any = style
-	if style == "" {
+	var styleValue any
+	theme := cfg.MapTheme
+	switch {
+	case cfg.MapStyleURL != "":
+		// A custom style is opaque to us; report the configured theme so the
+		// operator can still steer the palette via WAYFINDER_MAP_THEME.
+		styleValue = cfg.MapStyleURL
+	case cfg.MapTheme == mapThemeOSM:
 		styleValue = json.RawMessage(defaultMapStyle)
+	default:
+		styleValue = json.RawMessage(darkMapStyle)
+		theme = mapThemeDark
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -388,12 +485,13 @@ func mapConfigHandler(cfg Config) http.HandlerFunc {
 			"center_lon": cfg.MapCenterLon,
 			"zoom":       cfg.MapZoom,
 			"style":      styleValue,
+			"theme":      theme,
 		})
 	}
 }
 
 // startProbeServer starts an HTTP server for health, readiness and metrics.
-func startProbeServer(logger *slog.Logger, blockCount, trackCount, tracksCurrent, heartbeatCount *atomic.Int64, broadcaster *broadcast.Broadcaster, recv *receiver.Receiver, feedHealth *health.FeedHealth, lastError *atomic.Pointer[string]) {
+func startProbeServer(logger *slog.Logger, blockCount, trackCount, tracksCurrent, heartbeatCount *atomic.Int64, broadcaster *broadcast.Broadcaster, recv *receiver.Receiver, feedHealth *health.FeedHealth, aeroService *aeronautical.Service, lastError *atomic.Pointer[string]) {
 	mux := http.NewServeMux()
 
 	// /health — liveness check (always ready unless startup failed).
@@ -438,6 +536,9 @@ func startProbeServer(logger *slog.Logger, blockCount, trackCount, tracksCurrent
 			metrics.Counter("wayfinder_ws_clients_evicted_total", "Total number of WebSocket clients evicted due to a full send channel.", broadcaster.EvictedCount()),
 			metrics.Counter("wayfinder_cat065_heartbeats_received_total", "Total number of CAT065 SDPS-status heartbeats received.", heartbeatCount.Load()),
 			metrics.Gauge("wayfinder_feed_stale", "1 if the CAT065 heartbeat feed is currently stale, else 0.", feedStale),
+			metrics.Counter("wayfinder_openaip_fetch_success_total", "Total number of successful OpenAIP aeronautical fetches (per kind).", aeroService.FetchSuccessCount()),
+			metrics.Counter("wayfinder_openaip_fetch_failures_total", "Total number of failed OpenAIP aeronautical fetches (per kind).", aeroService.FetchFailureCount()),
+			metrics.Gauge("wayfinder_openaip_cache_age_seconds", "Seconds since the last successful OpenAIP fetch, or -1 if never.", aeroService.CacheAgeSeconds(time.Now())),
 		)(w, r)
 	})
 
