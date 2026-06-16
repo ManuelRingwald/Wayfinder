@@ -9,6 +9,9 @@ const VECTORS_SOURCE_ID = "track-vectors";
 const VECTORS_LAYER_ID = "track-vectors-lines";
 const TRAILS_SOURCE_ID = "track-trails";
 const TRAILS_LAYER_ID = "track-trails-lines";
+// ASD-004a: individual position-dot layer, rendered above the trail line.
+const HISTORY_DOTS_SOURCE_ID = "track-history-dots";
+const HISTORY_DOTS_LAYER_ID = "track-history-dots-circles";
 
 // Aeronautical overlay layers (ASD-003, fed by the OpenAIP backend via
 // /api/airspace, /api/navaids, /api/waypoints). They render beneath the track
@@ -37,6 +40,9 @@ const TRAIL_MAX_POINTS = 20;
 // Mean Earth radius (m), used for the local meters-to-degrees conversion of
 // the vector endpoint. Sufficient accuracy for display purposes.
 const EARTH_RADIUS_M = 6371000;
+
+// ASD-004c: duration of the TSE graceful fade-out animation in milliseconds.
+const FADE_DURATION_MS = 1500;
 
 // Foreground palettes per base-map theme (ASD-003 Häppchen 3a). On the dark
 // "Radar Dark Mode" base, labels are light with a dark halo so they stay
@@ -72,11 +78,28 @@ const state = {
   reconnectTimer: null,
   reconnectDelay: 2000,
   pendingTracks: null,
-  // Per-track history of past positions ([lon, lat]), for the trail display.
+  // Per-track history of past positions ([lon, lat]), for trail and dot display.
   trackHistory: new Map(),
   // Per-track last-known flight level in feet, for the vertical-tendency
-  // indicator (ASD-001b). Pruned in updateTracksLayer alongside trackHistory.
+  // indicator (ASD-001b).
   trackFlHistory: new Map(),
+  // ASD-004b: per-track coasting flag, needed by trail/dot features for the
+  // dimming paint expression (trackHistory doesn't carry track-level metadata).
+  trackCoasting: new Map(),
+  // ASD-004c: tracks fading out after TSE; Map<track_num, {deadline, track}>.
+  // History and coasting state are kept alive until the deadline expires.
+  fadingTracks: new Map(),
+  // setInterval handle for the fade-out animation loop (null when idle).
+  fadeInterval: null,
+  // Precomputed GeoJSON features for the current live-track frame; reused by
+  // renderSources() on each fade-loop tick to avoid redundant computation.
+  // flight_level_ft is stored alongside so renderSources() can re-evaluate
+  // the FL filter whenever the user moves the slider (ASD-005).
+  liveTrackFeatures: [],
+  liveVectorFeatures: [],
+  // ASD-005: active FL filter. minFL/maxFL are in FL units (e.g. 100 = FL100);
+  // null means no limit. hide=true makes filtered tracks invisible; false dims them.
+  flFilter: { minFL: null, maxFL: null, hide: false },
   // Active foreground palette, selected from the configured map theme.
   palette: PALETTES.dark,
 };
@@ -103,7 +126,10 @@ async function main() {
     addAirspaceLayers(map);
     addNavaidLayers(map);
     addWaypointLayers(map);
+    // Track layers from bottom to top: trail line → history dots → speed
+    // vectors → track symbols → labels.
     addTrailsLayer(map);
+    addHistoryDotsLayer(map);
     addVectorsLayer(map);
     addTracksLayer(map);
     state.mapLoaded = true;
@@ -117,6 +143,7 @@ async function main() {
     setInterval(() => loadAeronautical(map), AERO_REFRESH_MS);
 
     setupLayerControl(map);
+    setupFlFilter();
   });
 
   connectWebSocket();
@@ -386,6 +413,8 @@ function setupLayerControl(map) {
 // addTracksLayer registers a GeoJSON source and two layers for rendering
 // tracks: a coloured circle per track (status-dependent) and a text label
 // with the track number.
+// ASD-004b/4c: circle-opacity and text-opacity use data-driven expressions to
+// dim coasting tracks (status uncertain) and fade TSE tracks to transparency.
 function addTracksLayer(map) {
   map.addSource(TRACKS_SOURCE_ID, {
     type: "geojson",
@@ -400,6 +429,8 @@ function addTracksLayer(map) {
       "circle-radius": 5,
       "circle-color": [
         "case",
+        ["get", "filtered"],
+        "#455a64", // blue-grey: outside FL filter range (ASD-005)
         ["get", "coasting"],
         "#ff9800", // orange: coasting (no recent update)
         ["get", "confirmed"],
@@ -408,6 +439,13 @@ function addTracksLayer(map) {
       ],
       "circle-stroke-width": 1,
       "circle-stroke-color": state.palette.symbolStroke,
+      "circle-opacity": [
+        "case",
+        ["has", "fade_opacity"], ["get", "fade_opacity"],
+        ["has", "fl_opacity"],   ["get", "fl_opacity"],
+        ["get", "coasting"], 0.5,
+        1.0,
+      ],
     },
   });
 
@@ -416,8 +454,8 @@ function addTracksLayer(map) {
     type: "symbol",
     source: TRACKS_SOURCE_ID,
     layout: {
-      // Precomputed two-line label: track number, and flight level when known
-      // (ASD-style data block). See buildLabel in updateTracksLayer.
+      // Precomputed multi-line label: callsign/track-num, FL+tendency, ground
+      // speed (ASD-001). See buildLabel in updateTracksLayer.
       "text-field": ["get", "label"],
       "text-size": 11,
       "text-offset": [0, 1.2],
@@ -427,13 +465,21 @@ function addTracksLayer(map) {
       "text-color": state.palette.label,
       "text-halo-color": state.palette.labelHalo,
       "text-halo-width": 1,
+      "text-opacity": [
+        "case",
+        ["has", "fade_opacity"], ["get", "fade_opacity"],
+        ["has", "fl_opacity"],   ["get", "fl_opacity"],
+        ["get", "coasting"], 0.35,
+        1.0,
+      ],
     },
   });
 }
 
 // addTrailsLayer registers a GeoJSON source and a line layer for rendering
 // each track's recent flight path (a fading trail of its last positions).
-// Added first so trails draw beneath the speed vectors and track symbols.
+// Added first so trails draw beneath the history dots, speed vectors and track
+// symbols. ASD-004b/4c: line-opacity dims coasting trails and fades TSE trails.
 function addTrailsLayer(map) {
   map.addSource(TRAILS_SOURCE_ID, {
     type: "geojson",
@@ -447,7 +493,42 @@ function addTrailsLayer(map) {
     paint: {
       "line-color": state.palette.trail,
       "line-width": 1,
-      "line-opacity": 0.6,
+      "line-opacity": [
+        "case",
+        ["has", "fade_opacity"], ["*", 0.6, ["get", "fade_opacity"]],
+        ["has", "fl_opacity"],   ["get", "fl_opacity"],
+        ["get", "coasting"], 0.2,
+        0.6,
+      ],
+    },
+  });
+}
+
+// addHistoryDotsLayer registers a GeoJSON source and a circle layer for
+// rendering each past position in a track's history as a discrete dot (ASD-004a).
+// On a real radar scope, the spacing between dots encodes instantaneous speed
+// and the curvature encodes turn rate — information lost in a continuous line.
+// ASD-004b/4c: circle-opacity dims coasting dots and fades TSE dots.
+function addHistoryDotsLayer(map) {
+  map.addSource(HISTORY_DOTS_SOURCE_ID, {
+    type: "geojson",
+    data: { type: "FeatureCollection", features: [] },
+  });
+
+  map.addLayer({
+    id: HISTORY_DOTS_LAYER_ID,
+    type: "circle",
+    source: HISTORY_DOTS_SOURCE_ID,
+    paint: {
+      "circle-radius": 2,
+      "circle-color": state.palette.trail,
+      "circle-opacity": [
+        "case",
+        ["has", "fade_opacity"], ["*", 0.6, ["get", "fade_opacity"]],
+        ["has", "fl_opacity"],   ["get", "fl_opacity"],
+        ["get", "coasting"], 0.2,
+        0.6,
+      ],
     },
   });
 }
@@ -456,6 +537,7 @@ function addTrailsLayer(map) {
 // each track's speed vector (a short line from the current position towards
 // where the track will be in VECTOR_LOOKAHEAD_S seconds, ASD-style SVL).
 // Added before the tracks layer so the track symbols draw on top.
+// ASD-004b/4c: line-opacity dims coasting vectors and fades TSE vectors.
 function addVectorsLayer(map) {
   map.addSource(VECTORS_SOURCE_ID, {
     type: "geojson",
@@ -469,6 +551,13 @@ function addVectorsLayer(map) {
     paint: {
       "line-color": state.palette.vector,
       "line-width": 1.5,
+      "line-opacity": [
+        "case",
+        ["has", "fade_opacity"], ["get", "fade_opacity"],
+        ["has", "fl_opacity"],   ["get", "fl_opacity"],
+        ["get", "coasting"], 0.35,
+        1.0,
+      ],
     },
   });
 }
@@ -514,9 +603,48 @@ function buildLabel(track, vTrend) {
   return `${line1}${gsLine}`;
 }
 
+// isFlFiltered returns true when a known flight level falls outside the active
+// FL filter window (ASD-005). Tracks with unknown FL always pass through the
+// filter — hiding unknown-altitude traffic would be operationally unsafe.
+function isFlFiltered(flightLevelFt) {
+  if (typeof flightLevelFt !== "number") return false;
+  const fl = Math.round(flightLevelFt / 100);
+  const { minFL, maxFL } = state.flFilter;
+  if (minFL !== null && fl < minFL) return true;
+  if (maxFL !== null && fl > maxFL) return true;
+  return false;
+}
+
+// flOpacity returns the fl_opacity value to attach to a filtered feature, or
+// undefined when the feature passes the filter. hide=true → 0 (invisible);
+// hide=false → 0.15 (entsättigt / heavily dimmed).
+function flOpacity(flightLevelFt) {
+  if (!isFlFiltered(flightLevelFt)) return undefined;
+  return state.flFilter.hide ? 0.0 : 0.15;
+}
+
+// setupFlFilter wires the FL-filter panel (ASD-005) so slider/checkbox changes
+// immediately re-render all map sources without waiting for a new WSS update.
+function setupFlFilter() {
+  const minInput = document.getElementById("fl-min");
+  const maxInput = document.getElementById("fl-max");
+  const hideCheck = document.getElementById("fl-hide");
+  if (!minInput || !maxInput || !hideCheck) return;
+  const apply = () => {
+    state.flFilter.minFL = minInput.value !== "" ? parseInt(minInput.value, 10) : null;
+    state.flFilter.maxFL = maxInput.value !== "" ? parseInt(maxInput.value, 10) : null;
+    state.flFilter.hide = hideCheck.checked;
+    if (state.mapLoaded) renderSources();
+  };
+  minInput.addEventListener("input", apply);
+  maxInput.addEventListener("input", apply);
+  hideCheck.addEventListener("change", apply);
+}
+
 // updateTrackHistory appends each track's current position to its trail
 // history (capped at TRAIL_MAX_POINTS) and drops history for tracks that are
-// no longer present in the latest update.
+// no longer present — but keeps history alive for tracks currently fading out
+// (ASD-004c), so their trail and dots remain visible during the fade.
 function updateTrackHistory(tracks) {
   const seen = new Set();
 
@@ -534,15 +662,12 @@ function updateTrackHistory(tracks) {
   });
 
   for (const trackNum of state.trackHistory.keys()) {
-    if (!seen.has(trackNum)) {
+    if (!seen.has(trackNum) && !state.fadingTracks.has(trackNum)) {
       state.trackHistory.delete(trackNum);
     }
   }
 }
 
-// updateTracksLayer converts a Message (see pkg/broadcast.Message) into
-// GeoJSON FeatureCollections and pushes them into the map sources: track
-// symbols/labels, their speed-vector lines, and their recent-position trails.
 // updateFeedBanner reflects the CAT065 feed-health state (Firefly ADR 0018)
 // in the top-right banner: green "FEED OK", red "FEED STALE" (heartbeat lost),
 // or grey "FEED ?" until the first heartbeat arrives.
@@ -551,38 +676,62 @@ function updateFeedBanner(feedStatus) {
   if (!el) {
     return;
   }
-  const state = feedStatus.state;
-  el.className = state;
-  if (state === "ok") {
+  const s = feedStatus.state;
+  el.className = s;
+  if (s === "ok") {
     el.textContent = "● FEED OK";
-  } else if (state === "stale") {
+  } else if (s === "stale") {
     el.textContent = "▲ FEED STALE — kein Heartbeat";
   } else {
     el.textContent = "● FEED ?";
   }
 }
 
+// updateTracksLayer processes a WebSocket message (see pkg/broadcast.Message):
+// it routes TSE tracks into the fade-out map (ASD-004c), computes per-track
+// vertical tendency and labels (ASD-001), builds live GeoJSON features, and
+// kicks off the fade-animation loop when needed.
 function updateTracksLayer(msg) {
-  // Drop tracks flagged `ended` (CAT062 I062/080 TSE): this is their final
-  // report, signalling deletion. Excluding them here makes the symbol, label
-  // and speed vector disappear at once, and — since they fall out of the
-  // "seen" set in updateTrackHistory — their trail history is purged too.
-  const tracks = (msg.tracks || []).filter((track) => !track.ended);
+  // TSE (Track-Service-End) tracks: register them for a graceful fade-out
+  // (ASD-004c) instead of removing them instantly. Only the first TSE for a
+  // given track_num sets the deadline; duplicates are ignored.
+  (msg.tracks || [])
+    .filter((t) => t.ended)
+    .forEach((t) => {
+      if (!state.fadingTracks.has(t.track_num)) {
+        state.fadingTracks.set(t.track_num, {
+          deadline: Date.now() + FADE_DURATION_MS,
+          track: t,
+        });
+      }
+    });
+
+  const tracks = (msg.tracks || []).filter((t) => !t.ended);
+
+  // A track_num reappearing in the live stream (resurrection) must be evicted
+  // from the fading map so it does not render with a stale fade_opacity.
+  tracks.forEach((t) => state.fadingTracks.delete(t.track_num));
 
   updateTrackHistory(tracks);
 
-  // Prune FL history for tracks no longer present (mirrors updateTrackHistory).
-  const seenNums = new Set(tracks.map((t) => t.track_num));
+  // Build the set of track_nums that need ongoing state (live + fading).
+  const liveNums = new Set(tracks.map((t) => t.track_num));
   for (const num of state.trackFlHistory.keys()) {
-    if (!seenNums.has(num)) {
+    if (!liveNums.has(num) && !state.fadingTracks.has(num)) {
       state.trackFlHistory.delete(num);
     }
   }
+  for (const num of state.trackCoasting.keys()) {
+    if (!liveNums.has(num) && !state.fadingTracks.has(num)) {
+      state.trackCoasting.delete(num);
+    }
+  }
 
-  const features = tracks.map((track) => {
-    // Vertical-tendency indicator (ASD-001b): compare current FL to the last
-    // known FL for this track. Threshold 50 ft (2 LSBs of I062/136 at 25 ft
-    // each) filters single-quantisation-step noise from Mode-C encoding.
+  // Precompute live track GeoJSON features. Vertical-tendency (ASD-001b) is
+  // computed here — comparing current FL to the previously stored value — and
+  // the result is baked into the label string so renderSources() can reuse it
+  // without recalculating on every fade-loop tick.
+  state.liveTrackFeatures = tracks.map((track) => {
     let vTrend = "";
     if (typeof track.flight_level_ft === "number") {
       const prevFl = state.trackFlHistory.get(track.track_num);
@@ -593,12 +742,10 @@ function updateTracksLayer(msg) {
       }
       state.trackFlHistory.set(track.track_num, track.flight_level_ft);
     }
+    state.trackCoasting.set(track.track_num, track.coasting);
     return {
       type: "Feature",
-      geometry: {
-        type: "Point",
-        coordinates: [track.longitude, track.latitude],
-      },
+      geometry: { type: "Point", coordinates: [track.longitude, track.latitude] },
       properties: {
         track_num: track.track_num,
         confirmed: track.confirmed,
@@ -606,11 +753,14 @@ function updateTracksLayer(msg) {
         vx: track.vx,
         vy: track.vy,
         label: buildLabel(track, vTrend),
+        // Stored so renderSources() can re-evaluate the FL filter on UI change
+        // (ASD-005) without waiting for a new WebSocket update.
+        flight_level_ft: typeof track.flight_level_ft === "number" ? track.flight_level_ft : null,
       },
     };
   });
 
-  const vectorFeatures = tracks.map((track) => ({
+  state.liveVectorFeatures = tracks.map((track) => ({
     type: "Feature",
     geometry: {
       type: "LineString",
@@ -621,31 +771,146 @@ function updateTracksLayer(msg) {
     },
     properties: {
       track_num: track.track_num,
+      coasting: track.coasting,
     },
   }));
 
+  renderSources();
+
+  // Start the fade-animation loop if there are fading tracks and it is not
+  // already running. tickFade() stops the interval when all tracks expire.
+  if (state.fadingTracks.size > 0 && !state.fadeInterval) {
+    state.fadeInterval = setInterval(tickFade, 50);
+  }
+}
+
+// renderSources pushes the current air picture into all four GeoJSON map
+// sources: track symbols/labels, speed vectors, history dots, and trails.
+// It merges live features with any currently fading tracks, attaching a
+// fade_opacity property (0–1) that the paint expressions use for opacity.
+// Called on every WebSocket update and on every fade-loop tick.
+function renderSources() {
+  const now = Date.now();
+
+  // Live-track features: re-evaluate FL filter (ASD-005) each render call so
+  // a slider change takes effect immediately, not only on the next WSS update.
+  const liveTrackFeatures = state.liveTrackFeatures.map((f) => {
+    const flFt = f.properties.flight_level_ft;
+    const filtered = isFlFiltered(flFt);
+    const flOp = flOpacity(flFt);
+    const props = { ...f.properties, filtered };
+    if (flOp !== undefined) props.fl_opacity = flOp;
+    return { ...f, properties: props };
+  });
+
+  // Fading-track features: same shape as live features but carry fade_opacity.
+  // FL filter is also applied so that a filtering track fades out invisibly.
+  const fadingTrackFeatures = [];
+  const fadingVectorFeatures = [];
+  for (const [, { deadline, track }] of state.fadingTracks) {
+    const fadeOpacity = Math.max(0, (deadline - now) / FADE_DURATION_MS);
+    const flOp = flOpacity(track.flight_level_ft);
+    const trackProps = {
+      track_num: track.track_num,
+      confirmed: track.confirmed,
+      coasting: track.coasting,
+      vx: track.vx,
+      vy: track.vy,
+      label: buildLabel(track, ""),
+      filtered: isFlFiltered(track.flight_level_ft),
+      fade_opacity: fadeOpacity,
+    };
+    if (flOp !== undefined) trackProps.fl_opacity = flOp;
+    fadingTrackFeatures.push({
+      type: "Feature",
+      geometry: { type: "Point", coordinates: [track.longitude, track.latitude] },
+      properties: trackProps,
+    });
+    const vecProps = {
+      track_num: track.track_num,
+      coasting: track.coasting,
+      fade_opacity: fadeOpacity,
+    };
+    if (flOp !== undefined) vecProps.fl_opacity = flOp;
+    fadingVectorFeatures.push({
+      type: "Feature",
+      geometry: {
+        type: "LineString",
+        coordinates: [
+          [track.longitude, track.latitude],
+          vectorEndpoint(track.latitude, track.longitude, track.vx, track.vy),
+        ],
+      },
+      properties: vecProps,
+    });
+  }
+
+  // Live vector features also need FL filter re-evaluation.
+  const liveVectorFeatures = state.liveVectorFeatures.map((f) => {
+    const flFt = state.trackFlHistory.get(f.properties.track_num);
+    const flOp = flOpacity(flFt);
+    if (flOp === undefined) return f;
+    return { ...f, properties: { ...f.properties, fl_opacity: flOp } };
+  });
+
   state.map.getSource(TRACKS_SOURCE_ID).setData({
     type: "FeatureCollection",
-    features,
+    features: [...liveTrackFeatures, ...fadingTrackFeatures],
   });
 
   state.map.getSource(VECTORS_SOURCE_ID).setData({
     type: "FeatureCollection",
-    features: vectorFeatures,
+    features: [...liveVectorFeatures, ...fadingVectorFeatures],
   });
 
+  // History dots (ASD-004a): one Point per entry in trackHistory. The coasting
+  // flag comes from trackCoasting (updated in updateTracksLayer). Fading tracks
+  // keep their history alive and carry fade_opacity so dots fade with the track.
+  // ASD-005: fl_opacity is derived from the last known FL for this track.
+  const dotsFeatures = [];
+  for (const [trackNum, hist] of state.trackHistory) {
+    const isCoasting = state.trackCoasting.get(trackNum) || false;
+    const fadingEntry = state.fadingTracks.get(trackNum);
+    const fadeOpacity = fadingEntry
+      ? Math.max(0, (fadingEntry.deadline - now) / FADE_DURATION_MS)
+      : undefined;
+    const flFt = state.trackFlHistory.get(trackNum);
+    const flOp = flOpacity(flFt);
+    for (const coord of hist) {
+      const props = { track_num: trackNum, coasting: isCoasting };
+      if (fadeOpacity !== undefined) props.fade_opacity = fadeOpacity;
+      if (flOp !== undefined) props.fl_opacity = flOp;
+      dotsFeatures.push({
+        type: "Feature",
+        geometry: { type: "Point", coordinates: coord },
+        properties: props,
+      });
+    }
+  }
+
+  state.map.getSource(HISTORY_DOTS_SOURCE_ID).setData({
+    type: "FeatureCollection",
+    features: dotsFeatures,
+  });
+
+  // Trails: one LineString per track, with coasting, fade_opacity and fl_opacity
+  // for consistent dimming/fading/filtering across all layers (ASD-004/ASD-005).
   const trailFeatures = [];
   for (const [trackNum, hist] of state.trackHistory) {
     if (hist.length >= 2) {
+      const isCoasting = state.trackCoasting.get(trackNum) || false;
+      const fadingEntry = state.fadingTracks.get(trackNum);
+      const flFt = state.trackFlHistory.get(trackNum);
+      const flOp = flOpacity(flFt);
+      const props = { track_num: trackNum, coasting: isCoasting };
+      if (fadingEntry) {
+        props.fade_opacity = Math.max(0, (fadingEntry.deadline - now) / FADE_DURATION_MS);
+      }
+      if (flOp !== undefined) props.fl_opacity = flOp;
       trailFeatures.push({
         type: "Feature",
-        geometry: {
-          type: "LineString",
-          coordinates: hist,
-        },
-        properties: {
-          track_num: trackNum,
-        },
+        geometry: { type: "LineString", coordinates: hist },
+        properties: props,
       });
     }
   }
@@ -654,6 +919,27 @@ function updateTracksLayer(msg) {
     type: "FeatureCollection",
     features: trailFeatures,
   });
+}
+
+// tickFade advances the TSE fade-out animation (ASD-004c). Runs every 50 ms
+// while fadingTracks is non-empty. Expired tracks are evicted from all state
+// maps; the interval clears itself when all fading tracks have disappeared.
+function tickFade() {
+  const now = Date.now();
+  for (const [num, { deadline }] of state.fadingTracks) {
+    if (now >= deadline) {
+      state.fadingTracks.delete(num);
+      state.trackHistory.delete(num);
+      state.trackCoasting.delete(num);
+    }
+  }
+
+  if (state.fadingTracks.size === 0) {
+    clearInterval(state.fadeInterval);
+    state.fadeInterval = null;
+  }
+
+  renderSources();
 }
 
 function connectWebSocket() {
