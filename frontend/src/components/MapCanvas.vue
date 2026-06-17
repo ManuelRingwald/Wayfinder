@@ -1,11 +1,22 @@
 <template>
-  <div ref="mapEl" style="width: 100%; height: 100%" />
+  <!-- ASD-009: wrapper with position:relative so MapControls can be
+       positioned absolutely over the MapLibre canvas. -->
+  <div style="position: relative; width: 100%; height: 100%">
+    <div ref="mapEl" style="width: 100%; height: 100%" />
+    <MapControls
+      @zoom-in="mapEngine?.zoomIn()"
+      @zoom-out="mapEngine?.zoomOut()"
+      @recenter="mapEngine?.recenter()"
+      @reset-north="mapEngine?.resetNorth()"
+    />
+  </div>
 </template>
 
 <script setup>
 import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { useAsdStore } from '@/stores/asd.js'
 import { initMap } from '@/map/engine.js'
+import MapControls from './MapControls.vue'
 
 const emit = defineEmits(['track-click'])
 const store = useAsdStore()

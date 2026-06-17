@@ -244,5 +244,13 @@ export async function initMap(container, store, onTrackClick) {
     map.remove()
   }
 
-  return { map, destroy, setLayerVisibility, updateFlFilter }
+  // ASD-009: Map control helpers exposed to the Vue chrome layer.
+  // They are intentionally thin wrappers — the map object owns the state,
+  // and the chrome layer never needs to reach into it directly.
+  function zoomIn()    { map.zoomIn() }
+  function zoomOut()   { map.zoomOut() }
+  function resetNorth() { map.easeTo({ bearing: 0, pitch: 0 }) }
+  function recenter()  { map.flyTo({ center: [cfg.center_lon, cfg.center_lat], zoom: cfg.zoom }) }
+
+  return { map, destroy, setLayerVisibility, updateFlFilter, zoomIn, zoomOut, resetNorth, recenter }
 }
