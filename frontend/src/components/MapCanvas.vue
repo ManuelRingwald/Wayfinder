@@ -48,6 +48,15 @@ watch(() => store.hiddenCategories.size, () => {
   mapEngine?.updateFlFilter()
 })
 
+// ASD-011: apply airspace group filter once after map load (so the initial
+// state is correctly reflected) and whenever the store changes.
+watch(() => store.mapLoaded, (loaded) => {
+  if (loaded) mapEngine?.updateAirspaceFilter()
+})
+watch(() => ({ ...store.airspaceGroupVisibility }), () => {
+  mapEngine?.updateAirspaceFilter()
+}, { deep: true })
+
 defineExpose({
   setLayerVisibility: (layer, val) => mapEngine?.setLayerVisibility({ [layer]: val }),
   updateFlFilter: () => mapEngine?.updateFlFilter(),

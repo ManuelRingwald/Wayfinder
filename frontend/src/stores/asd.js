@@ -35,6 +35,20 @@ export const useAsdStore = defineStore('asd', () => {
   // Engine's renderSources skips features in this set.
   const hiddenCategories = reactive(new Set())
 
+  // ASD-011: per-group visibility for airspace category filter.
+  // All groups visible by default; MapCanvas watches this and calls
+  // mapEngine.updateAirspaceFilter() to apply MapLibre setFilter.
+  const airspaceGroupVisibility = reactive({
+    ctr: true,
+    tma: true,
+    restricted: true,
+    info: true,
+  })
+
+  function toggleAirspaceGroup(id) {
+    airspaceGroupVisibility[id] = !airspaceGroupVisibility[id]
+  }
+
   // Selected track for detail panel (null = no selection)
   const selectedTrack = ref(null)
 
@@ -79,9 +93,11 @@ export const useAsdStore = defineStore('asd', () => {
   return {
     mapLoaded, palette, feedStatus, layerVisibility, flFilter,
     trackCounts, hiddenCategories,
+    airspaceGroupVisibility,
     selectedTrack, labelPins,
     setFeedStatus, setMapLoaded, setPalette, setLayerVisibility,
     setFlFilter, setTrackCounts, toggleCategoryFilter,
+    toggleAirspaceGroup,
     selectTrack, clearTrackSelection, setLabelPin, deleteLabelPin,
   }
 })
