@@ -1,0 +1,14 @@
+# Wayfinder configuration file (optional — env vars take precedence)
+# Copy to wayfinder.yaml and adjust as needed.
+# This file is NOT committed with secrets — add wayfinder.yaml to .gitignore.
+
+map:
+  # Default map center (Frankfurt Tower)
+  center_lat: 50.0264
+  center_lon: 8.5431
+  # Default zoom level
+  zoom: 10
+
+openaip:
+  # Search radius around map center in km (30 NM ≈ 56 km)
+  radius_km: 56
