@@ -1,133 +1,65 @@
 <template>
-  <!-- ASD-008: Navigation Rail + expandable secondary panel.
-       On desktop the rail is always visible (56 px, icons + tooltips).
-       Clicking a rail icon expands it to a 240 px secondary panel with the
-       relevant controls. On mobile it reverts to a temporary overlay drawer
-       triggered by the App Bar hamburger. -->
+  <!-- ASD-012: Two-level navigation.
+       Desktop: a permanent 56 px icon rail (always visible) plus an optional
+       244 px panel that slides in beside it — the drawer width grows from 56
+       to 300 px. The map canvas adjusts automatically because Vuetify's layout
+       tracks the drawer width.
+       Mobile: a standard temporary overlay drawer (hamburger-triggered) that
+       shows the panel content directly, no rail column needed. -->
   <v-navigation-drawer
     v-model="drawerOpen"
     :permanent="mdAndUp"
     :temporary="!mdAndUp"
-    :rail="railCollapsed"
-    rail-width="56"
-    width="240"
+    :width="drawerWidth"
     color="surface"
+    class="nav-drawer"
   >
-    <!-- Rail icon list — always visible regardless of expand state -->
-    <v-list nav density="compact" class="pa-1">
-      <v-list-item
-        v-for="section in sections"
-        :key="section.id"
-        :value="section.id"
-        :prepend-icon="section.icon"
-        :active="activeSection === section.id"
-        active-color="primary"
-        rounded="lg"
-        class="mb-1"
-        @click="toggleSection(section.id)"
-      >
-        <template #title>
-          <span v-if="!railCollapsed">{{ section.label }}</span>
-        </template>
-        <!-- Tooltip shown only in collapsed rail mode -->
-        <v-tooltip
-          v-if="railCollapsed"
-          activator="parent"
-          location="right"
-          :text="section.label"
-        />
-      </v-list-item>
-    </v-list>
+    <!-- ── Desktop layout ── -->
+    <template v-if="mdAndUp">
+      <div class="nav-two-col">
 
-    <!-- Panel content — only rendered when a section is open -->
-    <template v-if="!railCollapsed">
-      <v-divider class="my-1" />
+        <!-- Rail: 56 px icon strip, always visible -->
+        <div class="nav-rail">
+          <v-list density="compact" class="pa-1 pt-2" nav>
+            <v-list-item
+              v-for="s in sections"
+              :key="s.id"
+              :active="activePanel === s.id"
+              active-color="primary"
+              rounded="lg"
+              class="nav-rail__item mb-1"
+              @click="togglePanel(s.id)"
+            >
+              <template #prepend>
+                <v-icon size="20">{{ s.icon }}</v-icon>
+              </template>
+              <v-tooltip activator="parent" location="right" :text="s.label" />
+            </v-list-item>
+          </v-list>
+        </div>
 
-      <!-- Layer controls panel -->
-      <template v-if="activeSection === 'layers'">
-        <v-list density="compact" nav class="pt-1">
-          <v-list-subheader class="text-primary font-weight-medium">
-            Kartenlayer
-          </v-list-subheader>
-          <v-list-item>
-            <v-switch
-              v-model="store.layerVisibility.airspace"
-              label="Lufträume"
-              @update:model-value="onLayerToggle('airspace', $event)"
-            />
-          </v-list-item>
-          <v-list-item>
-            <v-switch
-              v-model="store.layerVisibility.navaids"
-              label="VOR / NDB"
-              @update:model-value="onLayerToggle('navaids', $event)"
-            />
-          </v-list-item>
-          <v-list-item>
-            <v-switch
-              v-model="store.layerVisibility.waypoints"
-              label="Waypoints"
-              @update:model-value="onLayerToggle('waypoints', $event)"
-            />
-          </v-list-item>
-        </v-list>
-
-        <v-divider class="my-1" />
-
-        <v-list density="compact" nav class="pt-1">
-          <v-list-subheader class="text-primary font-weight-medium">
-            FL-Filter
-          </v-list-subheader>
-          <v-list-item>
-            <div class="d-flex align-center gap-2 px-1">
-              <v-text-field
-                v-model.number="minFL"
-                type="number"
-                label="Min"
-                min="0"
-                max="999"
-                step="10"
-                style="width: 76px"
-                @update:model-value="onFlFilterChange"
-              />
-              <span class="text-medium-emphasis text-body-2">–</span>
-              <v-text-field
-                v-model.number="maxFL"
-                type="number"
-                label="Max"
-                min="0"
-                max="999"
-                step="10"
-                style="width: 76px"
-                @update:model-value="onFlFilterChange"
+        <!-- Panel: slides in to the right of the rail -->
+        <Transition name="nav-panel">
+          <div v-if="activePanel" class="nav-panel">
+            <v-divider vertical />
+            <div class="nav-panel__body">
+              <LayerFilterContent
+                @layer-toggle="onLayerToggle"
+                @fl-filter-change="onFlFilterChange"
               />
             </div>
-          </v-list-item>
-          <v-list-item>
-            <v-switch
-              v-model="hideFiltered"
-              label="Ausblenden"
-              @update:model-value="onFlFilterChange"
-            />
-          </v-list-item>
-        </v-list>
-      </template>
+          </div>
+        </Transition>
+
+      </div>
     </template>
 
-    <!-- Collapse toggle at bottom (desktop only) -->
-    <template #append>
-      <v-divider v-if="mdAndUp" />
-      <v-list nav density="compact" class="pa-1" v-if="mdAndUp">
-        <v-list-item
-          :prepend-icon="railCollapsed ? 'mdi-chevron-right' : 'mdi-chevron-left'"
-          rounded="lg"
-          @click="railCollapsed = !railCollapsed"
-        >
-          <template #title>
-            <span v-if="!railCollapsed" class="text-body-2 text-medium-emphasis">Einklappen</span>
-          </template>
-        </v-list-item>
-      </v-list>
+    <!-- ── Mobile layout ── -->
+    <template v-else>
+      <LayerFilterContent
+        @layer-toggle="onLayerToggle"
+        @fl-filter-change="onFlFilterChange"
+      />
     </template>
   </v-navigation-drawer>
 </template>
@@ -135,7 +67,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useDisplay } from 'vuetify'
-import { useAsdStore } from '@/stores/asd.js'
+import LayerFilterContent from './LayerFilterContent.vue'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: true },
@@ -143,52 +75,84 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue', 'layer-toggle', 'fl-filter-change'])
 
 const { mdAndUp } = useDisplay()
-const store = useAsdStore()
 
-// ASD-008 nav sections — extend here for ASD-013 (alarms) and future panels
+// ASD-012 nav sections — extend here for future panels (alarms, scenarios …)
 const sections = [
   { id: 'layers', icon: 'mdi-layers-outline', label: 'Layer & Filter' },
 ]
 
-const activeSection = ref('layers')
-const railCollapsed = ref(false)
+const activePanel = ref('layers')  // open by default
 
 const drawerOpen = computed({
   get: () => props.modelValue,
   set: (v) => emit('update:modelValue', v),
 })
 
-function toggleSection(id) {
-  if (railCollapsed.value) {
-    // First click on a collapsed rail: expand and show that section
-    railCollapsed.value = false
-    activeSection.value = id
-  } else if (activeSection.value === id) {
-    // Clicking the already-active section while expanded: collapse rail
-    railCollapsed.value = true
-  } else {
-    // Switch to a different section while already expanded
-    activeSection.value = id
-  }
+// Width: 56 px (rail only) when no panel active, 300 px (rail + panel) when open.
+// On mobile the drawer uses a fixed 280 px (handled by Vuetify temporary mode).
+const drawerWidth = computed(() => {
+  if (!mdAndUp.value) return 280
+  return activePanel.value ? 300 : 56
+})
+
+function togglePanel(id) {
+  activePanel.value = activePanel.value === id ? null : id
 }
 
-// FL filter local refs synced to store
-const minFL = ref(store.flFilter.minFL)
-const maxFL = ref(store.flFilter.maxFL)
-const hideFiltered = ref(store.flFilter.hide)
-
-function onLayerToggle(layer, val) {
-  store.setLayerVisibility(layer, val)
-  emit('layer-toggle', { layer, val })
-}
-
-function onFlFilterChange() {
-  const update = {
-    minFL: minFL.value || null,
-    maxFL: maxFL.value || null,
-    hide: hideFiltered.value,
-  }
-  store.setFlFilter(update)
-  emit('fl-filter-change', update)
-}
+function onLayerToggle(payload) { emit('layer-toggle', payload) }
+function onFlFilterChange(payload) { emit('fl-filter-change', payload) }
 </script>
+
+<style scoped>
+/* Two-column desktop layout */
+.nav-two-col {
+  display: flex;
+  flex-direction: row;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Rail: icon strip, fixed 56 px */
+.nav-rail {
+  width: 56px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+/* Rail items: centre icon, hide any default title padding */
+.nav-rail__item {
+  min-width: 0;
+  padding-inline: 8px !important;
+}
+.nav-rail__item :deep(.v-list-item__spacer) { display: none; }
+
+/* Panel: fills the remaining width beside the rail */
+.nav-panel {
+  display: flex;
+  flex-direction: row;
+  flex: 1;
+  overflow: hidden;
+}
+.nav-panel__body {
+  flex: 1;
+  overflow-y: auto;
+}
+
+/* Slide-in transition for the panel */
+.nav-panel-enter-active,
+.nav-panel-leave-active {
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.nav-panel-enter-from,
+.nav-panel-leave-to {
+  opacity: 0;
+  transform: translateX(-8px);
+}
+
+/* Drawer width transition — animates the 56↔300 px change */
+.nav-drawer :deep(.v-navigation-drawer__content) {
+  overflow: hidden;
+}
+</style>

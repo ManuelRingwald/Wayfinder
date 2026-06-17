@@ -82,6 +82,45 @@ export const LABEL_SLOTS = [
 export const MAX_HISTORY_PTS = TRAIL_MAX_POINTS
 export const HISTORY_MAX_PTS = TRAIL_MAX_POINTS
 
+// ASD-011: Airspace type groups for the category filter. OpenAIP encodes
+// airspace type as a numeric enum; these groups map the enum values to
+// operationally meaningful categories with distinct display colours.
+// lineWidth and fillOpacity drive the per-group MapLibre paint expressions.
+export const AIRSPACE_GROUPS = [
+  {
+    id: 'ctr',
+    label: 'Kontrollzonen (CTR)',
+    color: '#e040fb',      // magenta — safety-critical, around airports
+    types: [4, 13],        // 4=CTR, 13=ATZ
+    lineWidth: 1.5,
+    fillOpacity: 0.10,
+  },
+  {
+    id: 'tma',
+    label: 'TMA / CTA',
+    color: '#448aff',      // blue — controlled upper airspace
+    types: [7, 26],        // 7=TMA, 26=CTA
+    lineWidth: 1.0,
+    fillOpacity: 0.06,
+  },
+  {
+    id: 'restricted',
+    label: 'Beschränkungsgebiete',
+    color: '#ff6d00',      // orange — restricted/danger/prohibited
+    types: [1, 2, 3],      // 1=Restricted, 2=Danger, 3=Prohibited
+    lineWidth: 1.5,
+    fillOpacity: 0.12,
+  },
+  {
+    id: 'info',
+    label: 'FIS / RMZ / TMZ',
+    color: '#607d8b',      // blue-grey — advisory, often dimmable
+    types: [5, 6, 10, 30], // 5=TMZ, 6=RMZ, 10=FIR, 30=FIZ
+    lineWidth: 0.8,
+    fillOpacity: 0.04,
+  },
+]
+
 // ASD-007: Track symbol colours by ICAO target type. These are independent of
 // the base-map palette — they must remain distinguishable on both dark and OSM
 // bases. In the current demo Firefly only emits civil tracks (friendlyCivil);

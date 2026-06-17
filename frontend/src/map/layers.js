@@ -24,7 +24,20 @@ import {
   LEADER_LINES_SOURCE_ID,
   LEADER_LINES_LAYER_ID,
   LABEL_TEXT_SIZE,
+  AIRSPACE_GROUPS,
 } from './constants.js'
+
+// Build a MapLibre 'match' expression keyed on the OpenAIP numeric type field.
+// Each AIRSPACE_GROUP contributes one arm (array label → single value).
+// Unknown types fall back to `fallback`.
+function airspaceMatchExpr(prop, fallback) {
+  const expr = ['match', ['get', 'type']]
+  for (const g of AIRSPACE_GROUPS) {
+    expr.push(g.types, g[prop])
+  }
+  expr.push(fallback)
+  return expr
+}
 
 // makeIconImage renders a small icon onto an offscreen canvas and returns its
 // ImageData, so we need no external sprite assets (keeps Wayfinder a single
@@ -116,8 +129,9 @@ export function addAeronauticalIcons(map) {
 }
 
 // addAirspaceLayers registers the airspace source and its fill/outline/label
-// layers (sector and FIR boundaries). Polygons get a faint fill so overlapping
-// sectors stay readable on the dark base.
+// layers. ASD-011: paint expressions are type-driven via AIRSPACE_GROUPS so
+// each category gets a distinct colour; the group filter is applied separately
+// via updateAirspaceFilter() in engine.js.
 export function addAirspaceLayers(map, palette) {
   map.addSource(AIRSPACE_SOURCE_ID, {
     type: 'geojson',
@@ -130,8 +144,8 @@ export function addAirspaceLayers(map, palette) {
     source: AIRSPACE_SOURCE_ID,
     filter: ['==', ['geometry-type'], 'Polygon'],
     paint: {
-      'fill-color': palette.airspaceLine,
-      'fill-opacity': 0.06,
+      'fill-color': airspaceMatchExpr('color', palette.airspaceLine),
+      'fill-opacity': airspaceMatchExpr('fillOpacity', 0.06),
     },
   })
 
@@ -140,8 +154,8 @@ export function addAirspaceLayers(map, palette) {
     type: 'line',
     source: AIRSPACE_SOURCE_ID,
     paint: {
-      'line-color': palette.airspaceLine,
-      'line-width': 1,
+      'line-color': airspaceMatchExpr('color', palette.airspaceLine),
+      'line-width': airspaceMatchExpr('lineWidth', 1.0),
       'line-opacity': 0.8,
     },
   })
@@ -158,7 +172,7 @@ export function addAirspaceLayers(map, palette) {
       'symbol-placement': 'line',
     },
     paint: {
-      'text-color': palette.airspaceText,
+      'text-color': airspaceMatchExpr('color', palette.airspaceText),
       'text-halo-color': palette.aeroHalo,
       'text-halo-width': 1,
     },

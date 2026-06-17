@@ -6,7 +6,7 @@
 // only for UI-facing state (feedStatus, mapLoaded, palette key).
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import { PALETTES, TRACKS_LAYER_ID } from './constants.js'
+import { PALETTES, TRACKS_LAYER_ID, AIRSPACE_GROUPS } from './constants.js'
 import {
   addAeronauticalIcons,
   addAirspaceLayers,
@@ -249,6 +249,29 @@ export async function initMap(container, store, onTrackClick) {
     doRender()
   }
 
+  // ASD-011: update MapLibre filters on the airspace layers to reflect the
+  // current airspaceGroupVisibility state. Called by MapCanvas whenever the
+  // store changes (or after map load to apply the initial state).
+  function updateAirspaceFilter() {
+    if (!state.mapLoaded) return
+    const vis = store.airspaceGroupVisibility
+
+    const visibleTypes = []
+    for (const g of AIRSPACE_GROUPS) {
+      if (vis[g.id]) visibleTypes.push(...g.types)
+    }
+
+    const typeFilter = visibleTypes.length > 0
+      ? ['in', ['get', 'type'], ['literal', visibleTypes]]
+      : ['boolean', false]
+
+    const polygonAndType = ['all', ['==', ['geometry-type'], 'Polygon'], typeFilter]
+
+    if (map.getLayer(AIRSPACE_FILL_LAYER_ID))  map.setFilter(AIRSPACE_FILL_LAYER_ID, polygonAndType)
+    if (map.getLayer(AIRSPACE_LINE_LAYER_ID))  map.setFilter(AIRSPACE_LINE_LAYER_ID, typeFilter)
+    if (map.getLayer(AIRSPACE_LABEL_LAYER_ID)) map.setFilter(AIRSPACE_LABEL_LAYER_ID, typeFilter)
+  }
+
   // Destroy: close WS, clear intervals, remove map.
   function destroy() {
     if (reconnectTimer) clearTimeout(reconnectTimer)
@@ -266,5 +289,5 @@ export async function initMap(container, store, onTrackClick) {
   function resetNorth() { map.easeTo({ bearing: 0, pitch: 0 }) }
   function recenter()  { map.flyTo({ center: [cfg.center_lon, cfg.center_lat], zoom: cfg.zoom }) }
 
-  return { map, destroy, setLayerVisibility, updateFlFilter, zoomIn, zoomOut, resetNorth, recenter }
+  return { map, destroy, setLayerVisibility, updateFlFilter, updateAirspaceFilter, zoomIn, zoomOut, resetNorth, recenter }
 }
