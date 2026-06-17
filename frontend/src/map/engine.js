@@ -83,7 +83,20 @@ export async function initMap(container, store, onTrackClick) {
   // Helper: build a bound renderSources call with the current store slices.
   const doRender = () => {
     if (!state.mapLoaded) return
-    renderSources(map, state, store.flFilter, state.labelPins, palette)
+    renderSources(map, state, store.flFilter, state.labelPins, palette, store.hiddenCategories)
+  }
+
+  // ASD-010: derive per-category track counts from live features and push to
+  // the store so TrackFilterChips can display them reactively.
+  function updateTrackCounts() {
+    let confirmed = 0, coasting = 0, tentative = 0
+    for (const f of state.liveTrackFeatures) {
+      const p = f.properties
+      if (p.coasting) coasting++
+      else if (p.confirmed) confirmed++
+      else tentative++
+    }
+    store.setTrackCounts({ confirmed, coasting, tentative })
   }
 
   // Fade-loop management: start interval if not already running.
@@ -130,6 +143,7 @@ export async function initMap(container, store, onTrackClick) {
         }
         if (state.mapLoaded) {
           updateTracksLayer(msg, state, doRender, startFadeLoop)
+          updateTrackCounts()
         } else {
           state.pendingTracks = msg
         }
@@ -244,5 +258,13 @@ export async function initMap(container, store, onTrackClick) {
     map.remove()
   }
 
-  return { map, destroy, setLayerVisibility, updateFlFilter }
+  // ASD-009: Map control helpers exposed to the Vue chrome layer.
+  // They are intentionally thin wrappers — the map object owns the state,
+  // and the chrome layer never needs to reach into it directly.
+  function zoomIn()    { map.zoomIn() }
+  function zoomOut()   { map.zoomOut() }
+  function resetNorth() { map.easeTo({ bearing: 0, pitch: 0 }) }
+  function recenter()  { map.flyTo({ center: [cfg.center_lon, cfg.center_lat], zoom: cfg.zoom }) }
+
+  return { map, destroy, setLayerVisibility, updateFlFilter, zoomIn, zoomOut, resetNorth, recenter }
 }

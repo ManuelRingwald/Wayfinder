@@ -26,22 +26,40 @@ function vectorEndpoint(lat, lon, vx, vy) {
   return [lon + dLon, lat + dLat]
 }
 
+// trackCategory returns the ASD-010 category string for a feature's properties.
+function trackCategory(props) {
+  if (props.coasting) return 'coasting'
+  if (props.confirmed) return 'confirmed'
+  return 'tentative'
+}
+
 // renderSources pushes the current air picture into all GeoJSON map sources.
 // It merges live features with any currently fading tracks, attaching a
 // fade_opacity property (0–1) that the paint expressions use for opacity.
 // Called on every WebSocket update and on every fade-loop tick.
 // Parameters:
-//   map        — MapLibre Map instance
-//   state      — engine runtime state (liveTrackFeatures, fadingTracks, …)
-//   flFilter   — { minFL, maxFL, hide } from Pinia store
-//   labelPins  — Map<track_num, {dx, dy}> manual label overrides
-//   palette    — active foreground colour palette
-export function renderSources(map, state, flFilter, labelPins, palette) {
+//   map              — MapLibre Map instance
+//   state            — engine runtime state (liveTrackFeatures, fadingTracks, …)
+//   flFilter         — { minFL, maxFL, hide } from Pinia store
+//   labelPins        — Map<track_num, {dx, dy}> manual label overrides
+//   palette          — active foreground colour palette
+//   hiddenCategories — Set<string> of ASD-010 categories to hide ('confirmed' | 'coasting' | 'tentative')
+export function renderSources(map, state, flFilter, labelPins, palette, hiddenCategories = new Set()) {
   const now = Date.now()
+
+  // ASD-010: build the set of track_nums belonging to hidden categories so
+  // trails, dots and vectors can be suppressed in step with their symbol.
+  const hiddenNums = new Set()
+  for (const f of state.liveTrackFeatures) {
+    if (hiddenCategories.has(trackCategory(f.properties))) {
+      hiddenNums.add(f.properties.track_num)
+    }
+  }
 
   // Live-track features: re-evaluate FL filter (ASD-005) each render call so
   // a slider change takes effect immediately, not only on the next WSS update.
-  const liveTrackFeatures = state.liveTrackFeatures.map((f) => {
+  const liveTrackFeatures = state.liveTrackFeatures.flatMap((f) => {
+    if (hiddenNums.has(f.properties.track_num)) return []
     const flFt = f.properties.flight_level_ft
     const filtered = isFlFiltered(flFt, flFilter)
     const flOp = flOpacity(flFt, flFilter)
@@ -93,11 +111,13 @@ export function renderSources(map, state, flFilter, labelPins, palette) {
   }
 
   // Live vector features also need FL filter re-evaluation.
-  const liveVectorFeatures = state.liveVectorFeatures.map((f) => {
+  // ASD-010: suppress vectors for hidden categories.
+  const liveVectorFeatures = state.liveVectorFeatures.flatMap((f) => {
+    if (hiddenNums.has(f.properties.track_num)) return []
     const flFt = state.trackFlHistory.get(f.properties.track_num)
     const flOp = flOpacity(flFt, flFilter)
-    if (flOp === undefined) return f
-    return { ...f, properties: { ...f.properties, fl_opacity: flOp } }
+    if (flOp === undefined) return [f]
+    return [{ ...f, properties: { ...f.properties, fl_opacity: flOp } }]
   })
 
   map.getSource(TRACKS_SOURCE_ID).setData({
@@ -116,6 +136,7 @@ export function renderSources(map, state, flFilter, labelPins, palette) {
   // ASD-005: fl_opacity is derived from the last known FL for this track.
   const dotsFeatures = []
   for (const [trackNum, hist] of state.trackHistory) {
+    if (hiddenNums.has(trackNum)) continue // ASD-010: skip hidden categories
     const isCoasting = state.trackCoasting.get(trackNum) || false
     const fadingEntry = state.fadingTracks.get(trackNum)
     const fadeOpacity = fadingEntry
@@ -144,6 +165,7 @@ export function renderSources(map, state, flFilter, labelPins, palette) {
   // for consistent dimming/fading/filtering across all layers (ASD-004/ASD-005).
   const trailFeatures = []
   for (const [trackNum, hist] of state.trackHistory) {
+    if (hiddenNums.has(trackNum)) continue // ASD-010: skip hidden categories
     if (hist.length >= 2) {
       const isCoasting = state.trackCoasting.get(trackNum) || false
       const fadingEntry = state.fadingTracks.get(trackNum)

@@ -2,6 +2,7 @@
   <v-app>
     <v-app-bar elevation="0" color="surface" density="compact">
       <template #prepend>
+        <!-- Hamburger only on mobile — on desktop the rail is always visible -->
         <v-app-bar-nav-icon
           v-if="!mdAndUp"
           @click="drawerOpen = !drawerOpen"
@@ -16,13 +17,14 @@
       </template>
     </v-app-bar>
 
-    <LayerSidebar
+    <!-- ASD-008: Navigation Rail replaces monolithic LayerSidebar -->
+    <NavigationRail
       v-model="drawerOpen"
       @layer-toggle="onLayerToggle"
       @fl-filter-change="onFlFilterChange"
     />
 
-    <v-main style="padding: 0">
+    <v-main style="padding: 0; position: relative">
       <MapCanvas
         ref="mapCanvas"
         @track-click="onTrackClick"
@@ -40,7 +42,7 @@
 import { ref } from 'vue'
 import { useDisplay } from 'vuetify'
 import { useAsdStore } from '@/stores/asd.js'
-import LayerSidebar from './components/LayerSidebar.vue'
+import NavigationRail from './components/NavigationRail.vue'
 import FeedStatusChip from './components/FeedStatusChip.vue'
 import MapCanvas from './components/MapCanvas.vue'
 import TrackDetailPanel from './components/TrackDetailPanel.vue'

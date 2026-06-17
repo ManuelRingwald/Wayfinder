@@ -1,11 +1,23 @@
 <template>
-  <div ref="mapEl" style="width: 100%; height: 100%" />
+  <div style="position: absolute; inset: 0">
+    <div ref="mapEl" style="width: 100%; height: 100%" />
+    <MapControls
+      @zoom-in="mapEngine?.zoomIn()"
+      @zoom-out="mapEngine?.zoomOut()"
+      @recenter="mapEngine?.recenter()"
+      @reset-north="mapEngine?.resetNorth()"
+    />
+    <!-- ASD-010: category filter chips top-centre -->
+    <TrackFilterChips />
+  </div>
 </template>
 
 <script setup>
 import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { useAsdStore } from '@/stores/asd.js'
 import { initMap } from '@/map/engine.js'
+import MapControls from './MapControls.vue'
+import TrackFilterChips from './TrackFilterChips.vue'
 
 const emit = defineEmits(['track-click'])
 const store = useAsdStore()
@@ -29,6 +41,12 @@ watch(() => ({ ...store.layerVisibility }), (vis) => {
 watch(() => ({ ...store.flFilter }), () => {
   mapEngine?.updateFlFilter()
 }, { deep: true })
+
+// ASD-010: re-render when category filter changes (hiddenCategories is a
+// reactive Set; we watch its size as a proxy for any add/delete).
+watch(() => store.hiddenCategories.size, () => {
+  mapEngine?.updateFlFilter()
+})
 
 defineExpose({
   setLayerVisibility: (layer, val) => mapEngine?.setLayerVisibility({ [layer]: val }),

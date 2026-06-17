@@ -23,6 +23,18 @@ export const useAsdStore = defineStore('asd', () => {
     hide: false,
   })
 
+  // ASD-010: live track counts per status category.
+  // Updated by the engine after every WS frame; consumed by TrackFilterChips.
+  const trackCounts = reactive({
+    confirmed: 0,
+    coasting: 0,
+    tentative: 0,
+  })
+
+  // ASD-010: categories currently hidden via the filter chips.
+  // Engine's renderSources skips features in this set.
+  const hiddenCategories = reactive(new Set())
+
   // Selected track for detail panel (null = no selection)
   const selectedTrack = ref(null)
 
@@ -36,6 +48,23 @@ export const useAsdStore = defineStore('asd', () => {
   function setFlFilter(updates) { Object.assign(flFilter, updates) }
   function selectTrack(track) { selectedTrack.value = track }
   function clearTrackSelection() { selectedTrack.value = null }
+
+  // ASD-010: update live counts (called by engine after each WS frame).
+  function setTrackCounts(counts) {
+    trackCounts.confirmed = counts.confirmed ?? 0
+    trackCounts.coasting = counts.coasting ?? 0
+    trackCounts.tentative = counts.tentative ?? 0
+  }
+
+  // ASD-010: toggle a category in/out of the hidden set.
+  function toggleCategoryFilter(category) {
+    if (hiddenCategories.has(category)) {
+      hiddenCategories.delete(category)
+    } else {
+      hiddenCategories.add(category)
+    }
+  }
+
   function setLabelPin(trackNum, pin) {
     const m = new Map(labelPins.value)
     m.set(trackNum, pin)
@@ -49,8 +78,10 @@ export const useAsdStore = defineStore('asd', () => {
 
   return {
     mapLoaded, palette, feedStatus, layerVisibility, flFilter,
+    trackCounts, hiddenCategories,
     selectedTrack, labelPins,
     setFeedStatus, setMapLoaded, setPalette, setLayerVisibility,
-    setFlFilter, selectTrack, clearTrackSelection, setLabelPin, deleteLabelPin,
+    setFlFilter, setTrackCounts, toggleCategoryFilter,
+    selectTrack, clearTrackSelection, setLabelPin, deleteLabelPin,
   }
 })

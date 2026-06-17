@@ -82,19 +82,34 @@ export const LABEL_SLOTS = [
 export const MAX_HISTORY_PTS = TRAIL_MAX_POINTS
 export const HISTORY_MAX_PTS = TRAIL_MAX_POINTS
 
+// ASD-007: Track symbol colours by ICAO target type. These are independent of
+// the base-map palette — they must remain distinguishable on both dark and OSM
+// bases. In the current demo Firefly only emits civil tracks (friendlyCivil);
+// the remaining colours are reserved for future IFF/Mode-3A differentiation.
+// Full rationale and hex values documented in docs/design/color-tokens.md §3.1.
+export const TRACK_COLORS = {
+  friendlyCivil:    '#41c4e8', // cyan  — civil confirmed track
+  friendlyMilitary: '#ffa726', // amber — military confirmed track
+  hostile:          '#ff4338', // red   — hostile / ordnance (= error colour)
+  unknown:          '#ffd23e', // gold  — not yet correlated
+  neutral:          '#43c66b', // green — neutral track
+}
+
 // Foreground palettes per base-map theme (ASD-003 Häppchen 3a). On the dark
 // "Radar Dark Mode" base, labels are light with a dark halo so they stay
 // legible; on the bright OSM base the original dark-on-white palette is used.
-// Track-status colours (confirmed/coasting/tentative) read well on both bases.
+// ASD-007: updated to align with docs/design/color-tokens.md §3.2 and §3.3.
 export const PALETTES = {
   dark: {
-    label: '#e8eef5',
+    label: '#dce6f0',        // = on-surface token
     labelHalo: '#000000',
-    vector: '#cfd8dc',
-    trail: '#607d8b',
+    vector: '#9ec8de',       // speed-vector line (SVL)
+    trail: '#3a5a72',        // history trail (subdued, no map distraction)
     symbolStroke: '#000000',
+    airspaceFillColor: '#3a6fb0', // used with opacity 0.12 in layers.js
     airspaceLine: '#5b8fd6',
     airspaceText: '#9fc0e8',
+    airways: '#2a8fa8',
     aeroHalo: '#000000',
   },
   osm: {
@@ -103,8 +118,10 @@ export const PALETTES = {
     vector: '#212121',
     trail: '#90a4ae',
     symbolStroke: '#000000',
+    airspaceFillColor: '#1f4ea8',
     airspaceLine: '#1f4ea8',
     airspaceText: '#22305a',
+    airways: '#1a6a7a',
     aeroHalo: '#ffffff',
   },
 }

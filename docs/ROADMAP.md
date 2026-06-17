@@ -6,8 +6,9 @@
 > Arbeit neue Findings/Pakete ergeben. **Stichwort „Roadmap" im Chat zeigt
 > diese Liste.**
 >
-> Stand: 2026-06-16 (Pakete #1–#3, #10–#16 abgeschlossen; Pakete #10–#20
-> aus den Backlogs „Firefly SDPS Core Features" und „Wayfinder" übernommen).
+> Stand: 2026-06-17 (Pakete #1–#3, #10–#16 abgeschlossen; Pakete #10–#20
+> aus den Backlogs „Firefly SDPS Core Features" und „Wayfinder" übernommen;
+> ASD-007–013 aus Mockup-Analyse 2026-06-17 neu aufgenommen).
 
 ## Empfohlene Reihenfolge
 
@@ -17,6 +18,13 @@
 | 2 | **Observability-Grundgerüst** ✅ *abgeschlossen* | Firefly + Wayfinder | **Häppchen 2.1 ✅ erledigt** (Wayfinder: totes `internal/config` entfernt, `WAYFINDER_LOG_LEVEL` konfigurierbar, Client-Eviction im Broadcaster geloggt, NFR-OBS-001); **Häppchen 2.2 ✅ erledigt** (Firefly: `tracing` in `firefly-multicast` eingezogen — Sender `lib.rs::run` mit `debug!`/`error!` pro Scan, Empfänger `receiver.rs::run` mit `debug!`/`warn!` pro Block; `firefly-asterix` unverändert, NFR-OBS-001); **Häppchen 2.3 ✅ erledigt** (gemeinsamer `/metrics`-Endpoint, Prometheus-Textformat: Wayfinder `pkg/metrics` auf Port `:8080` — Block-/Track-Zahlen, CAT062-Decode-Fehler, aktuelle Track-Zahl, WS-Client-Count/Evictions, NFR-OBS-002; Firefly `firefly-server::metrics` auf `/metrics` — Szene-Frame-Zahl, WS-Client-Count/Total, CAT062-Multicast-Scans/Sendefehler, NFR-OBS-001) | **S3 · Sonnet 4.6** |
 | 3 | **AP5/AP6 — CAT065 Heartbeat** ✅ *abgeschlossen* | Firefly (Encoder) + Wayfinder (Decoder) | SDPS-Service-Status (Feed-Health) — unterscheidet „leerer Himmel" von „totem Feed". **Firefly:** `firefly-asterix::cat065` (Encoder+Decoder, byte-genau), `firefly-multicast::run_heartbeat` (wall-clock, gleiche Gruppe wie CAT062, ADR 0018), Metrik `firefly_cat065_heartbeats_sent_total`; ICD → 2.3.0 (additiv, §8), FR-IO-006/FR-NET-003. **Wayfinder:** `pkg/cat065`-Decoder, Receiver-Dispatch am CAT-Oktett, `pkg/health`-Staleness-Tracker, Feed-Banner im Frontend, `/ready`-Integration, Metriken `wayfinder_cat065_heartbeats_received_total`/`wayfinder_feed_stale`; FR-DATA-004/FR-OPS-004/NFR-OBS-003. | **S4 · Opus 4.8** |
 | 4 | **Konfigurierbarer System-Referenzpunkt** | Firefly | I062/100-Referenzpunkt jenseits Demo-Ursprung Frankfurt, ADR-0006-Folgeentscheidung | **S3 · Sonnet 4.6** |
+| ASD-007 | **Farbschema (Mockup-Ableitung)** ✅ *abgeschlossen* | Wayfinder | Cyan-Primary-Theme (`#23d3e6`) aus ASD-Mockup in `vuetify.js` (MD3-Chrome) + `constants.js` (PALETTES, Track-Domain-Farben); Design-Spec in `docs/design/color-tokens.md`; FR-UI-007. | **S2 · Sonnet 4.6** |
+| ASD-008 | **Navigation Rail + Sekundär-Panel** | Wayfinder | Ikonische linke Leiste (v-navigation-drawer schmal); Klick auf Icon klappt breites Sekundär-Panel auf (Layer-Controls, FL-Filter, weitere Panels); zweistufige Navigation statt monolithischer Sidebar; FR-UI-008. | **S3 · Sonnet 4.6** |
+| ASD-009 | **Karten-Controls rechts** | Wayfinder | Floating Action Buttons rechts auf der Karte: Zoom +/−, Recenter (zurück zum konfigurierten Kartenzentrum), Fullscreen-Toggle, Nord-up-Reset; schwebend über MapLibre-Canvas, kein Einfluss auf MapLibre-eigene Controls; FR-UI-009. | **S2 · Sonnet 4.6** |
+| ASD-010 | **Kategorie-Filter-Chips mit Track-Zählern** | Wayfinder | Chip-Leiste oben auf der Karte: Chips für Track-Statusgruppen (Confirmed, Coasting, Tentative) mit Live-Zähler aus Pinia-Store; Klick blendet Gruppe aus; Farbe per Statusgruppe; FR-UI-010. | **S3 · Sonnet 4.6** |
+| ASD-011 | **Erweitertes Track-Detail-Panel** | Wayfinder | Ausbau `TrackDetailCard.vue`: volle Datenblockanzeige (Callsign, ICAO-Adresse, Squawk, FL mit Tendenz-Pfeil, Ground Speed, Heading, Track-Nummer, Zeitstempel letztes Update, Status); FR-UI-011. | **S2 · Sonnet 4.6** |
+| ASD-012 | **Range-Rings + Scale-Bar + Nord-/Track-up** | Wayfinder | Konfigurierbare Range-Rings um Kartenzentrum (MapLibre GeoJSON-Overlay, Abstand konfigurierbar); Scale-Bar-Overlay; Nord-up/Track-up-Toggle; Berechnung in `src/map/`-Engine (keine Vue-Abhängigkeit); FR-UI-012. | **S3 · Opus 4.8** |
+| ASD-013 | **Alarm-/Ereignis-Panel** | Wayfinder | Chronologische Ereignisliste (Feed stale, Track appeared/disappeared, Status-Wechsel); aus Pinia-Event-Queue befüllt; visueller Badge auf Nav-Rail-Icon wenn Einträge vorhanden; FR-UI-013. | **S3 · Sonnet 4.6** |
 | 5 | **Out-of-Order-Eingang (Robustheit)** | Firefly | Tracker-Härtung gegen verspätete/umsortierte Plots | **S3 · Sonnet 4.6** |
 | 6 | **Coverage-Werkzeug** | Firefly | Visualisierung Sensor-Abdeckung | **S3 · Sonnet 4.6** |
 | 7 | **FHA / Hazard-Analyse** | Firefly + Wayfinder | Sicherheits-Analyse-Dokument | **S4 · Opus 4.8** |
