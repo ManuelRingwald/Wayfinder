@@ -1,23 +1,16 @@
 <template>
   <v-app>
-    <v-app-bar elevation="0" color="surface" density="compact">
-      <template #prepend>
-        <!-- Hamburger only on mobile — on desktop the rail is always visible -->
-        <v-app-bar-nav-icon
-          v-if="!mdAndUp"
-          @click="drawerOpen = !drawerOpen"
-        />
-      </template>
-      <v-app-bar-title>
-        <span class="text-primary font-weight-bold">Wayfinder</span>
-        <span class="text-medium-emphasis text-body-2 ml-2">ASD</span>
-      </v-app-bar-title>
-      <template #append>
-        <FeedStatusChip class="mr-3" />
-      </template>
-    </v-app-bar>
+    <!-- ASD-013: App Bar removed — the ASD is a full-screen scope, no title bar needed.
+         On mobile a minimal floating hamburger opens the navigation drawer. -->
+    <v-btn
+      v-if="!mdAndUp"
+      icon="mdi-menu"
+      size="small"
+      elevation="4"
+      class="mobile-menu-btn"
+      @click="drawerOpen = !drawerOpen"
+    />
 
-    <!-- ASD-008: Navigation Rail replaces monolithic LayerSidebar -->
     <NavigationRail
       v-model="drawerOpen"
       @layer-toggle="onLayerToggle"
@@ -43,7 +36,6 @@ import { ref } from 'vue'
 import { useDisplay } from 'vuetify'
 import { useAsdStore } from '@/stores/asd.js'
 import NavigationRail from './components/NavigationRail.vue'
-import FeedStatusChip from './components/FeedStatusChip.vue'
 import MapCanvas from './components/MapCanvas.vue'
 import TrackDetailPanel from './components/TrackDetailPanel.vue'
 
@@ -64,3 +56,13 @@ function onTrackClick(track) {
   store.selectTrack(track)
 }
 </script>
+
+<style scoped>
+.mobile-menu-btn {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 1100;
+  background: rgba(var(--v-theme-surface), 0.9) !important;
+}
+</style>

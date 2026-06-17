@@ -103,7 +103,7 @@ function toggleFullscreen() {
 <style scoped>
 .map-controls {
   position: absolute;
-  top: calc(var(--v-layout-top, 48px) + 12px);
+  top: calc(var(--v-layout-top, 0px) + 12px);
   right: 12px;
   z-index: 10;
   display: flex;
