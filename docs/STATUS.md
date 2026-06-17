@@ -7,7 +7,24 @@
 > 🗺️ **Roadmap:** Arbeitspakete, Findings und empfohlene Reihenfolge stehen in
 > `docs/ROADMAP.md` (Stichwort „Roadmap" im Chat zeigt diese Liste).
 
-- **Zuletzt aktualisiert:** 2026-06-16 — **Paket #16 / ASD-002 „Anti-Garbling
+- **Zuletzt aktualisiert:** 2026-06-17 — **ASD-006 „Vue 3 + Vuetify 3 (Material Design 3)"
+  abgeschlossen.** Branch `claude/vue-md3-asd-006`. ADR 0002 ratifiziert (Vue 3 + Vuetify 3,
+  Vite, Vitest, Pinia — Chrome/Karten-Engine klar getrennt). AP0 ADR-Doku; AP1 Scaffold
+  (asdDarkTheme, Vuetify-Defaults, Vitest-Setup); AP2 Karten-Engine aus app.js in
+  framework-agnostische ES-Module extrahiert (constants, label, deconflict, layers, tracks,
+  render, drag, aeronautical, engine) + 39 Vitest-Tests grün (buildLabel, bboxCollides,
+  deconflictLabels, isFlFiltered, flOpacity); AP3 Pinia-Store (asd.js) + LayerSidebar.vue
+  (MD3 Navigation Drawer links: Layer-Switches + FL-Filter — räumt den Scope frei); AP4
+  App-Shell (App.vue mit v-app-bar, FeedStatusChip als MD3-Chip, MapCanvas.vue als
+  Karten-Mount mit reaktiver Store-Sync); AP5 Track-Detail-Panel (TrackDetailPanel.vue +
+  TrackDetailCard.vue — neu: Callsign/FL/Speed/Mode3A/Status bei Track-Klick);
+  AP6 A11y via Vuetify-Standards (Touch-Targets, WCAG-Kontrast, Hamburger-Drawer auf Mobile).
+  Go-Backend: embed-Pfad von static/ auf dist/. wayfinder.yaml.example für
+  Karten-Defaults (Zentrum/Zoom/OpenAIP-Radius). FR-UI-001…NFR-UI-002 im Register.
+  Gates: npm run build ✅ · vitest 39/39 ✅ · go test ./... ✅ · go vet ✅.
+  S4 · Opus 4.8. Nächster Schritt: Branch mergen nach Abnahme + ggf. wayfinder.yaml
+  mit Frankfurt-Koordinaten befüllen.
+- **Vorherige Aktualisierung:** 2026-06-16 — **Paket #16 / ASD-002 „Anti-Garbling
   (Label-Deconfliction + Drag&Drop)" abgeschlossen.** Rein Frontend (`app.js`),
   kein Backend- oder ICD-Change. **B1 Auto-Deconfliction:** `deconflictLabels()`
   berechnet in Screen-Space für jeden Track (deterministisch nach `track_num`) die

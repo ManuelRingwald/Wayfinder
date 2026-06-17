@@ -355,6 +355,113 @@ func TestLoadConfigMapTheme(t *testing.T) {
 	}
 }
 
+func TestLoadYAMLFileAppliesValues(t *testing.T) {
+	f, err := os.CreateTemp(t.TempDir(), "wayfinder-*.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = f.WriteString(`
+map:
+  center_lat: 48.1234
+  center_lon: 11.5678
+  zoom: 9
+openaip:
+  radius_km: 56
+`)
+	f.Close()
+
+	cfg := Config{
+		MapCenterLat:    50.0379,
+		MapCenterLon:    8.5622,
+		MapZoom:         8,
+		OpenAIPRadiusKM: 250,
+	}
+	loadYAMLFile(f.Name(), &cfg, slog.Default())
+
+	if cfg.MapCenterLat != 48.1234 {
+		t.Errorf("center_lat: got %v, want 48.1234", cfg.MapCenterLat)
+	}
+	if cfg.MapCenterLon != 11.5678 {
+		t.Errorf("center_lon: got %v, want 11.5678", cfg.MapCenterLon)
+	}
+	if cfg.MapZoom != 9 {
+		t.Errorf("zoom: got %v, want 9", cfg.MapZoom)
+	}
+	if cfg.OpenAIPRadiusKM != 56 {
+		t.Errorf("radius_km: got %v, want 56", cfg.OpenAIPRadiusKM)
+	}
+}
+
+func TestLoadYAMLFileMissingFileIsNonFatal(t *testing.T) {
+	cfg := Config{MapCenterLat: 50.0}
+	loadYAMLFile("/nonexistent/wayfinder.yaml", &cfg, slog.Default())
+	if cfg.MapCenterLat != 50.0 {
+		t.Errorf("defaults must be preserved when file is missing")
+	}
+}
+
+func TestLoadYAMLFileInvalidYAMLIsNonFatal(t *testing.T) {
+	f, err := os.CreateTemp(t.TempDir(), "wayfinder-bad-*.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = f.WriteString(":::invalid yaml:::")
+	f.Close()
+
+	cfg := Config{MapCenterLat: 50.0}
+	loadYAMLFile(f.Name(), &cfg, slog.Default())
+	if cfg.MapCenterLat != 50.0 {
+		t.Errorf("defaults must be preserved on YAML parse error")
+	}
+}
+
+func TestLoadYAMLFilePartialOverride(t *testing.T) {
+	f, err := os.CreateTemp(t.TempDir(), "wayfinder-partial-*.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Only radius_km set — other defaults must remain unchanged
+	_, _ = f.WriteString(`
+openaip:
+  radius_km: 100
+`)
+	f.Close()
+
+	cfg := Config{MapCenterLat: 50.0379, MapCenterLon: 8.5622, MapZoom: 8, OpenAIPRadiusKM: 250}
+	loadYAMLFile(f.Name(), &cfg, slog.Default())
+
+	if cfg.MapCenterLat != 50.0379 {
+		t.Errorf("center_lat must be unchanged when not set in YAML")
+	}
+	if cfg.OpenAIPRadiusKM != 100 {
+		t.Errorf("radius_km: got %v, want 100", cfg.OpenAIPRadiusKM)
+	}
+}
+
+func TestLoadYAMLFileEnvVarWins(t *testing.T) {
+	f, err := os.CreateTemp(t.TempDir(), "wayfinder-envwin-*.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = f.WriteString(`
+map:
+  center_lat: 48.0
+`)
+	f.Close()
+	t.Setenv("WAYFINDER_CONFIG_FILE", f.Name())
+	t.Setenv("WAYFINDER_MAP_CENTER_LAT", "51.5")
+	defer func() {
+		os.Unsetenv("WAYFINDER_CONFIG_FILE")
+		os.Unsetenv("WAYFINDER_MAP_CENTER_LAT")
+	}()
+
+	cfg := loadConfig()
+	// Env-var (51.5) must win over YAML (48.0)
+	if cfg.MapCenterLat != 51.5 {
+		t.Errorf("env var must override YAML: got %v, want 51.5", cfg.MapCenterLat)
+	}
+}
+
 func TestLoadConfigSecurityEnvVarsDefaultEmpty(t *testing.T) {
 	for _, key := range []string{"WAYFINDER_ALLOWED_ORIGINS", "WAYFINDER_AUTH_TOKEN", "WAYFINDER_TLS_CERT", "WAYFINDER_TLS_KEY"} {
 		os.Unsetenv(key)
