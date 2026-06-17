@@ -43,7 +43,7 @@ const categories = [
 <style scoped>
 .track-filter-chips {
   position: absolute;
-  top: 10px;
+  top: calc(var(--v-layout-top, 48px) + 10px);
   left: 50%;
   transform: translateX(-50%);
   z-index: 10;
