@@ -1,6 +1,6 @@
 <template>
-  <!-- ASD-009: wrapper with position:relative so MapControls can be
-       positioned absolutely over the MapLibre canvas. -->
+  <!-- Wrapper with position:relative so MapControls and TrackFilterChips
+       can be positioned absolutely over the MapLibre canvas. -->
   <div style="position: relative; width: 100%; height: 100%">
     <div ref="mapEl" style="width: 100%; height: 100%" />
     <MapControls
@@ -9,6 +9,8 @@
       @recenter="mapEngine?.recenter()"
       @reset-north="mapEngine?.resetNorth()"
     />
+    <!-- ASD-010: category filter chips top-centre -->
+    <TrackFilterChips />
   </div>
 </template>
 
@@ -17,6 +19,7 @@ import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { useAsdStore } from '@/stores/asd.js'
 import { initMap } from '@/map/engine.js'
 import MapControls from './MapControls.vue'
+import TrackFilterChips from './TrackFilterChips.vue'
 
 const emit = defineEmits(['track-click'])
 const store = useAsdStore()
@@ -40,6 +43,12 @@ watch(() => ({ ...store.layerVisibility }), (vis) => {
 watch(() => ({ ...store.flFilter }), () => {
   mapEngine?.updateFlFilter()
 }, { deep: true })
+
+// ASD-010: re-render when category filter changes (hiddenCategories is a
+// reactive Set; we watch its size as a proxy for any add/delete).
+watch(() => store.hiddenCategories.size, () => {
+  mapEngine?.updateFlFilter()
+})
 
 defineExpose({
   setLayerVisibility: (layer, val) => mapEngine?.setLayerVisibility({ [layer]: val }),
