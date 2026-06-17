@@ -7,6 +7,8 @@
       @recenter="mapEngine?.recenter()"
       @reset-north="mapEngine?.resetNorth()"
     />
+    <!-- ASD-013: FeedStatusChip moved here after app bar removal -->
+    <FeedStatusChip class="feed-chip" />
     <!-- ASD-010: category filter chips top-centre -->
     <TrackFilterChips />
   </div>
@@ -18,6 +20,7 @@ import { useAsdStore } from '@/stores/asd.js'
 import { initMap } from '@/map/engine.js'
 import MapControls from './MapControls.vue'
 import TrackFilterChips from './TrackFilterChips.vue'
+import FeedStatusChip from './FeedStatusChip.vue'
 
 const emit = defineEmits(['track-click'])
 const store = useAsdStore()
@@ -62,3 +65,13 @@ defineExpose({
   updateFlFilter: () => mapEngine?.updateFlFilter(),
 })
 </script>
+
+<style scoped>
+/* ASD-013: Feed chip anchored top-right, beside map controls. */
+.feed-chip {
+  position: absolute;
+  top: 12px;
+  right: 60px;
+  z-index: 10;
+}
+</style>
