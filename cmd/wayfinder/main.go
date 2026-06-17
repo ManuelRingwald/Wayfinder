@@ -15,6 +15,8 @@ import (
 	"syscall"
 	"time"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/manuelringwald/wayfinder/internal/webui"
 	"github.com/manuelringwald/wayfinder/pkg/aeronautical"
 	"github.com/manuelringwald/wayfinder/pkg/broadcast"
@@ -320,6 +322,55 @@ const (
 	mapThemeOSM  = "osm"
 )
 
+// yamlFileConfig mirrors the structure of wayfinder.yaml. All fields are
+// optional; absent fields leave the corresponding Config defaults untouched.
+// Env-vars always take precedence (12-Factor: env > file > hardcoded default).
+type yamlFileConfig struct {
+	Map struct {
+		CenterLat float64 `yaml:"center_lat"`
+		CenterLon float64 `yaml:"center_lon"`
+		Zoom      float64 `yaml:"zoom"`
+	} `yaml:"map"`
+	OpenAIP struct {
+		RadiusKM float64 `yaml:"radius_km"`
+	} `yaml:"openaip"`
+}
+
+// loadYAMLFile reads wayfinder.yaml from the given path and applies non-zero
+// fields to cfg. Missing file or parse errors are treated as non-fatal — the
+// caller falls back to hardcoded defaults and env-vars. The path is resolved
+// relative to the working directory; an empty path disables YAML loading.
+func loadYAMLFile(path string, cfg *Config, logger *slog.Logger) {
+	if path == "" {
+		return
+	}
+	data, err := os.ReadFile(path) //nolint:gosec // path comes from trusted env/default
+	if err != nil {
+		if !os.IsNotExist(err) {
+			logger.Warn("wayfinder.yaml unreadable, using defaults", "path", path, "err", err)
+		}
+		return
+	}
+	var fc yamlFileConfig
+	if err := yaml.Unmarshal(data, &fc); err != nil {
+		logger.Warn("wayfinder.yaml parse error, using defaults", "path", path, "err", err)
+		return
+	}
+	if fc.Map.CenterLat != 0 {
+		cfg.MapCenterLat = fc.Map.CenterLat
+	}
+	if fc.Map.CenterLon != 0 {
+		cfg.MapCenterLon = fc.Map.CenterLon
+	}
+	if fc.Map.Zoom != 0 {
+		cfg.MapZoom = fc.Map.Zoom
+	}
+	if fc.OpenAIP.RadiusKM != 0 {
+		cfg.OpenAIPRadiusKM = fc.OpenAIP.RadiusKM
+	}
+	logger.Info("loaded wayfinder.yaml", "path", path)
+}
+
 // loadConfig loads configuration from environment variables.
 func loadConfig() Config {
 	cfg := Config{
@@ -341,6 +392,14 @@ func loadConfig() Config {
 	if cfg.MulticastGroup == "" {
 		cfg.MulticastGroup = "239.255.0.62"
 	}
+
+	// Load optional wayfinder.yaml before env-vars so that env-vars win.
+	// WAYFINDER_CONFIG_FILE overrides the default path; set to "" to disable.
+	yamlPath := os.Getenv("WAYFINDER_CONFIG_FILE")
+	if yamlPath == "" {
+		yamlPath = "wayfinder.yaml"
+	}
+	loadYAMLFile(yamlPath, &cfg, slog.Default())
 
 	if portStr := os.Getenv("FIREFLY_CAT062_PORT"); portStr != "" {
 		if port, err := strconv.Atoi(portStr); err == nil {

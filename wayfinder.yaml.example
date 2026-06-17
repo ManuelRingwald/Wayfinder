@@ -1,14 +1,31 @@
-# Wayfinder configuration file (optional — env vars take precedence)
-# Copy to wayfinder.yaml and adjust as needed.
-# This file is NOT committed with secrets — add wayfinder.yaml to .gitignore.
+# Wayfinder — Konfigurationsdatei (optional)
+#
+# Kopiere diese Datei nach wayfinder.yaml und passe sie an.
+# wayfinder.yaml wird von .gitignore ausgeschlossen — Secrets bleiben lokal.
+#
+# Prioritäten (höhere Zahl gewinnt):
+#   1. Hardcodierte Defaults (im Binary)
+#   2. Diese Datei (wayfinder.yaml)
+#   3. Umgebungsvariablen (gewinnen immer — 12-Factor)
+#
+# Pfad: Standardmäßig wird wayfinder.yaml im Arbeitsverzeichnis gesucht.
+# Überschreiben: WAYFINDER_CONFIG_FILE=/pfad/zur/datei.yaml
+#
+# Alle Felder sind optional. Weggelassene Felder behalten ihren Default-Wert.
 
 map:
-  # Default map center (Frankfurt Tower)
+  # Kartenmittelpunkt beim Start — WGS84-Koordinaten.
+  # Default: Frankfurt am Main (Firefly Demo-Szenario).
+  # Beispiel Frankfurt Tower: 50.0264 / 8.5431
   center_lat: 50.0264
   center_lon: 8.5431
-  # Default zoom level
+
+  # Startzoom (MapLibre-Zoom-Level; 8 = Regionalansicht, 12 = Platzrundenbereich).
   zoom: 10
 
 openaip:
-  # Search radius around map center in km (30 NM ≈ 56 km)
+  # Suchradius um den Kartenmittelpunkt für aeronautische Daten (Lufträume,
+  # VOR/NDB, Waypoints). Einheit: Kilometer.
+  # 30 NM ≈ 56 km | 50 NM ≈ 93 km | 100 NM ≈ 185 km
+  # Default ohne Datei: 250 km (großzügig für Entwicklung/Demo).
   radius_km: 56
