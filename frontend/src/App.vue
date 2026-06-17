@@ -24,7 +24,7 @@
       @fl-filter-change="onFlFilterChange"
     />
 
-    <v-main style="padding: 0">
+    <v-main>
       <MapCanvas
         ref="mapCanvas"
         @track-click="onTrackClick"

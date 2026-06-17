@@ -1,7 +1,8 @@
 <template>
-  <!-- Wrapper with position:relative so MapControls and TrackFilterChips
-       can be positioned absolutely over the MapLibre canvas. -->
-  <div style="position: relative; width: 100%; height: 100%">
+  <!-- Wrapper fills the entire v-main content area via absolute positioning.
+       Using inset: 0 is more reliable than height: 100% since v-main__wrap
+       does not have an explicit height in Vuetify 3's layout model. -->
+  <div style="position: absolute; inset: 0">
     <div ref="mapEl" style="width: 100%; height: 100%" />
     <MapControls
       @zoom-in="mapEngine?.zoomIn()"
