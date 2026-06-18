@@ -208,6 +208,11 @@ sinngemäß):
       (`docs/requirements/`) eingetragen und mit Code/Test rückverfolgbar.
 - [ ] Sicherheits-relevante Pfade (Feed-Eingang, Auth am Browser-Rand) sind
       bewertet (Abschnitt 7).
+- [ ] **`docs/INSTALLATION.md` auf Aktualität geprüft** — neue Umgebungsvariablen,
+      geänderte Startbefehle oder neue Voraussetzungen müssen eingetragen sein.
+- [ ] **`docs/TECHNICAL.md` auf Aktualität geprüft** — neue Metriken,
+      geänderte Env-Variablen, neue Betriebsmodi oder Einschränkungen müssen
+      dokumentiert sein.
 - [ ] Die zugehörige Doku wurde aktualisiert.
 - [ ] Der Commit hat eine klare, beschreibende Nachricht.
 
