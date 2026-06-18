@@ -174,21 +174,39 @@ func DecodeRecord(data []byte, offset int) (DecodedTrack, int, error) {
 			track.Status = status
 			offset = newOffset
 
-		case 14: // I062/290: Update Ages (compound, currently just PSR age)
+		case 14: // I062/290: Update Ages (compound: PSR age + ES age, ICD 2.4.0)
 			if offset+1 > len(data) {
 				return track, offset, NewDecodeError("truncated I062/290 primary")
 			}
 			primary := data[offset]
 			offset++
 
-			// Check PSR bit (bit 6, 0x40)
-			if (primary & 0x40) != 0 {
-				if offset+1 > len(data) {
-					return track, offset, NewDecodeError("truncated I062/290 PSR")
+			// Each set bit in the primary subfield (MSB→LSB) is followed by one
+			// 1-byte age value (LSB = 1/4 s). We walk the bits in order and pick
+			// out the two Firefly emits — PSR (0x40) and ES (0x08, Extended
+			// Squitter / ADS-B, ICD 2.4.0) — while consuming and skipping any
+			// others. Doing it positionally (rather than reading PSR then ES at
+			// fixed offsets) keeps the decoder correct if Firefly ever inserts a
+			// subfield between them — the tolerant decoder the charter requires
+			// (Abschnitt 2/7). Bit 0 (0x01) is FX; Firefly never sets it, so a
+			// second primary octet is not expected here.
+			for bit := 7; bit >= 1; bit-- {
+				mask := byte(1) << uint(bit)
+				if (primary & mask) == 0 {
+					continue
 				}
-				psrAgeTicks := data[offset]
-				track.UpdateAge.PSRAge = float64(psrAgeTicks) * 0.25 // LSB = 1/4 s
+				if offset+1 > len(data) {
+					return track, offset, NewDecodeError("truncated I062/290 subfield")
+				}
+				ageSeconds := float64(data[offset]) * 0.25 // LSB = 1/4 s
 				offset++
+				switch mask {
+				case 0x40: // PSR age
+					track.UpdateAge.PSRAge = ageSeconds
+				case 0x08: // ES age (Extended Squitter / ADS-B), ICD 2.4.0
+					es := ageSeconds
+					track.UpdateAge.ESAge = &es
+				}
 			}
 
 		case 17: // I062/136: Measured Flight Level (2 bytes, signed i16, LSB 1/4 FL = 25 ft)

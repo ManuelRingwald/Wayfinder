@@ -7,7 +7,26 @@
 > 🗺️ **Roadmap:** Arbeitspakete, Findings und empfohlene Reihenfolge stehen in
 > `docs/ROADMAP.md` (Stichwort „Roadmap" im Chat zeigt diese Liste).
 
-- **Zuletzt aktualisiert:** 2026-06-16 — **Paket #16 / ASD-002 „Anti-Garbling
+- **Zuletzt aktualisiert:** 2026-06-18 — **AP9.9 „ADS-B-Badge im Track-Label"
+  abgeschlossen (S3 · Opus 4.8).** Wayfinder-Seite von AP9 (ADS-B-Integration).
+  **Decoder:** `pkg/cat062/types.go` um `UpdateAge.ESAge *float64` erweitert
+  (nil = rein Radar, Pointer = ADS-B-Anteil vorhanden). `pkg/cat062/decoder.go`
+  Fall 14 (I062/290) durch bit-walking Loop ersetzt: Bits 7→1 MSB-first,
+  je gesetztes Bit ein Age-Byte (LSB = 1/4 s); PSR=0x40, ES=0x08 — tolerant
+  gegenüber zukünftigen Subfeldern. **Broadcaster:** `TrackMessage.AdsbAgeS
+  *float64` (`json:"adsb_age_s,omitempty"`) hinzugefügt; `tracksToMessage` mapt
+  `UpdateAge.ESAge`. **Frontend (`app.js`):** `ADSB_FRESH_THRESHOLD_S = 30`,
+  `ADSB_BADGE = "◆"`, `isAdsbFresh(adsbAgeS)` Helper;
+  `buildLabel` zeigt `◆` im Label-Ident wenn `isAdsbFresh` (age ≤ 30 s).
+  **Tests:** `TestDecodeAdsbAge` + `TestDecodeNoAdsbAge` (byte-exakt,
+  Mirror von Fireflys `single_track_with_adsb_hit_matches_reference_dump`,
+  ICD 2.4.0); `TestTracksToMessageMapsAdsbAge` in Broadcast-Tests.
+  **Anforderungen:** FR-DATA-005 (ES-Age Decoder), FR-ASD-006 (ADS-B Badge)
+  im Register. Gates grün (`go test ./...` ✅, `go vet ./...` ✅, `gofmt` ✅,
+  `node --check app.js` ✅). AP9 (ADS-B, ICD 2.4.0) auf Wayfinder-Seite
+  damit vollständig abgeschlossen. Nächster Schritt: nächstes Roadmap-Paket
+  nach Abstimmung.
+- **Vorherige Aktualisierung:** 2026-06-16 — **Paket #16 / ASD-002 „Anti-Garbling
   (Label-Deconfliction + Drag&Drop)" abgeschlossen.** Rein Frontend (`app.js`),
   kein Backend- oder ICD-Change. **B1 Auto-Deconfliction:** `deconflictLabels()`
   berechnet in Screen-Space für jeden Track (deterministisch nach `track_num`) die
