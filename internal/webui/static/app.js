@@ -43,6 +43,17 @@ const EARTH_RADIUS_M = 6371000;
 // ASD-004c: duration of the TSE graceful fade-out animation in milliseconds.
 const FADE_DURATION_MS = 1500;
 
+// AP9.9: a track is shown with the ADS-B badge when its ES (Extended Squitter)
+// age (I062/290, ICD 2.4.0) is no older than this many seconds — i.e. it is
+// *currently* backed by ADS-B, not merely once was. Mirrors the ADS-B update
+// cadence (1–2 s) with generous slack for poll/multicast latency.
+const ADSB_FRESH_THRESHOLD_S = 30;
+
+// AP9.9: the ADS-B badge glyph appended to the data-block's identity line.
+// "◆" is in the same Geometric Shapes Unicode block as the vertical-tendency
+// arrows (▲/▼) the label already renders, so the map font stack covers it.
+const ADSB_BADGE = "◆";
+
 // ASD-002: Anti-Garbling — separate GeoJSON sources for deconflicted labels
 // and leader lines (lines from symbol to data-block anchor).
 const LABELS_SOURCE_ID = "track-labels";
@@ -915,16 +926,24 @@ function vectorEndpoint(lat, lon, vx, vy) {
 }
 
 // buildLabel produces the track's ASD data-block label (ASD-001).
-//   Line 1: callsign (I062/245) or track number as fallback.
+//   Line 1: callsign (I062/245) or track number as fallback, with an ADS-B
+//            badge (◆, AP9.9) appended when the track is currently ADS-B-backed.
 //   Line 2: "FLnnn" (flight level, I062/136) + vertical-tendency indicator
 //            (▲ climbing / ▼ descending / empty for level), when FL is known.
 //   Line 3: ground speed in knots (from Vx/Vy, I062/185), when non-zero.
 // vTrend is "▲", "▼", or "" — computed by updateTracksLayer (ASD-001b).
 function buildLabel(track, vTrend) {
-  const line1 =
+  const ident =
     typeof track.callsign === "string" && track.callsign !== ""
       ? track.callsign
       : String(track.track_num);
+
+  // ADS-B badge: the track carries a fresh Extended Squitter contribution
+  // (I062/290 ES age, ICD 2.4.0 / Firefly ADR 0019). adsb_age_s is absent for
+  // radar-only tracks, so the badge appears only for ADS-B-backed traffic.
+  const line1 = isAdsbFresh(track.adsb_age_s)
+    ? `${ident} ${ADSB_BADGE}`
+    : ident;
 
   // Ground speed: sqrt(Vx²+Vy²) m/s → kt (1 m/s ≈ 1.9438 kt).
   const gs = Math.round(Math.hypot(track.vx, track.vy) * 1.9438);
@@ -936,6 +955,13 @@ function buildLabel(track, vTrend) {
     return `${line1}\nFL${String(fl).padStart(3, "0")}${trend}${gsLine}`;
   }
   return `${line1}${gsLine}`;
+}
+
+// isAdsbFresh reports whether a track is currently ADS-B-backed: its ES age
+// (I062/290 ES subfield, seconds; AP9.9) is present and no older than
+// ADSB_FRESH_THRESHOLD_S. Radar-only tracks omit adsb_age_s and return false.
+function isAdsbFresh(adsbAgeS) {
+  return typeof adsbAgeS === "number" && adsbAgeS <= ADSB_FRESH_THRESHOLD_S;
 }
 
 // isFlFiltered returns true when a known flight level falls outside the active

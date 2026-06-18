@@ -52,6 +52,12 @@ type TrackStatus struct {
 // UpdateAge is I062/290: time since last update, in seconds.
 type UpdateAge struct {
 	PSRAge float64 // Primary Surveillance Radar age, seconds
+	// ESAge is the time since the last Extended Squitter (ADS-B) contribution,
+	// in seconds, decoded from the ES subfield of I062/290 (ICD 2.4.0). It is
+	// present only for tracks that have been updated by ADS-B; a radar-only
+	// track leaves it nil. Its presence is what tells the ASD a track carries
+	// an ADS-B component (Firefly ADR 0019).
+	ESAge *float64 // optional, I062/290 ES (Extended Squitter / ADS-B) age, seconds
 }
 
 // PositionAccuracy is I062/500: estimated 1-sigma position uncertainty, in meters.

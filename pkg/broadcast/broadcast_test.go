@@ -171,6 +171,33 @@ func TestTracksToMessage(t *testing.T) {
 	}
 }
 
+// TestTracksToMessageMapsAdsbAge verifies the I062/290 ES age (ADS-B, ICD
+// 2.4.0) is carried through to the wire as adsb_age_s, and that a radar-only
+// track leaves it nil (so the frontend shows no ADS-B badge). AP9.9.
+func TestTracksToMessageMapsAdsbAge(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(nil, nil))
+	b := New(logger)
+
+	esAge := 3.0
+	adsbTrack := cat062.DecodedTrack{TrackNum: 1, UpdateAge: cat062.UpdateAge{PSRAge: 2.0, ESAge: &esAge}}
+	radarTrack := cat062.DecodedTrack{TrackNum: 2, UpdateAge: cat062.UpdateAge{PSRAge: 2.0}}
+
+	msg := b.tracksToMessage([]cat062.DecodedTrack{adsbTrack, radarTrack})
+	if len(msg.Tracks) != 2 {
+		t.Fatalf("expected 2 tracks, got %d", len(msg.Tracks))
+	}
+
+	if msg.Tracks[0].AdsbAgeS == nil {
+		t.Fatalf("ADS-B track: AdsbAgeS got nil, want ~3.0")
+	}
+	if *msg.Tracks[0].AdsbAgeS < 2.99 || *msg.Tracks[0].AdsbAgeS > 3.01 {
+		t.Errorf("ADS-B track: AdsbAgeS got %f, want ~3.0", *msg.Tracks[0].AdsbAgeS)
+	}
+	if msg.Tracks[1].AdsbAgeS != nil {
+		t.Errorf("radar-only track: AdsbAgeS got %v, want nil", *msg.Tracks[1].AdsbAgeS)
+	}
+}
+
 // TestBroadcastEvictsClientWithFullSendChannel verifies that a client whose
 // send channel is full (i.e., not being drained) is evicted instead of
 // blocking the broadcaster.

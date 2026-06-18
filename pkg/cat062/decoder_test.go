@@ -254,6 +254,90 @@ func TestDecodeMultipleTracks(t *testing.T) {
 	}
 }
 
+// TestDecodeAdsbAge decodes a record whose I062/290 carries the ES (Extended
+// Squitter / ADS-B) age subfield (primary bit 0x08, ICD 2.4.0) — the signal
+// that a track has an ADS-B component (Firefly ADR 0019). The reference
+// vector's PSR-only I062/290 [0x40, 0x08] is extended to [0x48, 0x08, 0x0C]:
+// the primary subfield gains the ES bit (0x40|0x08 = 0x48), the PSR age stays
+// 2 s (0x08), and the ES age 3 s (0x0C = 12 * 1/4 s) is appended. This is the
+// byte-exact dump of Firefly's encoder test
+// `single_track_with_adsb_hit_matches_reference_dump`; the FSPEC is unchanged
+// (ES rides inside the already-present I062/290, FRN 14 — additive, ICD 2.4.0).
+func TestDecodeAdsbAge(t *testing.T) {
+	data := []byte{
+		0x3E,       // CAT 62
+		0x00, 0x29, // LEN = 41 (one byte more than the reference: I062/290 grew to 3 bytes)
+		0x9F, 0x0F, 0x01, 0x04, // FSPEC {1, 4, 5, 6, 7, 12, 13, 14, 27} — unchanged
+		0x19, 0x02, // I062/010 SAC/SIC
+		0x00, 0x06, 0x00, // I062/070 time
+		0x00, 0x80, 0x00, 0x00, // I062/105 latitude 45°
+		0x00, 0x20, 0x00, 0x00, // I062/105 longitude 11.25°
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // I062/100 X=0, Y=0
+		0x01, 0x90, // I062/185 Vx = 100 m/s
+		0xFF, 0x38, // I062/185 Vy = -50 m/s
+		0x00, 0x01, // I062/040 track number 1
+		0x00,             // I062/080 confirmed, fresh
+		0x48, 0x08, 0x0C, // I062/290 PSR age = 2 s + ES age = 3 s (ICD 2.4.0)
+		0x80, 0x00, 0xC8, 0x00, 0xC8, // I062/500 APC = 100 m (FRN 27)
+	}
+
+	tracks, err := DecodeDataBlock(data)
+	if err != nil {
+		t.Fatalf("DecodeDataBlock failed: %v", err)
+	}
+	if len(tracks) != 1 {
+		t.Fatalf("expected 1 track, got %d", len(tracks))
+	}
+
+	track := tracks[0]
+	// PSR age still decodes correctly alongside the new ES age.
+	if track.UpdateAge.PSRAge < 1.99 || track.UpdateAge.PSRAge > 2.01 {
+		t.Errorf("PSRAge mismatch: expected ≈2.0, got %v", track.UpdateAge.PSRAge)
+	}
+	if track.UpdateAge.ESAge == nil {
+		t.Fatalf("ESAge mismatch: expected ≈3.0, got nil")
+	}
+	if *track.UpdateAge.ESAge < 2.99 || *track.UpdateAge.ESAge > 3.01 {
+		t.Errorf("ESAge mismatch: expected ≈3.0, got %v", *track.UpdateAge.ESAge)
+	}
+	// The items after I062/290 must still decode correctly around the longer item.
+	if track.TrackNum != 1 {
+		t.Errorf("TrackNum mismatch: expected 1, got %d", track.TrackNum)
+	}
+	if track.Accuracy.APC < 99.99 || track.Accuracy.APC > 100.01 {
+		t.Errorf("Accuracy.APC mismatch: expected ≈100.0, got %v", track.Accuracy.APC)
+	}
+}
+
+// TestDecodeNoAdsbAge confirms a radar-only track (the PSR-only reference
+// vector) decodes ESAge as nil — there is no spurious ADS-B badge.
+func TestDecodeNoAdsbAge(t *testing.T) {
+	data := []byte{
+		0x3E,
+		0x00, 0x28, // LEN = 40 (reference vector, PSR-only I062/290)
+		0x9F, 0x0F, 0x01, 0x04,
+		0x19, 0x02,
+		0x00, 0x06, 0x00,
+		0x00, 0x80, 0x00, 0x00,
+		0x00, 0x20, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x01, 0x90,
+		0xFF, 0x38,
+		0x00, 0x01,
+		0x00,
+		0x40, 0x08, // I062/290 PSR age = 2 s, no ES subfield
+		0x80, 0x00, 0xC8, 0x00, 0xC8,
+	}
+
+	tracks, err := DecodeDataBlock(data)
+	if err != nil {
+		t.Fatalf("DecodeDataBlock failed: %v", err)
+	}
+	if tracks[0].UpdateAge.ESAge != nil {
+		t.Errorf("ESAge mismatch: expected nil for radar-only track, got %v", *tracks[0].UpdateAge.ESAge)
+	}
+}
+
 // BenchmarkDecode benchmarks the decoder on a single record.
 func BenchmarkDecodeRecord(b *testing.B) {
 	data := []byte{

@@ -43,11 +43,16 @@ type TrackMessage struct {
 	// Ended is the I062/080 TSE flag: this is the final report for the track,
 	// which is being deleted. The frontend removes the track on this. Only
 	// serialized when true (a live track omits it).
-	Ended    bool    `json:"ended,omitempty"`
-	PSRAge   float64 `json:"psr_age"`
-	Accuracy float64 `json:"accuracy"`
-	Mode3A   *uint16 `json:"mode_3a,omitempty"`
-	ICAOAddr *uint32 `json:"icao_addr,omitempty"`
+	Ended  bool    `json:"ended,omitempty"`
+	PSRAge float64 `json:"psr_age"`
+	// AdsbAgeS is the time since the last ADS-B (Extended Squitter)
+	// contribution, in seconds, from I062/290's ES subfield (ICD 2.4.0).
+	// Present only for tracks with an ADS-B component (Firefly ADR 0019); its
+	// presence is what the frontend uses to show the ADS-B badge.
+	AdsbAgeS *float64 `json:"adsb_age_s,omitempty"`
+	Accuracy float64  `json:"accuracy"`
+	Mode3A   *uint16  `json:"mode_3a,omitempty"`
+	ICAOAddr *uint32  `json:"icao_addr,omitempty"`
 	// FlightLevelFt is the measured barometric flight level in feet (I062/136),
 	// present only for tracks carrying a Mode C reply.
 	FlightLevelFt *float64 `json:"flight_level_ft,omitempty"`
@@ -177,6 +182,7 @@ func (b *Broadcaster) tracksToMessage(tracks []cat062.DecodedTrack) Message {
 			Coasting:      track.Status.Coasting,
 			Ended:         track.Status.Ended,
 			PSRAge:        track.UpdateAge.PSRAge,
+			AdsbAgeS:      track.UpdateAge.ESAge,
 			Accuracy:      track.Accuracy.APC,
 			Mode3A:        track.Mode3A,
 			ICAOAddr:      track.ICAOAddr,
