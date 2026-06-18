@@ -113,6 +113,25 @@ Jeder verbundene Browser-Client erhält dieselben Track-Updates. Der
 Broadcaster hält keine Track-History — jedes Update ist ein vollständiges
 Snapshot-Frame (alle aktuell bekannten Tracks).
 
+**ADS-B-Anteil (`adsb_age_s`, ICD 2.4.0, AP9.9):** Das Feld `adsb_age_s`
+ist nur vorhanden (`omitempty`), wenn Firefly den Track zuletzt mit einem
+ADS-B-Selbstbericht aktualisiert hat. Der Wert gibt das Alter dieses Updates
+in Sekunden an (Auflösung 1/4 s, aus I062/290 ES-Age). Fehlt das Feld, ist
+der Track ein reiner Radar-Track.
+
+Das Frontend wertet dieses Feld für den **ADS-B-Badge** aus:
+
+| Bedingung | Darstellung |
+|-----------|-------------|
+| `adsb_age_s` fehlt | kein Badge (reiner Radar-Track) |
+| `adsb_age_s` ≤ 30 s | `◆` im Track-Label (frischer ADS-B-Anteil) |
+| `adsb_age_s` > 30 s | kein Badge (ADS-B-Anteil veraltet) |
+
+Die 30-Sekunden-Schwelle (`ADSB_FRESH_THRESHOLD_S`) ist in
+`internal/webui/static/app.js` definiert und gibt an, ab wann ein ADS-B-Hit
+als nicht mehr frisch gilt (Fireflys Live-Modus sendet typisch alle 5–10 s
+OpenSky-Polls).
+
 ### 2.3 Ausgang: Feed-Status an den Browser
 
 Der Feed-Status (`feed_status`-Nachricht) wird separat gesendet, wenn sich
