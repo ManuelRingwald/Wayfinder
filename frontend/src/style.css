@@ -1,0 +1,16 @@
+/* Reset */
+*, *::before, *::after { box-sizing: border-box; }
+html, body, #app {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden; /* map takes full viewport */
+}
+/* Vuetify navigation drawer width override for compact ASD use */
+.v-navigation-drawer { border-right: 1px solid rgba(255,255,255,0.08) !important; }
+/* Ensure map canvas fills v-main */
+.v-main { height: 100vh; }
+/* Improve number input appearance in dark theme */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; }
+input[type="number"] { -moz-appearance: textfield; }

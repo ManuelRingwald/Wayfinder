@@ -1,0 +1,77 @@
+<template>
+  <div style="position: absolute; inset: 0">
+    <div ref="mapEl" style="width: 100%; height: 100%" />
+    <MapControls
+      @zoom-in="mapEngine?.zoomIn()"
+      @zoom-out="mapEngine?.zoomOut()"
+      @recenter="mapEngine?.recenter()"
+      @reset-north="mapEngine?.resetNorth()"
+    />
+    <!-- ASD-013: FeedStatusChip moved here after app bar removal -->
+    <FeedStatusChip class="feed-chip" />
+    <!-- ASD-010: category filter chips top-centre -->
+    <TrackFilterChips />
+  </div>
+</template>
+
+<script setup>
+import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { useAsdStore } from '@/stores/asd.js'
+import { initMap } from '@/map/engine.js'
+import MapControls from './MapControls.vue'
+import TrackFilterChips from './TrackFilterChips.vue'
+import FeedStatusChip from './FeedStatusChip.vue'
+
+const emit = defineEmits(['track-click'])
+const store = useAsdStore()
+const mapEl = ref(null)
+let mapEngine = null
+
+onMounted(async () => {
+  mapEngine = await initMap(mapEl.value, store, (track) => emit('track-click', track))
+})
+
+onUnmounted(() => {
+  mapEngine?.destroy()
+})
+
+// Layer visibility reactive sync
+watch(() => ({ ...store.layerVisibility }), (vis) => {
+  mapEngine?.setLayerVisibility(vis)
+}, { deep: true })
+
+// FL filter reactive sync
+watch(() => ({ ...store.flFilter }), () => {
+  mapEngine?.updateFlFilter()
+}, { deep: true })
+
+// ASD-010: re-render when category filter changes (hiddenCategories is a
+// reactive Set; we watch its size as a proxy for any add/delete).
+watch(() => store.hiddenCategories.size, () => {
+  mapEngine?.updateFlFilter()
+})
+
+// ASD-011: apply airspace group filter once after map load (so the initial
+// state is correctly reflected) and whenever the store changes.
+watch(() => store.mapLoaded, (loaded) => {
+  if (loaded) mapEngine?.updateAirspaceFilter()
+})
+watch(() => ({ ...store.airspaceGroupVisibility }), () => {
+  mapEngine?.updateAirspaceFilter()
+}, { deep: true })
+
+defineExpose({
+  setLayerVisibility: (layer, val) => mapEngine?.setLayerVisibility({ [layer]: val }),
+  updateFlFilter: () => mapEngine?.updateFlFilter(),
+})
+</script>
+
+<style scoped>
+/* ASD-013: Feed chip anchored top-right, beside map controls. */
+.feed-chip {
+  position: absolute;
+  top: 12px;
+  right: 60px;
+  z-index: 10;
+}
+</style>

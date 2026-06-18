@@ -26,6 +26,45 @@
   `node --check app.js` ✅). AP9 (ADS-B, ICD 2.4.0) auf Wayfinder-Seite
   damit vollständig abgeschlossen. Nächster Schritt: nächstes Roadmap-Paket
   nach Abstimmung.
+- **Vorherige Aktualisierung:** 2026-06-17 — **Phase 1 der ASD-Optik-Verbesserung
+  (ASD-007–010) abgeschlossen.** Branch `claude/vue-md3-asd-006`.
+
+  **ASD-007 Farbschema:** Cyan-Primary-Theme aus ASD-Mockup (Command-Center-
+  Ästhetik). `vuetify.js`: background `#070b12`, surface `#0e1622`, primary
+  `#23d3e6`. `constants.js`: neues `TRACK_COLORS`-Objekt (friendlyCivil
+  `#41c4e8`, hostile `#ff4338`, unknown `#ffd23e`, neutral `#43c66b`, friendlyMilitary
+  `#ffa726`); PALETTES.dark aktualisiert (label, vector, trail, airspaceFillColor,
+  airways). Design-Spec in `docs/design/color-tokens.md`.
+
+  **ASD-008 Navigation Rail:** `NavigationRail.vue` ersetzt die monolithische
+  `LayerSidebar.vue`. Permanent-schmale Schiene (56 px Icons + Tooltips) auf
+  Desktop; Klick → 240-px-Panel für Layer-/FL-Filter-Controls; Collapse-Button;
+  Mobile bleibt Hamburger-Temporary-Drawer. sections-Array vorbereitet für
+  ASD-013 Alarm-Panel.
+
+  **ASD-009 Karten-Controls:** `MapControls.vue` — zwei schwebende Button-
+  Gruppen rechts (Zoom +/−; Recenter, Nord-up, Fullscreen). `engine.js` um
+  `zoomIn/zoomOut/recenter/resetNorth` erweitert.
+
+  **ASD-010 Kategorie-Filter-Chips:** `TrackFilterChips.vue` top-center über
+  dem Canvas. Live-Zähler (Confirmed/Coasting/Tentative) aus Pinia
+  `trackCounts`. Klick togglet `hiddenCategories`; `render.js` filtert alle
+  Feature-Typen (Symbole, Vektoren, Dots, Trails) für ausgeblendete Kategorien.
+
+  Gates: `npm run build` ✅ · `vitest 39/39` ✅ · `go test ./...` ✅.
+  S2–S3 · Sonnet 4.6.
+
+  **Nächster Schritt:** Phase 2 beginnen — Reihenfolge ASD-011 → ASD-012 →
+  ASD-013. ASD-011 (Erweitertes Track-Detail-Panel) ist S2, gut umsetzbar mit
+  Sonnet 4.6. Oder: PR #16 erst mergen lassen und dann auf neuem Branch weiter.
+
+- **Vorherige Aktualisierung:** 2026-06-17 — **ASD-006 „Vue 3 + Vuetify 3
+  (Material Design 3)" abgeschlossen.** Branch `claude/vue-md3-asd-006`.
+  ADR 0002 ratifiziert. AP0–AP6 vollständig umgesetzt (ADR-Doku, Scaffold,
+  Karten-Engine als ES-Module, 39 Vitest-Tests, Pinia-Store, App-Shell,
+  Track-Detail-Panel). wayfinder.yaml.example + FR-CFG-003 (YAML-Config).
+  Gates: npm run build ✅ · vitest 39/39 ✅ · go test ./... ✅.
+
 - **Vorherige Aktualisierung:** 2026-06-16 — **Paket #16 / ASD-002 „Anti-Garbling
   (Label-Deconfliction + Drag&Drop)" abgeschlossen.** Rein Frontend (`app.js`),
   kein Backend- oder ICD-Change. **B1 Auto-Deconfliction:** `deconflictLabels()`
@@ -295,134 +334,51 @@
   Nächster Schritt: AP7/AP8 (Callsign I062/245), AP5/AP6 (CAT065 Heartbeat),
   weitere UI-Häppchen.
 
-> 🔁 **Pivot vollzogen: Wayfinder konsumiert CAT062/UDP-Multicast statt
-> JSON/WebSocket.** `CLAUDE.md` wurde komplett neu gefasst (Produktionsbetrieb,
-> Modell-Angabe pro Schritt jetzt Pflicht, Abschnitt 2 = vollständiger
-> CAT062-Draht-Vertrag mit FRN/Item-Tabelle). Begründung und Konsequenzen stehen
-> in Fireflys `docs/decisions/0014-produktionsbetrieb-statt-lernprojekt-wayfinder-cat062.md`.
->
-> Cross-Project-Status (`docs/cross-project/todo-for-firefly.md`): Issues
-> **#6, #8, #10** geschlossen (durch CAT062-Architektur gegenstandslos), **#7**
-> transformiert (Netz-Isolation Multicast + Wayfinder-Browser-Rand), **#9** (UTC
-> Time-of-Day) bleibt offen und wird zentraler.
-
 ---
 
 ## 1. Wo wir gerade stehen
 
-**M1.3 (WebSocket-Server — Browser-Push): ✅ Abgeschlossen**
+**AP9.9 ADS-B-Badge (ICD 2.4.0): ✅ Abgeschlossen** (PR #22, gemergt)
+**ASD-006 (Vue 3 + Vuetify 3 MD3): ✅ Abgeschlossen**
+**ASD-007 Farbschema: ✅ Abgeschlossen**
+**ASD-008 Navigation Rail: ✅ Abgeschlossen**
+**ASD-009 Karten-Controls: ✅ Abgeschlossen**
+**ASD-010 Kategorie-Filter-Chips: ✅ Abgeschlossen**
 
-Implementiert:
-- ✅ `pkg/broadcast/broadcast.go` — Broadcaster mit Channel-basierter Architektur
-  - Track-Channel-Input: `broadcaster.TracksChan() <- tracks`
-  - Client-Registry (sync.Map) für non-blocking Broadcast
-  - Automatische Eviction bei vollem Client-Channel
-  - Message-Format: JSON mit Track-Array
-- ✅ `pkg/ws/handler.go` — HTTP-Handler für WebSocket-Upgrade
-  - Client-Lifecycle: register → readLoop + writeLoop → unregister
-  - Ping/Pong für Keepalive
-  - WriteJSON für Message-Serialisierung
-- ✅ Integration in `main.go`:
-  - Receiver → Broadcaster → WebSocket-Clients (volle Pipeline)
-  - Graceful shutdown mit Goroutine-Sync (sync.WaitGroup)
-  - Readiness probe: ready wenn Clients verbunden ODER Blocks empfangen
-  - WebSocket auf `:8081` (/ws endpoint)
+Ausstehend (Phase 2):
 
-**Qualitäts-Gates:** `go build ./cmd/wayfinder` ✅, `go test ./...` ✅
-
----
-
-**M1.2 (UDP-Multicast-Receiver): ✅ Abgeschlossen**
-
-Implementiert:
-- ✅ `pkg/receiver/receiver.go` — UDP-Multicast-Listener mit CAT062-Decoder-Integration
-  - Multicast-Bindung auf `239.255.0.62:8600` (oder env. konfigurierbar via `FIREFLY_CAT062_GROUP`/`FIREFLY_CAT062_PORT`)
-  - Handler-Pattern für Track-Verarbeitung (jedes Datagramm = ein Block mit 0+ Tracks)
-  - Fehlerbehandlung: truncated/malformed Blöcke werden geloggt und ignoriert (kein Panic)
-- ✅ `cmd/wayfinder/main.go` — Server-Einstieg mit
-  - Umgebungs-Konfiguration (12-Factor)
-  - `/health` (Liveness) und `/ready` (Readiness) probes für Container/Kubernetes
-  - Graceful shutdown auf SIGINT/SIGTERM
-  - Strukturiertes JSON-Logging (stderr)
-- ✅ `pkg/receiver/receiver_test.go` — 5 Tests (Config, Invalid Group, Run/Listen, Context Cancellation)
-
-**Integrationen:** CAT062-Decoder ist direkt in den Receiver-Handler verdrahtet — die ersten Datenpakete von Firefly können jetzt empfangen und dekodiert werden.
-
----
-
-**M1.1 (CAT062-Decoder-Grundgerüst): ✅ Abgeschlossen**
-
-Implementiert:
-- ✅ `pkg/cat062/types.go` — DecodedTrack, DataSourceID, TimeOfDay, WGS84Position, CartesianPosition, Velocity, TrackStatus, UpdateAge, PositionAccuracy
-- ✅ `pkg/cat062/fspec.go` — FSPEC-Parser mit FX-Chaining
-- ✅ `pkg/cat062/decoder.go` — DecodeDataBlock, DecodeRecord mit FRN 1,4,5,6,7,9,11,12,13,14,16
-  - FRN1 (I062/010): SAC/SIC ✅
-  - FRN4 (I062/070): Time-of-Day ✅
-  - FRN5 (I062/105): WGS84-Position ✅
-  - FRN6 (I062/100): System-Cartesian (i24 **sign-extension**) ✅
-  - FRN7 (I062/185): Velocity ✅
-  - FRN9 (I062/060): Mode 3/A ✅
-  - FRN11 (I062/380): ICAO-Adresse ✅
-  - FRN12 (I062/040): Track-Nummer ✅
-  - FRN13 (I062/080): Track-Status (variable FX, vereinfacht) ✅
-  - FRN14 (I062/290): PSR-Age ✅
-  - FRN16 (I062/500): Position-Genauigkeit (APC) ✅
-- ✅ `pkg/cat062/decoder_test.go` — **alle 10 Tests grün** (TestSignExtendI24,
-  TestFSPECParser, TestDecodeDataSourceID, TestDecodeTimeOfDay,
-  TestDecodeWGS84Position, TestDecodeVelocity, TestDecodeCartesianPosition,
-  TestDecodeMultipleTracks, TestReferenceVector, BenchmarkDecodeRecord)
-
-**Validierung gegen Firefly (M1.1.d):**
-- `TestReferenceVector` dekodiert den byte-exakten Dump aus Fireflys
-  `single_track_matches_reference_dump` (firefly-asterix/src/cat062.rs) und
-  prüft alle Felder gegen die dort erzeugten Werte — der Wire-Vertrag zwischen
-  Firefly (Encoder) und Wayfinder (Decoder) ist somit Ende-zu-Ende verifiziert.
-
-**Qualitäts-Gates:** `go test ./...` ✅, `go vet ./...` ✅, `gofmt` ✅
+| AP | Inhalt | Stufe |
+|----|--------|-------|
+| **ASD-011** | Erweitertes Track-Detail-Panel (Ausbau TrackDetailCard.vue) | S2 · Sonnet 4.6 |
+| **ASD-012** | Range-Rings + Scale-Bar + Nord-/Track-up | S3 · Opus 4.8 |
+| **ASD-013** | Alarm-/Ereignis-Panel | S3 · Sonnet 4.6 |
 
 ## 2. Gesetzte Entscheidungen (Fundament)
 
 | Thema | Entscheidung | Quelle | Status |
 |-------|--------------|--------|--------|
 | Betriebsmodus | Produktionsbetrieb (nicht Lernprojekt) | Fireflys ADR 0014 | ✅ |
-| Schnittstelle | **CAT062 over UDP-Multicast** (nicht JSON/WebSocket) | Fireflys ADR 0006 + 0014, `CLAUDE.md` Abschnitt 2 | ✅ |
-| Sprache | Code Englisch, Doku/Chat Deutsch | `CLAUDE.md` Abschnitt 4 | ✅ |
-| Stack | Go + MapLibre GL JS + WebSocket-Server-Push | `CLAUDE.md` Abschnitt 5, ADR 0001 | ✅ ratifiziert 2026-06-13 |
+| Schnittstelle | **CAT062 over UDP-Multicast** | Fireflys ADR 0006 + 0014, `CLAUDE.md` §2 | ✅ |
+| Stack | Go + MapLibre GL JS + WebSocket-Server-Push | ADR 0001 | ✅ |
+| Frontend-Framework | Vue 3 + Vuetify 3 (MD3), Vite, Vitest, Pinia | ADR 0002 | ✅ |
+| Farbschema | Cyan-Primary aus ASD-Mockup | `docs/design/color-tokens.md` | ✅ |
 
-## 3. Nächster Schritt (hier geht es weiter!)
+## 3. Nächster Schritt
 
-➡️ **M1.3 (WebSocket-Server — Browser-Push für Live-Tracks)**
+➡️ **ASD-011: Erweitertes Track-Detail-Panel** (S2 · Sonnet 4.6) — nach Abstimmung.
 
-Live-Tracks vom Receiver an Browser-Clients über WebSocket:
-- Go-WebSocket-Server (mit gorilla/websocket oder stdlib `net/http/httputil/reverseproxy`)
-- Receiver → Channel → WebSocket-Broadcast-Loop
-- Message format: JSON mit Track-Array (lat, lon, vx, vy, track_num, status, …)
-- Client-Verbindung: `/ws`, optional mit Cookie/Bearer-Auth
-- Health: WebSocket-Clients zählen als Readiness-Indikator
+Ausbau `TrackDetailCard.vue`: vollständiger ASD-Data-Block (Callsign, ICAO-
+Adresse, Squawk, FL mit Tendenz-Pfeil, Ground Speed, Heading, Track-Nummer,
+Zeitstempel letztes Update, Status). Rein Frontend, kein Backend-Change nötig.
 
-Danach M1.4 (Frontend mit MapLibre GL JS).
+Dann ASD-012 (Range-Rings, S3 · Opus 4.8) und ASD-013 (Alarm-Panel, S3 · Sonnet 4.6).
 
-Erst Erklärung → Rückfragen/Go → dann kleine, testbare Umsetzung
-(`CLAUDE.md` Abschnitt 3).
-
-## 4. So steige ich wieder ein (Kurzbefehle)
+## 4. Schnell-Einstieg
 
 ```bash
-# Tests laufen und Dekodierung prüfen
-go test ./pkg/cat062 -v
-
-# Oder einzelne Tests:
-go test ./pkg/cat062 -run TestDecodeCartesianPosition -v
-
-# Code ansehen:
-ls -la pkg/cat062/
-# decoder.go        (Haupt-Dekoder + i24-Helfer)
-# decoder_test.go   (Tests)
-# types.go          (Domain-Typen)
-# fspec.go          (FSPEC-Parser)
+cd /home/user/Wayfinder
+git log --oneline | head -10
+npm run build          # in frontend/
+npm run test -- --run  # in frontend/
+go test ./...
 ```
-
-Einstieg:
-- `CLAUDE.md` Abschnitt 2 = CAT062-Draht-Vertrag + FRN-Tabelle
-- `docs/cross-project/todo-for-firefly.md` = Cross-Project-Status
-- Commit-Log: `git log --oneline | head` (letzte Arbeit + Messaging)
