@@ -50,6 +50,12 @@ export const LABELS_LAYER_ID = 'track-labels-text'
 export const LEADER_LINES_SOURCE_ID = 'track-leader-lines'
 export const LEADER_LINES_LAYER_ID = 'track-leader-lines-lines'
 
+// Paket 6: Sensor coverage ring overlay — radar range circles fetched from
+// /api/coverage/rings as a static GeoJSON FeatureCollection.
+export const COVERAGE_SOURCE_ID = 'coverage-rings'
+export const COVERAGE_RINGS_LAYER_ID = 'coverage-rings-lines'
+export const COVERAGE_CENTER_LAYER_ID = 'coverage-center-circles'
+
 // ASD-002: Deconfliction geometry constants (all values in screen pixels).
 // LABEL_TEXT_SIZE      : data-block text size; used as the symbol layer's "text-size".
 // LABEL_SLOT_RADIUS_PX : distance from symbol centre to label anchor candidate.

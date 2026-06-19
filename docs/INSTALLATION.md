@@ -386,6 +386,41 @@ ist das Feature deaktiviert (Warn-Log, keine Fehlermeldung an den Client).
 | `WAYFINDER_OPENAIP_REFRESH` | `24h` | Refresh-Intervall (Go-Duration-Format: `1h`, `30m`, `24h`) |
 | `WAYFINDER_OPENAIP_BASE_URL` | *(intern)* | Override der OpenAIP-Basis-URL (für Tests/Proxies) |
 
+### 7.5 Radarabdeckungs-Overlay (Paket 6)
+
+Sensor-Positionen und -Reichweiten für das Coverage-Ring-Overlay. N = 1, 2, 3, …
+(max. 20); die Reihe muss lückenlos beginnen — fehlende N=2 stoppt die Auswertung.
+
+| Variable | Default | Beschreibung |
+|----------|---------|--------------|
+| `WAYFINDER_COVERAGE_SENSOR_N_LAT` | *(leer)* | Breitengrad des Radarstandorts (Dezimalgrad WGS84) |
+| `WAYFINDER_COVERAGE_SENSOR_N_LON` | *(leer)* | Längengrad des Radarstandorts (Dezimalgrad WGS84) |
+| `WAYFINDER_COVERAGE_SENSOR_N_MAX_RANGE_M` | *(leer)* | Maximale Reichweite in Metern (Pflicht; 0 = Sensor überspringen) |
+| `WAYFINDER_COVERAGE_SENSOR_N_MIN_RANGE_M` | `0` | Innerer Blindbereich in Metern (0 = kein Blindbereich) |
+| `WAYFINDER_COVERAGE_SENSOR_N_LABEL` | *(leer)* | Tooltip-Bezeichnung des Radars |
+| `WAYFINDER_COVERAGE_RING_COLOR` | `#5B8DEF` | Farbe aller Radarringe (CSS-Hex-Farbe) |
+
+**Beispiel (Frankfurt-Konfiguration):**
+```
+WAYFINDER_COVERAGE_SENSOR_1_LAT=50.0379
+WAYFINDER_COVERAGE_SENSOR_1_LON=8.5622
+WAYFINDER_COVERAGE_SENSOR_1_MAX_RANGE_M=120000
+WAYFINDER_COVERAGE_SENSOR_1_LABEL=Frankfurt-Center
+
+WAYFINDER_COVERAGE_SENSOR_2_LAT=50.0849
+WAYFINDER_COVERAGE_SENSOR_2_LON=8.0638
+WAYFINDER_COVERAGE_SENSOR_2_MAX_RANGE_M=100000
+WAYFINDER_COVERAGE_SENSOR_2_LABEL=Frankfurt-West
+
+WAYFINDER_COVERAGE_SENSOR_3_LAT=50.3558
+WAYFINDER_COVERAGE_SENSOR_3_LON=9.0009
+WAYFINDER_COVERAGE_SENSOR_3_MAX_RANGE_M=100000
+WAYFINDER_COVERAGE_SENSOR_3_LABEL=Frankfurt-Nordost
+```
+
+Die Werte müssen mit den Sensor-Positionen in Fireflys Konfiguration übereinstimmen.
+Ohne konfigurierte Sensoren bleibt das Feature deaktiviert (kein Fehler).
+
 ### 7.4 Sicherheit
 
 | Variable | Default | Beschreibung |

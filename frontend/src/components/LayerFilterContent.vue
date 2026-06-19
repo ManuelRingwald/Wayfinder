@@ -64,6 +64,18 @@
       />
     </div>
 
+    <div class="filter-row">
+      <v-switch
+        v-model="store.layerVisibility.coverageRings"
+        label="Radarabdeckung"
+        color="primary"
+        density="compact"
+        hide-details
+        inset
+        @update:model-value="onLayerToggle('coverageRings', $event)"
+      />
+    </div>
+
     <!-- ── FL-Filter ── -->
     <div class="filter-section-header filter-section-header--spaced">FL-Filter</div>
 

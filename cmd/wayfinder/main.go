@@ -22,6 +22,7 @@ import (
 	"github.com/manuelringwald/wayfinder/pkg/broadcast"
 	"github.com/manuelringwald/wayfinder/pkg/cat062"
 	"github.com/manuelringwald/wayfinder/pkg/cat065"
+	"github.com/manuelringwald/wayfinder/pkg/coverage"
 	"github.com/manuelringwald/wayfinder/pkg/health"
 	"github.com/manuelringwald/wayfinder/pkg/metrics"
 	"github.com/manuelringwald/wayfinder/pkg/receiver"
@@ -210,6 +211,11 @@ func main() {
 	// /api/waypoints), served from the OpenAIP cache (ADR 0004).
 	aeroService.Register(mux)
 
+	// Coverage rings: static GeoJSON computed once from config, served to the
+	// browser on demand. An empty FeatureCollection is returned when no sensors
+	// are configured so the frontend can always fetch unconditionally.
+	mux.HandleFunc("/api/coverage/rings", coverageRingsHandler(cfg))
+
 	handler := authMiddleware(cfg.AuthToken, mux)
 
 	go func() {
@@ -273,6 +279,11 @@ type Config struct {
 	OpenAIPBaseURL  string        // WAYFINDER_OPENAIP_BASE_URL (optional override)
 	OpenAIPRefresh  time.Duration // WAYFINDER_OPENAIP_REFRESH (Go duration, default 24h)
 	OpenAIPRadiusKM float64       // WAYFINDER_OPENAIP_RADIUS_KM (default 250)
+
+	// Coverage rings overlay (Paket 6, ASD-012 extension).
+	// Populated from WAYFINDER_COVERAGE_SENSOR_N_* env-vars.
+	CoverageSensors   []coverage.SensorConfig // WAYFINDER_COVERAGE_SENSOR_N_{LAT,LON,...}
+	CoverageRingColor string                  // WAYFINDER_COVERAGE_RING_COLOR, default #5B8DEF
 }
 
 // defaultMapStyle is a minimal MapLibre style using OpenStreetMap raster
@@ -480,6 +491,13 @@ func loadConfig() Config {
 		}
 	}
 
+	// Coverage rings: sensor positions and ranges from env-vars.
+	cfg.CoverageSensors = coverage.ParseEnv(os.Getenv)
+	cfg.CoverageRingColor = os.Getenv("WAYFINDER_COVERAGE_RING_COLOR")
+	if cfg.CoverageRingColor == "" {
+		cfg.CoverageRingColor = "#5B8DEF"
+	}
+
 	return cfg
 }
 
@@ -545,12 +563,32 @@ func mapConfigHandler(cfg Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"center_lat": cfg.MapCenterLat,
-			"center_lon": cfg.MapCenterLon,
-			"zoom":       cfg.MapZoom,
-			"style":      styleValue,
-			"theme":      theme,
+			"center_lat":            cfg.MapCenterLat,
+			"center_lon":            cfg.MapCenterLon,
+			"zoom":                  cfg.MapZoom,
+			"style":                 styleValue,
+			"theme":                 theme,
+			"coverage_ring_color":   cfg.CoverageRingColor,
+			"coverage_sensor_count": len(cfg.CoverageSensors),
 		})
+	}
+}
+
+// coverageRingsHandler serves the sensor coverage rings as a static GeoJSON
+// FeatureCollection. The GeoJSON is computed once at startup from the
+// configured sensors; an empty FeatureCollection is returned when no sensors
+// are configured so the frontend can always fetch unconditionally.
+func coverageRingsHandler(cfg Config) http.HandlerFunc {
+	body, err := coverage.RingsGeoJSON(cfg.CoverageSensors, cfg.CoverageRingColor)
+	if err != nil {
+		// RingsGeoJSON only fails when json.Marshal fails — effectively never.
+		// Fall back to a minimal empty collection rather than crashing.
+		body = []byte(`{"type":"FeatureCollection","features":[]}`)
+	}
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/geo+json")
+		w.Header().Set("Cache-Control", "no-cache")
+		_, _ = w.Write(body)
 	}
 }
 

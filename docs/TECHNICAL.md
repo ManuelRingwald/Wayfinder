@@ -309,6 +309,20 @@ Auflösung (höchste Priorität zuerst):
 | `WAYFINDER_OPENAIP_REFRESH` | `24h` | duration | Refresh-Intervall (Go-Duration, z. B. `1h`, `30m`) |
 | `WAYFINDER_OPENAIP_BASE_URL` | *(intern)* | URL | Override der OpenAIP-API-Basis-URL |
 
+### 6.5 Radarabdeckungs-Overlay (Paket 6)
+
+| Variable | Default | Typ | Beschreibung |
+|----------|---------|-----|--------------|
+| `WAYFINDER_COVERAGE_SENSOR_N_LAT` | *(leer)* | float | Breitengrad Sensorstandort (WGS84) |
+| `WAYFINDER_COVERAGE_SENSOR_N_LON` | *(leer)* | float | Längengrad Sensorstandort (WGS84) |
+| `WAYFINDER_COVERAGE_SENSOR_N_MAX_RANGE_M` | *(leer)* | float | Außenradius in Metern |
+| `WAYFINDER_COVERAGE_SENSOR_N_MIN_RANGE_M` | `0` | float | Innenradius in Metern (0 = kein Blindbereich) |
+| `WAYFINDER_COVERAGE_SENSOR_N_LABEL` | *(leer)* | string | Sensor-Bezeichnung für Tooltip |
+| `WAYFINDER_COVERAGE_RING_COLOR` | `#5B8DEF` | CSS-Hex | Farbe aller Ringe (einheitlich) |
+
+**Endpoint:** `GET /api/coverage/rings` → `application/geo+json` FeatureCollection.
+Wird einmal beim Frontend-Load abgerufen. Leere Collection wenn kein Sensor konfiguriert.
+
 ### 6.4 Sicherheit
 
 | Variable | Default | Typ | Beschreibung |
