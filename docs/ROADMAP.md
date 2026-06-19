@@ -53,9 +53,19 @@ Umbau vom einprozessigen, beim-Start-konfigurierten **Single-Tenant-ASD** zur
   PostgreSQL + `pgx`/`sqlc` + `goose`-Migrationen, Schema-Skizze, Stateless-Split;
   Identität OIDC@Proxy primär + eingebauter Fallback (`WAYFINDER_AUTH_MODE`),
   Tenant-Kontext fail-closed; Redis zurückgestellt; Register FR-TEN-002/NFR-SEC-004.
+- **WF2-02 — ADR 0007 „Cloud-Ingest & Feed-Fan-out" ✅ erledigt** (`0007-cloud-ingest-und-feed-fan-out.md`):
+  Zielumgebung Public Cloud + Kubernetes; `FeedSource`-Abstraktion (direkt-Multicast
+  vs. Stream), Ingest-Gateway (Multicast→Bus, Roh-Datagramm, Subject pro Feed),
+  **Stream-Bus = NATS JetStream** (Core-Fan-out + optionaler Puffer; Replay bleibt
+  Firefly); RabbitMQ/Kafka geprüft & verworfen (RabbitMQ > Kafka, beide < NATS für
+  dieses Profil); Register FR-FEED-001/NFR-SCALE-001.
 
-**➡️ Nächster Schritt:** **WF2-02 — ADR 0007 „Cloud-Ingest & Feed-Fan-out"**
-(S4 · Opus 4.8). Kein Produktivcode vor dieser Ratifizierung.
+**✅ Stufe 0 (Entscheidung & Fundament) abgeschlossen** — ADR 0005/0006/0007.
+
+**➡️ Nächster Schritt:** **WF2-10 — Persistenz-Schicht & Migrationen** (Beginn
+Stufe 1, **erstes Produktivcode-Paket**: `pkg/store`, pgx/sqlc, goose-Migrationen).
+**S3 · Sonnet 4.6 (+Opus-Review)** — wird vor Umsetzung separat angekündigt
+(Code-Gates ab hier wieder voll: `go test`, Repository-/Testcontainer-Tests).
 
 ---
 
@@ -72,12 +82,12 @@ Details & Begründung: Konzept §7/§8.
 |----|--------|----------------|------|--------|
 | **WF2-00** 🔒 | ADR 0005 „Multi-Mandanten-Pivot" (Reframe, Hybrid-Modell, Vertrauensgrenze, Zert-Haltung) | **S4 · Opus 4.8** | — | ✅ **erledigt** (ADR 0005) |
 | **WF2-01** 🔒 | ADR 0006 „Konfig-/Identitäts-Persistenz" (Postgres-Schema, Migrationen, Stateless-Split) | **S4 · Opus 4.8** | WF2-00 | ✅ **erledigt** (ADR 0006) |
-| **WF2-02** | ADR 0007 „Cloud-Ingest & Feed-Fan-out" (`FeedSource`, Gateway, NATS/Kafka vs direkt-Multicast) | **S4 · Opus 4.8** | WF2-00 | **➡️ NÄCHSTER** |
+| **WF2-02** | ADR 0007 „Cloud-Ingest & Feed-Fan-out" (`FeedSource`, Gateway, **NATS JetStream** gewählt) | **S4 · Opus 4.8** | WF2-00 | ✅ **erledigt** (ADR 0007) |
 
 ### Stufe 1 — Identität & Mandanten-Grundgerüst (ohne Datenfluss-Änderung)
 | AP | Inhalt | Stufe · Modell | Abh. | Status |
 |----|--------|----------------|------|--------|
-| **WF2-10** 🔒 | Persistenz-Schicht & Migrationen (`pkg/store`, pgx/sqlc) | **S3 · Sonnet 4.6** (+Opus-Review) | WF2-01 | geplant |
+| **WF2-10** 🔒 | Persistenz-Schicht & Migrationen (`pkg/store`, pgx/sqlc) | **S3 · Sonnet 4.6** (+Opus-Review) | WF2-01 | **➡️ NÄCHSTER** (erstes Produktivcode-Paket) |
 | **WF2-11** 🔒 | AuthN: echtes Nutzer-/Session-Modell (OIDC@Proxy o. eingebaut; Tenant-Claim) | **S4 · Opus 4.8** | WF2-10 | geplant |
 | **WF2-12** 🔒 | Tenant-Context-Middleware (jeder HTTP/WS-Request → Tenant-ID, fail-closed) | **S4 · Opus 4.8** | WF2-11 | geplant |
 | **WF2-13** | Admin-Bootstrap (create-tenant/-user, `/admin`-Auth-Gate) | **S2–S3 · Sonnet 4.6** | WF2-12 | geplant |
@@ -207,6 +217,7 @@ Architektur-Wirkung — nicht auf dem kritischen Pfad, aber jederzeit wertstifte
 - ✅ Konzept Wayfinder 2.0 erstellt & auf `main` (`docs/design/wayfinder-2.0-konzept.md`, PR #25) — 6 Ausbaustufen, ~28 WF2-Pakete, Modell-Tabelle, zwei Leitentscheidungen.
 - ✅ **WF2-00 / ADR 0005 — Multi-Mandanten-Pivot** (`docs/decisions/0005-multi-mandanten-pivot.md`): Pivot ratifiziert, Hybrid-Modell, Isolationsgrenze, Kommerz-Scope, 12-Factor-Grenze; Register FR-TEN-001/NFR-SEC-003.
 - ✅ **WF2-01 / ADR 0006 — Konfig-/Identitäts-Persistenz** (`docs/decisions/0006-konfig-identitaets-persistenz.md`): PostgreSQL + pgx/sqlc + goose, Schema-Skizze, Stateless-Split, Identität (OIDC@Proxy primär + Fallback), Redis zurückgestellt; Register FR-TEN-002/NFR-SEC-004.
+- ✅ **WF2-02 / ADR 0007 — Cloud-Ingest & Feed-Fan-out** (`docs/decisions/0007-cloud-ingest-und-feed-fan-out.md`): Public Cloud + K8s; FeedSource-Abstraktion, Ingest-Gateway, **NATS JetStream** (RabbitMQ/Kafka geprüft & verworfen); Register FR-FEED-001/NFR-SCALE-001. **→ Stufe 0 abgeschlossen.**
 
 **Cross-Project / Firefly:**
 - ✅ Paket #6 / Coverage-Werkzeug — Radar-Ringe-Overlay (`pkg/coverage`, `/api/coverage/rings`, Frontend-Layer-Toggle, Firefly `SensorModel`-Erweiterung; PR #27)
