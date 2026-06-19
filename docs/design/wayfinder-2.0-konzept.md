@@ -8,6 +8,10 @@
 > **Verbindlichkeit:** Dieses Konzept ist ein **Vorschlag**. Es ersetzt keine
 > ADRs; die hier benannten Leitentscheidungen werden vor der Umsetzung je als
 > ADR ratifiziert (CLAUDE.md §3 „Erst abstimmen, dann bauen").
+> **Entscheidungs-Stand (2026-06-19):** Zwei Richtungsentscheidungen gefallen
+> (§11): **Mandanten-Modell = Hybrid** (§6.1) und **Kommerz-Scope = Feature-Flags
+> ja, Stripe-Billing zurückgestellt** (§6.5). Übrige Entscheidungen (§11.3–11.6)
+> fallen je im zugehörigen ADR.
 
 ---
 
@@ -185,9 +189,9 @@ abdeckt") — S4–S5-Arbeit mit **Pflicht-Negativtests**.
 - **Variante B — Himmel pro Mandant:** je Mandant ein eigener Upstream-Feed
   (eigene Multicast-Gruppe / eigene Firefly-Instanz / eigenes Einzugsgebiet).
   *Schwerer; nötig bei verschiedenen Regionen/Sensoren je Kunde.*
-- **➡️ Empfehlung — Hybrid:** **Feed-Katalog** (N Feeds) + Mandant **abonniert
-  eine Teilmenge** und legt **Sicht-Filter** darüber. Subsumiert A und B, ist die
-  einzige Variante, die mit Wachstum nicht bricht.
+- **✅ Gewählt (2026-06-19) — Hybrid:** **Feed-Katalog** (N Feeds) + Mandant
+  **abonniert eine Teilmenge** und legt **Sicht-Filter** darüber. Subsumiert A und
+  B, ist die einzige Variante, die mit Wachstum nicht bricht.
 
 ### 6.2 Persistenz & Identität (ADR 0006)
 - **➡️ Empfehlung:** PostgreSQL als Konfig-/Identitäts-Store (wie im Entwurf);
@@ -212,11 +216,12 @@ abdeckt") — S4–S5-Arbeit mit **Pflicht-Negativtests**.
   ⇒ Cross-Project-Issue an Firefly (§10).
 
 ### 6.5 Monetarisierung (ADR 0008, optional/zuletzt)
-- **➡️ Empfehlung:** **Feature-Flags als Daten** im Entitlement-Store
-  (`tenant.HasFeature(...)`), **entkoppelt** von Billing. Stripe (falls
-  überhaupt) als **separate Plane**: Webhook → Entitlement-Update. Der ASD-Kern
-  importiert **nie** Stripe. Wenn das Produkt eine Behörden-/Leitstellen-Lösung
-  bleibt (kein Endkunden-SaaS), kann Epic 4 ganz entfallen.
+- **✅ Gewählt (2026-06-19): Feature-Flags ja, Stripe-Billing zurückgestellt.**
+  **Feature-Flags als Daten** im Entitlement-Store (`tenant.HasFeature(...)`),
+  **entkoppelt** von Billing — das hält das sicherheitsrelevante ASD frei von
+  Billing-Kopplung. Eine etwaige spätere Stripe-Anbindung bleibt eine **separate
+  Plane** (Webhook → Entitlement-Update); der ASD-Kern importiert **nie** Stripe.
+  ⇒ In Stufe 5 ist **WF2-50 (Entitlements) aktiv**, **WF2-51 (Billing) ruht**.
 
 ---
 
@@ -328,8 +333,9 @@ Modell** · **Abhängig von** · 🔒 = sicherheitskritisch.
 - **WF2-50 · Feature-Entitlement-Service** — `tenant.HasFeature("psr_layer")`
   aus DB-Entitlements; Feature-Flags als Daten, **nicht** Stripe-gekoppelt.
   **S3 · Sonnet 4.6** · Abh.: WF2-10
-- **WF2-51 · Billing-Adapter (Stripe) als separate Plane** — Webhook →
-  Entitlement-Update; ASD-Kern bleibt Stripe-frei. Sekret-/PCI-Sorgfalt.
+- **WF2-51 · Billing-Adapter (Stripe) als separate Plane** *(zurückgestellt,
+  §6.5 — derzeit nicht im Ziel)* — Webhook → Entitlement-Update; ASD-Kern bleibt
+  Stripe-frei. Sekret-/PCI-Sorgfalt.
   **S3 · Sonnet 4.6** (mit 🔒-Review) · Abh.: WF2-50
 - **WF2-52 · Stateless-Härtung & horizontale Skalierung** — bestätigen, dass kein
   node-lokaler State bleibt; Live-Lagebild je Feed extern/teilbar, sodass jede
@@ -416,11 +422,10 @@ Grund-Einstufung S3 ist.
 
 ## 11. Offene Entscheidungen (für die Abstimmung)
 
-1. **Mandanten-Modell:** Variante A (geteilter Himmel + Sichten), B (Himmel je
-   Mandant) oder **Hybrid** (Empfehlung)?
-2. **Kommerz-Scope:** Ist Epic 4 (Stripe/Basic-Premium/„Netflix") wirklich im
-   Ziel — oder ist Wayfinder 2.0 eine **Multi-Leitstellen-Lösung** für Behörden
-   *ohne* Endkunden-Monetarisierung (dann entfällt Stufe 5 weitgehend)?
+1. ✅ **ENTSCHIEDEN (2026-06-19) — Mandanten-Modell: Hybrid** (Feed-Katalog +
+   Abos + Sicht-Filter; §6.1).
+2. ✅ **ENTSCHIEDEN (2026-06-19) — Kommerz-Scope: Feature-Flags ja, Stripe-
+   Billing zurückgestellt** (§6.5; Stufe 5 ohne Billing, WF2-51 ruht).
 3. **Datastore/Cache:** PostgreSQL bestätigt? Redis erst bei gemessenem Bedarf
    (Empfehlung) oder von Anfang an?
 4. **Identität:** OIDC am Reverse-Proxy (Empfehlung, cloud-nativ) oder
