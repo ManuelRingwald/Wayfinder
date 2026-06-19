@@ -7,7 +7,27 @@
 > 🗺️ **Roadmap:** Arbeitspakete, Findings und empfohlene Reihenfolge stehen in
 > `docs/ROADMAP.md` (Stichwort „Roadmap" im Chat zeigt diese Liste).
 
-- **Zuletzt aktualisiert:** 2026-06-19 — **WF2-00 / ADR 0005 „Multi-Mandanten-Pivot"
+- **Zuletzt aktualisiert:** 2026-06-19 — **WF2-01 / ADR 0006 „Konfig-/Identitäts-
+  Persistenz" abgeschlossen (S4 · Opus 4.8, Doku).** Zweiter Baustein von
+  Wayfinder 2.0 (Stufe 0). Neue ADR `docs/decisions/0006-konfig-identitaets-persistenz.md`:
+  (1) Datastore = **PostgreSQL**; (2) Zugriff = **`pgx` + `sqlc`** (typsicher,
+  kein ORM, auditierbar); (3) Migrationen = **`goose`** (eingebettet, getaggte
+  Baselines); (4) **Schema-Skizze** (tenants/users/feeds/subscriptions/
+  view_configs/entitlements; feeds = globaler Katalog, sensor_mix als
+  Feed-Eigenschaft); (5) **Identität = OIDC@Proxy primär** (Wayfinder validiert
+  Token, mappt subject→tenant) **+ eingebauter Fallback** (argon2id) **+ none**
+  (Single-Tenant), via `WAYFINDER_AUTH_MODE`; Tenant-Kontext **fail-closed**
+  (Muster aus ADR 0003); (6) **Stateless-Split** (State in DB, Infra/Secrets in
+  ENV); (7) **Redis zurückgestellt** (In-Proc-TTL zuerst). Register **FR-TEN-002**
+  (Persistenz/Schema) + **NFR-SEC-004** (Identität/Session), je mit Vorwärts-
+  Referenz auf WF2-10/11/12. Neue ENV-Variablen (`WAYFINDER_DB_URL`,
+  `WAYFINDER_OIDC_*`, `WAYFINDER_SESSION_KEY`, `WAYFINDER_AUTH_MODE`) kommen in
+  INSTALLATION/TECHNICAL, **sobald WF2-10/11 sie einlesen** (heute noch
+  wirkungslos). ROADMAP §0/§1/§6 + STATUS §1/§2/§3 fortgeschrieben (WF2-01 ✅,
+  nächster = WF2-02). `go build/vet/test` grün (keine Code-Änderung). Reine Doku.
+  **Nächster Schritt:** WF2-02 / ADR 0007 „Cloud-Ingest & Feed-Fan-out"
+  (S4 · Opus 4.8) nach „Go".
+- **Vorherige Aktualisierung:** 2026-06-19 — **WF2-00 / ADR 0005 „Multi-Mandanten-Pivot"
   abgeschlossen (S4 · Opus 4.8, Doku).** Erster Baustein von Wayfinder 2.0.
   Neue ADR `docs/decisions/0005-multi-mandanten-pivot.md`: (1) Pivot zur
   mandantenfähigen Plattform ratifiziert, ASD-Kern bleibt als mandanten-skopierte
@@ -408,8 +428,8 @@ Kritischer 2.0-Pfad (Stufe 0):
 | AP | Inhalt | Stufe | Status |
 |----|--------|-------|--------|
 | **WF2-00** | ADR 0005 „Multi-Mandanten-Pivot" | S4 · Opus 4.8 | ✅ erledigt |
-| **WF2-01** | ADR 0006 „Konfig-/Identitäts-Persistenz" | S4 · Opus 4.8 | ➡️ nächster |
-| **WF2-02** | ADR 0007 „Cloud-Ingest & Feed-Fan-out" | S4 · Opus 4.8 | geplant |
+| **WF2-01** | ADR 0006 „Konfig-/Identitäts-Persistenz" | S4 · Opus 4.8 | ✅ erledigt |
+| **WF2-02** | ADR 0007 „Cloud-Ingest & Feed-Fan-out" | S4 · Opus 4.8 | ➡️ nächster |
 
 Offen, **ASD-Kern (mandanten-unabhängig, parallel möglich** — nicht im kritischen
 Pfad, Details/Abgleich in ROADMAP §2):
@@ -432,21 +452,22 @@ Pfad, Details/Abgleich in ROADMAP §2):
 | **Wayfinder 2.0 — Pivot/Mandanten-Modell** | **Hybrid** (Feed-Katalog + Abos + Sicht-Filter); Pivot ratifiziert | **ADR 0005** | ✅ ratifiziert |
 | **Wayfinder 2.0 — Kommerz-Scope** | **Feature-Flags ja, Stripe-Billing zurückgestellt** | **ADR 0005** (Konzept §6.5) | ✅ (WF2-51 ruht) |
 | **Wayfinder 2.0 — Isolationsgrenze** | Server-seitige AuthZ pro Subscription, fail-closed, Pflicht-Negativtests | **ADR 0005**, NFR-SEC-003 | ✅ Prinzip gesetzt (Umsetzung WF2-21/22) |
+| **Wayfinder 2.0 — Persistenz** | PostgreSQL + `pgx`/`sqlc` + `goose`; Schema-Skizze; Stateless-Split; Redis zurückgestellt | **ADR 0006**, FR-TEN-002 | ✅ entschieden (Umsetzung WF2-10) |
+| **Wayfinder 2.0 — Identität** | OIDC@Proxy primär + eingebauter Fallback + none (`WAYFINDER_AUTH_MODE`); Tenant-Kontext fail-closed | **ADR 0006**, NFR-SEC-004 | ✅ entschieden (Umsetzung WF2-11/12) |
 
 ## 3. Nächster Schritt
 
-➡️ **WF2-01: ADR 0006 „Konfig-/Identitäts-Persistenz"** (S4 · Opus 4.8) — nach „Go".
+➡️ **WF2-02: ADR 0007 „Cloud-Ingest & Feed-Fan-out"** (S4 · Opus 4.8) — nach „Go".
 
-Baut auf ADR 0005 auf: Datastore-Wahl (Postgres) + Schema (`tenants`, `users`,
-`feeds`, `subscriptions`, `view_configs`, `entitlements`), Migrations-Tooling,
-Stateless-App-/State-Split, Identitäts-Anbindung im Detail (OIDC@Proxy vs.
-eingebaut). Reine Doku (ADR), kein Produktivcode.
+Letztes Stufe-0-Paket: `FeedSource`-Abstraktion (direkt-Multicast On-Prem vs.
+Stream-Consumer in der Cloud), Multicast→Unicast-Ingest-Gateway als eigener
+Dienst, Transport-Wahl (NATS JetStream vs. Kafka vs. direkt-Multicast), Bezug zur
+Zielumgebung (Konzept §11.6). Reine Doku (ADR), kein Produktivcode.
 
-Danach WF2-02 (ADR 0007 Cloud-Ingest & Feed-Fan-out), dann Stufe 1 (Umsetzung
-Persistenz/Identität, WF2-10..13).
+Danach **Stufe 1** (Umsetzung Persistenz/Identität, WF2-10..13).
 
-**Erledigt in dieser Sitzung:** WF2-00 / ADR 0005 (Multi-Mandanten-Pivot)
-ratifiziert; Register FR-TEN-001/NFR-SEC-003 angelegt.
+**Erledigt in dieser Sitzung:** WF2-00 / ADR 0005 (Pivot) + WF2-01 / ADR 0006
+(Persistenz/Identität); Register FR-TEN-001/002, NFR-SEC-003/004 angelegt.
 
 **Parallel möglich (nicht kritischer Pfad):** ASD-011/012/013 (ASD-Kern,
 ROADMAP §2) — widerspruchsfrei zu 2.0, von einem leichteren Modell ziehbar.
