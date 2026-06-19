@@ -1,6 +1,6 @@
 # Wayfinder 2.0 — Konzept: Von statischem Single-Tenant-ASD zur konfigurierbaren Multi-Mandanten-Plattform
 
-> **Status:** Entwurf / zur Abstimmung (noch **nicht** ratifiziert)
+> **Status:** Strategie-Richtung **teilweise ratifiziert** (Hybrid-Modell + Kommerz-Scope, siehe Entscheidungs-Stand unten); Ausbaustufen & Arbeitspakete (§7) sind **Entwurf**, werden je als ADR ratifiziert.
 > **Datum:** 2026-06-19
 > **Grundlage:** Entwurf „Wayfinder 2.0" (Ziel-Architektur: Von Statisch zu SaaS)
 > **Einstufung dieses Dokuments:** Architektur-Konzept, S4–S5 (strategische

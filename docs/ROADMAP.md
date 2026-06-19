@@ -22,7 +22,6 @@
 ---
 
 ## 0. Strategische Ausrichtung: Wayfinder 2.0
->>>>>>> origin/main
 
 Wayfinder 2.0 ist der **leitende Programmrahmen** für die nächste Phase: der
 Umbau vom einprozessigen, beim-Start-konfigurierten **Single-Tenant-ASD** zur
