@@ -7,7 +7,25 @@
 > 🗺️ **Roadmap:** Arbeitspakete, Findings und empfohlene Reihenfolge stehen in
 > `docs/ROADMAP.md` (Stichwort „Roadmap" im Chat zeigt diese Liste).
 
-- **Zuletzt aktualisiert:** 2026-06-19 — **WF2-01 / ADR 0006 „Konfig-/Identitäts-
+- **Zuletzt aktualisiert:** 2026-06-19 — **WF2-02 / ADR 0007 „Cloud-Ingest &
+  Feed-Fan-out" abgeschlossen — STUFE 0 KOMPLETT (S4 · Opus 4.8, Doku).** Neue
+  ADR `docs/decisions/0007-cloud-ingest-und-feed-fan-out.md`. Zielumgebung vom
+  Projektverantwortlichen gesetzt: **Public Cloud + Kubernetes**. Entscheidungen:
+  (1) **`FeedSource`-Abstraktion** — `MulticastFeedSource` (On-Prem/Dev) vs.
+  `StreamFeedSource` (Cloud), via `WAYFINDER_FEED_SOURCE`; (2) **Ingest-Gateway**
+  (`cmd/wayfinder-ingest`) als eigener Minimal-Dienst: tritt Multicast-Gruppe(n)
+  bei, republisht **Roh-Datagramme** auf **Subject pro Feed** (kein Decode im
+  Gateway); (3) **Stream-Bus = NATS JetStream** — Core-Subject-Fan-out („jede
+  Instanz sieht alles"), JetStream nur als Late-Join-Puffer, Replay bleibt
+  Firefly (SDPS-005). **RabbitMQ vs Kafka geprüft** (auf Wunsch): für dieses
+  Profil RabbitMQ > Kafka, beide < NATS → verworfen; RabbitMQ bleibt AMQP-
+  Fallback. Bus trägt Roh-ASTERIX (einziger Decode-Punkt erhalten). Register
+  **FR-FEED-001** + **NFR-SCALE-001**. ROADMAP §0/§1/§6 + STATUS §1/§2/§3
+  fortgeschrieben. `go build/vet/test` grün. Reine Doku. **Damit ADR 0005/0006/
+  0007 = Stufe 0 abgeschlossen.** **Nächster Schritt:** WF2-10 (Persistenz-
+  Schicht, **erstes Produktivcode-Paket**, S3 · Sonnet 4.6 +Opus-Review) nach
+  Ankündigung & „Go".
+- **Vorherige Aktualisierung:** 2026-06-19 — **WF2-01 / ADR 0006 „Konfig-/Identitäts-
   Persistenz" abgeschlossen (S4 · Opus 4.8, Doku).** Zweiter Baustein von
   Wayfinder 2.0 (Stufe 0). Neue ADR `docs/decisions/0006-konfig-identitaets-persistenz.md`:
   (1) Datastore = **PostgreSQL**; (2) Zugriff = **`pgx` + `sqlc`** (typsicher,
@@ -423,13 +441,17 @@
 (mandanten-isolierter Stream, 🔒) → 3 (Config/Admin) → 4 (Sensorik) → 5
 (Kommerz/HA)**.
 
-Kritischer 2.0-Pfad (Stufe 0):
+**✅ Stufe 0 (Entscheidung & Fundament) abgeschlossen:**
 
 | AP | Inhalt | Stufe | Status |
 |----|--------|-------|--------|
 | **WF2-00** | ADR 0005 „Multi-Mandanten-Pivot" | S4 · Opus 4.8 | ✅ erledigt |
 | **WF2-01** | ADR 0006 „Konfig-/Identitäts-Persistenz" | S4 · Opus 4.8 | ✅ erledigt |
-| **WF2-02** | ADR 0007 „Cloud-Ingest & Feed-Fan-out" | S4 · Opus 4.8 | ➡️ nächster |
+| **WF2-02** | ADR 0007 „Cloud-Ingest & Feed-Fan-out" (NATS JetStream) | S4 · Opus 4.8 | ✅ erledigt |
+
+**➡️ Nächster: Stufe 1 (Umsetzung) — WF2-10** Persistenz-Schicht & Migrationen
+(`pkg/store`, pgx/sqlc, goose), **erstes Produktivcode-Paket**, S3 · Sonnet 4.6
+(+Opus-Review). Ab hier greifen die Code-Gates wieder voll.
 
 Offen, **ASD-Kern (mandanten-unabhängig, parallel möglich** — nicht im kritischen
 Pfad, Details/Abgleich in ROADMAP §2):
@@ -454,20 +476,25 @@ Pfad, Details/Abgleich in ROADMAP §2):
 | **Wayfinder 2.0 — Isolationsgrenze** | Server-seitige AuthZ pro Subscription, fail-closed, Pflicht-Negativtests | **ADR 0005**, NFR-SEC-003 | ✅ Prinzip gesetzt (Umsetzung WF2-21/22) |
 | **Wayfinder 2.0 — Persistenz** | PostgreSQL + `pgx`/`sqlc` + `goose`; Schema-Skizze; Stateless-Split; Redis zurückgestellt | **ADR 0006**, FR-TEN-002 | ✅ entschieden (Umsetzung WF2-10) |
 | **Wayfinder 2.0 — Identität** | OIDC@Proxy primär + eingebauter Fallback + none (`WAYFINDER_AUTH_MODE`); Tenant-Kontext fail-closed | **ADR 0006**, NFR-SEC-004 | ✅ entschieden (Umsetzung WF2-11/12) |
+| **Wayfinder 2.0 — Cloud-Ingest/Transport** | Public Cloud + K8s; `FeedSource` (Multicast/Stream) + Ingest-Gateway; Bus = **NATS JetStream** (RabbitMQ/Kafka verworfen) | **ADR 0007**, FR-FEED-001/NFR-SCALE-001 | ✅ entschieden (Umsetzung WF2-20/52/53) |
 
 ## 3. Nächster Schritt
 
-➡️ **WF2-02: ADR 0007 „Cloud-Ingest & Feed-Fan-out"** (S4 · Opus 4.8) — nach „Go".
+➡️ **WF2-10: Persistenz-Schicht & Migrationen** (Beginn **Stufe 1**, **erstes
+Produktivcode-Paket**) — S3 · Sonnet 4.6 (+Opus-Review), nach Ankündigung & „Go".
 
-Letztes Stufe-0-Paket: `FeedSource`-Abstraktion (direkt-Multicast On-Prem vs.
-Stream-Consumer in der Cloud), Multicast→Unicast-Ingest-Gateway als eigener
-Dienst, Transport-Wahl (NATS JetStream vs. Kafka vs. direkt-Multicast), Bezug zur
-Zielumgebung (Konzept §11.6). Reine Doku (ADR), kein Produktivcode.
+Setzt ADR 0006 um: `pkg/store` (pgx-Pool, sqlc-generierte Queries), eingebettete
+`goose`-Migrationen für das Schema (tenants/users/feeds/subscriptions/
+view_configs/entitlements), Repository-Funktionen + Tests (Testcontainers
+Postgres). **Code-Gates ab hier wieder voll** (`go test ./...`, vet, gofmt) +
+neue Anforderungen mit Code/Test rückverfolgbar. Neue ENV-Var `WAYFINDER_DB_URL`
+→ INSTALLATION/TECHNICAL nachziehen.
 
-Danach **Stufe 1** (Umsetzung Persistenz/Identität, WF2-10..13).
+Danach WF2-11 (AuthN), WF2-12 (Tenant-Context), WF2-13 (Admin-Bootstrap).
 
-**Erledigt in dieser Sitzung:** WF2-00 / ADR 0005 (Pivot) + WF2-01 / ADR 0006
-(Persistenz/Identität); Register FR-TEN-001/002, NFR-SEC-003/004 angelegt.
+**Erledigt in dieser Sitzung:** **Stufe 0 komplett** — WF2-00/ADR 0005 (Pivot),
+WF2-01/ADR 0006 (Persistenz/Identität), WF2-02/ADR 0007 (Cloud-Ingest, NATS
+JetStream). Register FR-TEN-001/002, FR-FEED-001, NFR-SEC-003/004, NFR-SCALE-001.
 
 **Parallel möglich (nicht kritischer Pfad):** ASD-011/012/013 (ASD-Kern,
 ROADMAP §2) — widerspruchsfrei zu 2.0, von einem leichteren Modell ziehbar.
