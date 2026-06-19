@@ -25,8 +25,9 @@
 | ASD-011 | **Erweitertes Track-Detail-Panel** | Wayfinder | Ausbau `TrackDetailCard.vue`: volle Datenblockanzeige (Callsign, ICAO-Adresse, Squawk, FL mit Tendenz-Pfeil, Ground Speed, Heading, Track-Nummer, Zeitstempel letztes Update, Status); FR-UI-011. | **S2 · Sonnet 4.6** |
 | ASD-012 | **Range-Rings + Scale-Bar + Nord-/Track-up** | Wayfinder | Konfigurierbare Range-Rings um Kartenzentrum (MapLibre GeoJSON-Overlay, Abstand konfigurierbar); Scale-Bar-Overlay; Nord-up/Track-up-Toggle; Berechnung in `src/map/`-Engine (keine Vue-Abhängigkeit); FR-UI-012. | **S3 · Opus 4.8** |
 | ASD-013 | **Alarm-/Ereignis-Panel** | Wayfinder | Chronologische Ereignisliste (Feed stale, Track appeared/disappeared, Status-Wechsel); aus Pinia-Event-Queue befüllt; visueller Badge auf Nav-Rail-Icon wenn Einträge vorhanden; FR-UI-013. | **S3 · Sonnet 4.6** |
-| 5 | **Out-of-Order-Eingang (Robustheit)** | Firefly | Tracker-Härtung gegen verspätete/umsortierte Plots | **S3 · Sonnet 4.6** |
-| 6 | **Coverage-Werkzeug** | Firefly | Visualisierung Sensor-Abdeckung | **S3 · Sonnet 4.6** |
+| 5 | **Out-of-Order-Eingang (Robustheit)** ✅ *abgeschlossen* | Firefly | `data_time_watermark` (High-Water-Mark) im `Tracker`; `process_plots` sortiert Eingabe intern; verspätete Gruppen (`t < watermark`) und Rückwärts-Scans werden verworfen + per `tracing::warn!` gemeldet. FR-TRK-033. | **S3 · Sonnet 4.6** |
+| 6 | **Coverage-Werkzeug** | Firefly + Wayfinder | Visualisierung Sensor-Abdeckung (Radar-Ringe + Plot-Dichte) in Wayfinder. Wayfinder konfiguriert Sensor-Positionen/Reichweiten über eigene Env-Vars (`WAYFINDER_COVERAGE_SENSOR_N_*`). | **S3 · Sonnet 4.6** |
+| 6a | **Firefly-UI-Aufräumen** | Firefly | Fireflys eingebettetes MapLibre-WebUI (`/` + `/ws`) entfernen — war nur relevant, bevor Wayfinder existierte; jetzt toter Pfad. | **S2 · Sonnet 4.6** |
 | 7 | **FHA / Hazard-Analyse** | Firefly + Wayfinder | Sicherheits-Analyse-Dokument | **S4 · Opus 4.8** |
 | 8 | **Sensor-Registrierung/Bias-Korrektur** | Firefly | M4-Nachtrag, größere Mess-Fusions-Erweiterung | **S5 · Fable 5 / Opus 4.8** |
 | 9 | **Live-OpenAIP-Integration** | Firefly | Statische Airspace-GeoJSON → Live-API. *Hinweis:* die **Wayfinder-Seite** ist mit ASD-003 (#13, ADR 0004) live umgesetzt; offen bleibt ein etwaiger Firefly-seitiger Bedarf. | **S3 · Sonnet 4.6** |
