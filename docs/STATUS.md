@@ -7,7 +7,26 @@
 > 🗺️ **Roadmap:** Arbeitspakete, Findings und empfohlene Reihenfolge stehen in
 > `docs/ROADMAP.md` (Stichwort „Roadmap" im Chat zeigt diese Liste).
 
-- **Zuletzt aktualisiert:** 2026-06-19 — **Paket 6 Coverage-Werkzeug (Radar-Ringe) abgeschlossen (S3 · Sonnet 4.6).**
+- **Zuletzt aktualisiert:** 2026-06-19 — **WF2-00 / ADR 0005 „Multi-Mandanten-Pivot"
+  abgeschlossen (S4 · Opus 4.8, Doku).** Erster Baustein von Wayfinder 2.0.
+  Neue ADR `docs/decisions/0005-multi-mandanten-pivot.md`: (1) Pivot zur
+  mandantenfähigen Plattform ratifiziert, ASD-Kern bleibt als mandanten-skopierte
+  Sicht; (2) **Mandanten-Modell = Hybrid** (Feed-Katalog + Abos + Sicht-Filter)
+  mit konzeptuellem Datenmodell (Tenant/User/Feed/Subscription/ViewConfig/
+  Entitlement); (3) **Isolationsgrenze** als sicherheitskritischer Kern: server-
+  seitige AuthZ pro Subscription, Broadcaster all-to-all → prädikat-gefiltert,
+  fail-closed, **Pflicht-Negativtests** (A sieht nie B); nimmt die in ADR 0003
+  vertagte „Autorisierungs-ADR" auf; (4) Kommerz-Scope (Feature-Flags ja, Billing
+  zurückgestellt); (5) Zert-Haltung (Isolation in FHA #7); (6) 12-Factor-Grenze
+  (Infra-Secrets ENV, fachliche Config DB); (7) Single-Tenant als degenerierter
+  Fall (schrittweise Migration); (8) Abgrenzung zu ADR 0006/0007. Register:
+  **FR-TEN-001** (Mandantenfähigkeit/Hybrid) + **NFR-SEC-003** (Cross-Tenant-
+  Isolation), beide mit Vorwärts-Referenz auf WF2-1x/2x. ROADMAP §0/§1/§6 +
+  STATUS §1/§2/§3 fortgeschrieben (WF2-00 ✅, nächster = WF2-01). `go test ./...`
+  grün (keine Code-Änderung). Reine Doku, kein Produktivcode, keine ICD-Änderung.
+  **Nächster Schritt:** WF2-01 / ADR 0006 „Konfig-/Identitäts-Persistenz"
+  (S4 · Opus 4.8) nach „Go".
+- **Vorherige Aktualisierung:** 2026-06-19 — **Paket 6 Coverage-Werkzeug (Radar-Ringe) abgeschlossen (S3 · Sonnet 4.6).**
   Neues Go-Paket `pkg/coverage`: `ParseEnv()` liest `WAYFINDER_COVERAGE_SENSOR_N_*`
   (max. 20 Sensoren); `RingsGeoJSON()` erzeugt GeoJSON-FeatureCollection mit äußerem
   Ring (outer), innerem Ring (inner, nur bei MinRangeM > 0) und Mittelpunkt-Dot
@@ -384,13 +403,13 @@
 (mandanten-isolierter Stream, 🔒) → 3 (Config/Admin) → 4 (Sensorik) → 5
 (Kommerz/HA)**.
 
-Offen, **kritischer 2.0-Pfad** (nächste Pakete):
+Kritischer 2.0-Pfad (Stufe 0):
 
-| AP | Inhalt | Stufe |
-|----|--------|-------|
-| **WF2-00** | ADR 0005 „Multi-Mandanten-Pivot" | S4 · Opus 4.8 |
-| **WF2-01** | ADR 0006 „Konfig-/Identitäts-Persistenz" | S4 · Opus 4.8 |
-| **WF2-02** | ADR 0007 „Cloud-Ingest & Feed-Fan-out" | S4 · Opus 4.8 |
+| AP | Inhalt | Stufe | Status |
+|----|--------|-------|--------|
+| **WF2-00** | ADR 0005 „Multi-Mandanten-Pivot" | S4 · Opus 4.8 | ✅ erledigt |
+| **WF2-01** | ADR 0006 „Konfig-/Identitäts-Persistenz" | S4 · Opus 4.8 | ➡️ nächster |
+| **WF2-02** | ADR 0007 „Cloud-Ingest & Feed-Fan-out" | S4 · Opus 4.8 | geplant |
 
 Offen, **ASD-Kern (mandanten-unabhängig, parallel möglich** — nicht im kritischen
 Pfad, Details/Abgleich in ROADMAP §2):
@@ -410,22 +429,24 @@ Pfad, Details/Abgleich in ROADMAP §2):
 | Stack | Go + MapLibre GL JS + WebSocket-Server-Push | ADR 0001 | ✅ |
 | Frontend-Framework | Vue 3 + Vuetify 3 (MD3), Vite, Vitest, Pinia | ADR 0002 | ✅ |
 | Farbschema | Cyan-Primary aus ASD-Mockup | `docs/design/color-tokens.md` | ✅ |
-| **Wayfinder 2.0 — Mandanten-Modell** | **Hybrid** (Feed-Katalog + Abos + Sicht-Filter) | Konzept §6.1, ROADMAP §0 | 🟡 gesetzt (ADR 0005 formalisiert) |
-| **Wayfinder 2.0 — Kommerz-Scope** | **Feature-Flags ja, Stripe-Billing zurückgestellt** | Konzept §6.5, ROADMAP §0 | 🟡 gesetzt (WF2-51 ruht) |
+| **Wayfinder 2.0 — Pivot/Mandanten-Modell** | **Hybrid** (Feed-Katalog + Abos + Sicht-Filter); Pivot ratifiziert | **ADR 0005** | ✅ ratifiziert |
+| **Wayfinder 2.0 — Kommerz-Scope** | **Feature-Flags ja, Stripe-Billing zurückgestellt** | **ADR 0005** (Konzept §6.5) | ✅ (WF2-51 ruht) |
+| **Wayfinder 2.0 — Isolationsgrenze** | Server-seitige AuthZ pro Subscription, fail-closed, Pflicht-Negativtests | **ADR 0005**, NFR-SEC-003 | ✅ Prinzip gesetzt (Umsetzung WF2-21/22) |
 
 ## 3. Nächster Schritt
 
-➡️ **WF2-00: ADR 0005 „Multi-Mandanten-Pivot"** (S4 · Opus 4.8) — nach „Go".
+➡️ **WF2-01: ADR 0006 „Konfig-/Identitäts-Persistenz"** (S4 · Opus 4.8) — nach „Go".
 
-Ratifiziert den Reframe Single-Tenant-ASD → mandantenfähige Plattform: Hybrid-
-Mandanten-Modell als Konsequenz für Receiver/Broadcaster, Vertrauens-/
-Isolationsgrenze („Frankfurt sieht nie Stuttgart"), Tenancy-Datenmodell-Skizze,
-Kommerz-Scope (Feature-Flags ja, Billing zurückgestellt), neue Anforderungs-
-Familien (`FR-TEN-*`, `NFR-SEC-*`). Reine Doku, kein Code, keine ICD-Änderung.
+Baut auf ADR 0005 auf: Datastore-Wahl (Postgres) + Schema (`tenants`, `users`,
+`feeds`, `subscriptions`, `view_configs`, `entitlements`), Migrations-Tooling,
+Stateless-App-/State-Split, Identitäts-Anbindung im Detail (OIDC@Proxy vs.
+eingebaut). Reine Doku (ADR), kein Produktivcode.
 
-Danach WF2-01 (ADR 0006 Persistenz) und WF2-02 (ADR 0007 Cloud-Ingest). Die
-übrigen offenen Entscheidungen (Datastore/Cache, Identität OIDC-vs-eingebaut,
-Sensor-Ansatz, Zielumgebung) fallen je im zugehörigen ADR (siehe Konzept §11).
+Danach WF2-02 (ADR 0007 Cloud-Ingest & Feed-Fan-out), dann Stufe 1 (Umsetzung
+Persistenz/Identität, WF2-10..13).
+
+**Erledigt in dieser Sitzung:** WF2-00 / ADR 0005 (Multi-Mandanten-Pivot)
+ratifiziert; Register FR-TEN-001/NFR-SEC-003 angelegt.
 
 **Parallel möglich (nicht kritischer Pfad):** ASD-011/012/013 (ASD-Kern,
 ROADMAP §2) — widerspruchsfrei zu 2.0, von einem leichteren Modell ziehbar.

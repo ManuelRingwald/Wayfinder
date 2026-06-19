@@ -44,9 +44,14 @@ Umbau vom einprozessigen, beim-Start-konfigurierten **Single-Tenant-ASD** zur
   dann Identität/Persistenz, dann der sicherheitskritische mandanten-isolierte
   Datenstrom** — bevor Komfort/Sensorik/Kommerz folgen.
 
-**➡️ Nächster Schritt (löst den bisherigen „ASD-011 zuerst" ab):**
-**WF2-00 — ADR 0005 „Multi-Mandanten-Pivot"** (S4 · Opus 4.8). Kein
-Produktivcode vor dieser Ratifizierung.
+**WF2-00 — ADR 0005 „Multi-Mandanten-Pivot" ✅ erledigt** (`docs/decisions/0005-multi-mandanten-pivot.md`):
+Pivot ratifiziert, Hybrid-Modell + Datenmodell-Skizze, Isolationsgrenze
+(server-seitige AuthZ pro Subscription, fail-closed, Pflicht-Negativtests),
+Kommerz-Scope, 12-Factor-Grenze, Single-Tenant als degenerierter Fall;
+Register FR-TEN-001/NFR-SEC-003.
+
+**➡️ Nächster Schritt:** **WF2-01 — ADR 0006 „Konfig-/Identitäts-Persistenz"**
+(S4 · Opus 4.8). Kein Produktivcode vor dieser Ratifizierung.
 
 ---
 
@@ -61,8 +66,8 @@ Details & Begründung: Konzept §7/§8.
 ### Stufe 0 — Entscheidung & Fundament (reine ADRs, kein Produktivcode)
 | AP | Inhalt | Stufe · Modell | Abh. | Status |
 |----|--------|----------------|------|--------|
-| **WF2-00** 🔒 | ADR 0005 „Multi-Mandanten-Pivot" (Reframe, Hybrid-Modell, Vertrauensgrenze, Zert-Haltung) | **S4 · Opus 4.8** | — | **➡️ NÄCHSTER SCHRITT** |
-| **WF2-01** 🔒 | ADR 0006 „Konfig-/Identitäts-Persistenz" (Postgres-Schema, Migrationen, Stateless-Split) | **S4 · Opus 4.8** | WF2-00 | geplant |
+| **WF2-00** 🔒 | ADR 0005 „Multi-Mandanten-Pivot" (Reframe, Hybrid-Modell, Vertrauensgrenze, Zert-Haltung) | **S4 · Opus 4.8** | — | ✅ **erledigt** (ADR 0005) |
+| **WF2-01** 🔒 | ADR 0006 „Konfig-/Identitäts-Persistenz" (Postgres-Schema, Migrationen, Stateless-Split) | **S4 · Opus 4.8** | WF2-00 | **➡️ NÄCHSTER** |
 | **WF2-02** | ADR 0007 „Cloud-Ingest & Feed-Fan-out" (`FeedSource`, Gateway, NATS/Kafka vs direkt-Multicast) | **S4 · Opus 4.8** | WF2-00 | geplant |
 
 ### Stufe 1 — Identität & Mandanten-Grundgerüst (ohne Datenfluss-Änderung)
@@ -196,6 +201,7 @@ Architektur-Wirkung — nicht auf dem kritischen Pfad, aber jederzeit wertstifte
 
 **Wayfinder-2.0-Vorlauf:**
 - ✅ Konzept Wayfinder 2.0 erstellt & auf `main` (`docs/design/wayfinder-2.0-konzept.md`, PR #25) — 6 Ausbaustufen, ~28 WF2-Pakete, Modell-Tabelle, zwei Leitentscheidungen.
+- ✅ **WF2-00 / ADR 0005 — Multi-Mandanten-Pivot** (`docs/decisions/0005-multi-mandanten-pivot.md`): Pivot ratifiziert, Hybrid-Modell, Isolationsgrenze, Kommerz-Scope, 12-Factor-Grenze; Register FR-TEN-001/NFR-SEC-003.
 
 **Cross-Project / Firefly:**
 - ✅ Paket #6 / Coverage-Werkzeug — Radar-Ringe-Overlay (`pkg/coverage`, `/api/coverage/rings`, Frontend-Layer-Toggle, Firefly `SensorModel`-Erweiterung; PR #27)
