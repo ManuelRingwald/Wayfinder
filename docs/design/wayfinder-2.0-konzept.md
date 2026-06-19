@@ -12,6 +12,11 @@
 > (§11): **Mandanten-Modell = Hybrid** (§6.1) und **Kommerz-Scope = Feature-Flags
 > ja, Stripe-Billing zurückgestellt** (§6.5). Übrige Entscheidungen (§11.3–11.6)
 > fallen je im zugehörigen ADR.
+> **Zentrale Nachverfolgung:** `docs/ROADMAP.md` (§0–§1) führt **Status und
+> Reihenfolge** der WF2-Pakete (maßgeblich); dieses Konzept liefert die
+> **Begründung** (§7 Ausbaustufen, §8 Modell-Tabelle). Bei Status-Abweichungen
+> gilt die ROADMAP. Die ASD-Kern-Pakete (ASD-011/012/013) sind dort in §2 als
+> mandanten-unabhängige Parallel-Spur eingeordnet.
 
 ---
 
