@@ -25,6 +25,9 @@ import {
   LEADER_LINES_LAYER_ID,
   LABEL_TEXT_SIZE,
   AIRSPACE_GROUPS,
+  COVERAGE_SOURCE_ID,
+  COVERAGE_RINGS_LAYER_ID,
+  COVERAGE_CENTER_LAYER_ID,
 } from './constants.js'
 
 // Build a MapLibre 'match' expression keyed on the OpenAIP numeric type field.
@@ -443,4 +446,69 @@ export function addVectorsLayer(map, palette) {
       ],
     },
   })
+}
+
+// addCoverageLayer registers the sensor coverage ring overlay.
+//
+// Two MapLibre layers are created on a single GeoJSON source:
+//   - COVERAGE_RINGS_LAYER_ID       : outer ring LineStrings.
+//   - COVERAGE_RINGS_LAYER_ID-inner : inner (dead-zone) ring LineStrings.
+//   - COVERAGE_CENTER_LAYER_ID      : small dot at each sensor site.
+//
+// The source starts empty; call updateCoverageSource() after the map loads to
+// populate it with data from /api/coverage/rings.
+export function addCoverageLayer(map) {
+  map.addSource(COVERAGE_SOURCE_ID, {
+    type: 'geojson',
+    data: { type: 'FeatureCollection', features: [] },
+  })
+
+  // Outer ring: dashed line at max detection range.
+  map.addLayer({
+    id: COVERAGE_RINGS_LAYER_ID,
+    type: 'line',
+    source: COVERAGE_SOURCE_ID,
+    filter: ['==', ['get', 'type'], 'outer'],
+    paint: {
+      'line-color': ['get', 'color'],
+      'line-width': 1.2,
+      'line-opacity': 0.65,
+      'line-dasharray': [4, 3],
+    },
+  })
+
+  // Inner (dead-zone) ring: finer dashes at lower opacity.
+  map.addLayer({
+    id: COVERAGE_RINGS_LAYER_ID + '-inner',
+    type: 'line',
+    source: COVERAGE_SOURCE_ID,
+    filter: ['==', ['get', 'type'], 'inner'],
+    paint: {
+      'line-color': ['get', 'color'],
+      'line-width': 0.8,
+      'line-opacity': 0.40,
+      'line-dasharray': [2, 3],
+    },
+  })
+
+  // Sensor centre dot.
+  map.addLayer({
+    id: COVERAGE_CENTER_LAYER_ID,
+    type: 'circle',
+    source: COVERAGE_SOURCE_ID,
+    filter: ['==', ['get', 'type'], 'center'],
+    paint: {
+      'circle-color': ['get', 'color'],
+      'circle-radius': 4,
+      'circle-opacity': 0.80,
+      'circle-stroke-color': '#000',
+      'circle-stroke-width': 1,
+    },
+  })
+}
+
+// updateCoverageSource replaces the GeoJSON data in the coverage ring source.
+export function updateCoverageSource(map, geojson) {
+  const src = map.getSource(COVERAGE_SOURCE_ID)
+  if (src) src.setData(geojson)
 }

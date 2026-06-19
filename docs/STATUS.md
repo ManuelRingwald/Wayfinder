@@ -7,7 +7,23 @@
 > 🗺️ **Roadmap:** Arbeitspakete, Findings und empfohlene Reihenfolge stehen in
 > `docs/ROADMAP.md` (Stichwort „Roadmap" im Chat zeigt diese Liste).
 
-- **Zuletzt aktualisiert:** 2026-06-19 — **Roadmap zentral auf Wayfinder 2.0
+- **Zuletzt aktualisiert:** 2026-06-19 — **Paket 6 Coverage-Werkzeug (Radar-Ringe) abgeschlossen (S3 · Sonnet 4.6).**
+  Neues Go-Paket `pkg/coverage`: `ParseEnv()` liest `WAYFINDER_COVERAGE_SENSOR_N_*`
+  (max. 20 Sensoren); `RingsGeoJSON()` erzeugt GeoJSON-FeatureCollection mit äußerem
+  Ring (outer), innerem Ring (inner, nur bei MinRangeM > 0) und Mittelpunkt-Dot
+  (center). Kreisapproximation: 128 Punkte, Flat-Earth (< 1 % Fehler bei ≤ 250 km).
+  Neuer Endpoint `/api/coverage/rings` (statisch, einmal berechnet, `application/geo+json`).
+  `WAYFINDER_COVERAGE_RING_COLOR` (Default `#5B8DEF`) — einheitliche Farbe für alle Sensoren.
+  Frontend: neues `COVERAGE_*` Quell-/Layer-ID-Paar in `constants.js`; `addCoverageLayer()`
+  + `updateCoverageSource()` in `layers.js`; Engine lädt Layer und fetched Ringe beim
+  Map-Load; `setLayerVisibility` kennt `coverageRings`; ASD-Store `layerVisibility.coverageRings: true`;
+  Toggle-Schalter „Radarabdeckung" im Layer-Panel. 6 Tests in `pkg/coverage/coverage_test.go`.
+  INSTALLATION.md §7.5 + TECHNICAL.md §6.5 ergänzt. Firefly-Seite: `SensorModel` erhält
+  `min_range_m`/`max_range_m` (serde-kompatibel, rein informational); `with_sensor_coverage()`
+  chainbar; Frankfurt + Demo-Scene setzen Reichweiten. `cargo test --workspace` grün.
+  Paket 6a (Firefly-UI-Aufräumen) als separates TODO in Roadmap vermerkt.
+  Nächster Schritt: Paket 7 (FHA/Hazard-Analyse) oder Paket 6a nach Abstimmung.
+- **Vorherige Aktualisierung:** 2026-06-19 — **Roadmap zentral auf Wayfinder 2.0
   ausgerichtet; Widersprüche aufgelöst (S2–S3 · Sonnet/Opus, Doku).** Aus dem
   Entwurf „Wayfinder 2.0" wurde ein ausführliches Konzept entwickelt
   (`docs/design/wayfinder-2.0-konzept.md`, **auf `main` via PR #25**): 6

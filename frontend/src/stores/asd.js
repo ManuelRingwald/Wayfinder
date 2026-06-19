@@ -14,6 +14,7 @@ export const useAsdStore = defineStore('asd', () => {
     airspace: true,
     navaids: true,
     waypoints: true,
+    coverageRings: true,
   })
 
   // FL filter

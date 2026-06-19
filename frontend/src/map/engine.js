@@ -18,6 +18,8 @@ import {
   addTrailsLayer,
   addHistoryDotsLayer,
   addVectorsLayer,
+  addCoverageLayer,
+  updateCoverageSource,
 } from './layers.js'
 import { updateTracksLayer } from './tracks.js'
 import { renderSources, tickFade } from './render.js'
@@ -29,6 +31,8 @@ import {
   AIRSPACE_LABEL_LAYER_ID,
   NAVAIDS_LAYER_ID,
   WAYPOINTS_LAYER_ID,
+  COVERAGE_RINGS_LAYER_ID,
+  COVERAGE_CENTER_LAYER_ID,
 } from './constants.js'
 
 // initMap creates a MapLibre instance on the given container element, wires
@@ -170,6 +174,14 @@ export async function initMap(container, store, onTrackClick) {
     addAirspaceLayers(map, palette)
     addNavaidLayers(map, palette)
     addWaypointLayers(map, palette)
+    // Coverage rings sit above aeronautical overlays but below track layers,
+    // so they provide geographic context without obscuring the air picture.
+    addCoverageLayer(map)
+    // Fetch rings once; the data is static (derived from operator config).
+    fetch('/api/coverage/rings')
+      .then((r) => r.json())
+      .then((geojson) => updateCoverageSource(map, geojson))
+      .catch((err) => console.warn('coverage rings fetch failed:', err))
     // Track layers from bottom to top: trail line → history dots → speed
     // vectors → leader lines → track symbols → deconflicted labels (ASD-002).
     addTrailsLayer(map, palette)
@@ -231,6 +243,7 @@ export async function initMap(container, store, onTrackClick) {
       airspace: [AIRSPACE_FILL_LAYER_ID, AIRSPACE_LINE_LAYER_ID, AIRSPACE_LABEL_LAYER_ID],
       navaids: [NAVAIDS_LAYER_ID],
       waypoints: [WAYPOINTS_LAYER_ID],
+      coverageRings: [COVERAGE_RINGS_LAYER_ID, COVERAGE_RINGS_LAYER_ID + '-inner', COVERAGE_CENTER_LAYER_ID],
     }
     for (const [key, layerIds] of Object.entries(groups)) {
       if (key in vis) {

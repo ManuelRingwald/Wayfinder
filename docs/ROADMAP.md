@@ -22,6 +22,7 @@
 ---
 
 ## 0. Strategische Ausrichtung: Wayfinder 2.0
+>>>>>>> origin/main
 
 Wayfinder 2.0 ist der **leitende Programmrahmen** für die nächste Phase: der
 Umbau vom einprozessigen, beim-Start-konfigurierten **Single-Tenant-ASD** zur
@@ -136,7 +137,8 @@ mit Fireflys Roadmap synchron gehalten. Annotiert ist je der Bezug zu Wayfinder
 |---|-------|---------|--------|--------------|-----------|
 | 4 | **Konfigurierbarer System-Referenzpunkt** | Firefly | I062/100-Referenzpunkt jenseits Demo-Ursprung Frankfurt | S3 · Sonnet 4.6 | **Relevant:** je Feed/Mandant ggf. eigener Referenzpunkt (Hybrid-Modell). Mit WF2-20 (Feed-Registry) abstimmen. |
 | 5 | **Out-of-Order-Eingang (Robustheit)** | Firefly | Tracker-Härtung gegen verspätete/umsortierte Plots | S3 · Sonnet 4.6 | Neutral (Upstream-Qualität). |
-| 6 | **Coverage-Werkzeug** | Firefly | Visualisierung Sensor-Abdeckung | S3 · Sonnet 4.6 | Neutral; ggf. später als ASD-Layer konsumierbar. |
+| 6 | **Coverage-Werkzeug** ✅ *abgeschlossen* | Firefly + Wayfinder | Visualisierung Sensor-Abdeckung (Radar-Ringe). `pkg/coverage` + `/api/coverage/rings`; `WAYFINDER_COVERAGE_SENSOR_N_*`; Frontend-Layer-Toggle. Firefly: `SensorModel.min_range_m`/`max_range_m`. (PR #27) | S3 · Sonnet 4.6 | Neutral; ggf. später als mandanten-konfigurierter ASD-Layer (WF2-30/31). |
+| 6a | **Firefly-UI-Aufräumen** | Firefly | Fireflys eingebettetes MapLibre-WebUI (`/` + `/ws`) entfernen — war nur relevant, bevor Wayfinder existierte; jetzt toter Code-Pfad. | S2 · Sonnet 4.6 | Neutral; rein Firefly-intern. |
 | 7 | **FHA / Hazard-Analyse** | Firefly + Wayfinder | Sicherheits-Analyse-Dokument | S4 · Opus 4.8 | **Erweitern:** muss die **Multi-Tenant-Isolations-Hazards** (Cross-Tenant-Leckage) aufnehmen — koppelt an WF2-21/22. |
 | 8 | **Sensor-Registrierung/Bias-Korrektur** | Firefly | M4-Nachtrag, Mess-Fusions-Erweiterung | S5 · Fable 5 / Opus 4.8 | **Enabler** für ehrliche Per-Track-Sensor-Provenienz (vgl. WF2-40/42). |
 | 9 | **Live-OpenAIP-Integration** | Firefly | Wayfinder-Seite via ASD-003/ADR 0004 **erledigt**; offen nur etwaiger Firefly-Bedarf | S3 · Sonnet 4.6 | Wayfinder-seitig erledigt. |
@@ -195,6 +197,9 @@ Architektur-Wirkung — nicht auf dem kritischen Pfad, aber jederzeit wertstifte
 
 **Wayfinder-2.0-Vorlauf:**
 - ✅ Konzept Wayfinder 2.0 erstellt & auf `main` (`docs/design/wayfinder-2.0-konzept.md`, PR #25) — 6 Ausbaustufen, ~28 WF2-Pakete, Modell-Tabelle, zwei Leitentscheidungen.
+
+**Cross-Project / Firefly:**
+- ✅ Paket #6 / Coverage-Werkzeug — Radar-Ringe-Overlay (`pkg/coverage`, `/api/coverage/rings`, Frontend-Layer-Toggle, Firefly `SensorModel`-Erweiterung; PR #27)
 
 **ASD-Kern / Frontend:**
 - ✅ ASD-007 Farbschema · ASD-008 Navigation Rail · ASD-009 Karten-Controls · ASD-010 Kategorie-Filter-Chips (Phase 1, Vue 3 + Vuetify 3 MD3)
