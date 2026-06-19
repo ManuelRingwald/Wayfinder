@@ -7,7 +7,24 @@
 > 🗺️ **Roadmap:** Arbeitspakete, Findings und empfohlene Reihenfolge stehen in
 > `docs/ROADMAP.md` (Stichwort „Roadmap" im Chat zeigt diese Liste).
 
-- **Zuletzt aktualisiert:** 2026-06-18 — **AP9.9 „ADS-B-Badge im Track-Label"
+- **Zuletzt aktualisiert:** 2026-06-19 — **Roadmap zentral auf Wayfinder 2.0
+  ausgerichtet; Widersprüche aufgelöst (S2–S3 · Sonnet/Opus, Doku).** Aus dem
+  Entwurf „Wayfinder 2.0" wurde ein ausführliches Konzept entwickelt
+  (`docs/design/wayfinder-2.0-konzept.md`, **auf `main` via PR #25**): 6
+  Ausbaustufen (0–5), ~28 Arbeitspakete (`WF2-xx`), Schwierigkeitsgrad→Modell-
+  Tabelle, zwei ratifizierte Leitentscheidungen — **Mandanten-Modell = Hybrid**
+  und **Kommerz-Scope = Feature-Flags ja, Stripe-Billing zurückgestellt**.
+  Danach **`docs/ROADMAP.md` komplett neu strukturiert** als zentrale, auf 2.0
+  ausgerichtete Quelle: §0 Strategie, §1 WF2-Backlog (Stufen 0–5), §2 ASD-Kern
+  (ASD-011/012/013 als **mandanten-unabhängige Parallel-Spur** mit 2.0-Abgleich),
+  §3 Firefly-Backlog mit 2.0-Bezug, §4 Begründung, §6 Erledigt. **Kollision
+  aufgelöst:** bisher zeigte STATUS auf „ASD-011 zuerst", das Konzept auf „ADR
+  0005" — neuer gemeinsamer nächster Schritt = **WF2-00 / ADR 0005**.
+  Cross-Project-Abhängigkeiten in `docs/cross-project/todo-for-firefly.md`
+  vermerkt. Reine Doku, kein Produktivcode, keine ICD-Änderung. Gates n/a
+  (Markdown). Nächster Schritt: **WF2-00 — ADR 0005 „Multi-Mandanten-Pivot"**
+  (S4 · Opus 4.8) nach „Go".
+- **Vorherige Aktualisierung:** 2026-06-18 — **AP9.9 „ADS-B-Badge im Track-Label"
   abgeschlossen (S3 · Opus 4.8).** Wayfinder-Seite von AP9 (ADS-B-Integration).
   **Decoder:** `pkg/cat062/types.go` um `UpdateAge.ESAge *float64` erweitert
   (nil = rein Radar, Pointer = ADS-B-Anteil vorhanden). `pkg/cat062/decoder.go`
@@ -345,7 +362,22 @@
 **ASD-009 Karten-Controls: ✅ Abgeschlossen**
 **ASD-010 Kategorie-Filter-Chips: ✅ Abgeschlossen**
 
-Ausstehend (Phase 2):
+**Strategische Ausrichtung: Wayfinder 2.0** (Multi-Mandanten-Plattform) — siehe
+`docs/ROADMAP.md` §0/§1 (zentral) und `docs/design/wayfinder-2.0-konzept.md`
+(Begründung). Kritischer Pfad: **Stufe 0 (ADRs) → 1 (Identität/Persistenz) → 2
+(mandanten-isolierter Stream, 🔒) → 3 (Config/Admin) → 4 (Sensorik) → 5
+(Kommerz/HA)**.
+
+Offen, **kritischer 2.0-Pfad** (nächste Pakete):
+
+| AP | Inhalt | Stufe |
+|----|--------|-------|
+| **WF2-00** | ADR 0005 „Multi-Mandanten-Pivot" | S4 · Opus 4.8 |
+| **WF2-01** | ADR 0006 „Konfig-/Identitäts-Persistenz" | S4 · Opus 4.8 |
+| **WF2-02** | ADR 0007 „Cloud-Ingest & Feed-Fan-out" | S4 · Opus 4.8 |
+
+Offen, **ASD-Kern (mandanten-unabhängig, parallel möglich** — nicht im kritischen
+Pfad, Details/Abgleich in ROADMAP §2):
 
 | AP | Inhalt | Stufe |
 |----|--------|-------|
@@ -362,16 +394,25 @@ Ausstehend (Phase 2):
 | Stack | Go + MapLibre GL JS + WebSocket-Server-Push | ADR 0001 | ✅ |
 | Frontend-Framework | Vue 3 + Vuetify 3 (MD3), Vite, Vitest, Pinia | ADR 0002 | ✅ |
 | Farbschema | Cyan-Primary aus ASD-Mockup | `docs/design/color-tokens.md` | ✅ |
+| **Wayfinder 2.0 — Mandanten-Modell** | **Hybrid** (Feed-Katalog + Abos + Sicht-Filter) | Konzept §6.1, ROADMAP §0 | 🟡 gesetzt (ADR 0005 formalisiert) |
+| **Wayfinder 2.0 — Kommerz-Scope** | **Feature-Flags ja, Stripe-Billing zurückgestellt** | Konzept §6.5, ROADMAP §0 | 🟡 gesetzt (WF2-51 ruht) |
 
 ## 3. Nächster Schritt
 
-➡️ **ASD-011: Erweitertes Track-Detail-Panel** (S2 · Sonnet 4.6) — nach Abstimmung.
+➡️ **WF2-00: ADR 0005 „Multi-Mandanten-Pivot"** (S4 · Opus 4.8) — nach „Go".
 
-Ausbau `TrackDetailCard.vue`: vollständiger ASD-Data-Block (Callsign, ICAO-
-Adresse, Squawk, FL mit Tendenz-Pfeil, Ground Speed, Heading, Track-Nummer,
-Zeitstempel letztes Update, Status). Rein Frontend, kein Backend-Change nötig.
+Ratifiziert den Reframe Single-Tenant-ASD → mandantenfähige Plattform: Hybrid-
+Mandanten-Modell als Konsequenz für Receiver/Broadcaster, Vertrauens-/
+Isolationsgrenze („Frankfurt sieht nie Stuttgart"), Tenancy-Datenmodell-Skizze,
+Kommerz-Scope (Feature-Flags ja, Billing zurückgestellt), neue Anforderungs-
+Familien (`FR-TEN-*`, `NFR-SEC-*`). Reine Doku, kein Code, keine ICD-Änderung.
 
-Dann ASD-012 (Range-Rings, S3 · Opus 4.8) und ASD-013 (Alarm-Panel, S3 · Sonnet 4.6).
+Danach WF2-01 (ADR 0006 Persistenz) und WF2-02 (ADR 0007 Cloud-Ingest). Die
+übrigen offenen Entscheidungen (Datastore/Cache, Identität OIDC-vs-eingebaut,
+Sensor-Ansatz, Zielumgebung) fallen je im zugehörigen ADR (siehe Konzept §11).
+
+**Parallel möglich (nicht kritischer Pfad):** ASD-011/012/013 (ASD-Kern,
+ROADMAP §2) — widerspruchsfrei zu 2.0, von einem leichteren Modell ziehbar.
 
 ## 4. Schnell-Einstieg
 

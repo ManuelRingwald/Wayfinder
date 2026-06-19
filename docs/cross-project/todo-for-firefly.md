@@ -64,3 +64,29 @@ ASD-Elemente wie Unsicherheits-Ringe und Label-Inhalte).
 - **CAT062-Empfänger-Seite bereits bewiesen** (Fireflys ADR 0006, Häppchen
   D.1–D.3): Decoder, Rückprojektion und echter Multicast-Empfänger sind
   Ende-zu-Ende getestet — gute Referenz für den Wayfinder-Decoder.
+
+---
+
+## Wayfinder 2.0 (Multi-Mandanten-Plattform) — künftige Schnittstellen-Bezüge
+
+> Stand 2026-06-19. Wayfinder richtet sich auf **Wayfinder 2.0** aus (Konzept:
+> `docs/design/wayfinder-2.0-konzept.md`; zentrale Roadmap: `docs/ROADMAP.md`
+> §0–§1). Mandanten-Modell = **Hybrid** (Feed-Katalog + Abos + Sicht-Filter).
+> Die folgenden Punkte **können** Firefly betreffen. Sie sind **noch nicht**
+> akut — `from-wayfinder`-Issues werden **erst beim Erreichen der jeweiligen
+> Stufe** erstellt (nicht prophylaktisch), damit keine verfrühten/gegensätzlichen
+> Anforderungen entstehen. Hier nur als Vorwarnung dokumentiert.
+
+| Thema | Wayfinder-Paket | Mögliche Firefly-Wirkung | Auslöser für Issue |
+|-------|-----------------|--------------------------|--------------------|
+| **Per-Track-Sensor-Provenienz** (FLARM/SSR/PSR/ADS-B-Diskriminator je Track) | WF2-40/42 (Stufe 4) | CAT062 trägt heute **keinen** sauberen Per-Track-Sensortyp; echte Provenienz wäre eine **ICD-Änderung** (neues Item/Bit). Enabler: Fireflys SDPS-001 (FEP-Ingestion, #19) + Sensor-Registrierung (#8). | Beginn Stufe 4 |
+| **Feed-pro-Mandant** (Hybrid-Modell, Variante-B-Anteil) | WF2-20 (Stufe 2) | Mehrere Mandanten mit eigenem „Himmel" ⇒ Fireflys **Multicast-Gruppen-/Instanz-Modell** (eine Gruppe je Feed/Einzugsgebiet) abstimmen. | Beginn Stufe 2 |
+| **Konfigurierbarer System-Referenzpunkt** | WF2-20 | Roadmap #4 (Firefly): je Feed ggf. eigener I062/100-Referenzpunkt. | Beginn Stufe 2 |
+| **Ende-zu-Ende-HA** | WF2-52/53 (Stufe 5) | Fireflys SDPS-002 (#20, Main/Standby) ↔ Wayfinders stateless Skalierung + Ingest-Gateway-HA für durchgängige Verfügbarkeit. | Beginn Stufe 5 |
+| **FHA / Hazard-Analyse** | WF2-21/22 | Roadmap #7 (gemeinsam): muss **Cross-Tenant-Isolations-Hazards** aufnehmen. | mit #7 |
+
+**Wichtig (kein Konflikt mit dem Charter):** Diese Punkte ändern **nicht** das
+Prinzip „kein Firefly-Code-Import, Kopplung nur über den CAT062-Draht-Vertrag".
+Sensor-Mix bleibt vorerst eine **Feed-Eigenschaft** auf Wayfinder-Seite; eine
+ICD-Erweiterung wird nur angestoßen, falls echte Per-Track-Provenienz operativ
+nötig wird — dann beidseitig per ADR.
