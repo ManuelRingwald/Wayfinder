@@ -182,3 +182,27 @@ Wahrheit. Das Laufzeit-Nachladen ohne Neustart ist Sache von **WF2-30**.
   validiert den Token defensiv, ersetzt aber kein Proxy-/Netz-Audit.
 - **Migrations-/Backup-/DR-Betrieb** der Postgres-Instanz ist Deployment-Sache und
   Teil der späteren „Betriebs-Härtung", nicht dieser Entscheidung.
+
+## Nachtrag (2026-06-19, Umsetzung WF2-10.1)
+
+Zwei Präzisierungen aus der Umsetzung des ersten Persistenz-Häppchens:
+
+1. **Migrations-Tooling: `goose` → minimaler In-House-Runner.** §3 nannte `goose`
+   (mit golang-migrate als zulässiger Alternative „aus Betriebsgründen"). Bei der
+   Umsetzung zeigte sich ein konkreter Betriebsgrund: `goose` zieht **transitiv
+   `modernc.org/sqlite`** (eine vollständige Go-SQLite-Engine) in den Modulgraphen
+   — unnötiger Ballast für einen Postgres-only-Dienst und in einem lean/
+   analysierbaren, sicherheitsrelevanten System unerwünscht (CLAUDE.md §7).
+   Stattdessen ein **~120-Zeilen-Runner** (`pkg/store/migrate.go`): eingebettete
+   `migrations/*.sql` (Marker `-- +migrate up`/`-- +migrate down`),
+   `schema_migrations`-Tracking-Tabelle, je Migration **eine Transaktion**
+   (Postgres-transaktionales DDL), idempotent, forward-only. Erfüllt die
+   ADR-Absicht (versionierte, eingebettete Migrationen mit getaggten Baselines)
+   **ohne** Migrations-Bibliotheks-Abhängigkeit. `pgx` (§2) bleibt unverändert.
+2. **Go-Baseline 1.23 → 1.25.** Die in §2 gewählte `pgx`-Bibliothek und das
+   moderne `golang.org/x/*`-Ökosystem verlangen inzwischen **go 1.25** (pgx ≥ v5.9,
+   `x/sync` ≥ v0.20 u. a.). Auf 1.23 zu bleiben hätte ein **fragiles Geflecht aus
+   Version-Pins** erfordert (bricht beim nächsten `go get`, hält Sicherheits-
+   updates zurück). Daher bewusst `go.mod` → `go 1.25.0` und Dockerfile-Basis →
+   `golang:1.25-bookworm`. Rückwärtskompatibler Sprachsprung, dokumentiert (kein
+   „stiller" Jump).
