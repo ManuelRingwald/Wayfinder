@@ -37,20 +37,26 @@ func TestLoadMigrations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loadMigrations: %v", err)
 	}
-	if len(migs) != 1 {
-		t.Fatalf("loaded %d migrations, want 1", len(migs))
+	if len(migs) != 2 {
+		t.Fatalf("loaded %d migrations, want 2", len(migs))
 	}
-	m := migs[0]
-	if m.version != 1 || m.name != "init" {
-		t.Fatalf("migration = {version:%d name:%q}, want {1 init}", m.version, m.name)
+
+	// Migrations are returned in ascending version order.
+	if migs[0].version != 1 || migs[1].version != 2 {
+		t.Fatalf("versions = [%d %d], want [1 2]", migs[0].version, migs[1].version)
+	}
+
+	init := migs[0]
+	if init.name != "init" {
+		t.Fatalf("first migration name = %q, want init", init.name)
 	}
 	for _, tbl := range schemaTables {
-		if !strings.Contains(m.up, "CREATE TABLE "+tbl+" ") {
-			t.Errorf("up section does not CREATE TABLE %s", tbl)
+		if !strings.Contains(init.up, "CREATE TABLE "+tbl+" ") {
+			t.Errorf("init up section does not CREATE TABLE %s", tbl)
 		}
 	}
-	if strings.Contains(m.up, "DROP TABLE") {
-		t.Error("up section unexpectedly contains DROP TABLE (down marker not honoured)")
+	if strings.Contains(init.up, "DROP TABLE") {
+		t.Error("init up section unexpectedly contains DROP TABLE (down marker not honoured)")
 	}
 }
 

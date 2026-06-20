@@ -7,7 +7,23 @@
 > 🗺️ **Roadmap:** Arbeitspakete, Findings und empfohlene Reihenfolge stehen in
 > `docs/ROADMAP.md` (Stichwort „Roadmap" im Chat zeigt diese Liste).
 
-- **Zuletzt aktualisiert:** 2026-06-19 — **WF2-10.3a „Feed-/Subscription-/
+- **Zuletzt aktualisiert:** 2026-06-19 — **WF2-10.3b „View-Config-Repository"
+  abgeschlossen — WF2-10 (PERSISTENZ-SCHICHT) KOMPLETT (S3 · Sonnet 4.6 /
+  Opus-Review).** Neu: `view_configs.go` (`BBox`, `ViewConfig` mit `UserID *int64`
+  = nil/Tenant-Default; JSONB `aoi *BBox` nullable + `layers map[string]bool`),
+  `UpsertTenantDefault`/`UpsertUserOverride` (Upsert über Partial-Unique-Indizes),
+  `GetTenantDefault`/`GetUserOverride`/**`GetEffective`** (Override → Fallback
+  Default). **Zweite Migration `00002_view_config_user_unique.sql`** (Nutzer-Index
+  → Partial-Unique; demonstriert Schema-Evolution des In-House-Runners).
+  `TestLoadMigrations` auf 2 Migrationen erweitert. **Tests** (`view_configs_test.go`):
+  DB-frei `TestViewJSONParams` + Integration (Default-Round-Trip, In-Place-Update,
+  Override-Idempotenz, `GetEffective`) — **real gegen PostgreSQL 16** via
+  `scripts/pg-test.sh` (wendet beide Migrationen an). Standard-`go test ./...`
+  grün ohne DB. **Damit alle 6 Tabellen-Repos fertig (tenants/users/feeds/
+  subscriptions/view_configs/entitlements).** Register FR-TEN-001, Milestone
+  `docs/milestones/WF2-10.3b_ViewConfig_Repo.md`. Gates grün. **Nächster Schritt:**
+  WF2-11 (AuthN, 🔒 S4 · Opus 4.8) nach Ankündigung & „Go".
+- **Vorherige Aktualisierung:** 2026-06-19 — **WF2-10.3a „Feed-/Subscription-/
   Entitlement-Repositories" abgeschlossen (S3 · Sonnet 4.6 / Opus-Review).**
   Vervollständigt die Persistenz-Repos bis auf `view_configs` (10.3b). Neu:
   `feeds.go` (`FeedRepo`; `SensorMix []string` aus JSONB, nullable Region),
@@ -501,12 +517,11 @@
 | **WF2-01** | ADR 0006 „Konfig-/Identitäts-Persistenz" | S4 · Opus 4.8 | ✅ erledigt |
 | **WF2-02** | ADR 0007 „Cloud-Ingest & Feed-Fan-out" (NATS JetStream) | S4 · Opus 4.8 | ✅ erledigt |
 
-**Stufe 1 — in Arbeit:** **WF2-10.1 ✅** (pgx-Pool + In-House-Migrationsrunner +
-Schema) · **WF2-10.2 ✅** (Tenant-/User-Repos, `GetBySubject` = Identität→Mandant)
-· **WF2-10.3a ✅** (Feed-/Subscription-/Entitlement-Repos; `subscriptions`
-isolations-kritisch, Daten-Isolations-Test). Alles **real gegen PostgreSQL 16**
-via `scripts/pg-test.sh`. **➡️ Nächster: WF2-10.3b** (`view_configs`-Repo,
-JSONB-lastig), S3 · Sonnet 4.6 (+Opus-Review).
+**Stufe 1 — in Arbeit:** **WF2-10 ✅ komplett** (10.1 Migrationsrunner · 10.2
+Tenant/User · 10.3a Feed/Subscription/Entitlement · 10.3b ViewConfig) — alle 6
+Tabellen-Repos, **real gegen PostgreSQL 16** via `scripts/pg-test.sh`. **➡️
+Nächster: WF2-11 (AuthN)** 🔒 S4 · Opus 4.8 — `WAYFINDER_AUTH_MODE`, OIDC-Token-
+Validierung, subject→user→tenant.
 
 Offen, **ASD-Kern (mandanten-unabhängig, parallel möglich** — nicht im kritischen
 Pfad, Details/Abgleich in ROADMAP §2):
@@ -535,22 +550,23 @@ Pfad, Details/Abgleich in ROADMAP §2):
 
 ## 3. Nächster Schritt
 
-➡️ **WF2-10.3b: `view_configs`-Repo** — S3 · Sonnet 4.6 (+Opus-Review), nach
+➡️ **WF2-11: AuthN — echtes Nutzer-/Session-Modell** 🔒 S4 · Opus 4.8, nach
 Ankündigung & „Go".
 
-Schließt die Persistenz-Repos ab: `view_configs` (Zentrum/Radius/AOI/FL-Band/
-Layer; JSONB-`aoi`/`layers`; tenant-Default + optionale Nutzer-Übersteuerung,
-Upsert über den Partial-Unique-Index `idx_view_configs_tenant_default`). Tests
-real via `scripts/pg-test.sh`.
+Setzt ADR 0006 §5 um: `WAYFINDER_AUTH_MODE` ∈ {proxy, builtin, none}; im
+proxy-Modus Validierung des weitergereichten OIDC-Tokens (Issuer/Audience/
+Signatur), im builtin-Modus argon2id; Auflösung **subject→user→tenant** über
+`UserRepo.GetBySubject` (10.2). Löst den heutigen einzelnen geteilten Token
+(ADR 0003) ab. Sicherheitskritisch (🔒) → Opus 4.8, mit Negativtests.
 
-Danach WF2-11 (AuthN), WF2-12 (Tenant-Context), WF2-13 (Admin-Bootstrap).
+Danach WF2-12 (Tenant-Context-Middleware, fail-closed), WF2-13 (Admin-Bootstrap).
 
 **Erledigt in dieser Sitzung:** **Stufe 0 komplett** (WF2-00/01/02, ADR
-0005/0006/0007) **+ WF2-10.1** (Persistenz/Migrationsrunner) **+ WF2-10.2**
-(Tenant-/User-Repos) **+ WF2-10.3a** (Feed-/Subscription-/Entitlement-Repos,
-Daten-Isolations-Test) — alles real gegen PostgreSQL 16 getestet. ADR-0006-
-Nachtrag: goose verworfen, Go-Baseline 1.25. Register FR-TEN-001/002, FR-FEED-001,
-NFR-SEC-003/004, NFR-SCALE-001; Test-Runner `scripts/pg-test.sh`.
+0005/0006/0007) **+ WF2-10 komplett** (10.1 Migrationsrunner · 10.2 Tenant/User ·
+10.3a Feed/Subscription/Entitlement · 10.3b ViewConfig) — alle 6 Tabellen-Repos,
+real gegen PostgreSQL 16 getestet. ADR-0006-Nachtrag: goose verworfen, Go-Baseline
+1.25. Register FR-TEN-001/002, FR-FEED-001, NFR-SEC-003/004, NFR-SCALE-001;
+Test-Runner `scripts/pg-test.sh`.
 
 **Parallel möglich (nicht kritischer Pfad):** ASD-011/012/013 (ASD-Kern,
 ROADMAP §2) — widerspruchsfrei zu 2.0, von einem leichteren Modell ziehbar.
