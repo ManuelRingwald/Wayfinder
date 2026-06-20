@@ -7,7 +7,40 @@
 > 🗺️ **Roadmap:** Arbeitspakete, Findings und empfohlene Reihenfolge stehen in
 > `docs/ROADMAP.md` (Stichwort „Roadmap" im Chat zeigt diese Liste).
 
-- **Zuletzt aktualisiert:** 2026-06-19 — **WF2-12.2 „Multi-Tenancy-Verdrahtung im
+- **Zuletzt aktualisiert:** 2026-06-20 — **WF2-12.3 „Builtin-Login" abgeschlossen
+  — WF2-12 (TENANT-CONTEXT) KOMPLETT (🔒 S4 · Opus 4.8).** Schließt den
+  builtin-Auth-Modus für Standalone-Deployments ohne IdP: aus Passwort wird eine
+  Session. **Persistenz:** Migration `00003_credentials.sql` (Tabelle `credentials`,
+  `user_id` PK → `users` `ON DELETE CASCADE`, getrennt von `users` — nur lokal
+  angemeldete Nutzer haben eine Zeile, OIDC/proxy keine, ADR 0006 §5; zugleich die
+  3. Migration des In-House-Runners) + `pkg/store/credentials.go` (`CredentialRepo`:
+  `Set` Upsert `ON CONFLICT (user_id)`, `GetHash` → `ErrNotFound` ohne lokales
+  Passwort; Hash bleibt opak, Hashing in `pkg/auth`). **HTTP:** `pkg/tenant/login.go`
+  `LoginHandler` (nur POST, JSON `{subject,password}`, Body 4 KiB-begrenzt) —
+  **timing-gehärtet gegen Nutzer-Enumeration** (immer ein `VerifyPassword`, gegen
+  einmaligen `dummyHash` wenn Subject/Credential fehlt); Erfolg →
+  `auth.MintSession`-**HttpOnly**-Cookie (`SameSite=Lax`, `Secure` bei TLS), `204`;
+  **jeder** Fehlerpfad → dasselbe `401` ohne Account-Existenz-Leakage, nie ein
+  Cookie auf Fehler; `LogoutHandler` löscht das Cookie (`MaxAge=-1`). **Verdrahtung
+  (`main.go`):** neues `WAYFINDER_SESSION_TTL` (Default 12h); `/api/login`+`/api/logout`
+  **nur wenn `dbPool != nil && AuthMode == builtin`** (proxy/none stellen keine
+  lokalen Sessions aus), bewusst unauthentifiziert, `Secure` an TLS gekoppelt.
+  **Tests:** DB-frei `login_test.go` (Erfolg setzt valides HttpOnly-Cookie;
+  Fehlertabelle falsches PW/unbekannter Nutzer/kein Credential → 401, leer/kaputt →
+  400, kein Cookie auf Fehler; GET → 405; Logout löscht Cookie) + **real gegen
+  PostgreSQL 16** `credentials_integration_test.go` (`TestIntegrationCredentialRepo`:
+  Set→GetHash-Round-Trip, Upsert, ErrNotFound, FK-Cascade). Standard-`go test ./...`
+  grün ohne DB, `scripts/pg-test.sh` grün. INSTALLATION §7 + TECHNICAL §6 um
+  `WAYFINDER_SESSION_TTL` + builtin-Login-Endpoints ergänzt (alter „folgt
+  WF2-12.3"-Hinweis abgelöst); Register NFR-SEC-004; Milestone
+  `docs/milestones/WF2-12.3_Builtin_Login.md`. Gates grün (`go build/vet/test`,
+  `gofmt`, `pg-test.sh`); `go 1.25` unverändert. **Damit WF2-12 komplett** (12.1
+  Middleware + 12.2 Verdrahtung + 12.3 builtin-Login); `pkg/auth` liefert in allen
+  3 Modi ein Subject. **Abgrenzung:** noch kein Self-Service/Passwort-UI — das erste
+  Konto+Passwort legt **WF2-13** an (builtin-Login ist verdrahtet, ab WF2-13
+  bedienbar; proxy bleibt der voll funktionsfähige Pfad). **Nächster Schritt:**
+  WF2-13 (Admin-Bootstrap) nach Ankündigung & „Go".
+- **Vorherige Aktualisierung:** 2026-06-19 — **WF2-12.2 „Multi-Tenancy-Verdrahtung im
   Server" abgeschlossen (🔒 S4 · Opus 4.8).** Bringt die Tenant-Middleware in den
   laufenden Server. `cmd/wayfinder/main.go`: `Config` um Multi-Tenancy-Felder
   erweitert (`DBURL`/`AuthMode`/`SessionKey`/`OIDCIssuer`/`OIDCAudience`/…),
@@ -588,11 +621,13 @@
 | **WF2-01** | ADR 0006 „Konfig-/Identitäts-Persistenz" | S4 · Opus 4.8 | ✅ erledigt |
 | **WF2-02** | ADR 0007 „Cloud-Ingest & Feed-Fan-out" (NATS JetStream) | S4 · Opus 4.8 | ✅ erledigt |
 
-**Stufe 1 — in Arbeit:** **WF2-10 ✅** (6 Tabellen-Repos) · **WF2-11 ✅** (AuthN,
-alle 3 Modi) · **WF2-12.1+12.2 ✅** (Tenant-Middleware + Verdrahtung in `main.go`:
-`setupTenancy` aktiviert DB+Migrationen+`/ws`-Gate nur bei `WAYFINDER_DB_URL`,
-sonst Single-Tenant; real-PG getestet). **➡️ Nächster: WF2-12.3** (builtin-Login-
-Handler + Credential-Speicher) 🔒 S4 · Opus 4.8. *(proxy-Modus voll funktionsfähig.)*
+**Stufe 1 — fast komplett:** **WF2-10 ✅** (6 Tabellen-Repos) · **WF2-11 ✅**
+(AuthN, alle 3 Modi) · **WF2-12 ✅** (Tenant-Context: 12.1 Middleware + 12.2
+Verdrahtung `setupTenancy` + 12.3 builtin-Login `/api/login`+Credential-Speicher,
+timing-gehärtet, nur in `builtin`-Modus; real-PG getestet). **➡️ Nächster: WF2-13**
+(Admin-Bootstrap: ersten Tenant/Nutzer + Passwort anlegen, `/admin`-Auth-Gate)
+S2–S3 · Sonnet 4.6 — schließt Stufe 1 ab. *(proxy-Modus voll funktionsfähig;
+builtin ab WF2-13 bedienbar.)*
 
 Offen, **ASD-Kern (mandanten-unabhängig, parallel möglich** — nicht im kritischen
 Pfad, Details/Abgleich in ROADMAP §2):
@@ -621,24 +656,27 @@ Pfad, Details/Abgleich in ROADMAP §2):
 
 ## 3. Nächster Schritt
 
-➡️ **WF2-12.3: builtin-Login-Handler** 🔒 S4 · Opus 4.8, nach Ankündigung & „Go".
+➡️ **WF2-13: Admin-Bootstrap** S2–S3 · Sonnet 4.6, nach Ankündigung & „Go".
 
-Vervollständigt den builtin-Modus: Credential-Speicher (Migration `00003`:
-Passwort-Hash zu Nutzern bzw. eigene Tabelle) + `/api/login`-Handler (Passwort via
-`auth.VerifyPassword` prüfen → `auth.MintSession`-Cookie setzen) + Logout. Real
-gegen PG getestet. *(Der **proxy-Modus** ist bereits voll funktionsfähig — builtin
-betrifft nur Standalone-Deployments ohne IdP.)*
+Schließt **Stufe 1** ab: ein Weg, den **ersten Tenant + Nutzer + Passwort**
+anzulegen (CLI-Subcommand oder einmaliger Bootstrap-Pfad), damit der in WF2-12.3
+verdrahtete builtin-Login auch *bedienbar* wird, plus ein `/admin`-Auth-Gate. Erst
+damit hat ein frisch aufgesetztes Multi-Tenant-Deployment ein erstes Login. *(Der
+**proxy-Modus** ist bereits voll funktionsfähig — WF2-13 betrifft primär den
+builtin-/Standalone-Pfad.)*
 
-Danach WF2-13 (Admin-Bootstrap: ersten Tenant/Nutzer anlegen), dann **Stufe 2**
-(mandanten-isolierter Stream, WF2-20/21/22 — der sicherheitskritische Kern).
+Danach **Stufe 2** (mandanten-isolierter Stream, WF2-20/21/22 — der
+sicherheitskritische Kern mit Pflicht-Negativtests „A sieht nie B").
 
 **Erledigt in dieser Sitzung:** **Stufe 0 komplett** (WF2-00/01/02, ADR
 0005/0006/0007) **+ WF2-10 komplett** (alle 6 Tabellen-Repos, real gegen
 PostgreSQL 16) **+ WF2-11 komplett** (AuthN: 11.1 builtin-Primitive argon2id/HMAC-
 Session/Mode/None+Builtin · 11.2 proxy-Modus `ProxyAuthenticator` go-oidc)
-**+ WF2-12.1/12.2** (`pkg/auth`-Factory + `pkg/tenant` Middleware + Verdrahtung in
-`main.go`: `setupTenancy`, `/ws`-Gate, neue ENV-Vars). ADR-0006-Nachtrag: goose
-verworfen, Go-Baseline 1.25. Register FR-CFG-001, FR-TEN-001/002, FR-FEED-001,
+**+ WF2-12 komplett** (12.1 `pkg/auth`-Factory + `pkg/tenant` Middleware · 12.2
+Verdrahtung in `main.go`: `setupTenancy`, `/ws`-Gate · 12.3 builtin-Login
+`/api/login`+`/api/logout` + Credential-Speicher Migration `00003`/`CredentialRepo`,
+timing-gehärtet, `WAYFINDER_SESSION_TTL`). ADR-0006-Nachtrag: goose verworfen,
+Go-Baseline 1.25. Register FR-CFG-001, FR-TEN-001/002, FR-FEED-001,
 NFR-SEC-003/004, NFR-SCALE-001; Test-Runner `scripts/pg-test.sh` (jetzt `./...`);
 neue Deps `golang.org/x/crypto`, `github.com/coreos/go-oidc/v3`.
 

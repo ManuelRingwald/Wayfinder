@@ -37,18 +37,20 @@ func TestLoadMigrations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loadMigrations: %v", err)
 	}
-	if len(migs) != 2 {
-		t.Fatalf("loaded %d migrations, want 2", len(migs))
+	if len(migs) < 3 {
+		t.Fatalf("loaded %d migrations, want at least 3", len(migs))
 	}
 
-	// Migrations are returned in ascending version order.
-	if migs[0].version != 1 || migs[1].version != 2 {
-		t.Fatalf("versions = [%d %d], want [1 2]", migs[0].version, migs[1].version)
+	// Versions are returned strictly ascending (and therefore unique).
+	for i := 1; i < len(migs); i++ {
+		if migs[i].version <= migs[i-1].version {
+			t.Fatalf("migrations not strictly ascending: %d then %d", migs[i-1].version, migs[i].version)
+		}
 	}
 
 	init := migs[0]
-	if init.name != "init" {
-		t.Fatalf("first migration name = %q, want init", init.name)
+	if init.version != 1 || init.name != "init" {
+		t.Fatalf("first migration = {%d %q}, want {1 init}", init.version, init.name)
 	}
 	for _, tbl := range schemaTables {
 		if !strings.Contains(init.up, "CREATE TABLE "+tbl+" ") {

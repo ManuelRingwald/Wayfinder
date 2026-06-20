@@ -347,7 +347,13 @@ Identitäts-Modell siehe ADR 0006 §5.
 | `WAYFINDER_OIDC_AUDIENCE` | *(leer)* | string | proxy: erwartete Audience, Pflicht. |
 | `WAYFINDER_SESSION_KEY` | *(leer)* | string | builtin: HMAC-Schlüssel für Session-Cookies, Pflicht. |
 | `WAYFINDER_SESSION_COOKIE` | `wf_session` | string | builtin: Cookie-Name. |
+| `WAYFINDER_SESSION_TTL` | `12h` | duration | builtin: Session-Lebensdauer. |
 | `WAYFINDER_NONE_SUBJECT` | `default` | string | none: festes Subject je Anfrage. |
+
+**builtin-Login-Endpoints:** `POST /api/login` (`{"subject","password"}` →
+HttpOnly-Cookie via `auth.MintSession`, sonst `401` mit Timing-Angleich gegen
+User-Enumeration), `POST /api/logout` (Cookie löschen). Nur im builtin-Modus
+registriert.
 
 ### 6.5 Betrieb
 

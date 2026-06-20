@@ -446,11 +446,14 @@ ohne gültigen, einem Mandanten zugeordneten Nutzer → `401`).
 | `WAYFINDER_OIDC_AUDIENCE` | *(leer)* | `proxy`: erwartete Audience (Client-ID). Pflicht im proxy-Modus. |
 | `WAYFINDER_SESSION_KEY` | *(leer)* | `builtin`: HMAC-Schlüssel zum Signieren der Session-Cookies. Pflicht im builtin-Modus. |
 | `WAYFINDER_SESSION_COOKIE` | `wf_session` | `builtin`: Name der Session-Cookie. |
+| `WAYFINDER_SESSION_TTL` | `12h` | `builtin`: Session-Lebensdauer (Go-Duration, z. B. `8h`). |
 | `WAYFINDER_NONE_SUBJECT` | `default` | `none`: festes Subject, das jeder Anfrage zugeordnet wird. |
 
-> ⚠️ Der **builtin-Login-Handler** (Passwort → Cookie) folgt in WF2-12.3; im
-> builtin-Modus kann derzeit noch keine Cookie ausgestellt werden. Der
-> **proxy-Modus** ist voll funktionsfähig.
+> ℹ️ **builtin-Login:** `POST /api/login` mit `{"subject":"…","password":"…"}` →
+> setzt bei Erfolg eine HttpOnly-Session-Cookie (sonst `401`); `POST /api/logout`
+> löscht sie. Passwörter werden als argon2id-Hash gespeichert; Nutzer und
+> Passwörter legt der Admin-Bootstrap (WF2-13) an. Der **proxy-Modus** braucht
+> keinen Login (der vorgelagerte OIDC-Proxy authentifiziert).
 
 ### 7.5 Betrieb
 
