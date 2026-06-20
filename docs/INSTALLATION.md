@@ -455,6 +455,40 @@ ohne gültigen, einem Mandanten zugeordneten Nutzer → `401`).
 > Passwörter legt der Admin-Bootstrap (WF2-13) an. Der **proxy-Modus** braucht
 > keinen Login (der vorgelagerte OIDC-Proxy authentifiziert).
 
+#### Admin-Bootstrap (ersten Mandanten/Nutzer anlegen)
+
+Ein frisch aufgesetztes Multi-Mandanten-Deployment hat zunächst **keinen** Nutzer.
+Der Subcommand `wayfinder bootstrap` legt den ersten Mandanten + Admin-Nutzer (und
+im builtin-Modus dessen Passwort) an. Er liest `WAYFINDER_DB_URL`, wendet die
+Migrationen an und ist **idempotent** (mehrfach ausführbar — vorhandener Mandant/
+Nutzer wird wiederverwendet, das Passwort wird neu gesetzt):
+
+```bash
+# proxy-Modus: nur Mandant + Nutzer (das OIDC-subject mappt auf den Nutzer)
+WAYFINDER_DB_URL=postgres://… wayfinder bootstrap \
+    -tenant acme -tenant-name "ACME Air" -subject alice@example.com -role tenant_admin
+
+# builtin-Modus: zusätzlich ein Passwort (über ENV, nicht als Flag — Flags sind
+# in der Prozessliste sichtbar)
+WAYFINDER_DB_URL=postgres://… WAYFINDER_BOOTSTRAP_PASSWORD='…' \
+    wayfinder bootstrap -tenant acme -subject admin -role tenant_admin
+```
+
+| Flag / Variable | Default | Beschreibung |
+|-----------------|---------|--------------|
+| `-tenant` | *(Pflicht)* | Mandanten-Slug (eindeutig). |
+| `-tenant-name` | = Slug | Anzeigename des Mandanten. |
+| `-subject` | *(Pflicht)* | OIDC-Subject (proxy) bzw. Benutzername (builtin) des Admins. |
+| `-email` | *(leer)* | Optionale E-Mail. |
+| `-role` | `tenant_admin` | `operator` \| `tenant_admin` \| `super_admin`. |
+| `-password` | *(leer)* | builtin-Passwort (besser über `WAYFINDER_BOOTSTRAP_PASSWORD`). |
+| `WAYFINDER_BOOTSTRAP_PASSWORD` | *(leer)* | builtin-Passwort (bevorzugt; nicht in der Prozessliste sichtbar). |
+
+> 🔒 **`/admin`-Endpoint:** Bei aktiver Multi-Tenancy ist `/admin` rollen-gegated
+> (`tenant_admin`/`super_admin`, sonst `403`) und liefert derzeit eine minimale
+> „whoami"-Antwort (eigene Identität als JSON) zur Zugriffsprüfung. Die
+> eigentliche Admin-API/-UI folgt in WF2-31/32.
+
 ### 7.5 Betrieb
 
 | Variable | Default | Beschreibung |

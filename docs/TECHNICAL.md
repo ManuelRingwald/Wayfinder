@@ -349,11 +349,20 @@ Identitäts-Modell siehe ADR 0006 §5.
 | `WAYFINDER_SESSION_COOKIE` | `wf_session` | string | builtin: Cookie-Name. |
 | `WAYFINDER_SESSION_TTL` | `12h` | duration | builtin: Session-Lebensdauer. |
 | `WAYFINDER_NONE_SUBJECT` | `default` | string | none: festes Subject je Anfrage. |
+| `WAYFINDER_BOOTSTRAP_PASSWORD` | *(leer)* | string | Nur vom `bootstrap`-Subcommand gelesen: builtin-Passwort des ersten Admins. |
 
 **builtin-Login-Endpoints:** `POST /api/login` (`{"subject","password"}` →
 HttpOnly-Cookie via `auth.MintSession`, sonst `401` mit Timing-Angleich gegen
 User-Enumeration), `POST /api/logout` (Cookie löschen). Nur im builtin-Modus
 registriert.
+
+**Admin-Bootstrap (WF2-13):** Subcommand `wayfinder bootstrap` (`cmd/wayfinder/
+bootstrap.go`) legt **idempotent** ersten Mandanten + Admin-Nutzer (+ builtin-
+Passwort via `WAYFINDER_BOOTSTRAP_PASSWORD`) an; liest `WAYFINDER_DB_URL`,
+migriert, verweigert das Re-Homing eines Subjects in einen anderen Mandanten.
+**`/admin`-Gate:** `tenant.RequireRole(tenant_admin, super_admin)` hinter der
+Tenant-Middleware (fail-closed `403` ohne passende Rolle/Identität); liefert eine
+minimale whoami-JSON-Antwort, Admin-API/-UI folgt WF2-31/32.
 
 ### 6.5 Betrieb
 

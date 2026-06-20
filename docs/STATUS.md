@@ -7,7 +7,37 @@
 > 🗺️ **Roadmap:** Arbeitspakete, Findings und empfohlene Reihenfolge stehen in
 > `docs/ROADMAP.md` (Stichwort „Roadmap" im Chat zeigt diese Liste).
 
-- **Zuletzt aktualisiert:** 2026-06-20 — **WF2-12.3 „Builtin-Login" abgeschlossen
+- **Zuletzt aktualisiert:** 2026-06-20 — **WF2-13 „Admin-Bootstrap" abgeschlossen
+  — STUFE 1 KOMPLETT (S2–S3 · Sonnet 4.6 / Opus-Review).** Schließt die Lücke
+  „frisch aufgesetztes Deployment hat keinen Nutzer": ein **Subcommand legt den
+  ersten Mandanten + Admin an**, womit der builtin-Login aus WF2-12.3 bedienbar
+  wird. **`cmd/wayfinder/bootstrap.go`:** `wayfinder bootstrap -tenant … -subject …
+  [-role …] [-email …]` (Dispatch in `main()` über `os.Args[1]=="bootstrap"`; ohne
+  Subcommand startet wie bisher der Server). `runBootstrap` (testbarer Kern):
+  **idempotentes** Get-or-Create für Tenant (Slug) + User (Subject) + optionales
+  `CredentialRepo.Set` (Upsert (re)setzt Passwort); **kein stilles Re-Homing** —
+  Subject in anderem Mandanten → Konflikt-Fehler. `bootstrapCommand`: Flags +
+  `WAYFINDER_DB_URL` + `store.Open`/`Migrate` + `runBootstrap`. **Passwort-Hygiene:**
+  bevorzugt `WAYFINDER_BOOTSTRAP_PASSWORD` (Flag in Prozessliste sichtbar), argon2id-
+  Hash, nie Klartext. **`/admin`-Rollen-Gate** (`pkg/tenant/authz.go`): `RequireRole`-
+  Middleware (nur `tenant_admin`/`super_admin` durch, sonst `403`; **fail-closed**
+  auch ohne Identity); in `main.go` als `tenantMW(RequireRole(…)(whoami))` gemountet,
+  `adminWhoamiHandler` liefert Identity als JSON (echte Admin-API/-UI = WF2-31/32).
+  **Kein Schema-Change.** **Tests:** DB-frei `bootstrap_test.go` (`validate`) +
+  `pkg/tenant/authz_test.go` (`RequireRole` admin erlaubt / operator+ohne-Identität
+  → 403); **real gegen PostgreSQL 16** `bootstrap_integration_test.go`
+  (`TestIntegrationBootstrap`: Erstlauf legt Tenant+User+Credential an & verifiziert
+  Passwort, Zweitlauf idempotent + Passwort-Update, Cross-Tenant-Subject → Konflikt);
+  **E2E-Rauchtest** des Binaries (create → idempotent → fehlendes Pflicht-Flag exit≠0,
+  `psql` bestätigt 1 Zeile). Standard-`go test ./...` grün ohne DB, `scripts/pg-test.sh`
+  grün. INSTALLATION §7 (Bootstrap-Aufruf/Flag-Tabelle/`WAYFINDER_BOOTSTRAP_PASSWORD`/
+  `/admin`) + TECHNICAL §6 ergänzt; Register FR-TEN-001; Milestone
+  `docs/milestones/WF2-13_Admin_Bootstrap.md`. Gates grün (`go build/vet/test`,
+  `gofmt`, `pg-test.sh`); `go 1.25` unverändert. **Damit Stufe 1 komplett**
+  (WF2-10 Persistenz · WF2-11 AuthN · WF2-12 Tenant-Context · WF2-13 Bootstrap).
+  **Nächster Schritt: Stufe 2** — WF2-20 (Feed-Registry & Multi-Feed-Receiver,
+  🔒 S4 · Opus 4.8) nach Ankündigung & „Go".
+- **Vorherige Aktualisierung:** 2026-06-20 — **WF2-12.3 „Builtin-Login" abgeschlossen
   — WF2-12 (TENANT-CONTEXT) KOMPLETT (🔒 S4 · Opus 4.8).** Schließt den
   builtin-Auth-Modus für Standalone-Deployments ohne IdP: aus Passwort wird eine
   Session. **Persistenz:** Migration `00003_credentials.sql` (Tabelle `credentials`,
@@ -621,13 +651,13 @@
 | **WF2-01** | ADR 0006 „Konfig-/Identitäts-Persistenz" | S4 · Opus 4.8 | ✅ erledigt |
 | **WF2-02** | ADR 0007 „Cloud-Ingest & Feed-Fan-out" (NATS JetStream) | S4 · Opus 4.8 | ✅ erledigt |
 
-**Stufe 1 — fast komplett:** **WF2-10 ✅** (6 Tabellen-Repos) · **WF2-11 ✅**
-(AuthN, alle 3 Modi) · **WF2-12 ✅** (Tenant-Context: 12.1 Middleware + 12.2
-Verdrahtung `setupTenancy` + 12.3 builtin-Login `/api/login`+Credential-Speicher,
-timing-gehärtet, nur in `builtin`-Modus; real-PG getestet). **➡️ Nächster: WF2-13**
-(Admin-Bootstrap: ersten Tenant/Nutzer + Passwort anlegen, `/admin`-Auth-Gate)
-S2–S3 · Sonnet 4.6 — schließt Stufe 1 ab. *(proxy-Modus voll funktionsfähig;
-builtin ab WF2-13 bedienbar.)*
+**✅ Stufe 1 (Identität & Mandanten-Grundgerüst) komplett:** **WF2-10 ✅** (6
+Tabellen-Repos) · **WF2-11 ✅** (AuthN, alle 3 Modi) · **WF2-12 ✅** (Tenant-Context:
+Middleware + Verdrahtung + builtin-Login) · **WF2-13 ✅** (Admin-Bootstrap:
+Subcommand `wayfinder bootstrap` legt ersten Tenant/Admin/Passwort an, idempotent;
+`/admin`-Rollen-Gate `RequireRole`; real-PG + E2E getestet). **➡️ Nächster:
+Stufe 2 — WF2-20** (Feed-Registry & Multi-Feed-Receiver, 1→N Feeds) 🔒 S4 · Opus 4.8
+— Beginn des sicherheitskritischen Stream-Umbaus.
 
 Offen, **ASD-Kern (mandanten-unabhängig, parallel möglich** — nicht im kritischen
 Pfad, Details/Abgleich in ROADMAP §2):
@@ -656,29 +686,28 @@ Pfad, Details/Abgleich in ROADMAP §2):
 
 ## 3. Nächster Schritt
 
-➡️ **WF2-13: Admin-Bootstrap** S2–S3 · Sonnet 4.6, nach Ankündigung & „Go".
+➡️ **Stufe 2 — WF2-20: Feed-Registry & Multi-Feed-Receiver** 🔒 S4 · Opus 4.8, nach
+Ankündigung & „Go".
 
-Schließt **Stufe 1** ab: ein Weg, den **ersten Tenant + Nutzer + Passwort**
-anzulegen (CLI-Subcommand oder einmaliger Bootstrap-Pfad), damit der in WF2-12.3
-verdrahtete builtin-Login auch *bedienbar* wird, plus ein `/admin`-Auth-Gate. Erst
-damit hat ein frisch aufgesetztes Multi-Tenant-Deployment ein erstes Login. *(Der
-**proxy-Modus** ist bereits voll funktionsfähig — WF2-13 betrifft primär den
-builtin-/Standalone-Pfad.)*
-
-Danach **Stufe 2** (mandanten-isolierter Stream, WF2-20/21/22 — der
-sicherheitskritische Kern mit Pflicht-Negativtests „A sieht nie B").
+Beginn des **sicherheitskritischen Stream-Umbaus**: vom Single-Feed zum
+**Feed-Katalog** (1→N Feeds aus der `feeds`-Tabelle), Receiver tritt mehreren
+Gruppen/Subjects bei und stempelt jeden Track mit seiner **`feed_id`** — die
+Grundlage, auf der WF2-21 (scoped Fan-out: Prädikat feed∩AOI∩FL∩Kategorie) und
+WF2-22 (Isolations-Testsuite, Pflicht-Negativtests „A sieht nie B") aufsetzen.
+Hier entsteht der Kern der Cross-Tenant-Isolation (NFR-SEC-003) — Opus + Negativ-
+Tests Pflicht.
 
 **Erledigt in dieser Sitzung:** **Stufe 0 komplett** (WF2-00/01/02, ADR
-0005/0006/0007) **+ WF2-10 komplett** (alle 6 Tabellen-Repos, real gegen
-PostgreSQL 16) **+ WF2-11 komplett** (AuthN: 11.1 builtin-Primitive argon2id/HMAC-
+0005/0006/0007) **+ STUFE 1 KOMPLETT** — **WF2-10** (alle 6 Tabellen-Repos, real
+gegen PostgreSQL 16) **+ WF2-11** (AuthN: 11.1 builtin-Primitive argon2id/HMAC-
 Session/Mode/None+Builtin · 11.2 proxy-Modus `ProxyAuthenticator` go-oidc)
-**+ WF2-12 komplett** (12.1 `pkg/auth`-Factory + `pkg/tenant` Middleware · 12.2
-Verdrahtung in `main.go`: `setupTenancy`, `/ws`-Gate · 12.3 builtin-Login
-`/api/login`+`/api/logout` + Credential-Speicher Migration `00003`/`CredentialRepo`,
-timing-gehärtet, `WAYFINDER_SESSION_TTL`). ADR-0006-Nachtrag: goose verworfen,
-Go-Baseline 1.25. Register FR-CFG-001, FR-TEN-001/002, FR-FEED-001,
-NFR-SEC-003/004, NFR-SCALE-001; Test-Runner `scripts/pg-test.sh` (jetzt `./...`);
-neue Deps `golang.org/x/crypto`, `github.com/coreos/go-oidc/v3`.
+**+ WF2-12** (12.1 `pkg/auth`-Factory + `pkg/tenant` Middleware · 12.2 Verdrahtung
+`setupTenancy`/`/ws`-Gate · 12.3 builtin-Login + Credential-Speicher, timing-
+gehärtet) **+ WF2-13** (Admin-Bootstrap-Subcommand idempotent + `/admin`-Rollen-
+Gate `RequireRole`). ADR-0006-Nachtrag: goose verworfen, Go-Baseline 1.25. Register
+FR-CFG-001, FR-TEN-001/002, FR-FEED-001, NFR-SEC-003/004, NFR-SCALE-001; Test-
+Runner `scripts/pg-test.sh` (jetzt `./...`); neue Deps `golang.org/x/crypto`,
+`github.com/coreos/go-oidc/v3`.
 
 **Parallel möglich (nicht kritischer Pfad):** ASD-011/012/013 (ASD-Kern,
 ROADMAP §2) — widerspruchsfrei zu 2.0, von einem leichteren Modell ziehbar.

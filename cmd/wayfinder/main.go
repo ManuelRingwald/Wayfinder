@@ -35,6 +35,17 @@ import (
 )
 
 func main() {
+	// Subcommand dispatch: `wayfinder bootstrap …` provisions the first
+	// tenant/admin user of a fresh multi-tenant deployment and exits (WF2-13).
+	// With no subcommand the ASD server runs as before.
+	if len(os.Args) > 1 && os.Args[1] == "bootstrap" {
+		if err := bootstrapCommand(os.Args[2:], os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, "bootstrap:", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	// Load configuration from environment.
 	cfg := loadConfig()
 
@@ -256,6 +267,15 @@ func main() {
 		mux.Handle("/api/login", tenant.LoginHandler(users, creds, loginCfg))
 		mux.Handle("/api/logout", tenant.LogoutHandler(loginCfg))
 		logger.Info("builtin login enabled", slog.String("path", "/api/login"))
+	}
+
+	// Admin gate (WF2-13): /admin is role-gated to tenant_admin/super_admin. For
+	// now it serves a minimal "whoami" so an admin can verify their access; the
+	// admin API/UI builds behind this gate in WF2-31/32. Only mounted with
+	// multi-tenancy active — the gate needs an Identity from the tenant middleware.
+	if tenantMW != nil {
+		admin := tenant.RequireRole(store.RoleTenantAdmin, store.RoleSuperAdmin)(adminWhoamiHandler())
+		mux.Handle("/admin", tenantMW(admin))
 	}
 
 	// The per-tenant middleware (on /ws) supersedes the legacy single shared
@@ -622,6 +642,27 @@ func setupTenancy(ctx context.Context, cfg Config, logger *slog.Logger) (func(ht
 	}
 	logger.Info("multi-tenancy enabled", slog.String("auth_mode", string(cfg.AuthMode)))
 	return tenant.Middleware(authenticator, store.NewUserRepo(pool), logger), pool, nil
+}
+
+// adminWhoamiHandler reports the caller's resolved tenant Identity as JSON. It
+// sits behind the /admin role gate (WF2-13) so an admin can confirm their access;
+// the real admin surface (tenant/user/subscription management) follows in
+// WF2-31/32. The handler trusts the Identity placed in context by the middleware.
+func adminWhoamiHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, ok := tenant.FromContext(r.Context())
+		if !ok {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"subject":   id.Subject,
+			"tenant_id": id.TenantID,
+			"user_id":   id.UserID,
+			"role":      id.Role,
+		})
+	}
 }
 
 // parseLogLevel parses the documented slog level names ("debug", "info",
