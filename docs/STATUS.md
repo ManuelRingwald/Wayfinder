@@ -7,7 +7,26 @@
 > 🗺️ **Roadmap:** Arbeitspakete, Findings und empfohlene Reihenfolge stehen in
 > `docs/ROADMAP.md` (Stichwort „Roadmap" im Chat zeigt diese Liste).
 
-- **Zuletzt aktualisiert:** 2026-06-19 — **WF2-02 / ADR 0007 „Cloud-Ingest &
+- **Zuletzt aktualisiert:** 2026-06-19 — **WF2-10.1 „Persistenz-Schicht & Migrationen"
+  abgeschlossen (S3 · Sonnet 4.6 / Opus-Review) — ERSTES PRODUKTIVCODE-PAKET.**
+  Neues `pkg/store`: `store.go` (`Open` pgxpool + Ping, `DSNFromEnv` aus
+  `WAYFINDER_DB_URL`), `migrate.go` (minimaler **In-House-Migrationsrunner**:
+  eingebettete `migrations/*.sql`, `-- +migrate up/down`-Marker, `schema_migrations`-
+  Tracking, je Migration eine Transaktion, idempotent, forward-only),
+  `migrations/00001_init.sql` (ADR-0006-Schema: tenants/users/feeds/subscriptions/
+  view_configs/entitlements). Tests `store_test.go` DB-frei (kein Docker-Daemon
+  hier; Schema-Apply folgt WF2-10.3 in CI). **Zwei bewusste Entscheidungen
+  (ADR 0006 Nachtrag):** (1) **goose verworfen** — zog transitiv
+  `modernc.org/sqlite` (volle SQLite-Engine) in einen Postgres-only-Dienst; (2)
+  **Go-Baseline 1.23 → 1.25** (pgx + modernes `golang.org/x/*` verlangen es;
+  `go.mod` + Dockerfile `golang:1.25-bookworm` gebumpt). Abhängigkeit:
+  `github.com/jackc/pgx/v5` (sonst lean, kein Migrations-Framework). Register
+  FR-TEN-002 (Implementierung/Tests aktualisiert), Milestone
+  `docs/milestones/WF2-10.1_Persistence_Layer.md`. Gates grün (`go build/vet/test`,
+  `gofmt`). `WAYFINDER_DB_URL` noch nicht von `main` gelesen (Library) → kein
+  INSTALLATION-Eintrag nötig. **Nächster Schritt:** WF2-10.2 (Repositories
+  tenants/users) nach Ankündigung & „Go".
+- **Vorherige Aktualisierung:** 2026-06-19 — **WF2-02 / ADR 0007 „Cloud-Ingest &
   Feed-Fan-out" abgeschlossen — STUFE 0 KOMPLETT (S4 · Opus 4.8, Doku).** Neue
   ADR `docs/decisions/0007-cloud-ingest-und-feed-fan-out.md`. Zielumgebung vom
   Projektverantwortlichen gesetzt: **Public Cloud + Kubernetes**. Entscheidungen:
@@ -449,9 +468,10 @@
 | **WF2-01** | ADR 0006 „Konfig-/Identitäts-Persistenz" | S4 · Opus 4.8 | ✅ erledigt |
 | **WF2-02** | ADR 0007 „Cloud-Ingest & Feed-Fan-out" (NATS JetStream) | S4 · Opus 4.8 | ✅ erledigt |
 
-**➡️ Nächster: Stufe 1 (Umsetzung) — WF2-10** Persistenz-Schicht & Migrationen
-(`pkg/store`, pgx/sqlc, goose), **erstes Produktivcode-Paket**, S3 · Sonnet 4.6
-(+Opus-Review). Ab hier greifen die Code-Gates wieder voll.
+**Stufe 1 — in Arbeit:** **WF2-10.1 ✅** (`pkg/store`: pgx-Pool + eingebetteter
+In-House-Migrationsrunner + Schema `00001_init` + DB-freie Tests). **➡️ Nächster:
+WF2-10.2** (Repository-Zugriffe tenants/users mit pgx), S3 · Sonnet 4.6
+(+Opus-Review).
 
 Offen, **ASD-Kern (mandanten-unabhängig, parallel möglich** — nicht im kritischen
 Pfad, Details/Abgleich in ROADMAP §2):
@@ -474,27 +494,29 @@ Pfad, Details/Abgleich in ROADMAP §2):
 | **Wayfinder 2.0 — Pivot/Mandanten-Modell** | **Hybrid** (Feed-Katalog + Abos + Sicht-Filter); Pivot ratifiziert | **ADR 0005** | ✅ ratifiziert |
 | **Wayfinder 2.0 — Kommerz-Scope** | **Feature-Flags ja, Stripe-Billing zurückgestellt** | **ADR 0005** (Konzept §6.5) | ✅ (WF2-51 ruht) |
 | **Wayfinder 2.0 — Isolationsgrenze** | Server-seitige AuthZ pro Subscription, fail-closed, Pflicht-Negativtests | **ADR 0005**, NFR-SEC-003 | ✅ Prinzip gesetzt (Umsetzung WF2-21/22) |
-| **Wayfinder 2.0 — Persistenz** | PostgreSQL + `pgx`/`sqlc` + `goose`; Schema-Skizze; Stateless-Split; Redis zurückgestellt | **ADR 0006**, FR-TEN-002 | ✅ entschieden (Umsetzung WF2-10) |
+| **Wayfinder 2.0 — Persistenz** | PostgreSQL + `pgx`; **In-House-Migrationsrunner** (goose verworfen, ADR 0006 Nachtrag); Stateless-Split; Redis zurückgestellt; **Go-Baseline 1.25** | **ADR 0006**, FR-TEN-002 | 🔵 Umsetzung WF2-10 (10.1 ✅) |
 | **Wayfinder 2.0 — Identität** | OIDC@Proxy primär + eingebauter Fallback + none (`WAYFINDER_AUTH_MODE`); Tenant-Kontext fail-closed | **ADR 0006**, NFR-SEC-004 | ✅ entschieden (Umsetzung WF2-11/12) |
 | **Wayfinder 2.0 — Cloud-Ingest/Transport** | Public Cloud + K8s; `FeedSource` (Multicast/Stream) + Ingest-Gateway; Bus = **NATS JetStream** (RabbitMQ/Kafka verworfen) | **ADR 0007**, FR-FEED-001/NFR-SCALE-001 | ✅ entschieden (Umsetzung WF2-20/52/53) |
 
 ## 3. Nächster Schritt
 
-➡️ **WF2-10: Persistenz-Schicht & Migrationen** (Beginn **Stufe 1**, **erstes
-Produktivcode-Paket**) — S3 · Sonnet 4.6 (+Opus-Review), nach Ankündigung & „Go".
+➡️ **WF2-10.2: Repository-Zugriffe (tenants/users)** — S3 · Sonnet 4.6
+(+Opus-Review), nach Ankündigung & „Go".
 
-Setzt ADR 0006 um: `pkg/store` (pgx-Pool, sqlc-generierte Queries), eingebettete
-`goose`-Migrationen für das Schema (tenants/users/feeds/subscriptions/
-view_configs/entitlements), Repository-Funktionen + Tests (Testcontainers
-Postgres). **Code-Gates ab hier wieder voll** (`go test ./...`, vet, gofmt) +
-neue Anforderungen mit Code/Test rückverfolgbar. Neue ENV-Var `WAYFINDER_DB_URL`
-→ INSTALLATION/TECHNICAL nachziehen.
+Baut auf `pkg/store` (10.1) auf: typsichere CRUD-Zugriffe für `tenants`/`users`
+mit pgx (ggf. `sqlc`-Codegen — sqlc-Binary ist hier nicht installiert, daher
+entweder `go install` oder handgeschriebene pgx-Queries), inkl. Tests. DB-
+Integrationstests (Schema-Anwendung) folgen in WF2-10.3 (CI/Testcontainers, da
+**kein Docker-Daemon** in dieser Umgebung).
 
-Danach WF2-11 (AuthN), WF2-12 (Tenant-Context), WF2-13 (Admin-Bootstrap).
+Danach WF2-10.3 (restliche Repositories), dann WF2-11 (AuthN), WF2-12
+(Tenant-Context), WF2-13 (Admin-Bootstrap).
 
-**Erledigt in dieser Sitzung:** **Stufe 0 komplett** — WF2-00/ADR 0005 (Pivot),
-WF2-01/ADR 0006 (Persistenz/Identität), WF2-02/ADR 0007 (Cloud-Ingest, NATS
-JetStream). Register FR-TEN-001/002, FR-FEED-001, NFR-SEC-003/004, NFR-SCALE-001.
+**Erledigt in dieser Sitzung:** **Stufe 0 komplett** (WF2-00/01/02, ADR
+0005/0006/0007) **+ WF2-10.1** (`pkg/store`: pgx-Pool, In-House-Migrationsrunner,
+Schema, DB-freie Tests). Dabei ADR-0006-Nachtrag: **goose verworfen** (zog
+`modernc.org/sqlite`), **Go-Baseline 1.23 → 1.25** (Dockerfile gebumpt). Register
+FR-TEN-001/002, FR-FEED-001, NFR-SEC-003/004, NFR-SCALE-001.
 
 **Parallel möglich (nicht kritischer Pfad):** ASD-011/012/013 (ASD-Kern,
 ROADMAP §2) — widerspruchsfrei zu 2.0, von einem leichteren Modell ziehbar.
