@@ -7,7 +7,23 @@
 > 🗺️ **Roadmap:** Arbeitspakete, Findings und empfohlene Reihenfolge stehen in
 > `docs/ROADMAP.md` (Stichwort „Roadmap" im Chat zeigt diese Liste).
 
-- **Zuletzt aktualisiert:** 2026-06-19 — **WF2-11.1 „AuthN: Mode + builtin-
+- **Zuletzt aktualisiert:** 2026-06-19 — **WF2-11.2 „AuthN: proxy-Modus OIDC" —
+  WF2-11 (AUTHN) KOMPLETT (🔒 S4 · Opus 4.8).** `pkg/auth/proxy.go`:
+  `ProxyAuthenticator` validiert das vom Reverse-Proxy weitergereichte
+  OIDC-Bearer-Token (**Issuer/Audience/Signatur gegen JWKS, Ablauf**) via
+  **`github.com/coreos/go-oidc/v3`** (mit Projektverantwortlichem abgestimmt) und
+  liefert das `sub`; fehlend/ungültig/leer → `ErrUnauthenticated` (fail-closed,
+  keine Ursachen-Leakage). `idTokenVerifier`-Interface macht es unit-testbar;
+  `bearerToken` liest `Authorization: Bearer`. **Tests** (`proxy_test.go`) gegen
+  einen **lokalen Test-Issuer** (im Test erzeugter RSA-Schlüssel + `httptest`-JWKS
+  + selbst-signierte RS256-JWTs, ohne JWT-Lib): valid + alle Ablehnungen (fehlend,
+  kein JWT, abgelaufen, falsche Audience/Issuer, **falsche Signatur**, leeres
+  Subject). Keine selbstgebaute JWT/JWKS-Krypto. Damit liefert `pkg/auth` in
+  **allen 3 Modi** ein Subject → **WF2-11 abgeschlossen.** Register NFR-SEC-004,
+  Milestone `docs/milestones/WF2-11.2_Auth_Proxy_OIDC.md`. Gates grün (`go
+  build/vet/test`, `gofmt`); `go 1.25` unverändert. **Nächster Schritt:** WF2-12
+  (Tenant-Context-Middleware) nach Ankündigung & „Go".
+- **Vorherige Aktualisierung:** 2026-06-19 — **WF2-11.1 „AuthN: Mode + builtin-
   Primitive" abgeschlossen (🔒 S4 · Opus 4.8).** Neues Paket `pkg/auth` (ersetzt
   perspektivisch den einzelnen geteilten Token aus ADR 0003). `auth.go`: `Mode`
   (proxy/builtin/none) + `ParseMode` (Fallback none mit `ok=false`),
@@ -534,11 +550,11 @@
 | **WF2-01** | ADR 0006 „Konfig-/Identitäts-Persistenz" | S4 · Opus 4.8 | ✅ erledigt |
 | **WF2-02** | ADR 0007 „Cloud-Ingest & Feed-Fan-out" (NATS JetStream) | S4 · Opus 4.8 | ✅ erledigt |
 
-**Stufe 1 — in Arbeit:** **WF2-10 ✅ komplett** (alle 6 Tabellen-Repos, real gegen
-PostgreSQL 16) · **WF2-11.1 ✅** (`pkg/auth`: Mode, argon2id, HMAC-Session,
-None-/Builtin-Authenticator; 10 DB-freie Tests). **➡️ Nächster: WF2-11.2**
-(proxy-Modus OIDC-Token-Validierung, 🔒 S4 · Opus 4.8; neue Dep `go-oidc` vorab
-abstimmen).
+**Stufe 1 — in Arbeit:** **WF2-10 ✅** (alle 6 Tabellen-Repos, real gegen
+PostgreSQL 16) · **WF2-11 ✅ (AuthN komplett)** — `pkg/auth` liefert in allen 3
+Modi ein Subject: 11.1 (Mode/argon2id/HMAC-Session/None+Builtin) + 11.2
+(`ProxyAuthenticator`, go-oidc-Validierung). **➡️ Nächster: WF2-12** (Tenant-
+Context-Middleware, subject→user→tenant fail-closed) 🔒 S4 · Opus 4.8.
 
 Offen, **ASD-Kern (mandanten-unabhängig, parallel möglich** — nicht im kritischen
 Pfad, Details/Abgleich in ROADMAP §2):
@@ -567,24 +583,26 @@ Pfad, Details/Abgleich in ROADMAP §2):
 
 ## 3. Nächster Schritt
 
-➡️ **WF2-11.2: proxy-Modus — OIDC-Token-Validierung** 🔒 S4 · Opus 4.8, nach
-Ankündigung & „Go".
+➡️ **WF2-12: Tenant-Context-Middleware** 🔒 S4 · Opus 4.8, nach Ankündigung & „Go".
 
-Validiert das vom Reverse-Proxy weitergereichte OIDC-Token (Issuer/Audience/
-Signatur gegen JWKS) und extrahiert das Subject — `ProxyAuthenticator` in
-`pkg/auth`. **Bringt eine neue Abhängigkeit (`go-oidc`)** — wird **vor** dem Ziehen
-mit dem Projektverantwortlichen abgestimmt (lean-Linie). Tests gegen einen
-Test-Issuer/JWKS.
+Verdrahtet `pkg/auth` in den HTTP-Pfad: Authenticator-**Factory** aus
+`WAYFINDER_AUTH_MODE` + Config; **Middleware** ruft `Authenticate`, löst
+**subject→user→tenant** über `store.UserRepo.GetBySubject` auf und legt den
+Mandanten **fail-closed** in den Request-Kontext (ohne gültigen Mandanten kein
+Zugriff, NFR-SEC-003/004); dazu der **builtin-Login-Handler** (Passwort prüfen →
+Session-Cookie setzen). Erstes Häppchen voraussichtlich Factory + Context +
+Middleware; Login-Handler separat.
 
-Danach WF2-12 (HTTP-Middleware: subject→user→tenant via `UserRepo.GetBySubject`,
-fail-closed; Login-Handler builtin), WF2-13 (Admin-Bootstrap).
+Danach WF2-13 (Admin-Bootstrap), dann **Stufe 2** (mandanten-isolierter Stream,
+WF2-20/21/22 — der sicherheitskritische Kern).
 
 **Erledigt in dieser Sitzung:** **Stufe 0 komplett** (WF2-00/01/02, ADR
 0005/0006/0007) **+ WF2-10 komplett** (alle 6 Tabellen-Repos, real gegen
-PostgreSQL 16) **+ WF2-11.1** (`pkg/auth` builtin-Primitive: argon2id, HMAC-Session,
-Mode, None-/Builtin-Authenticator). ADR-0006-Nachtrag: goose verworfen, Go-Baseline
-1.25. Register FR-TEN-001/002, FR-FEED-001, NFR-SEC-003/004, NFR-SCALE-001;
-Test-Runner `scripts/pg-test.sh`; neue Dep `golang.org/x/crypto`.
+PostgreSQL 16) **+ WF2-11 komplett** (AuthN: 11.1 builtin-Primitive argon2id/HMAC-
+Session/Mode/None+Builtin · 11.2 proxy-Modus `ProxyAuthenticator` go-oidc).
+ADR-0006-Nachtrag: goose verworfen, Go-Baseline 1.25. Register FR-TEN-001/002,
+FR-FEED-001, NFR-SEC-003/004, NFR-SCALE-001; Test-Runner `scripts/pg-test.sh`;
+neue Deps `golang.org/x/crypto`, `github.com/coreos/go-oidc/v3`.
 
 **Parallel möglich (nicht kritischer Pfad):** ASD-011/012/013 (ASD-Kern,
 ROADMAP §2) — widerspruchsfrei zu 2.0, von einem leichteren Modell ziehbar.
