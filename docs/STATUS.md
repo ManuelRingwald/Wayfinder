@@ -7,7 +7,38 @@
 > 🗺️ **Roadmap:** Arbeitspakete, Findings und empfohlene Reihenfolge stehen in
 > `docs/ROADMAP.md` (Stichwort „Roadmap" im Chat zeigt diese Liste).
 
-- **Zuletzt aktualisiert:** 2026-06-20 — **WF2-20.1 „`feed_id`-Durchstich"
+- **Zuletzt aktualisiert:** 2026-06-20 — **WF2-20.2 „Multi-Feed-Receiver"
+  abgeschlossen — WF2-20 KOMPLETT (🔒 S4 · Opus 4.8).** Wayfinder ist jetzt
+  **mehr-feed-fähig**: der `feeds`-Katalog (DB) treibt **N Receiver** (je eine
+  Multicast-Gruppe), jeder stempelt seine Katalog-`feed_id` (aus 20.1) — die
+  physische Grundlage der Cross-Tenant-Isolation, auf der WF2-21 filtert.
+  **`cmd/wayfinder/feeds.go`** (rein/testbar): `feedConfig{ID,Name,Group,Port}`,
+  `resolveFeeds(catalogue,cfg)` (nicht-leerer DB-Katalog → ein `feedConfig` je
+  Zeile mit `feed_id=feeds.id`; sonst **Fallback** auf den ENV-Einzelfeed —
+  Single-Tenant/leerer Katalog startet trotzdem), `buildReceivers` (N Receiver,
+  geteilte Handler; kaputte Gruppe → benannter Fehler). **`main()`-Reorder:**
+  `setupTenancy` (DB) läuft **vor** dem Receiver-Start → `FeedRepo.List` →
+  `resolveFeeds` → `buildReceivers`; je Feed `Listen()`, ein nicht-beitretender
+  Feed wird **geloggt+übersprungen** (keiner → fatal); N Receiver-Goroutinen;
+  `wayfinder_cat062_decode_errors_total` summiert über alle Receiver
+  (`decodeErrors()`). **Feed-Health bleibt global** (per-Feed = WF2-23).
+  **Feed-CLI** `cmd/wayfinder/feedcmd.go`: `wayfinder feed add -name -group [-port]
+  [-region] [-sensor-mix]` + `feed list` (Dispatch neben `bootstrap`) — befüllt den
+  Katalog bis zur Admin-API (WF2-31). **Kein Schema-Change** (nutzt `feeds` aus
+  WF2-10). **Tests:** DB-frei `feeds_test.go` (`resolveFeeds` Fallback+Mapping,
+  `buildReceivers` inkl. Fehlerfall); real-PG `TestIntegrationFeedCatalogue`
+  (`feed add`×2 → `feed list` → `resolveFeeds` = 2 feedConfigs, distinkte
+  Nicht-Null-DB-IDs; leer→Fallback); **E2E-Rauchtest** (Binary `feed add/list`;
+  Server loggt `feeds resolved count=2`, leer→`count=1`). Gates grün (`go
+  build/vet/test`, `gofmt`, `pg-test.sh`); `go 1.25` unverändert. INSTALLATION §7
+  (feed-CLI/Multi-Feed) + TECHNICAL §6 (Subcommand/Multi-Receiver/Decode-Summe);
+  Register FR-FEED-001; Milestone `docs/milestones/WF2-20.2_Multi_Feed_Receiver.md`.
+  **Befund (vorbestehend):** Receiver blockiert in `ReadFromUDP`, prüft `ctx` nur
+  zwischen Datagrammen → sauberes `SIGTERM`-Shutdown hängt am Conn-Schließen; als
+  Betriebs-Härtung notiert (ROADMAP §5). **Abgrenzung:** kein NATS (WF2-53).
+  **Nächster Schritt:** WF2-21 (scoped Fan-out, prädikat-gefilterte Zustellung)
+  nach Ankündigung & „Go".
+- **Vorherige Aktualisierung:** 2026-06-20 — **WF2-20.1 „`feed_id`-Durchstich"
   abgeschlossen — STUFE 2 BEGONNEN (🔒 S4 · Opus 4.8).** Erster Baustein des
   mandanten-isolierten Datenstroms: jeder Track trägt jetzt seine **Feed-
   Attribution** (Grundlage für den scoped Fan-out WF2-21). Naht
@@ -678,11 +709,12 @@
 **✅ Stufe 1 komplett:** WF2-10 (Persistenz) · WF2-11 (AuthN, 3 Modi) · WF2-12
 (Tenant-Context + builtin-Login) · WF2-13 (Admin-Bootstrap + `/admin`-Gate).
 
-**🔵 Stufe 2 — begonnen (sicherheitskritischer Kern):** **WF2-20.1 ✅** (`feed_id`-
-Durchstich Receiver→Broadcaster→Wire; `WAYFINDER_FEED_ID`; `TrackMessage.feed_id`).
-**➡️ Nächster: WF2-20.2** (Feed-Registry aus DB-Katalog → N Receiver je `feed_id`;
-`main()`-Reorder) 🔒 S4 · Opus 4.8. Danach WF2-21 (scoped Fan-out) + WF2-22
-(Isolations-Negativtests „A sieht nie B").
+**🔵 Stufe 2 — in Arbeit (sicherheitskritischer Kern):** **WF2-20 ✅** (20.1
+`feed_id`-Naht + 20.2 Multi-Feed-Receiver aus DB-Katalog, N Receiver je `feed_id`,
+Feed-CLI `wayfinder feed add/list`, ENV-Fallback; real-PG + E2E getestet).
+**➡️ Nächster: WF2-21** (Subscription-Modell & scoped Fan-out: `broadcast()` →
+Prädikat `feed ∈ subs ∧ AOI ∧ FL ∧ Kategorie` je WS-Client) 🔒 S4–S5 · Opus 4.8 /
+Fable 5. Danach WF2-22 (Isolations-Negativtests „A sieht nie B").
 
 Offen, **ASD-Kern (mandanten-unabhängig, parallel möglich** — nicht im kritischen
 Pfad, Details/Abgleich in ROADMAP §2):
@@ -711,16 +743,18 @@ Pfad, Details/Abgleich in ROADMAP §2):
 
 ## 3. Nächster Schritt
 
-➡️ **WF2-20.2 — Feed-Registry & Multi-Feed-Receiver** 🔒 S4 · Opus 4.8, nach
-Ankündigung & „Go".
+➡️ **WF2-21 — Subscription-Modell & scoped Fan-out** 🔒 S4–S5 · Opus 4.8 / Fable 5,
+nach Ankündigung & „Go".
 
-Zweiter Halbschritt von WF2-20: vom Einzel-Feed zum **Feed-Katalog**. Den
-`feeds`-Katalog aus der DB lesen (`FeedRepo.List` — Felder `multicast_group`/
-`port`/`id`) und **N Receiver** starten (einer je Feed, je mit seiner `feed_id`
-aus 20.1); Lifecycle/Health je Feed; Single-Tenant-Fallback = ein Receiver wie
-heute. Erfordert ein **Reordering in `main()`** (DB öffnen vor Receiver-Start).
-Damit ist die Cross-Tenant-Isolations-Grundlage (NFR-SEC-003) physisch da, auf der
-WF2-21 (scoped Fan-out) + WF2-22 (Pflicht-Negativtests „A sieht nie B") aufsetzen.
+Der **eigentliche Isolations-Schritt**: `broadcast()` von all-to-all auf
+**prädikat-gefilterte Zustellung** umstellen. Je WS-Client trägt die
+Tenant-Identity (aus der Middleware) die erlaubten Feeds (`subscriptions`) + den
+Sicht-Filter (AOI/FL-Band/Kategorie aus `view_configs`); der Broadcaster stellt
+einem Client einen Track nur zu, wenn `track.feed_id ∈ subs ∧ in AOI ∧ im FL-Band
+∧ Kategorie erlaubt`. Server-seitig, fail-closed, **kein** Browser-Filtern. Baut
+direkt auf WF2-20 (`feed_id` pro Track) + WF2-12 (Identity am `/ws`-Rand) +
+`subscriptions.ListFeedsByTenant`/`view_configs.GetEffective` (WF2-10.3). Danach
+**WF2-22** (Pflicht-Negativtests „A sieht nie B", Property-/Fuzz).
 
 **Erledigt in dieser Sitzung:** **Stufe 0 komplett** (WF2-00/01/02, ADR
 0005/0006/0007) **+ STUFE 1 KOMPLETT** — **WF2-10** (alle 6 Tabellen-Repos, real
@@ -729,11 +763,13 @@ Session/Mode/None+Builtin · 11.2 proxy-Modus `ProxyAuthenticator` go-oidc)
 **+ WF2-12** (12.1 `pkg/auth`-Factory + `pkg/tenant` Middleware · 12.2 Verdrahtung
 `setupTenancy`/`/ws`-Gate · 12.3 builtin-Login + Credential-Speicher, timing-
 gehärtet) **+ WF2-13** (Admin-Bootstrap-Subcommand idempotent + `/admin`-Rollen-
-Gate `RequireRole`) **+ Stufe 2 begonnen: WF2-20.1** (`feed_id`-Durchstich
-Receiver→Broadcaster→Wire, `WAYFINDER_FEED_ID`). ADR-0006-Nachtrag: goose verworfen,
-Go-Baseline 1.25. Register FR-CFG-001, FR-TEN-001/002, FR-FEED-001,
-NFR-SEC-003/004, NFR-SCALE-001; Test-Runner `scripts/pg-test.sh` (jetzt `./...`,
-`-p 1`); neue Deps `golang.org/x/crypto`, `github.com/coreos/go-oidc/v3`.
+Gate `RequireRole`) **+ Stufe 2: WF2-20 komplett** (20.1 `feed_id`-Durchstich
+Receiver→Broadcaster→Wire `WAYFINDER_FEED_ID`; 20.2 Multi-Feed-Receiver aus
+DB-Katalog + Feed-CLI `wayfinder feed add/list` + ENV-Fallback + `main()`-Reorder).
+ADR-0006-Nachtrag: goose verworfen, Go-Baseline 1.25. Register FR-CFG-001,
+FR-TEN-001/002, FR-FEED-001, NFR-SEC-003/004, NFR-SCALE-001; Test-Runner
+`scripts/pg-test.sh` (jetzt `./...`, `-p 1`); neue Deps `golang.org/x/crypto`,
+`github.com/coreos/go-oidc/v3`. Subcommands: `bootstrap`, `feed`.
 
 **Parallel möglich (nicht kritischer Pfad):** ASD-011/012/013 (ASD-Kern,
 ROADMAP §2) — widerspruchsfrei zu 2.0, von einem leichteren Modell ziehbar.

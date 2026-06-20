@@ -36,14 +36,23 @@ import (
 
 func main() {
 	// Subcommand dispatch: `wayfinder bootstrap …` provisions the first
-	// tenant/admin user of a fresh multi-tenant deployment and exits (WF2-13).
-	// With no subcommand the ASD server runs as before.
-	if len(os.Args) > 1 && os.Args[1] == "bootstrap" {
-		if err := bootstrapCommand(os.Args[2:], os.Stdout); err != nil {
-			fmt.Fprintln(os.Stderr, "bootstrap:", err)
-			os.Exit(1)
+	// tenant/admin user (WF2-13); `wayfinder feed …` manages the feed catalogue
+	// (WF2-20.2). Each runs and exits; with no subcommand the ASD server runs.
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "bootstrap":
+			if err := bootstrapCommand(os.Args[2:], os.Stdout); err != nil {
+				fmt.Fprintln(os.Stderr, "bootstrap:", err)
+				os.Exit(1)
+			}
+			return
+		case "feed":
+			if err := feedCommand(os.Args[2:], os.Stdout); err != nil {
+				fmt.Fprintln(os.Stderr, "feed:", err)
+				os.Exit(1)
+			}
+			return
 		}
-		return
 	}
 
 	// Load configuration from environment.
@@ -99,46 +108,89 @@ func main() {
 		})
 	}
 
-	// Create receiver with handlers that feed the broadcaster and feed health.
-	recv, err := receiver.New(receiver.Config{
-		FeedID: cfg.FeedID,
-		Group:  cfg.MulticastGroup,
-		Port:   cfg.MulticastPort,
-		Logger: logger,
-		Handler: func(feedID int64, tracks []cat062.DecodedTrack) error {
-			blockCount.Add(1)
-			trackCount.Add(int64(len(tracks)))
-			tracksCurrent.Store(int64(len(tracks)))
-			// Feed tracks to broadcaster (non-blocking), tagged with their feed.
-			select {
-			case broadcaster.TracksChan() <- broadcast.TrackBatch{FeedID: feedID, Tracks: tracks}:
-			default:
-				logger.Warn("broadcaster channel full, dropping block")
-			}
-			return nil
-		},
-		StatusHandler: func(status cat065.ServiceStatus) error {
-			heartbeatCount.Add(1)
-			lastServiceID.Store(uint32(status.ServiceID))
-			feedHealth.RecordHeartbeat(time.Now())
-			// Notify the browser only on a state transition (e.g. first
-			// heartbeat, or recovery from stale).
-			if s, changed := feedHealth.Observe(time.Now()); changed {
-				broadcastFeedStatus(s)
-			}
-			return nil
-		},
-	})
+	// Track handler: feed decoded tracks (tagged with their feed_id, WF2-20) to
+	// the broadcaster. Shared by every feed receiver.
+	trackHandler := func(feedID int64, tracks []cat062.DecodedTrack) error {
+		blockCount.Add(1)
+		trackCount.Add(int64(len(tracks)))
+		tracksCurrent.Store(int64(len(tracks)))
+		// Feed tracks to broadcaster (non-blocking), tagged with their feed.
+		select {
+		case broadcaster.TracksChan() <- broadcast.TrackBatch{FeedID: feedID, Tracks: tracks}:
+		default:
+			logger.Warn("broadcaster channel full, dropping block")
+		}
+		return nil
+	}
+	// Status handler: CAT065 heartbeats feed the (global) feed-health tracker.
+	statusHandler := func(status cat065.ServiceStatus) error {
+		heartbeatCount.Add(1)
+		lastServiceID.Store(uint32(status.ServiceID))
+		feedHealth.RecordHeartbeat(time.Now())
+		// Notify the browser only on a state transition (e.g. first heartbeat,
+		// or recovery from stale).
+		if s, changed := feedHealth.Observe(time.Now()); changed {
+			broadcastFeedStatus(s)
+		}
+		return nil
+	}
+
+	// Multi-tenancy (WF2-12): when WAYFINDER_DB_URL is set, open the DB, migrate
+	// and build the tenant-context middleware; otherwise run single-tenant. Done
+	// before the receivers so the feed catalogue (WF2-20.2) can drive them.
+	setupCtx, cancelSetup := context.WithTimeout(context.Background(), 30*time.Second)
+	tenantMW, dbPool, err := setupTenancy(setupCtx, cfg, logger)
 	if err != nil {
-		logger.Error("create receiver", slog.String("error", err.Error()))
+		cancelSetup()
+		logger.Error("tenancy setup", slog.String("error", err.Error()))
 		os.Exit(1)
 	}
-	defer recv.Close()
+	if dbPool != nil {
+		defer dbPool.Close()
+	}
 
-	// Listen on multicast.
-	if err := recv.Listen(); err != nil {
-		logger.Error("listen multicast", slog.String("error", err.Error()))
+	// Resolve the feeds to receive: the DB catalogue (multi-feed, WF2-20.2) when
+	// present and non-empty, else the single ENV-configured feed (single-tenant /
+	// empty-catalogue fallback).
+	var catalogue []store.Feed
+	if dbPool != nil {
+		catalogue, err = store.NewFeedRepo(dbPool).List(setupCtx)
+	}
+	cancelSetup()
+	if err != nil {
+		logger.Error("list feed catalogue", slog.String("error", err.Error()))
 		os.Exit(1)
+	}
+	feeds := resolveFeeds(catalogue, cfg)
+	logger.Info("feeds resolved", slog.Int("count", len(feeds)))
+
+	// One receiver per feed; each stamps its feed_id onto decoded tracks.
+	recvs, err := buildReceivers(feeds, logger, trackHandler, statusHandler)
+	if err != nil {
+		logger.Error("create receivers", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+
+	// Join each feed. A feed that fails to listen is logged and skipped so one
+	// misconfigured feed doesn't take down the others; if none can join, fatal.
+	var listening []*receiver.Receiver
+	for i, r := range recvs {
+		if err := r.Listen(); err != nil {
+			logger.Error("feed listen failed",
+				slog.Int64("feed_id", feeds[i].ID),
+				slog.String("group", feeds[i].Group),
+				slog.Int("port", feeds[i].Port),
+				slog.String("error", err.Error()))
+			continue
+		}
+		listening = append(listening, r)
+	}
+	if len(listening) == 0 {
+		logger.Error("no feeds could be joined")
+		os.Exit(1)
+	}
+	for _, r := range listening {
+		defer r.Close()
 	}
 
 	// Graceful shutdown on SIGTERM/SIGINT.
@@ -148,20 +200,22 @@ func main() {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	// Run receiver and broadcaster in parallel.
+	// Run receivers and broadcaster in parallel.
 	var wg sync.WaitGroup
 
-	// Receiver goroutine.
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		if err := recv.Run(ctx); err != nil && err != context.Canceled {
-			msg := err.Error()
-			lastError.Store(&msg)
-			logger.Error("receiver error", slog.String("error", err.Error()))
-			cancel()
-		}
-	}()
+	// Receiver goroutines (one per joined feed).
+	for _, r := range listening {
+		wg.Add(1)
+		go func(r *receiver.Receiver) {
+			defer wg.Done()
+			if err := r.Run(ctx); err != nil && err != context.Canceled {
+				msg := err.Error()
+				lastError.Store(&msg)
+				logger.Error("receiver error", slog.String("error", err.Error()))
+				cancel()
+			}
+		}(r)
+	}
 
 	// Broadcaster goroutine.
 	wg.Add(1)
@@ -201,20 +255,14 @@ func main() {
 	go aeroService.Run(ctx)
 
 	// Start health/readiness/metrics probe server.
-	go startProbeServer(logger, &blockCount, &trackCount, &tracksCurrent, &heartbeatCount, broadcaster, recv, feedHealth, aeroService, &lastError)
-
-	// Multi-tenancy (WF2-12): when WAYFINDER_DB_URL is set, open the DB, migrate
-	// and build the tenant-context middleware; otherwise run single-tenant.
-	setupCtx, cancelSetup := context.WithTimeout(context.Background(), 30*time.Second)
-	tenantMW, dbPool, err := setupTenancy(setupCtx, cfg, logger)
-	cancelSetup()
-	if err != nil {
-		logger.Error("tenancy setup", slog.String("error", err.Error()))
-		os.Exit(1)
+	decodeErrors := func() int64 {
+		var n int64
+		for _, r := range listening {
+			n += r.DecodeErrorCount()
+		}
+		return n
 	}
-	if dbPool != nil {
-		defer dbPool.Close()
-	}
+	go startProbeServer(logger, &blockCount, &trackCount, &tracksCurrent, &heartbeatCount, broadcaster, decodeErrors, feedHealth, aeroService, &lastError)
 
 	// Start WebSocket server.
 	if tenantMW == nil && cfg.AuthToken == "" {
@@ -769,7 +817,7 @@ func coverageRingsHandler(cfg Config) http.HandlerFunc {
 }
 
 // startProbeServer starts an HTTP server for health, readiness and metrics.
-func startProbeServer(logger *slog.Logger, blockCount, trackCount, tracksCurrent, heartbeatCount *atomic.Int64, broadcaster *broadcast.Broadcaster, recv *receiver.Receiver, feedHealth *health.FeedHealth, aeroService *aeronautical.Service, lastError *atomic.Pointer[string]) {
+func startProbeServer(logger *slog.Logger, blockCount, trackCount, tracksCurrent, heartbeatCount *atomic.Int64, broadcaster *broadcast.Broadcaster, decodeErrors func() int64, feedHealth *health.FeedHealth, aeroService *aeronautical.Service, lastError *atomic.Pointer[string]) {
 	mux := http.NewServeMux()
 
 	// /health — liveness check (always ready unless startup failed).
@@ -808,7 +856,7 @@ func startProbeServer(logger *slog.Logger, blockCount, trackCount, tracksCurrent
 		metrics.Handler(
 			metrics.Counter("wayfinder_cat062_blocks_received_total", "Total number of CAT062 data blocks received via multicast.", blockCount.Load()),
 			metrics.Counter("wayfinder_cat062_tracks_received_total", "Total number of track records received across all CAT062 blocks.", trackCount.Load()),
-			metrics.Counter("wayfinder_cat062_decode_errors_total", "Total number of CAT062 data blocks that failed to decode.", recv.DecodeErrorCount()),
+			metrics.Counter("wayfinder_cat062_decode_errors_total", "Total number of CAT062 data blocks that failed to decode.", decodeErrors()),
 			metrics.Gauge("wayfinder_tracks_current", "Number of tracks in the most recently received CAT062 block.", tracksCurrent.Load()),
 			metrics.Gauge("wayfinder_ws_clients_connected", "Number of currently connected WebSocket clients.", int64(broadcaster.ClientCount())),
 			metrics.Counter("wayfinder_ws_clients_evicted_total", "Total number of WebSocket clients evicted due to a full send channel.", broadcaster.EvictedCount()),
