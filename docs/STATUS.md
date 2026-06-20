@@ -7,7 +7,22 @@
 > 🗺️ **Roadmap:** Arbeitspakete, Findings und empfohlene Reihenfolge stehen in
 > `docs/ROADMAP.md` (Stichwort „Roadmap" im Chat zeigt diese Liste).
 
-- **Zuletzt aktualisiert:** 2026-06-19 — **WF2-10.2 „Tenant-/User-Repositories"
+- **Zuletzt aktualisiert:** 2026-06-19 — **WF2-10.3a „Feed-/Subscription-/
+  Entitlement-Repositories" abgeschlossen (S3 · Sonnet 4.6 / Opus-Review).**
+  Vervollständigt die Persistenz-Repos bis auf `view_configs` (10.3b). Neu:
+  `feeds.go` (`FeedRepo`; `SensorMix []string` aus JSONB, nullable Region),
+  `subscriptions.go` (**isolations-kritisch**: `Subscribe` idempotent,
+  `Unsubscribe`, `IsSubscribed`, `ListFeedIDsByTenant`, **`ListFeedsByTenant`** =
+  die Query, die WF2-21 später durchsetzt), `entitlements.go` (`Set`-Upsert,
+  `IsEnabled` **default-deny**, `ListByTenant`). JSONB-Helfer `toJSONB`/`fromJSONB`
+  in `repo.go` (explizit über `$n::jsonb`). **Tests** inkl.
+  `TestIntegrationSubscriptionRepoIsolation` (Frankfurt sieht nie Stuttgarts
+  Feed) — **real gegen PostgreSQL 16** via `scripts/pg-test.sh`; Standard-`go test
+  ./...` grün ohne DB. Register FR-TEN-001 + NFR-SEC-003 (Abo-Datenschicht steht;
+  Durchsetzung WF2-21/22), Milestone
+  `docs/milestones/WF2-10.3a_Feed_Subscription_Entitlement_Repos.md`. Gates grün.
+  **Nächster Schritt:** WF2-10.3b (`view_configs`-Repo) nach Ankündigung & „Go".
+- **Vorherige Aktualisierung:** 2026-06-19 — **WF2-10.2 „Tenant-/User-Repositories"
   abgeschlossen (S3 · Sonnet 4.6 / Opus-Review).** Erste typsichere Datenzugriffe
   auf `pkg/store` (10.1). Neu: `models.go` (`Tenant`/`User`/`Role` mit
   `Valid()`-Guard), `tenants.go` (`TenantRepo`: Create/GetByID/GetBySlug/List),
@@ -486,11 +501,12 @@
 | **WF2-01** | ADR 0006 „Konfig-/Identitäts-Persistenz" | S4 · Opus 4.8 | ✅ erledigt |
 | **WF2-02** | ADR 0007 „Cloud-Ingest & Feed-Fan-out" (NATS JetStream) | S4 · Opus 4.8 | ✅ erledigt |
 
-**Stufe 1 — in Arbeit:** **WF2-10.1 ✅** (`pkg/store`: pgx-Pool + In-House-
-Migrationsrunner + Schema) · **WF2-10.2 ✅** (Tenant-/User-Repos, handgeschriebene
-pgx-Queries, `GetBySubject` = Identität→Mandant; **real gegen PostgreSQL 16**
-getestet via `scripts/pg-test.sh`). **➡️ Nächster: WF2-10.3** (Repos feeds/
-subscriptions/view_configs/entitlements), S3 · Sonnet 4.6 (+Opus-Review).
+**Stufe 1 — in Arbeit:** **WF2-10.1 ✅** (pgx-Pool + In-House-Migrationsrunner +
+Schema) · **WF2-10.2 ✅** (Tenant-/User-Repos, `GetBySubject` = Identität→Mandant)
+· **WF2-10.3a ✅** (Feed-/Subscription-/Entitlement-Repos; `subscriptions`
+isolations-kritisch, Daten-Isolations-Test). Alles **real gegen PostgreSQL 16**
+via `scripts/pg-test.sh`. **➡️ Nächster: WF2-10.3b** (`view_configs`-Repo,
+JSONB-lastig), S3 · Sonnet 4.6 (+Opus-Review).
 
 Offen, **ASD-Kern (mandanten-unabhängig, parallel möglich** — nicht im kritischen
 Pfad, Details/Abgleich in ROADMAP §2):
@@ -519,21 +535,22 @@ Pfad, Details/Abgleich in ROADMAP §2):
 
 ## 3. Nächster Schritt
 
-➡️ **WF2-10.3: restliche Repositories** (`feeds`, `subscriptions`, `view_configs`,
-`entitlements`) — S3 · Sonnet 4.6 (+Opus-Review), nach Ankündigung & „Go".
+➡️ **WF2-10.3b: `view_configs`-Repo** — S3 · Sonnet 4.6 (+Opus-Review), nach
+Ankündigung & „Go".
 
-Analog zu 10.2 (handgeschriebene pgx-Repos + DB-freie/Integration-Tests). Die
-`subscriptions`-Zugriffe (Tenant↔Feed) sind die **Datenbasis der Cross-Tenant-
-Isolation** (NFR-SEC-003), die in WF2-20/21 durchgesetzt wird. Tests real via
-`scripts/pg-test.sh`.
+Schließt die Persistenz-Repos ab: `view_configs` (Zentrum/Radius/AOI/FL-Band/
+Layer; JSONB-`aoi`/`layers`; tenant-Default + optionale Nutzer-Übersteuerung,
+Upsert über den Partial-Unique-Index `idx_view_configs_tenant_default`). Tests
+real via `scripts/pg-test.sh`.
 
 Danach WF2-11 (AuthN), WF2-12 (Tenant-Context), WF2-13 (Admin-Bootstrap).
 
 **Erledigt in dieser Sitzung:** **Stufe 0 komplett** (WF2-00/01/02, ADR
 0005/0006/0007) **+ WF2-10.1** (Persistenz/Migrationsrunner) **+ WF2-10.2**
-(Tenant-/User-Repos, real gegen PostgreSQL 16 getestet). ADR-0006-Nachtrag: goose
-verworfen, Go-Baseline 1.25. Register FR-TEN-001/002, FR-FEED-001, NFR-SEC-003/004,
-NFR-SCALE-001; neuer Test-Runner `scripts/pg-test.sh`.
+(Tenant-/User-Repos) **+ WF2-10.3a** (Feed-/Subscription-/Entitlement-Repos,
+Daten-Isolations-Test) — alles real gegen PostgreSQL 16 getestet. ADR-0006-
+Nachtrag: goose verworfen, Go-Baseline 1.25. Register FR-TEN-001/002, FR-FEED-001,
+NFR-SEC-003/004, NFR-SCALE-001; Test-Runner `scripts/pg-test.sh`.
 
 **Parallel möglich (nicht kritischer Pfad):** ASD-011/012/013 (ASD-Kern,
 ROADMAP §2) — widerspruchsfrei zu 2.0, von einem leichteren Modell ziehbar.
