@@ -7,7 +7,25 @@
 > 🗺️ **Roadmap:** Arbeitspakete, Findings und empfohlene Reihenfolge stehen in
 > `docs/ROADMAP.md` (Stichwort „Roadmap" im Chat zeigt diese Liste).
 
-- **Zuletzt aktualisiert:** 2026-06-19 — **WF2-10.1 „Persistenz-Schicht & Migrationen"
+- **Zuletzt aktualisiert:** 2026-06-19 — **WF2-10.2 „Tenant-/User-Repositories"
+  abgeschlossen (S3 · Sonnet 4.6 / Opus-Review).** Erste typsichere Datenzugriffe
+  auf `pkg/store` (10.1). Neu: `models.go` (`Tenant`/`User`/`Role` mit
+  `Valid()`-Guard), `tenants.go` (`TenantRepo`: Create/GetByID/GetBySlug/List),
+  `users.go` (`UserRepo`: Create mit Rollen-Validierung + nullable Email,
+  **`GetBySubject` = Identität→Mandant** (Basis WF2-11/12), GetByID/ListByTenant),
+  `repo.go` (`ErrNotFound` mappt `pgx.ErrNoRows`, `wrap`, `rowScanner`).
+  **Handgeschriebene pgx-Queries statt sqlc** (lean, keine Codegen-Toolchain;
+  erfüllt ADR-0006-Absicht „expliziter, auditierbarer SQL"; im Milestone
+  dokumentiert). **Tests:** `repo_test.go` (DB-frei: Rollen, Fehler-Mapping) +
+  `store_integration_test.go` (Round-Trips, UNIQUE-Constraints, ErrNotFound,
+  nullable Email, Rollen-Ablehnung) — **real gegen PostgreSQL 16** verifiziert via
+  neuem **`scripts/pg-test.sh`** (Wegwerf-Cluster, ohne Docker; validiert auch das
+  10.1-Schema end-to-end). Standard-`go test ./...` bleibt grün ohne DB
+  (Integration skippt). Register FR-TEN-001 (Impl/Tests aktualisiert), Milestone
+  `docs/milestones/WF2-10.2_Tenant_User_Repos.md`. Gates grün (`go build/vet/test`,
+  `gofmt`, `pg-test.sh`). **Nächster Schritt:** WF2-10.3 (Repos feeds/subscriptions/
+  view_configs/entitlements) nach Ankündigung & „Go".
+- **Vorherige Aktualisierung:** 2026-06-19 — **WF2-10.1 „Persistenz-Schicht & Migrationen"
   abgeschlossen (S3 · Sonnet 4.6 / Opus-Review) — ERSTES PRODUKTIVCODE-PAKET.**
   Neues `pkg/store`: `store.go` (`Open` pgxpool + Ping, `DSNFromEnv` aus
   `WAYFINDER_DB_URL`), `migrate.go` (minimaler **In-House-Migrationsrunner**:
@@ -468,10 +486,11 @@
 | **WF2-01** | ADR 0006 „Konfig-/Identitäts-Persistenz" | S4 · Opus 4.8 | ✅ erledigt |
 | **WF2-02** | ADR 0007 „Cloud-Ingest & Feed-Fan-out" (NATS JetStream) | S4 · Opus 4.8 | ✅ erledigt |
 
-**Stufe 1 — in Arbeit:** **WF2-10.1 ✅** (`pkg/store`: pgx-Pool + eingebetteter
-In-House-Migrationsrunner + Schema `00001_init` + DB-freie Tests). **➡️ Nächster:
-WF2-10.2** (Repository-Zugriffe tenants/users mit pgx), S3 · Sonnet 4.6
-(+Opus-Review).
+**Stufe 1 — in Arbeit:** **WF2-10.1 ✅** (`pkg/store`: pgx-Pool + In-House-
+Migrationsrunner + Schema) · **WF2-10.2 ✅** (Tenant-/User-Repos, handgeschriebene
+pgx-Queries, `GetBySubject` = Identität→Mandant; **real gegen PostgreSQL 16**
+getestet via `scripts/pg-test.sh`). **➡️ Nächster: WF2-10.3** (Repos feeds/
+subscriptions/view_configs/entitlements), S3 · Sonnet 4.6 (+Opus-Review).
 
 Offen, **ASD-Kern (mandanten-unabhängig, parallel möglich** — nicht im kritischen
 Pfad, Details/Abgleich in ROADMAP §2):
@@ -500,23 +519,21 @@ Pfad, Details/Abgleich in ROADMAP §2):
 
 ## 3. Nächster Schritt
 
-➡️ **WF2-10.2: Repository-Zugriffe (tenants/users)** — S3 · Sonnet 4.6
-(+Opus-Review), nach Ankündigung & „Go".
+➡️ **WF2-10.3: restliche Repositories** (`feeds`, `subscriptions`, `view_configs`,
+`entitlements`) — S3 · Sonnet 4.6 (+Opus-Review), nach Ankündigung & „Go".
 
-Baut auf `pkg/store` (10.1) auf: typsichere CRUD-Zugriffe für `tenants`/`users`
-mit pgx (ggf. `sqlc`-Codegen — sqlc-Binary ist hier nicht installiert, daher
-entweder `go install` oder handgeschriebene pgx-Queries), inkl. Tests. DB-
-Integrationstests (Schema-Anwendung) folgen in WF2-10.3 (CI/Testcontainers, da
-**kein Docker-Daemon** in dieser Umgebung).
+Analog zu 10.2 (handgeschriebene pgx-Repos + DB-freie/Integration-Tests). Die
+`subscriptions`-Zugriffe (Tenant↔Feed) sind die **Datenbasis der Cross-Tenant-
+Isolation** (NFR-SEC-003), die in WF2-20/21 durchgesetzt wird. Tests real via
+`scripts/pg-test.sh`.
 
-Danach WF2-10.3 (restliche Repositories), dann WF2-11 (AuthN), WF2-12
-(Tenant-Context), WF2-13 (Admin-Bootstrap).
+Danach WF2-11 (AuthN), WF2-12 (Tenant-Context), WF2-13 (Admin-Bootstrap).
 
 **Erledigt in dieser Sitzung:** **Stufe 0 komplett** (WF2-00/01/02, ADR
-0005/0006/0007) **+ WF2-10.1** (`pkg/store`: pgx-Pool, In-House-Migrationsrunner,
-Schema, DB-freie Tests). Dabei ADR-0006-Nachtrag: **goose verworfen** (zog
-`modernc.org/sqlite`), **Go-Baseline 1.23 → 1.25** (Dockerfile gebumpt). Register
-FR-TEN-001/002, FR-FEED-001, NFR-SEC-003/004, NFR-SCALE-001.
+0005/0006/0007) **+ WF2-10.1** (Persistenz/Migrationsrunner) **+ WF2-10.2**
+(Tenant-/User-Repos, real gegen PostgreSQL 16 getestet). ADR-0006-Nachtrag: goose
+verworfen, Go-Baseline 1.25. Register FR-TEN-001/002, FR-FEED-001, NFR-SEC-003/004,
+NFR-SCALE-001; neuer Test-Runner `scripts/pg-test.sh`.
 
 **Parallel möglich (nicht kritischer Pfad):** ASD-011/012/013 (ASD-Kern,
 ROADMAP §2) — widerspruchsfrei zu 2.0, von einem leichteren Modell ziehbar.
