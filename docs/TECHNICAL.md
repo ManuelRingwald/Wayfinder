@@ -365,6 +365,17 @@ migriert, verweigert das Re-Homing eines Subjects in einen anderen Mandanten.
 Tenant-Middleware (fail-closed `403` ohne passende Rolle/Identität); liefert eine
 minimale whoami-JSON-Antwort, Admin-API/-UI folgt WF2-31/32.
 
+**Multi-Feed-Empfang (WF2-20.2):** der `feeds`-Katalog (DB) treibt **N Receiver**
+(einer je Feed, je `feed_id` aus 20.1). `cmd/wayfinder/feeds.go`: `resolveFeeds`
+(Katalog → `feedConfig` je Zeile; leer/kein-DB → Fallback auf den ENV-Einzelfeed)
++ `buildReceivers`. In `main()` läuft `setupTenancy` **vor** dem Receiver-Start;
+ein Feed, der nicht beitreten kann, wird übersprungen (kein Feed → fatal);
+`wayfinder_cat062_decode_errors_total` summiert über alle Receiver. Feed-Health
+bleibt **global** (per-Feed später, WF2-23). **Feed-CLI** (`cmd/wayfinder/
+feedcmd.go`): `wayfinder feed add -name -group [-port] [-region] [-sensor-mix]`
+und `wayfinder feed list` pflegen den Katalog, bis die Admin-API existiert
+(WF2-31). NATS-/Stream-Feed-Source folgt WF2-53.
+
 ### 6.5 Betrieb
 
 | Variable | Default | Typ | Beschreibung |

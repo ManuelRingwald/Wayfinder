@@ -490,6 +490,37 @@ WAYFINDER_DB_URL=postgres://… WAYFINDER_BOOTSTRAP_PASSWORD='…' \
 > „whoami"-Antwort (eigene Identität als JSON) zur Zugriffsprüfung. Die
 > eigentliche Admin-API/-UI folgt in WF2-31/32.
 
+#### Feed-Katalog & Multi-Feed-Empfang (WF2-20)
+
+Im Multi-Mandanten-Betrieb empfängt Wayfinder **mehrere Feeds** gleichzeitig: der
+`feeds`-Katalog in der DB treibt **einen Receiver je Feed** (je eigene
+Multicast-Gruppe/Port); jeder Track wird mit seiner Katalog-`feed_id` gestempelt
+(Basis für die mandanten-skopierte Zustellung, WF2-21). Bis die Admin-API existiert
+(WF2-31), wird der Katalog über das `feed`-Subcommand gepflegt:
+
+```bash
+# Feed in den Katalog aufnehmen
+WAYFINDER_DB_URL=postgres://… wayfinder feed add \
+    -name Frankfurt -group 239.255.0.62 -port 8600 -sensor-mix PSR,SSR,ADS-B
+
+# Katalog anzeigen
+WAYFINDER_DB_URL=postgres://… wayfinder feed list
+```
+
+| Flag | Default | Beschreibung |
+|------|---------|--------------|
+| `-name` | *(Pflicht)* | Anzeigename des Feeds. |
+| `-group` | *(Pflicht)* | Multicast-Gruppe, z. B. `239.255.0.62`. |
+| `-port` | `8600` | Multicast-Port. |
+| `-region` | *(leer)* | Regions-Label (optional). |
+| `-sensor-mix` | *(leer)* | Kommaseparierter Sensor-Mix, z. B. `PSR,SSR,ADS-B`. |
+
+> ℹ️ **Fallback:** Ist der Katalog leer (oder läuft Wayfinder ohne
+> `WAYFINDER_DB_URL`), wird **ein** Feed aus `FIREFLY_CAT062_GROUP`/`_PORT` +
+> `WAYFINDER_FEED_ID` empfangen — das bisherige Single-Feed-Verhalten. Ein Feed,
+> der nicht beitreten kann, wird übersprungen; kann **kein** Feed beitreten,
+> beendet sich der Dienst. Der NATS-/Cloud-Bus-Pfad folgt später (WF2-53).
+
 ### 7.5 Betrieb
 
 | Variable | Default | Beschreibung |

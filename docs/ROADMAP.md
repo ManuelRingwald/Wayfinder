@@ -106,16 +106,20 @@ JWKS). Neue Deps: `golang.org/x/crypto` (argon2), `github.com/coreos/go-oidc/v3`
 (WF2-10), AuthN in 3 Modi (WF2-11), Tenant-Context + builtin-Login (WF2-12),
 Bootstrap + Admin-Gate (WF2-13).
 
-**Stufe 2 — begonnen (der sicherheitskritische Kern):**
-- **WF2-20.1 ✅** — `feed_id`-Durchstich: `receiver.Config.FeedID`
-  (`WAYFINDER_FEED_ID`) → Handler `(feedID, tracks)` → `broadcast.TrackBatch` →
-  `TrackMessage.feed_id`. Attribution-Naht steht; Single-Tenant unverändert
-  (`feed_id` 0/weggelassen). DB-frei getestet.
+**Stufe 2 — in Arbeit (der sicherheitskritische Kern):**
+- **WF2-20.1 ✅** — `feed_id`-Durchstich: `receiver.Config.FeedID` →
+  `broadcast.TrackBatch` → `TrackMessage.feed_id`. Attribution-Naht steht.
+- **WF2-20.2 ✅** — Multi-Feed-Receiver: `feeds`-Katalog (DB) → N Receiver je
+  `feed_id` (`resolveFeeds`/`buildReceivers`); `main()`-Reorder (DB vor Receiver),
+  per-Feed-Listen-Skip, Decode-Fehler-Summe; **Feed-CLI** `wayfinder feed
+  add/list`; Fallback auf den ENV-Einzelfeed bei leerem Katalog/kein-DB. Real-PG +
+  E2E getestet. **→ WF2-20 komplett.**
 
-**➡️ Nächster Schritt:** **WF2-20.2 — Feed-Registry & Multi-Feed-Receiver**
-(`feeds`-Katalog aus DB → N Receiver je `feed_id`; `main()`-Reorder DB-vor-Receiver;
-Single-Tenant-Fallback) 🔒 **S4 · Opus 4.8**, nach Ankündigung & „Go". Danach
-WF2-21 (scoped Fan-out) + WF2-22 (Isolations-Negativtests „A sieht nie B").
+**➡️ Nächster Schritt:** **WF2-21 — Subscription-Modell & scoped Fan-out**
+(`broadcast()` von all-to-all auf **prädikat-gefiltert**: `feed ∈ subscriptions ∧
+AOI ∧ FL-Band ∧ Kategorie`, getrieben durch die Tenant-Identity je WS-Client) 🔒
+**S4–S5 · Opus 4.8 / Fable 5**, nach Ankündigung & „Go". Danach WF2-22
+(Isolations-Negativtests „A sieht nie B").
 
 ---
 
@@ -145,8 +149,8 @@ Details & Begründung: Konzept §7/§8.
 ### Stufe 2 — Mandanten-isolierter Datenstrom (sicherheitskritischer Kern)
 | AP | Inhalt | Stufe · Modell | Abh. | Status |
 |----|--------|----------------|------|--------|
-| **WF2-20** 🔒 | Feed-Registry & Multi-Feed-Receiver (1→N Feeds; `feed_id` pro Track) | **S4 · Opus 4.8** | WF2-01, WF2-02 | 🔵 in Arbeit (20.1 `feed_id`-Durchstich ✅; 20.2 Multi-Feed offen) |
-| **WF2-21** 🔒 | Subscription-Modell & scoped Fan-out (`broadcast()` → Prädikat feed∩AOI∩FL∩Kat) | **S4–S5 · Opus 4.8 / Fable 5** | WF2-12, WF2-20 | geplant |
+| **WF2-20** 🔒 | Feed-Registry & Multi-Feed-Receiver (1→N Feeds; `feed_id` pro Track) | **S4 · Opus 4.8** | WF2-01, WF2-02 | ✅ **erledigt** (20.1 `feed_id`-Naht + 20.2 Multi-Feed + Feed-CLI) |
+| **WF2-21** 🔒 | Subscription-Modell & scoped Fan-out (`broadcast()` → Prädikat feed∩AOI∩FL∩Kat) | **S4–S5 · Opus 4.8 / Fable 5** | WF2-12, WF2-20 | ➡️ **nächster** |
 | **WF2-22** 🔒 | Isolations-Testsuite (Negativ-/Property-/Fuzz-Tests; A sieht nie B) | **S4 · Opus 4.8** | WF2-21 | geplant |
 | **WF2-23** | Pro-Mandant-Metriken & Audit-Log (`tenant`-Label, Audit-Event) | **S3 · Sonnet 4.6** | WF2-21 | geplant |
 
@@ -256,6 +260,10 @@ Architektur-Wirkung — nicht auf dem kritischen Pfad, aber jederzeit wertstifte
   konfigurierbar (NFR-OBS-001, erledigt).
 - `broadcast.go::timeNowMs()` liefert noch `0` (TODO) — wird mit 2.0 relevant
   (Audit-Log/Replay je Mandant, WF2-23). Als Altlast vorgemerkt.
+- **Shutdown-Härtung (vorbestehend, bei WF2-20.2 bestätigt):** `receiver.Run`
+  prüft `ctx` nur zwischen Datagrammen und blockiert in `ReadFromUDP`; sauberes
+  Herunterfahren hängt am Conn-Schließen/Prozess-Ende. Mit N Feeds unverändert
+  relevant — als Betriebs-Härtung (sauberes `SIGTERM`) vormerken (Stufe-5-Umfeld).
 
 **Firefly:** siehe Fireflys Roadmap (tracing/Metriken-Lücken historisch, größtenteils geschlossen).
 
@@ -278,7 +286,8 @@ Architektur-Wirkung — nicht auf dem kritischen Pfad, aber jederzeit wertstifte
 - ✅ **WF2-12.2 — Tenancy-Verdrahtung im Server** (`main.go` `setupTenancy`: DB-Open+Migrate+Authenticator+`tenant.Middleware` auf `/ws`, nur bei `WAYFINDER_DB_URL`; sonst Single-Tenant). ENV-Vars in INSTALLATION/TECHNICAL; real-PG-Integrationstest. Milestone `docs/milestones/WF2-12.2_Tenancy_HTTP_Wiring.md`.
 - ✅ **WF2-12.3 — Builtin-Login** (Migration `00003_credentials` + `pkg/store/credentials.go` `CredentialRepo` Set-Upsert/GetHash; `pkg/tenant/login.go` `/api/login` timing-gehärtet → `auth.MintSession`-HttpOnly-Cookie + `/api/logout`; `WAYFINDER_SESSION_TTL`; nur in `builtin`-Modus registriert). DB-freie Login-Tests + real-PG `CredentialRepo`-Test. **→ WF2-12 (Tenant-Context) komplett.** Milestone `docs/milestones/WF2-12.3_Builtin_Login.md`.
 - ✅ **WF2-13 — Admin-Bootstrap** (`cmd/wayfinder/bootstrap.go`: Subcommand `wayfinder bootstrap`, idempotentes Get-or-Create erster Tenant/Admin + optional builtin-Passwort via `WAYFINDER_BOOTSTRAP_PASSWORD`, kein Cross-Tenant-Re-Homing; `pkg/tenant/authz.go` `RequireRole`-Gate auf `/admin`, fail-closed `403`). DB-freie Tests (`validate`, `RequireRole`) + real-PG `TestIntegrationBootstrap` + E2E-Rauchtest. **→ Stufe 1 komplett.** Milestone `docs/milestones/WF2-13_Admin_Bootstrap.md`.
-- ✅ **WF2-20.1 — `feed_id`-Durchstich** (`receiver.Config.FeedID` + Handler-Signatur `(feedID, tracks)`; `broadcast.TrackBatch{FeedID,Tracks}` stempelt `TrackMessage.feed_id`; `WAYFINDER_FEED_ID`). Attribution-Naht Receiver→Broadcaster→Wire; Single-Tenant unverändert. Tests: `TestHandleTracksStampsFeedID`, `TestTracksToMessage` (feed_id). Milestone `docs/milestones/WF2-20.1_FeedID_Plumbing.md`. *(Multi-Feed-Empfang folgt WF2-20.2.)*
+- ✅ **WF2-20.1 — `feed_id`-Durchstich** (`receiver.Config.FeedID` + Handler-Signatur `(feedID, tracks)`; `broadcast.TrackBatch{FeedID,Tracks}` stempelt `TrackMessage.feed_id`; `WAYFINDER_FEED_ID`). Attribution-Naht Receiver→Broadcaster→Wire; Single-Tenant unverändert. Tests: `TestHandleTracksStampsFeedID`, `TestTracksToMessage` (feed_id). Milestone `docs/milestones/WF2-20.1_FeedID_Plumbing.md`.
+- ✅ **WF2-20.2 — Multi-Feed-Receiver** (`cmd/wayfinder/feeds.go` `resolveFeeds`/`buildReceivers`: DB-`feeds`-Katalog → N Receiver je `feed_id`, ENV-Fallback bei leerem Katalog/kein-DB; `main()`-Reorder DB-vor-Receiver, per-Feed-Listen-Skip, Decode-Fehler-Summe; Feed-CLI `cmd/wayfinder/feedcmd.go` `feed add`/`feed list`). DB-freie + real-PG (`TestIntegrationFeedCatalogue`) + E2E-Rauchtest. **→ WF2-20 komplett.** Milestone `docs/milestones/WF2-20.2_Multi_Feed_Receiver.md`.
 
 **Cross-Project / Firefly:**
 - ✅ Paket #6 / Coverage-Werkzeug — Radar-Ringe-Overlay (`pkg/coverage`, `/api/coverage/rings`, Frontend-Layer-Toggle, Firefly `SensorModel`-Erweiterung; PR #27)
