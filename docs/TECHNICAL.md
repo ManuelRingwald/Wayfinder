@@ -102,7 +102,7 @@ Es gibt keinen Panic auf Netzwerkeingaben.
 pkg/broadcast.Broadcaster
     │
     ├─► WebSocket /ws  (Port 8081)
-    │       └─► JSON TrackMessage  {track_num, lat, lon, vx, vy,
+    │       └─► JSON TrackMessage  {feed_id, track_num, lat, lon, vx, vy,
     │                                flight_level_ft, callsign, mode3a,
     │                                icao_address, adsb_age_s,
     │                                coasting, ended, ...}
@@ -287,6 +287,7 @@ Auflösung (höchste Priorität zuerst):
 |----------|---------|-----|--------------|
 | `FIREFLY_CAT062_GROUP` | `239.255.0.62` | string | UDP-Multicast-Gruppe |
 | `FIREFLY_CAT062_PORT` | `8600` | int | UDP-Port |
+| `WAYFINDER_FEED_ID` | `0` | int64 | Katalog-Feed-ID des Einzel-Feeds (WF2-20), auf jeden Track gestempelt; `0` = Single-Tenant. Wird im Multi-Feed-Modus (WF2-20.2) durch den DB-Katalog abgelöst. |
 | `WAYFINDER_PROBE_PORT` | `8080` | int | Port für Probe/Metrics-Endpunkte |
 | `WAYFINDER_FEED_STALE_TIMEOUT` | `3` | int (s) | Sekunden ohne CAT065-Heartbeat bis Staleness |
 

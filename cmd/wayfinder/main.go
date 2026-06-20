@@ -101,16 +101,17 @@ func main() {
 
 	// Create receiver with handlers that feed the broadcaster and feed health.
 	recv, err := receiver.New(receiver.Config{
+		FeedID: cfg.FeedID,
 		Group:  cfg.MulticastGroup,
 		Port:   cfg.MulticastPort,
 		Logger: logger,
-		Handler: func(tracks []cat062.DecodedTrack) error {
+		Handler: func(feedID int64, tracks []cat062.DecodedTrack) error {
 			blockCount.Add(1)
 			trackCount.Add(int64(len(tracks)))
 			tracksCurrent.Store(int64(len(tracks)))
-			// Feed tracks to broadcaster (non-blocking).
+			// Feed tracks to broadcaster (non-blocking), tagged with their feed.
 			select {
-			case broadcaster.TracksChan() <- tracks:
+			case broadcaster.TracksChan() <- broadcast.TrackBatch{FeedID: feedID, Tracks: tracks}:
 			default:
 				logger.Warn("broadcaster channel full, dropping block")
 			}
@@ -320,11 +321,16 @@ func main() {
 type Config struct {
 	MulticastGroup string
 	MulticastPort  int
-	ProbePort      int
-	MapCenterLat   float64
-	MapCenterLon   float64
-	MapZoom        float64
-	MapStyleURL    string
+	// FeedID is the catalogue feed this single-feed receiver consumes
+	// (WAYFINDER_FEED_ID, default 0 = single-tenant/unassigned). Stamped onto
+	// every track for the scoped fan-out (WF2-20/21). The DB-driven multi-feed
+	// receiver supersedes this single value in WF2-20.2.
+	FeedID       int64
+	ProbePort    int
+	MapCenterLat float64
+	MapCenterLon float64
+	MapZoom      float64
+	MapStyleURL  string
 	// MapTheme selects the built-in base map theme when no explicit
 	// MapStyleURL is configured: "dark" (Radar Dark Mode, the controller
 	// default) or "osm" (the bright OpenStreetMap raster). `WAYFINDER_MAP_THEME`,
@@ -507,6 +513,12 @@ func loadConfig() Config {
 	if portStr := os.Getenv("FIREFLY_CAT062_PORT"); portStr != "" {
 		if port, err := strconv.Atoi(portStr); err == nil {
 			cfg.MulticastPort = port
+		}
+	}
+
+	if v := os.Getenv("WAYFINDER_FEED_ID"); v != "" {
+		if id, err := strconv.ParseInt(v, 10, 64); err == nil {
+			cfg.FeedID = id
 		}
 	}
 

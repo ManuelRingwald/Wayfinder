@@ -22,7 +22,7 @@ func TestReceiverLoopback(t *testing.T) {
 		Group:  "127.0.0.1", // Loopback
 		Port:   0,           // Ephemeral port
 		Logger: slog.New(slog.NewTextHandler(nil, nil)),
-		Handler: func(tracks []cat062.DecodedTrack) error {
+		Handler: func(_ int64, tracks []cat062.DecodedTrack) error {
 			decodedBlocks++
 			decodedTracks += len(tracks)
 			return nil
@@ -80,7 +80,7 @@ func TestDispatchRoutesByCategory(t *testing.T) {
 	var gotStatus int
 	recv, err := New(Config{
 		Logger:        slog.New(slog.NewTextHandler(io.Discard, nil)),
-		Handler:       func(tracks []cat062.DecodedTrack) error { gotTracks += len(tracks); return nil },
+		Handler:       func(_ int64, tracks []cat062.DecodedTrack) error { gotTracks += len(tracks); return nil },
 		StatusHandler: func(cat065.ServiceStatus) error { gotStatus++; return nil },
 	})
 	if err != nil {
@@ -105,6 +105,37 @@ func TestDispatchRoutesByCategory(t *testing.T) {
 	}
 	if gotTracks != 0 || gotStatus != 1 {
 		t.Errorf("unknown CAT must not call handlers (tracks=%d status=%d)", gotTracks, gotStatus)
+	}
+}
+
+// TestHandleTracksStampsFeedID verifies the receiver's configured FeedID is
+// passed to the track handler for every decoded block, so downstream the track
+// can be attributed to its feed (WF2-20).
+func TestHandleTracksStampsFeedID(t *testing.T) {
+	var gotFeedID int64 = -1
+	var gotTracks int
+	recv, err := New(Config{
+		FeedID: 42,
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Handler: func(feedID int64, tracks []cat062.DecodedTrack) error {
+			gotFeedID = feedID
+			gotTracks = len(tracks)
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	// Minimal valid CAT062 block: CAT + LEN + FSPEC(FRN1) + I062/010 → 1 track.
+	block := []byte{0x3E, 0x00, 0x06, 0x80, 0x19, 0x02}
+	recv.dispatch(block, &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 1234})
+
+	if gotFeedID != 42 {
+		t.Errorf("handler feed_id = %d, want 42", gotFeedID)
+	}
+	if gotTracks != 1 {
+		t.Errorf("handler tracks = %d, want 1", gotTracks)
 	}
 }
 

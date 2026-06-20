@@ -361,6 +361,7 @@ Pfad überschreibbar via `WAYFINDER_CONFIG_FILE`). Env-Vars gewinnen immer.
 |----------|---------|--------------|
 | `FIREFLY_CAT062_GROUP` | `239.255.0.62` | UDP-Multicast-Gruppe für CAT062/CAT065-Eingang |
 | `FIREFLY_CAT062_PORT` | `8600` | UDP-Port des Multicast-Stroms |
+| `WAYFINDER_FEED_ID` | `0` | Katalog-Feed-ID dieses Einzel-Feeds (WF2-20); wird auf jeden Track gestempelt (`feed_id` im WS-Strom). `0` = Single-Tenant. Im Multi-Feed-Modus (WF2-20.2) liefert der DB-Katalog die Feed-IDs. |
 | `WAYFINDER_PROBE_PORT` | `8080` | Port für `/health`, `/ready`, `/metrics` |
 | `WAYFINDER_FEED_STALE_TIMEOUT` | `3` | Sekunden ohne CAT065-Heartbeat, ab denen der Feed als stale gilt |
 

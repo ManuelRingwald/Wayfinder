@@ -7,7 +7,31 @@
 > 🗺️ **Roadmap:** Arbeitspakete, Findings und empfohlene Reihenfolge stehen in
 > `docs/ROADMAP.md` (Stichwort „Roadmap" im Chat zeigt diese Liste).
 
-- **Zuletzt aktualisiert:** 2026-06-20 — **WF2-13 „Admin-Bootstrap" abgeschlossen
+- **Zuletzt aktualisiert:** 2026-06-20 — **WF2-20.1 „`feed_id`-Durchstich"
+  abgeschlossen — STUFE 2 BEGONNEN (🔒 S4 · Opus 4.8).** Erster Baustein des
+  mandanten-isolierten Datenstroms: jeder Track trägt jetzt seine **Feed-
+  Attribution** (Grundlage für den scoped Fan-out WF2-21). Naht
+  **Receiver→Broadcaster→Wire**: `pkg/receiver` `Config.FeedID int64` + Handler-
+  Signatur `func(feedID int64, tracks …)` (handleTracks reicht `r.feedID` durch;
+  `feed_id` ist Wayfinder-Attribution, **nicht** im CAT062-Draht — Decoder
+  unberührt); `pkg/broadcast` neuer `TrackBatch{FeedID,Tracks}` (der `trackChan`/
+  `TracksChan()` trägt ihn), `tracksToMessage` **stempelt `FeedID` auf jede**
+  `TrackMessage` (neues Feld `feed_id,omitempty` → Single-Tenant-Ausgabe
+  unverändert); `main.go` `Config.FeedID` aus `WAYFINDER_FEED_ID` (Default 0),
+  Handler verpackt in `broadcast.TrackBatch`. `feed_id` ist `int64 = feeds.id`
+  (worauf `subscriptions.feed_id` zeigt → WF2-21 filtert direkt). **Kein Schema-
+  Change, kein Verhaltenswechsel im Single-Tenant.** **Tests:** `pkg/receiver`
+  `TestHandleTracksStampsFeedID` (Receiver `FeedID:42` → Handler bekommt 42 bei
+  Minimal-CAT062-Block); `pkg/broadcast` `TestTracksToMessage` prüft Stempelung
+  (`FeedID:7`); bestehende Handler-/Broadcast-Tests auf neue Signatur/`TrackBatch`
+  angepasst. Gates grün (`go build/vet/test`, `gofmt`, `pg-test.sh`); `go 1.25`
+  unverändert. INSTALLATION §7.1 + TECHNICAL §6.1 (`WAYFINDER_FEED_ID`, `feed_id`
+  im TrackMessage); Register FR-FEED-001; Milestone
+  `docs/milestones/WF2-20.1_FeedID_Plumbing.md`. **Abgrenzung:** empfängt weiterhin
+  **einen** Feed — der eigentliche Multi-Feed-Empfang (N Sockets aus dem DB-Katalog)
+  ist **WF2-20.2**. **Nächster Schritt:** WF2-20.2 (Feed-Registry aus `feeds`-Tabelle
+  → N Receiver; `main()`-Reorder DB-vor-Receiver) nach Ankündigung & „Go".
+- **Vorherige Aktualisierung:** 2026-06-20 — **WF2-13 „Admin-Bootstrap" abgeschlossen
   — STUFE 1 KOMPLETT (S2–S3 · Sonnet 4.6 / Opus-Review).** Schließt die Lücke
   „frisch aufgesetztes Deployment hat keinen Nutzer": ein **Subcommand legt den
   ersten Mandanten + Admin an**, womit der builtin-Login aus WF2-12.3 bedienbar
@@ -651,13 +675,14 @@
 | **WF2-01** | ADR 0006 „Konfig-/Identitäts-Persistenz" | S4 · Opus 4.8 | ✅ erledigt |
 | **WF2-02** | ADR 0007 „Cloud-Ingest & Feed-Fan-out" (NATS JetStream) | S4 · Opus 4.8 | ✅ erledigt |
 
-**✅ Stufe 1 (Identität & Mandanten-Grundgerüst) komplett:** **WF2-10 ✅** (6
-Tabellen-Repos) · **WF2-11 ✅** (AuthN, alle 3 Modi) · **WF2-12 ✅** (Tenant-Context:
-Middleware + Verdrahtung + builtin-Login) · **WF2-13 ✅** (Admin-Bootstrap:
-Subcommand `wayfinder bootstrap` legt ersten Tenant/Admin/Passwort an, idempotent;
-`/admin`-Rollen-Gate `RequireRole`; real-PG + E2E getestet). **➡️ Nächster:
-Stufe 2 — WF2-20** (Feed-Registry & Multi-Feed-Receiver, 1→N Feeds) 🔒 S4 · Opus 4.8
-— Beginn des sicherheitskritischen Stream-Umbaus.
+**✅ Stufe 1 komplett:** WF2-10 (Persistenz) · WF2-11 (AuthN, 3 Modi) · WF2-12
+(Tenant-Context + builtin-Login) · WF2-13 (Admin-Bootstrap + `/admin`-Gate).
+
+**🔵 Stufe 2 — begonnen (sicherheitskritischer Kern):** **WF2-20.1 ✅** (`feed_id`-
+Durchstich Receiver→Broadcaster→Wire; `WAYFINDER_FEED_ID`; `TrackMessage.feed_id`).
+**➡️ Nächster: WF2-20.2** (Feed-Registry aus DB-Katalog → N Receiver je `feed_id`;
+`main()`-Reorder) 🔒 S4 · Opus 4.8. Danach WF2-21 (scoped Fan-out) + WF2-22
+(Isolations-Negativtests „A sieht nie B").
 
 Offen, **ASD-Kern (mandanten-unabhängig, parallel möglich** — nicht im kritischen
 Pfad, Details/Abgleich in ROADMAP §2):
@@ -686,16 +711,16 @@ Pfad, Details/Abgleich in ROADMAP §2):
 
 ## 3. Nächster Schritt
 
-➡️ **Stufe 2 — WF2-20: Feed-Registry & Multi-Feed-Receiver** 🔒 S4 · Opus 4.8, nach
+➡️ **WF2-20.2 — Feed-Registry & Multi-Feed-Receiver** 🔒 S4 · Opus 4.8, nach
 Ankündigung & „Go".
 
-Beginn des **sicherheitskritischen Stream-Umbaus**: vom Single-Feed zum
-**Feed-Katalog** (1→N Feeds aus der `feeds`-Tabelle), Receiver tritt mehreren
-Gruppen/Subjects bei und stempelt jeden Track mit seiner **`feed_id`** — die
-Grundlage, auf der WF2-21 (scoped Fan-out: Prädikat feed∩AOI∩FL∩Kategorie) und
-WF2-22 (Isolations-Testsuite, Pflicht-Negativtests „A sieht nie B") aufsetzen.
-Hier entsteht der Kern der Cross-Tenant-Isolation (NFR-SEC-003) — Opus + Negativ-
-Tests Pflicht.
+Zweiter Halbschritt von WF2-20: vom Einzel-Feed zum **Feed-Katalog**. Den
+`feeds`-Katalog aus der DB lesen (`FeedRepo.List` — Felder `multicast_group`/
+`port`/`id`) und **N Receiver** starten (einer je Feed, je mit seiner `feed_id`
+aus 20.1); Lifecycle/Health je Feed; Single-Tenant-Fallback = ein Receiver wie
+heute. Erfordert ein **Reordering in `main()`** (DB öffnen vor Receiver-Start).
+Damit ist die Cross-Tenant-Isolations-Grundlage (NFR-SEC-003) physisch da, auf der
+WF2-21 (scoped Fan-out) + WF2-22 (Pflicht-Negativtests „A sieht nie B") aufsetzen.
 
 **Erledigt in dieser Sitzung:** **Stufe 0 komplett** (WF2-00/01/02, ADR
 0005/0006/0007) **+ STUFE 1 KOMPLETT** — **WF2-10** (alle 6 Tabellen-Repos, real
@@ -704,10 +729,11 @@ Session/Mode/None+Builtin · 11.2 proxy-Modus `ProxyAuthenticator` go-oidc)
 **+ WF2-12** (12.1 `pkg/auth`-Factory + `pkg/tenant` Middleware · 12.2 Verdrahtung
 `setupTenancy`/`/ws`-Gate · 12.3 builtin-Login + Credential-Speicher, timing-
 gehärtet) **+ WF2-13** (Admin-Bootstrap-Subcommand idempotent + `/admin`-Rollen-
-Gate `RequireRole`). ADR-0006-Nachtrag: goose verworfen, Go-Baseline 1.25. Register
-FR-CFG-001, FR-TEN-001/002, FR-FEED-001, NFR-SEC-003/004, NFR-SCALE-001; Test-
-Runner `scripts/pg-test.sh` (jetzt `./...`); neue Deps `golang.org/x/crypto`,
-`github.com/coreos/go-oidc/v3`.
+Gate `RequireRole`) **+ Stufe 2 begonnen: WF2-20.1** (`feed_id`-Durchstich
+Receiver→Broadcaster→Wire, `WAYFINDER_FEED_ID`). ADR-0006-Nachtrag: goose verworfen,
+Go-Baseline 1.25. Register FR-CFG-001, FR-TEN-001/002, FR-FEED-001,
+NFR-SEC-003/004, NFR-SCALE-001; Test-Runner `scripts/pg-test.sh` (jetzt `./...`,
+`-p 1`); neue Deps `golang.org/x/crypto`, `github.com/coreos/go-oidc/v3`.
 
 **Parallel möglich (nicht kritischer Pfad):** ASD-011/012/013 (ASD-Kern,
 ROADMAP §2) — widerspruchsfrei zu 2.0, von einem leichteren Modell ziehbar.
