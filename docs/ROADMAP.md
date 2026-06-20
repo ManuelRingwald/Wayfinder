@@ -62,14 +62,18 @@ Umbau vom einprozessigen, beim-Start-konfigurierten **Single-Tenant-ASD** zur
 
 **✅ Stufe 0 (Entscheidung & Fundament) abgeschlossen** — ADR 0005/0006/0007.
 
-**Stufe 1 — in Arbeit:** **WF2-10.1 ✅ erledigt** — `pkg/store` (pgx-Pool, Schema-
-Migrationen via minimalem In-House-Runner statt goose, DB-freie Tests). Dabei
-zwei bewusste Entscheidungen (ADR 0006 Nachtrag): **goose verworfen** (zog
-`modernc.org/sqlite`-Ballast) und **Go-Baseline 1.23 → 1.25** (pgx + modernes
-`golang.org/x/*` verlangen es; Dockerfile gebumpt).
+**Stufe 1 — in Arbeit:**
+- **WF2-10.1 ✅** — `pkg/store` (pgx-Pool, In-House-Migrationsrunner statt goose,
+  DB-freie Tests). Dabei (ADR 0006 Nachtrag): goose verworfen (`modernc.org/sqlite`-
+  Ballast), Go-Baseline 1.23 → 1.25.
+- **WF2-10.2 ✅** — Repository-Zugriffe `tenants`/`users` (handgeschriebene pgx-
+  Queries statt sqlc; `Tenant`/`User`/`Role`-Typen, `GetBySubject` = Identität→
+  Mandant). **Real gegen PostgreSQL 16 getestet** via `scripts/pg-test.sh`
+  (Wegwerf-Cluster, ohne Docker) — validiert auch das 10.1-Schema end-to-end.
 
-**➡️ Nächster Schritt:** **WF2-10.2 — Repository-Zugriffe** (tenants/users mit pgx,
-ggf. sqlc; Queries) **S3 · Sonnet 4.6 (+Opus-Review)**, nach Ankündigung & „Go".
+**➡️ Nächster Schritt:** **WF2-10.3 — restliche Repositories** (`feeds`,
+`subscriptions`, `view_configs`, `entitlements`; `subscriptions` = Datenbasis der
+Cross-Tenant-Isolation) **S3 · Sonnet 4.6 (+Opus-Review)**, nach Ankündigung & „Go".
 
 ---
 
@@ -91,7 +95,7 @@ Details & Begründung: Konzept §7/§8.
 ### Stufe 1 — Identität & Mandanten-Grundgerüst (ohne Datenfluss-Änderung)
 | AP | Inhalt | Stufe · Modell | Abh. | Status |
 |----|--------|----------------|------|--------|
-| **WF2-10** 🔒 | Persistenz-Schicht & Migrationen (`pkg/store`, pgx; In-House-Migrationsrunner) | **S3 · Sonnet 4.6** (+Opus-Review) | WF2-01 | 🔵 in Arbeit (10.1 ✅; 10.2/10.3 offen) |
+| **WF2-10** 🔒 | Persistenz-Schicht, Migrationen & Repositories (`pkg/store`, pgx) | **S3 · Sonnet 4.6** (+Opus-Review) | WF2-01 | 🔵 in Arbeit (10.1+10.2 ✅; 10.3 offen) |
 | **WF2-11** 🔒 | AuthN: echtes Nutzer-/Session-Modell (OIDC@Proxy o. eingebaut; Tenant-Claim) | **S4 · Opus 4.8** | WF2-10 | geplant |
 | **WF2-12** 🔒 | Tenant-Context-Middleware (jeder HTTP/WS-Request → Tenant-ID, fail-closed) | **S4 · Opus 4.8** | WF2-11 | geplant |
 | **WF2-13** | Admin-Bootstrap (create-tenant/-user, `/admin`-Auth-Gate) | **S2–S3 · Sonnet 4.6** | WF2-12 | geplant |
@@ -223,6 +227,7 @@ Architektur-Wirkung — nicht auf dem kritischen Pfad, aber jederzeit wertstifte
 - ✅ **WF2-01 / ADR 0006 — Konfig-/Identitäts-Persistenz** (`docs/decisions/0006-konfig-identitaets-persistenz.md`): PostgreSQL + pgx/sqlc + goose, Schema-Skizze, Stateless-Split, Identität (OIDC@Proxy primär + Fallback), Redis zurückgestellt; Register FR-TEN-002/NFR-SEC-004.
 - ✅ **WF2-02 / ADR 0007 — Cloud-Ingest & Feed-Fan-out** (`docs/decisions/0007-cloud-ingest-und-feed-fan-out.md`): Public Cloud + K8s; FeedSource-Abstraktion, Ingest-Gateway, **NATS JetStream** (RabbitMQ/Kafka geprüft & verworfen); Register FR-FEED-001/NFR-SCALE-001. **→ Stufe 0 abgeschlossen.**
 - ✅ **WF2-10.1 — Persistenz-Schicht** (`pkg/store`: pgx-Pool, eingebetteter In-House-Migrationsrunner, Schema `00001_init`, DB-freie Tests; ADR 0006 Nachtrag: goose→Runner, Go-Baseline 1.25). Milestone `docs/milestones/WF2-10.1_Persistence_Layer.md`.
+- ✅ **WF2-10.2 — Tenant-/User-Repositories** (`models.go`, `tenants.go`, `users.go`, `repo.go`; handgeschriebene pgx-Queries; `GetBySubject` = Identität→Mandant). Tests DB-frei + Integration; **real gegen PostgreSQL 16** via `scripts/pg-test.sh`. Milestone `docs/milestones/WF2-10.2_Tenant_User_Repos.md`.
 
 **Cross-Project / Firefly:**
 - ✅ Paket #6 / Coverage-Werkzeug — Radar-Ringe-Overlay (`pkg/coverage`, `/api/coverage/rings`, Frontend-Layer-Toggle, Firefly `SensorModel`-Erweiterung; PR #27)
