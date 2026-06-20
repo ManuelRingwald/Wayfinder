@@ -240,6 +240,24 @@ func main() {
 	// are configured so the frontend can always fetch unconditionally.
 	mux.HandleFunc("/api/coverage/rings", coverageRingsHandler(cfg))
 
+	// Builtin-mode login/logout (WF2-12.3): only when multi-tenancy is on and the
+	// auth mode is builtin (proxy/none mint no local sessions). These routes are
+	// intentionally unauthenticated — they hand out the session the middleware
+	// later checks.
+	if dbPool != nil && cfg.AuthMode == auth.ModeBuiltin {
+		loginCfg := tenant.LoginConfig{
+			SessionKey: cfg.SessionKey,
+			CookieName: cfg.SessionCookie,
+			TTL:        cfg.SessionTTL,
+			Secure:     cfg.TLSCertFile != "" && cfg.TLSKeyFile != "",
+		}
+		users := store.NewUserRepo(dbPool)
+		creds := store.NewCredentialRepo(dbPool)
+		mux.Handle("/api/login", tenant.LoginHandler(users, creds, loginCfg))
+		mux.Handle("/api/logout", tenant.LogoutHandler(loginCfg))
+		logger.Info("builtin login enabled", slog.String("path", "/api/login"))
+	}
+
 	// The per-tenant middleware (on /ws) supersedes the legacy single shared
 	// token; only fall back to the token gate in single-tenant mode.
 	var handler http.Handler = mux
@@ -318,13 +336,14 @@ type Config struct {
 	// enabled only when DBURL is set; otherwise the server runs as the legacy
 	// single-tenant ASD (ADR 0005 §7, degenerate case) with no database and no
 	// tenant middleware.
-	DBURL         string    // WAYFINDER_DB_URL (PostgreSQL DSN; empty = single-tenant)
-	AuthMode      auth.Mode // WAYFINDER_AUTH_MODE (proxy|builtin|none, default none)
-	NoneSubject   string    // WAYFINDER_NONE_SUBJECT (ModeNone fixed subject, default "default")
-	SessionKey    []byte    // WAYFINDER_SESSION_KEY (ModeBuiltin HMAC key)
-	SessionCookie string    // WAYFINDER_SESSION_COOKIE (default "wf_session")
-	OIDCIssuer    string    // WAYFINDER_OIDC_ISSUER (ModeProxy)
-	OIDCAudience  string    // WAYFINDER_OIDC_AUDIENCE (ModeProxy)
+	DBURL         string        // WAYFINDER_DB_URL (PostgreSQL DSN; empty = single-tenant)
+	AuthMode      auth.Mode     // WAYFINDER_AUTH_MODE (proxy|builtin|none, default none)
+	NoneSubject   string        // WAYFINDER_NONE_SUBJECT (ModeNone fixed subject, default "default")
+	SessionKey    []byte        // WAYFINDER_SESSION_KEY (ModeBuiltin HMAC key)
+	SessionCookie string        // WAYFINDER_SESSION_COOKIE (default "wf_session")
+	SessionTTL    time.Duration // WAYFINDER_SESSION_TTL (Go duration, default 12h)
+	OIDCIssuer    string        // WAYFINDER_OIDC_ISSUER (ModeProxy)
+	OIDCAudience  string        // WAYFINDER_OIDC_AUDIENCE (ModeProxy)
 }
 
 // authConfig projects the runtime Config onto the auth package's Config.
@@ -559,6 +578,11 @@ func loadConfig() Config {
 		cfg.SessionKey = []byte(v)
 	}
 	cfg.SessionCookie = os.Getenv("WAYFINDER_SESSION_COOKIE")
+	if v := os.Getenv("WAYFINDER_SESSION_TTL"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			cfg.SessionTTL = d
+		}
+	}
 	cfg.OIDCIssuer = os.Getenv("WAYFINDER_OIDC_ISSUER")
 	cfg.OIDCAudience = os.Getenv("WAYFINDER_OIDC_AUDIENCE")
 
