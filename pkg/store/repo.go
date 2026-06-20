@@ -1,6 +1,7 @@
 package store
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -24,4 +25,25 @@ func wrap(op string, err error) error {
 		return fmt.Errorf("store: %s: %w", op, ErrNotFound)
 	}
 	return fmt.Errorf("store: %s: %w", op, err)
+}
+
+// toJSONB marshals v to a JSON string for insertion into a jsonb column via a
+// "$n::jsonb" cast. Passing the marshalled text (rather than a Go slice/map)
+// keeps the encoding explicit and independent of pgx's default type mapping
+// (which would otherwise treat e.g. []string as a Postgres text[] array).
+func toJSONB(v any) (string, error) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
+// fromJSONB unmarshals a jsonb column (scanned as raw bytes) into dest. Empty or
+// SQL-NULL values (len 0) leave dest untouched.
+func fromJSONB(raw []byte, dest any) error {
+	if len(raw) == 0 {
+		return nil
+	}
+	return json.Unmarshal(raw, dest)
 }
