@@ -83,15 +83,19 @@ Subject: **11.1** (Mode, argon2id, HMAC-Session, None-/Builtin) **+ 11.2**
 (`ProxyAuthenticator`, go-oidc-Validierung Issuer/Audience/Signatur/Ablauf gegen
 JWKS). Neue Deps: `golang.org/x/crypto` (argon2), `github.com/coreos/go-oidc/v3`.
 
-**WF2-12 (Tenant-Context) — in Arbeit:** **WF2-12.1 ✅** — `pkg/auth`-Factory
-(`NewAuthenticator`, fail-closed-Config) + neues `pkg/tenant` (`Identity`/Context,
-`Middleware` subject→user→tenant **fail-closed**, 401 ohne gültigen Mandanten).
-DB-frei getestet (Fake-Authenticator/-Lookup; `GetBySubject` real in WF2-10.2).
+**WF2-12 (Tenant-Context) — in Arbeit:**
+- **WF2-12.1 ✅** — `pkg/auth`-Factory + neues `pkg/tenant` (`Middleware`
+  subject→user→tenant **fail-closed**). DB-frei getestet.
+- **WF2-12.2 ✅** — Verdrahtung in `main.go`: `setupTenancy` (DB-Open+Migrate+
+  Authenticator+Middleware **nur bei gesetztem `WAYFINDER_DB_URL`**, sonst
+  Single-Tenant), `/ws` mandanten-gegated, Legacy-Token abgelöst. Neue ENV-Vars
+  in INSTALLATION/TECHNICAL. **Real gegen PG getestet** (`tenancy_test.go`: 401
+  ohne Nutzer, Tenant aufgelöst mit Nutzer).
 
-**➡️ Nächster Schritt:** **WF2-12.2 — HTTP-Verdrahtung** (`main.go`: DB-Pool +
-Migrationen beim Start, Middleware am Mux, `WAYFINDER_AUTH_MODE`/`_DB_URL`… →
-INSTALLATION/TECHNICAL; **builtin-Login-Handler**) 🔒 **S4 · Opus 4.8**, nach
-Ankündigung & „Go".
+**➡️ Nächster Schritt:** **WF2-12.3 — builtin-Login** (`/api/login`: Passwort via
+`auth.VerifyPassword` → `auth.MintSession`-Cookie; Credential-Speicher-Migration)
+🔒 **S4 · Opus 4.8**, nach Ankündigung & „Go". (proxy-Modus ist bereits voll
+funktionsfähig.)
 
 ---
 
@@ -115,7 +119,7 @@ Details & Begründung: Konzept §7/§8.
 |----|--------|----------------|------|--------|
 | **WF2-10** 🔒 | Persistenz-Schicht, Migrationen & Repositories (`pkg/store`, pgx) | **S3 · Sonnet 4.6** (+Opus-Review) | WF2-01 | ✅ **erledigt** (10.1–10.3b) |
 | **WF2-11** 🔒 | AuthN: echtes Nutzer-/Session-Modell (`pkg/auth`; argon2id, HMAC-Session, OIDC@Proxy) | **S4 · Opus 4.8** | WF2-10 | ✅ **erledigt** (11.1 + 11.2) |
-| **WF2-12** 🔒 | Tenant-Context-Middleware (jeder HTTP/WS-Request → Tenant-ID, fail-closed) | **S4 · Opus 4.8** | WF2-11 | 🔵 in Arbeit (12.1 ✅; 12.2 HTTP-Wiring offen) |
+| **WF2-12** 🔒 | Tenant-Context-Middleware (jeder HTTP/WS-Request → Tenant-ID, fail-closed) | **S4 · Opus 4.8** | WF2-11 | 🔵 in Arbeit (12.1+12.2 ✅; 12.3 builtin-Login offen) |
 | **WF2-13** | Admin-Bootstrap (create-tenant/-user, `/admin`-Auth-Gate) | **S2–S3 · Sonnet 4.6** | WF2-12 | geplant |
 
 ### Stufe 2 — Mandanten-isolierter Datenstrom (sicherheitskritischer Kern)
@@ -251,6 +255,7 @@ Architektur-Wirkung — nicht auf dem kritischen Pfad, aber jederzeit wertstifte
 - ✅ **WF2-11.1 — AuthN builtin-Primitive** (`pkg/auth`: Mode/ParseMode, argon2id-Passwort-Hashing, HMAC-Session-Token, None-/Builtin-Authenticator; `golang.org/x/crypto`). 10 DB-freie Tests. Milestone `docs/milestones/WF2-11.1_Auth_Builtin_Primitives.md`.
 - ✅ **WF2-11.2 — AuthN proxy-Modus OIDC** (`proxy.go`: `ProxyAuthenticator`, go-oidc-Validierung Issuer/Audience/Signatur/Ablauf; `github.com/coreos/go-oidc/v3`). Tests gegen lokalen Test-Issuer (RSA/JWKS/JWT). **→ WF2-11 (AuthN) komplett.** Milestone `docs/milestones/WF2-11.2_Auth_Proxy_OIDC.md`.
 - ✅ **WF2-12.1 — Tenant-Context-Middleware** (`pkg/auth/factory.go` `NewAuthenticator`; neues `pkg/tenant`: `Identity`/Context, `Middleware` subject→user→tenant fail-closed). DB-freie Tests (Erfolg + 3× fail-closed → 401). Milestone `docs/milestones/WF2-12.1_Tenant_Context_Middleware.md`.
+- ✅ **WF2-12.2 — Tenancy-Verdrahtung im Server** (`main.go` `setupTenancy`: DB-Open+Migrate+Authenticator+`tenant.Middleware` auf `/ws`, nur bei `WAYFINDER_DB_URL`; sonst Single-Tenant). ENV-Vars in INSTALLATION/TECHNICAL; real-PG-Integrationstest. Milestone `docs/milestones/WF2-12.2_Tenancy_HTTP_Wiring.md`.
 
 **Cross-Project / Firefly:**
 - ✅ Paket #6 / Coverage-Werkzeug — Radar-Ringe-Overlay (`pkg/coverage`, `/api/coverage/rings`, Frontend-Layer-Toggle, Firefly `SensorModel`-Erweiterung; PR #27)

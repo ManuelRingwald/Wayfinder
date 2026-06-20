@@ -2,10 +2,11 @@
 #
 # Run the pkg/store tests against a throwaway PostgreSQL instance.
 #
-# The integration tests (store_integration_test.go) skip unless
+# Integration tests across the module (pkg/store, cmd/wayfinder, …) skip unless
 # WAYFINDER_TEST_DB_URL points at a database. This script spins up a temporary
-# Postgres cluster, runs the tests against it, and tears everything down — so the
-# real schema + repositories can be exercised locally and in CI without Docker.
+# Postgres cluster, runs the whole test suite against it, and tears everything
+# down — so the real schema + repositories + server wiring can be exercised
+# locally and in CI without Docker.
 #
 # Requirements: the PostgreSQL server binaries (initdb/pg_ctl, override via
 # PGBIN) and, when run as root, a "postgres" system user (Postgres refuses to run
@@ -37,4 +38,4 @@ pg "$PGBIN/createdb -h '$WORKDIR' -p $PORT wayfinder_test"
 # Not `exec`: that would replace this shell and skip the cleanup trap, leaking the
 # temporary server. Run go test normally; its exit code propagates (set -e).
 export WAYFINDER_TEST_DB_URL="postgres://postgres@127.0.0.1:$PORT/wayfinder_test?sslmode=disable"
-go test ./pkg/store/... "$@"
+go test ./... "$@"

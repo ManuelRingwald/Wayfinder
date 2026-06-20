@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -15,10 +16,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"gopkg.in/yaml.v3"
 
 	"github.com/manuelringwald/wayfinder/internal/webui"
 	"github.com/manuelringwald/wayfinder/pkg/aeronautical"
+	"github.com/manuelringwald/wayfinder/pkg/auth"
 	"github.com/manuelringwald/wayfinder/pkg/broadcast"
 	"github.com/manuelringwald/wayfinder/pkg/cat062"
 	"github.com/manuelringwald/wayfinder/pkg/cat065"
@@ -26,6 +29,8 @@ import (
 	"github.com/manuelringwald/wayfinder/pkg/health"
 	"github.com/manuelringwald/wayfinder/pkg/metrics"
 	"github.com/manuelringwald/wayfinder/pkg/receiver"
+	"github.com/manuelringwald/wayfinder/pkg/store"
+	"github.com/manuelringwald/wayfinder/pkg/tenant"
 	"github.com/manuelringwald/wayfinder/pkg/ws"
 )
 
@@ -186,8 +191,21 @@ func main() {
 	// Start health/readiness/metrics probe server.
 	go startProbeServer(logger, &blockCount, &trackCount, &tracksCurrent, &heartbeatCount, broadcaster, recv, feedHealth, aeroService, &lastError)
 
+	// Multi-tenancy (WF2-12): when WAYFINDER_DB_URL is set, open the DB, migrate
+	// and build the tenant-context middleware; otherwise run single-tenant.
+	setupCtx, cancelSetup := context.WithTimeout(context.Background(), 30*time.Second)
+	tenantMW, dbPool, err := setupTenancy(setupCtx, cfg, logger)
+	cancelSetup()
+	if err != nil {
+		logger.Error("tenancy setup", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+	if dbPool != nil {
+		defer dbPool.Close()
+	}
+
 	// Start WebSocket server.
-	if cfg.AuthToken == "" {
+	if tenantMW == nil && cfg.AuthToken == "" {
 		logger.Warn("WAYFINDER_AUTH_TOKEN not set — browser edge relies on " +
 			"network isolation / a TLS+auth reverse proxy in front of this " +
 			"service (ADR 0003)")
@@ -196,7 +214,13 @@ func main() {
 	mux := http.NewServeMux()
 
 	wsHandler := ws.New(broadcaster, logger, cfg.AllowedOrigins)
-	mux.Handle("/ws", wsHandler)
+	// The live picture is tenant-scoped: gate /ws with the tenant middleware when
+	// multi-tenancy is enabled (the scoped fan-out itself follows in WF2-21).
+	if tenantMW != nil {
+		mux.Handle("/ws", tenantMW(wsHandler))
+	} else {
+		mux.Handle("/ws", wsHandler)
+	}
 
 	// Serve the ASD frontend (static HTML/JS/CSS) and its map configuration.
 	frontend, err := webui.Handler()
@@ -216,7 +240,12 @@ func main() {
 	// are configured so the frontend can always fetch unconditionally.
 	mux.HandleFunc("/api/coverage/rings", coverageRingsHandler(cfg))
 
-	handler := authMiddleware(cfg.AuthToken, mux)
+	// The per-tenant middleware (on /ws) supersedes the legacy single shared
+	// token; only fall back to the token gate in single-tenant mode.
+	var handler http.Handler = mux
+	if tenantMW == nil {
+		handler = authMiddleware(cfg.AuthToken, mux)
+	}
 
 	go func() {
 		addr := ":8081"
@@ -284,6 +313,30 @@ type Config struct {
 	// Populated from WAYFINDER_COVERAGE_SENSOR_N_* env-vars.
 	CoverageSensors   []coverage.SensorConfig // WAYFINDER_COVERAGE_SENSOR_N_{LAT,LON,...}
 	CoverageRingColor string                  // WAYFINDER_COVERAGE_RING_COLOR, default #5B8DEF
+
+	// Multi-tenancy (Wayfinder 2.0, WF2-12, ADR 0005/0006). Multi-tenancy is
+	// enabled only when DBURL is set; otherwise the server runs as the legacy
+	// single-tenant ASD (ADR 0005 §7, degenerate case) with no database and no
+	// tenant middleware.
+	DBURL         string    // WAYFINDER_DB_URL (PostgreSQL DSN; empty = single-tenant)
+	AuthMode      auth.Mode // WAYFINDER_AUTH_MODE (proxy|builtin|none, default none)
+	NoneSubject   string    // WAYFINDER_NONE_SUBJECT (ModeNone fixed subject, default "default")
+	SessionKey    []byte    // WAYFINDER_SESSION_KEY (ModeBuiltin HMAC key)
+	SessionCookie string    // WAYFINDER_SESSION_COOKIE (default "wf_session")
+	OIDCIssuer    string    // WAYFINDER_OIDC_ISSUER (ModeProxy)
+	OIDCAudience  string    // WAYFINDER_OIDC_AUDIENCE (ModeProxy)
+}
+
+// authConfig projects the runtime Config onto the auth package's Config.
+func (c Config) authConfig() auth.Config {
+	return auth.Config{
+		Mode:         c.AuthMode,
+		NoneSubject:  c.NoneSubject,
+		CookieName:   c.SessionCookie,
+		SessionKey:   c.SessionKey,
+		OIDCIssuer:   c.OIDCIssuer,
+		OIDCAudience: c.OIDCAudience,
+	}
 }
 
 // defaultMapStyle is a minimal MapLibre style using OpenStreetMap raster
@@ -498,7 +551,53 @@ func loadConfig() Config {
 		cfg.CoverageRingColor = "#5B8DEF"
 	}
 
+	// Multi-tenancy (WF2-12). Enabled only when WAYFINDER_DB_URL is set.
+	cfg.DBURL = os.Getenv("WAYFINDER_DB_URL")
+	cfg.AuthMode, _ = auth.ParseMode(os.Getenv("WAYFINDER_AUTH_MODE")) // invalid → none
+	cfg.NoneSubject = os.Getenv("WAYFINDER_NONE_SUBJECT")
+	if v := os.Getenv("WAYFINDER_SESSION_KEY"); v != "" {
+		cfg.SessionKey = []byte(v)
+	}
+	cfg.SessionCookie = os.Getenv("WAYFINDER_SESSION_COOKIE")
+	cfg.OIDCIssuer = os.Getenv("WAYFINDER_OIDC_ISSUER")
+	cfg.OIDCAudience = os.Getenv("WAYFINDER_OIDC_AUDIENCE")
+
 	return cfg
+}
+
+// setupTenancy wires up multi-tenancy when WAYFINDER_DB_URL is configured: it
+// opens the database, applies migrations, builds the configured authenticator
+// and returns the tenant-context middleware. When no database is configured it
+// returns (nil, nil, nil) — the server then runs as the legacy single-tenant ASD
+// (ADR 0005 §7). The returned pool (if any) must be closed by the caller.
+func setupTenancy(ctx context.Context, cfg Config, logger *slog.Logger) (func(http.Handler) http.Handler, *pgxpool.Pool, error) {
+	if cfg.DBURL == "" {
+		logger.Warn("WAYFINDER_DB_URL not set — running as single-tenant ASD " +
+			"(no database, no tenant isolation); set it to enable multi-tenancy (ADR 0005)")
+		return nil, nil, nil
+	}
+
+	pool, err := store.Open(ctx, cfg.DBURL)
+	if err != nil {
+		return nil, nil, fmt.Errorf("open store: %w", err)
+	}
+	if err := store.Migrate(ctx, pool); err != nil {
+		pool.Close()
+		return nil, nil, fmt.Errorf("migrate schema: %w", err)
+	}
+
+	authenticator, err := auth.NewAuthenticator(ctx, cfg.authConfig())
+	if err != nil {
+		pool.Close()
+		return nil, nil, fmt.Errorf("build authenticator: %w", err)
+	}
+
+	if cfg.AuthMode == auth.ModeNone {
+		logger.Warn("WAYFINDER_AUTH_MODE=none — every request is the same fixed " +
+			"subject; relies on network isolation (ADR 0003)")
+	}
+	logger.Info("multi-tenancy enabled", slog.String("auth_mode", string(cfg.AuthMode)))
+	return tenant.Middleware(authenticator, store.NewUserRepo(pool), logger), pool, nil
 }
 
 // parseLogLevel parses the documented slog level names ("debug", "info",

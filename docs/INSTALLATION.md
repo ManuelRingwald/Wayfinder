@@ -430,6 +430,28 @@ Ohne konfigurierte Sensoren bleibt das Feature deaktiviert (kein Fehler).
 | `WAYFINDER_TLS_CERT` | *(leer)* | Pfad zum TLS-Zertifikat (PEM). Nur aktiv, wenn beide Werte gesetzt sind. |
 | `WAYFINDER_TLS_KEY` | *(leer)* | Pfad zum TLS-Schlüssel (PEM). |
 
+### Multi-Mandanten (Wayfinder 2.0)
+
+Multi-Tenancy ist **nur aktiv, wenn `WAYFINDER_DB_URL` gesetzt ist**. Ohne diese
+Variable läuft Wayfinder als Single-Tenant-ASD (kein Datenbank-Zugriff, keine
+Tenant-Middleware — wie bisher). Mit gesetzter DB werden die Schema-Migrationen
+beim Start angewandt und `/ws` durch die Tenant-Middleware geschützt (fail-closed:
+ohne gültigen, einem Mandanten zugeordneten Nutzer → `401`).
+
+| Variable | Default | Beschreibung |
+|----------|---------|--------------|
+| `WAYFINDER_DB_URL` | *(leer)* | PostgreSQL-DSN (z. B. `postgres://user:pass@host:5432/wayfinder`). Leer = Single-Tenant, keine DB. |
+| `WAYFINDER_AUTH_MODE` | `none` | `proxy` (OIDC-Token vom Reverse-Proxy validieren), `builtin` (eingebaute Nutzer + Session-Cookie) oder `none` (fixes Subject, nur mit Netz-Isolation). |
+| `WAYFINDER_OIDC_ISSUER` | *(leer)* | `proxy`: OIDC-Issuer-URL (Discovery/JWKS). Pflicht im proxy-Modus. |
+| `WAYFINDER_OIDC_AUDIENCE` | *(leer)* | `proxy`: erwartete Audience (Client-ID). Pflicht im proxy-Modus. |
+| `WAYFINDER_SESSION_KEY` | *(leer)* | `builtin`: HMAC-Schlüssel zum Signieren der Session-Cookies. Pflicht im builtin-Modus. |
+| `WAYFINDER_SESSION_COOKIE` | `wf_session` | `builtin`: Name der Session-Cookie. |
+| `WAYFINDER_NONE_SUBJECT` | `default` | `none`: festes Subject, das jeder Anfrage zugeordnet wird. |
+
+> ⚠️ Der **builtin-Login-Handler** (Passwort → Cookie) folgt in WF2-12.3; im
+> builtin-Modus kann derzeit noch keine Cookie ausgestellt werden. Der
+> **proxy-Modus** ist voll funktionsfähig.
+
 ### 7.5 Betrieb
 
 | Variable | Default | Beschreibung |
