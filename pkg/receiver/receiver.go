@@ -14,11 +14,12 @@ import (
 // Receiver listens on a UDP-Multicast socket for CAT062 data blocks.
 // Each datagram = one complete CAT062 block (CAT + LEN + Records).
 type Receiver struct {
+	feedID        int64
 	group         net.IP
 	port          int
 	conn          *net.UDPConn
 	logger        *slog.Logger
-	handler       func(tracks []cat062.DecodedTrack) error
+	handler       func(feedID int64, tracks []cat062.DecodedTrack) error
 	statusHandler func(status cat065.ServiceStatus) error
 
 	decodeErrors atomic.Int64
@@ -26,11 +27,16 @@ type Receiver struct {
 
 // Config holds receiver configuration.
 type Config struct {
+	// FeedID identifies which feed this receiver consumes (the feeds.id of the
+	// catalogue entry, WF2-20). It is stamped onto every decoded track so the
+	// scoped fan-out (WF2-21) can filter per tenant subscription. Zero in the
+	// single-tenant / single-feed fallback.
+	FeedID int64
 	Group  string // Multicast group, default "239.255.0.62"
 	Port   int    // Port, default 8600
 	Logger *slog.Logger
-	// Handler receives decoded CAT062 track blocks.
-	Handler func(tracks []cat062.DecodedTrack) error
+	// Handler receives decoded CAT062 track blocks, attributed to FeedID.
+	Handler func(feedID int64, tracks []cat062.DecodedTrack) error
 	// StatusHandler receives decoded CAT065 SDPS heartbeats (Firefly ADR 0018).
 	// Optional; a nil handler means heartbeats are decoded and logged but
 	// otherwise ignored.
@@ -49,7 +55,7 @@ func New(cfg Config) (*Receiver, error) {
 		cfg.Logger = slog.Default()
 	}
 	if cfg.Handler == nil {
-		cfg.Handler = func(_ []cat062.DecodedTrack) error { return nil }
+		cfg.Handler = func(_ int64, _ []cat062.DecodedTrack) error { return nil }
 	}
 	if cfg.StatusHandler == nil {
 		cfg.StatusHandler = func(_ cat065.ServiceStatus) error { return nil }
@@ -61,6 +67,7 @@ func New(cfg Config) (*Receiver, error) {
 	}
 
 	return &Receiver{
+		feedID:        cfg.FeedID,
 		group:         group,
 		port:          cfg.Port,
 		logger:        cfg.Logger,
@@ -154,8 +161,9 @@ func (r *Receiver) handleTracks(data []byte, remote *net.UDPAddr) {
 	}
 	r.logger.Debug("decoded CAT062 block",
 		slog.String("remote", remote.String()),
+		slog.Int64("feed_id", r.feedID),
 		slog.Int("tracks", len(tracks)))
-	if err := r.handler(tracks); err != nil {
+	if err := r.handler(r.feedID, tracks); err != nil {
 		r.logger.Error("handler error",
 			slog.Int("tracks", len(tracks)),
 			slog.String("error", err.Error()))

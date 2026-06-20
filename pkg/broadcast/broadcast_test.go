@@ -36,7 +36,7 @@ func TestBroadcasterBasic(t *testing.T) {
 		Velocity: cat062.Velocity{Vx: 100.0, Vy: -50.0},
 	}
 
-	b.trackChan <- []cat062.DecodedTrack{track}
+	b.trackChan <- TrackBatch{Tracks: []cat062.DecodedTrack{track}}
 
 	// Receive broadcast.
 	select {
@@ -87,7 +87,7 @@ func TestBroadcasterMultipleClients(t *testing.T) {
 	}
 
 	// Send a track.
-	b.trackChan <- []cat062.DecodedTrack{{TrackNum: 1}}
+	b.trackChan <- TrackBatch{Tracks: []cat062.DecodedTrack{{TrackNum: 1}}}
 
 	// All clients should receive it.
 	for i := 0; i < 3; i++ {
@@ -146,14 +146,16 @@ func TestTracksToMessage(t *testing.T) {
 		Cartesian: cat062.CartesianPosition{X: 1000.0, Y: -500.0},
 	}
 
-	tracks := []cat062.DecodedTrack{track}
-	msg := b.tracksToMessage(tracks)
+	msg := b.tracksToMessage(TrackBatch{FeedID: 7, Tracks: []cat062.DecodedTrack{track}})
 
 	if len(msg.Tracks) != 1 {
 		t.Fatalf("expected 1 track, got %d", len(msg.Tracks))
 	}
 
 	tm := msg.Tracks[0]
+	if tm.FeedID != 7 {
+		t.Errorf("FeedID: got %d, want 7 (batch feed stamped onto track)", tm.FeedID)
+	}
 	if tm.TrackNum != 42 {
 		t.Errorf("TrackNum: got %d, want 42", tm.TrackNum)
 	}
@@ -182,7 +184,7 @@ func TestTracksToMessageMapsAdsbAge(t *testing.T) {
 	adsbTrack := cat062.DecodedTrack{TrackNum: 1, UpdateAge: cat062.UpdateAge{PSRAge: 2.0, ESAge: &esAge}}
 	radarTrack := cat062.DecodedTrack{TrackNum: 2, UpdateAge: cat062.UpdateAge{PSRAge: 2.0}}
 
-	msg := b.tracksToMessage([]cat062.DecodedTrack{adsbTrack, radarTrack})
+	msg := b.tracksToMessage(TrackBatch{Tracks: []cat062.DecodedTrack{adsbTrack, radarTrack}})
 	if len(msg.Tracks) != 2 {
 		t.Fatalf("expected 2 tracks, got %d", len(msg.Tracks))
 	}

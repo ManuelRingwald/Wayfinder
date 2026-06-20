@@ -27,8 +27,20 @@ type FeedStatusMessage struct {
 	ServiceID uint8 `json:"service_id,omitempty"`
 }
 
+// TrackBatch is a set of decoded tracks attributed to the feed they arrived on.
+// FeedID is stamped by the receiver (WF2-20) and threaded onto every resulting
+// TrackMessage, so the scoped fan-out (WF2-21) can filter per tenant
+// subscription. FeedID 0 is the single-tenant / single-feed fallback.
+type TrackBatch struct {
+	FeedID int64
+	Tracks []cat062.DecodedTrack
+}
+
 // TrackMessage represents a single track in JSON format.
 type TrackMessage struct {
+	// FeedID is the catalogue feed this track arrived on (WF2-20). Omitted in the
+	// single-tenant fallback (FeedID 0); set once feeds are catalogued (WF2-20.2).
+	FeedID    int64   `json:"feed_id,omitempty"`
 	TrackNum  uint16  `json:"track_num"`
 	SAC       uint8   `json:"sac"`
 	SIC       uint8   `json:"sic"`
@@ -68,7 +80,7 @@ type Sender interface {
 
 // Broadcaster listens for CAT062 tracks and broadcasts them to all connected clients.
 type Broadcaster struct {
-	trackChan chan []cat062.DecodedTrack
+	trackChan chan TrackBatch
 	clients   sync.Map // map[*Client]bool
 	logger    *slog.Logger
 
@@ -87,7 +99,7 @@ type Client struct {
 // New creates a new Broadcaster.
 func New(logger *slog.Logger) *Broadcaster {
 	return &Broadcaster{
-		trackChan:      make(chan []cat062.DecodedTrack, 10),
+		trackChan:      make(chan TrackBatch, 10),
 		logger:         logger,
 		registerChan:   make(chan *Client, 10),
 		unregisterChan: make(chan *Client, 10),
@@ -95,8 +107,9 @@ func New(logger *slog.Logger) *Broadcaster {
 	}
 }
 
-// TracksChan returns the channel for receiving CAT062 tracks.
-func (b *Broadcaster) TracksChan() chan<- []cat062.DecodedTrack {
+// TracksChan returns the channel for receiving CAT062 track batches (each
+// attributed to its feed, WF2-20).
+func (b *Broadcaster) TracksChan() chan<- TrackBatch {
 	return b.trackChan
 }
 
@@ -129,8 +142,8 @@ func (b *Broadcaster) Run(ctx context.Context) error {
 			close(c.send)
 			b.logger.Debug("client unregistered", slog.Int("clients", b.clientCount()))
 
-		case tracks := <-b.trackChan:
-			msg := b.tracksToMessage(tracks)
+		case batch := <-b.trackChan:
+			msg := b.tracksToMessage(batch)
 			b.broadcast(msg)
 
 		case msg := <-b.messageChan:
@@ -160,15 +173,17 @@ func (b *Broadcaster) EvictedCount() int64 {
 	return b.evicted.Load()
 }
 
-// tracksToMessage converts CAT062 decoded tracks to a broadcast message.
-func (b *Broadcaster) tracksToMessage(tracks []cat062.DecodedTrack) Message {
+// tracksToMessage converts a feed's CAT062 decoded tracks to a broadcast
+// message, stamping the batch's FeedID onto every track (WF2-20).
+func (b *Broadcaster) tracksToMessage(batch TrackBatch) Message {
 	msg := Message{
-		Tracks: make([]TrackMessage, len(tracks)),
+		Tracks: make([]TrackMessage, len(batch.Tracks)),
 		TimeMs: timeNowMs(),
 	}
 
-	for i, track := range tracks {
+	for i, track := range batch.Tracks {
 		msg.Tracks[i] = TrackMessage{
+			FeedID:        batch.FeedID,
 			TrackNum:      track.TrackNum,
 			SAC:           track.Source.SAC,
 			SIC:           track.Source.SIC,
