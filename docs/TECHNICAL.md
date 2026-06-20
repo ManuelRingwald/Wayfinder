@@ -332,6 +332,23 @@ Wird einmal beim Frontend-Load abgerufen. Leere Collection wenn kein Sensor konf
 | `WAYFINDER_TLS_CERT` | *(leer)* | Pfad | TLS-Zertifikat (PEM). Nur aktiv wenn beide TLS-Variablen gesetzt. |
 | `WAYFINDER_TLS_KEY` | *(leer)* | Pfad | TLS-Schlüssel (PEM). |
 
+### 6.6 Multi-Mandanten (Wayfinder 2.0)
+
+Aktiv nur bei gesetztem `WAYFINDER_DB_URL` (sonst Single-Tenant, keine DB/
+Middleware). Mit DB: Schema-Migrationen beim Start, `/ws` durch die
+Tenant-Middleware geschützt (fail-closed → `401` ohne gültigen Mandanten-Nutzer).
+Identitäts-Modell siehe ADR 0006 §5.
+
+| Variable | Default | Typ | Beschreibung |
+|----------|---------|-----|--------------|
+| `WAYFINDER_DB_URL` | *(leer)* | DSN | PostgreSQL-Verbindung. Leer = Single-Tenant (keine DB). |
+| `WAYFINDER_AUTH_MODE` | `none` | enum | `proxy` / `builtin` / `none`. Ungültig → `none`. |
+| `WAYFINDER_OIDC_ISSUER` | *(leer)* | URL | proxy: OIDC-Issuer (Discovery/JWKS), Pflicht. |
+| `WAYFINDER_OIDC_AUDIENCE` | *(leer)* | string | proxy: erwartete Audience, Pflicht. |
+| `WAYFINDER_SESSION_KEY` | *(leer)* | string | builtin: HMAC-Schlüssel für Session-Cookies, Pflicht. |
+| `WAYFINDER_SESSION_COOKIE` | `wf_session` | string | builtin: Cookie-Name. |
+| `WAYFINDER_NONE_SUBJECT` | `default` | string | none: festes Subject je Anfrage. |
+
 ### 6.5 Betrieb
 
 | Variable | Default | Typ | Beschreibung |
