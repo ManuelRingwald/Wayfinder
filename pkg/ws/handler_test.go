@@ -15,7 +15,7 @@ func testLogger() *slog.Logger {
 }
 
 func TestCheckOriginAllowsRequestsWithoutOriginHeader(t *testing.T) {
-	h := New(broadcast.New(testLogger()), testLogger(), nil)
+	h := New(broadcast.New(testLogger()), testLogger(), nil, nil)
 
 	r := httptest.NewRequest(http.MethodGet, "/ws", nil)
 	r.Host = "wayfinder.example:8081"
@@ -26,7 +26,7 @@ func TestCheckOriginAllowsRequestsWithoutOriginHeader(t *testing.T) {
 }
 
 func TestCheckOriginAllowsSameOrigin(t *testing.T) {
-	h := New(broadcast.New(testLogger()), testLogger(), nil)
+	h := New(broadcast.New(testLogger()), testLogger(), nil, nil)
 
 	r := httptest.NewRequest(http.MethodGet, "/ws", nil)
 	r.Host = "wayfinder.example:8081"
@@ -38,7 +38,7 @@ func TestCheckOriginAllowsSameOrigin(t *testing.T) {
 }
 
 func TestCheckOriginRejectsCrossOriginByDefault(t *testing.T) {
-	h := New(broadcast.New(testLogger()), testLogger(), nil)
+	h := New(broadcast.New(testLogger()), testLogger(), nil, nil)
 
 	r := httptest.NewRequest(http.MethodGet, "/ws", nil)
 	r.Host = "wayfinder.example:8081"
@@ -50,7 +50,7 @@ func TestCheckOriginRejectsCrossOriginByDefault(t *testing.T) {
 }
 
 func TestCheckOriginAllowsAllowlistedOrigin(t *testing.T) {
-	h := New(broadcast.New(testLogger()), testLogger(), []string{"https://allowed.example"})
+	h := New(broadcast.New(testLogger()), testLogger(), []string{"https://allowed.example"}, nil)
 
 	r := httptest.NewRequest(http.MethodGet, "/ws", nil)
 	r.Host = "wayfinder.example:8081"
@@ -62,7 +62,7 @@ func TestCheckOriginAllowsAllowlistedOrigin(t *testing.T) {
 }
 
 func TestCheckOriginRejectsOriginNotInAllowlist(t *testing.T) {
-	h := New(broadcast.New(testLogger()), testLogger(), []string{"https://allowed.example"})
+	h := New(broadcast.New(testLogger()), testLogger(), []string{"https://allowed.example"}, nil)
 
 	r := httptest.NewRequest(http.MethodGet, "/ws", nil)
 	r.Host = "wayfinder.example:8081"
@@ -74,7 +74,7 @@ func TestCheckOriginRejectsOriginNotInAllowlist(t *testing.T) {
 }
 
 func TestCheckOriginRejectsInvalidOriginHeader(t *testing.T) {
-	h := New(broadcast.New(testLogger()), testLogger(), nil)
+	h := New(broadcast.New(testLogger()), testLogger(), nil, nil)
 
 	r := httptest.NewRequest(http.MethodGet, "/ws", nil)
 	r.Host = "wayfinder.example:8081"

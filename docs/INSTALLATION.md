@@ -521,6 +521,12 @@ WAYFINDER_DB_URL=postgres://… wayfinder feed list
 > der nicht beitreten kann, wird übersprungen; kann **kein** Feed beitreten,
 > beendet sich der Dienst. Der NATS-/Cloud-Bus-Pfad folgt später (WF2-53).
 
+> 🔒 **Mandanten-Sicht (WF2-21):** Im Multi-Mandanten-Betrieb sieht ein `/ws`-Client
+> **nur** Tracks aus den Feeds, die sein Mandant **abonniert** hat (`subscriptions`).
+> Ein Mandant ohne Abo bekommt **keine** Tracks (fail-closed). Abos werden bis zur
+> Admin-API (WF2-31) direkt in der DB gesetzt (`subscriptions`-Tabelle: `tenant_id`,
+> `feed_id`). Single-Tenant (ohne `WAYFINDER_DB_URL`) sieht unverändert alles.
+
 ### 7.5 Betrieb
 
 | Variable | Default | Beschreibung |

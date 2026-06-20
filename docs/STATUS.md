@@ -7,7 +7,35 @@
 > 🗺️ **Roadmap:** Arbeitspakete, Findings und empfohlene Reihenfolge stehen in
 > `docs/ROADMAP.md` (Stichwort „Roadmap" im Chat zeigt diese Liste).
 
-- **Zuletzt aktualisiert:** 2026-06-20 — **WF2-20.2 „Multi-Feed-Receiver"
+- **Zuletzt aktualisiert:** 2026-06-20 — **WF2-21.1 „Scoped Fan-out: Feed-Level-
+  Isolation" abgeschlossen (🔒 S4–S5 · Opus 4.8) — DER ISOLATIONS-KERN.** Bisher
+  schickte der Broadcaster jedem Client alles (all-to-all); jetzt erhält ein Client
+  einen Track **nur**, wenn sein Mandant den Feed **abonniert** hat — server-seitig,
+  fail-closed, kein Browser-Filtern (NFR-SEC-003). **`pkg/broadcast`:** neuer
+  `Scope` (Menge erlaubter `feed_id`; **nil = unscoped/Single-Tenant**, **leer =
+  nichts/fail-closed**) + `NewScope`/`AllowsFeed`; `Client` trägt `*Scope`;
+  `RegisterClient(sendChan, scope)`. Track-Pfad läuft jetzt über **`broadcastTracks`**
+  (sendet eine Batch-Message nur an Clients mit `scope.AllowsFeed(batch.FeedID)`);
+  der `messageChan`-Pfad (`broadcast`) bleibt **global** für die CAT065-Feed-Health
+  (keine Track-Daten). **`pkg/ws`:** `ScopeResolver func(*http.Request)
+  (*broadcast.Scope, error)` läuft im `ServeHTTP` **vor** dem Upgrade — Fehler →
+  **`403`, kein Stream**; nil-Resolver = Scoping aus. **`cmd/wayfinder`:**
+  `newScopeResolver(subs)` liest die Tenant-Identity (Middleware, WF2-12) +
+  `subscriptions.ListFeedIDsByTenant` → `NewScope`; ohne Identity → Fehler;
+  nur bei `dbPool != nil` gesetzt (Single-Tenant bleibt all-to-all). **Kein
+  Schema-Change.** **Tests:** **Pflicht-Negativtest** `TestBroadcastFeedIsolation`
+  (zwei disjunkte Scopes {1}/{2}: A bekommt nie B's Feed-Track und umgekehrt) +
+  `TestScopeAllowsFeed` (nil=alles, Menge=eigene, leer=nichts) +
+  `cmd/wayfinder/scope_test.go` `TestNewScopeResolver`/`…FailsClosed` (DB-frei:
+  Identity→Feeds, keine Identity→Fehler, Lookup-Fehler→kein Scope). Bestehende
+  Broadcast-/WS-Tests auf neue Signaturen angepasst. Gates grün (`go build/vet/test`,
+  `gofmt`, `pg-test.sh`); `go 1.25` unverändert. TECHNICAL §6 (scoped Fan-out) +
+  INSTALLATION §7 (Abo gated Sicht) + Register NFR-SEC-003 (Feed-Enforcement +
+  Negativtest); Milestone `docs/milestones/WF2-21.1_Feed_Level_Isolation.md`.
+  **Abgrenzung:** Feed-Ebene; Sicht-Filter AOI/FL/Kategorie (`view_configs.
+  GetEffective`) = **WF2-21.2**; Scope ist Connect-Snapshot (Live-Apply = WF2-33).
+  **Nächster Schritt:** WF2-21.2 (Sicht-Filter) nach Ankündigung & „Go".
+- **Vorherige Aktualisierung:** 2026-06-20 — **WF2-20.2 „Multi-Feed-Receiver"
   abgeschlossen — WF2-20 KOMPLETT (🔒 S4 · Opus 4.8).** Wayfinder ist jetzt
   **mehr-feed-fähig**: der `feeds`-Katalog (DB) treibt **N Receiver** (je eine
   Multicast-Gruppe), jeder stempelt seine Katalog-`feed_id` (aus 20.1) — die
@@ -709,12 +737,12 @@
 **✅ Stufe 1 komplett:** WF2-10 (Persistenz) · WF2-11 (AuthN, 3 Modi) · WF2-12
 (Tenant-Context + builtin-Login) · WF2-13 (Admin-Bootstrap + `/admin`-Gate).
 
-**🔵 Stufe 2 — in Arbeit (sicherheitskritischer Kern):** **WF2-20 ✅** (20.1
-`feed_id`-Naht + 20.2 Multi-Feed-Receiver aus DB-Katalog, N Receiver je `feed_id`,
-Feed-CLI `wayfinder feed add/list`, ENV-Fallback; real-PG + E2E getestet).
-**➡️ Nächster: WF2-21** (Subscription-Modell & scoped Fan-out: `broadcast()` →
-Prädikat `feed ∈ subs ∧ AOI ∧ FL ∧ Kategorie` je WS-Client) 🔒 S4–S5 · Opus 4.8 /
-Fable 5. Danach WF2-22 (Isolations-Negativtests „A sieht nie B").
+**🔵 Stufe 2 — in Arbeit (sicherheitskritischer Kern):** **WF2-20 ✅** (Multi-Feed
++ `feed_id` pro Track) · **WF2-21.1 ✅** (scoped Fan-out **Feed-Ebene**:
+`broadcast.Scope`, Track nur an abonnierte Feeds, fail-closed; Pflicht-Negativtest
+„A bekommt nie B's Feed"). **➡️ Nächster: WF2-21.2** (Sicht-Filter AOI/FL-Band/
+Kategorie aus `view_configs.GetEffective`) 🔒 S4 · Opus 4.8. Danach WF2-22
+(Isolations-Testsuite Property-/Fuzz, breite „A sieht nie B").
 
 Offen, **ASD-Kern (mandanten-unabhängig, parallel möglich** — nicht im kritischen
 Pfad, Details/Abgleich in ROADMAP §2):
@@ -743,18 +771,17 @@ Pfad, Details/Abgleich in ROADMAP §2):
 
 ## 3. Nächster Schritt
 
-➡️ **WF2-21 — Subscription-Modell & scoped Fan-out** 🔒 S4–S5 · Opus 4.8 / Fable 5,
-nach Ankündigung & „Go".
+➡️ **WF2-21.2 — Sicht-Filter (AOI/FL-Band/Kategorie)** 🔒 S4 · Opus 4.8, nach
+Ankündigung & „Go".
 
-Der **eigentliche Isolations-Schritt**: `broadcast()` von all-to-all auf
-**prädikat-gefilterte Zustellung** umstellen. Je WS-Client trägt die
-Tenant-Identity (aus der Middleware) die erlaubten Feeds (`subscriptions`) + den
-Sicht-Filter (AOI/FL-Band/Kategorie aus `view_configs`); der Broadcaster stellt
-einem Client einen Track nur zu, wenn `track.feed_id ∈ subs ∧ in AOI ∧ im FL-Band
-∧ Kategorie erlaubt`. Server-seitig, fail-closed, **kein** Browser-Filtern. Baut
-direkt auf WF2-20 (`feed_id` pro Track) + WF2-12 (Identity am `/ws`-Rand) +
-`subscriptions.ListFeedsByTenant`/`view_configs.GetEffective` (WF2-10.3). Danach
-**WF2-22** (Pflicht-Negativtests „A sieht nie B", Property-/Fuzz).
+Zweiter Halbschritt von WF2-21: über die in 21.1 erlaubten Feeds den **Sicht-Filter
+des Mandanten** legen. `view_configs.GetEffective(tenantID, userID)` liefert
+AOI (BBox) + FL-Band (`fl_min`/`fl_max`) + Layer/Kategorie; der `Scope` wird um
+diese Felder erweitert und `broadcastTracks` filtert **einzelne Tracks** innerhalb
+eines erlaubten Feeds (Position in AOI, Flugfläche im Band, Kategorie erlaubt). Die
+Feed-Isolation aus 21.1 bleibt die harte Grenze; der Sicht-Filter ist die
+Komfort-/Skopierungsebene darüber. Danach **WF2-22** (Isolations-Testsuite:
+Property-/Fuzz, breite „A sieht nie B"-Abdeckung).
 
 **Erledigt in dieser Sitzung:** **Stufe 0 komplett** (WF2-00/01/02, ADR
 0005/0006/0007) **+ STUFE 1 KOMPLETT** — **WF2-10** (alle 6 Tabellen-Repos, real
@@ -765,8 +792,10 @@ Session/Mode/None+Builtin · 11.2 proxy-Modus `ProxyAuthenticator` go-oidc)
 gehärtet) **+ WF2-13** (Admin-Bootstrap-Subcommand idempotent + `/admin`-Rollen-
 Gate `RequireRole`) **+ Stufe 2: WF2-20 komplett** (20.1 `feed_id`-Durchstich
 Receiver→Broadcaster→Wire `WAYFINDER_FEED_ID`; 20.2 Multi-Feed-Receiver aus
-DB-Katalog + Feed-CLI `wayfinder feed add/list` + ENV-Fallback + `main()`-Reorder).
-ADR-0006-Nachtrag: goose verworfen, Go-Baseline 1.25. Register FR-CFG-001,
+DB-Katalog + Feed-CLI `wayfinder feed add/list` + ENV-Fallback + `main()`-Reorder)
+**+ WF2-21.1** (scoped Fan-out Feed-Isolation: `broadcast.Scope`/`ws.ScopeResolver`,
+fail-closed, Pflicht-Negativtest „A bekommt nie B's Feed"). ADR-0006-Nachtrag:
+goose verworfen, Go-Baseline 1.25. Register FR-CFG-001,
 FR-TEN-001/002, FR-FEED-001, NFR-SEC-003/004, NFR-SCALE-001; Test-Runner
 `scripts/pg-test.sh` (jetzt `./...`, `-p 1`); neue Deps `golang.org/x/crypto`,
 `github.com/coreos/go-oidc/v3`. Subcommands: `bootstrap`, `feed`.

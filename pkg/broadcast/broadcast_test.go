@@ -17,7 +17,7 @@ func TestBroadcasterBasic(t *testing.T) {
 
 	// Register a client.
 	sendChan := make(chan Message, 10)
-	client := b.RegisterClient(sendChan)
+	client := b.RegisterClient(sendChan, nil)
 
 	// Run broadcaster in background.
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
@@ -72,7 +72,7 @@ func TestBroadcasterMultipleClients(t *testing.T) {
 	sendChans := make([]chan Message, 3)
 	for i := 0; i < 3; i++ {
 		sendChans[i] = make(chan Message, 10)
-		clients[i] = b.RegisterClient(sendChans[i])
+		clients[i] = b.RegisterClient(sendChans[i], nil)
 	}
 
 	// Run broadcaster.
@@ -108,7 +108,7 @@ func TestBroadcasterSend(t *testing.T) {
 	b := New(logger)
 
 	sendChan := make(chan Message, 10)
-	b.RegisterClient(sendChan)
+	b.RegisterClient(sendChan, nil)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
@@ -200,6 +200,80 @@ func TestTracksToMessageMapsAdsbAge(t *testing.T) {
 	}
 }
 
+// TestScopeAllowsFeed covers the feed-level scope predicate: a nil scope sees
+// everything (single-tenant), a built scope sees only its feeds, and an empty
+// scope sees nothing (fail-closed).
+func TestScopeAllowsFeed(t *testing.T) {
+	var unscoped *Scope // nil
+	if !unscoped.AllowsFeed(1) || !unscoped.AllowsFeed(999) {
+		t.Error("nil scope must allow every feed (single-tenant passthrough)")
+	}
+
+	s := NewScope([]int64{1, 3})
+	if !s.AllowsFeed(1) || !s.AllowsFeed(3) {
+		t.Error("scope must allow its own feeds")
+	}
+	if s.AllowsFeed(2) {
+		t.Error("scope must reject a feed it was not granted")
+	}
+
+	if NewScope(nil).AllowsFeed(1) {
+		t.Error("empty scope must allow nothing (fail-closed)")
+	}
+}
+
+// TestBroadcastFeedIsolation is the mandatory cross-tenant negative test (WF2-21,
+// NFR-SEC-003): a client scoped to feed 1 must NEVER receive a track from feed 2,
+// and vice versa. Two clients with disjoint scopes prove the boundary.
+func TestBroadcastFeedIsolation(t *testing.T) {
+	b := New(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	go b.Run(ctx)
+
+	chanA := make(chan Message, 10)
+	chanB := make(chan Message, 10)
+	b.RegisterClient(chanA, NewScope([]int64{1})) // tenant A: only feed 1
+	b.RegisterClient(chanB, NewScope([]int64{2})) // tenant B: only feed 2
+	for i := 0; i < 100 && b.ClientCount() != 2; i++ {
+		time.Sleep(time.Millisecond)
+	}
+
+	// A track on feed 1 → only A.
+	b.trackChan <- TrackBatch{FeedID: 1, Tracks: []cat062.DecodedTrack{{TrackNum: 11}}}
+	select {
+	case msg := <-chanA:
+		if len(msg.Tracks) != 1 || msg.Tracks[0].FeedID != 1 {
+			t.Fatalf("A: got %+v, want one feed-1 track", msg.Tracks)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("A: timeout — should have received its own feed's track")
+	}
+	select {
+	case msg := <-chanB:
+		t.Fatalf("ISOLATION BREACH: B received a feed-1 track: %+v", msg.Tracks)
+	case <-time.After(100 * time.Millisecond):
+		// expected: B sees nothing from feed 1
+	}
+
+	// A track on feed 2 → only B.
+	b.trackChan <- TrackBatch{FeedID: 2, Tracks: []cat062.DecodedTrack{{TrackNum: 22}}}
+	select {
+	case msg := <-chanB:
+		if len(msg.Tracks) != 1 || msg.Tracks[0].FeedID != 2 {
+			t.Fatalf("B: got %+v, want one feed-2 track", msg.Tracks)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("B: timeout — should have received its own feed's track")
+	}
+	select {
+	case msg := <-chanA:
+		t.Fatalf("ISOLATION BREACH: A received a feed-2 track: %+v", msg.Tracks)
+	case <-time.After(100 * time.Millisecond):
+		// expected: A sees nothing from feed 2
+	}
+}
+
 // TestBroadcastEvictsClientWithFullSendChannel verifies that a client whose
 // send channel is full (i.e., not being drained) is evicted instead of
 // blocking the broadcaster.
@@ -213,7 +287,7 @@ func TestBroadcastEvictsClientWithFullSendChannel(t *testing.T) {
 
 	// Unbuffered channel that nobody reads from, so the first broadcast fills it.
 	sendChan := make(chan Message)
-	b.RegisterClient(sendChan)
+	b.RegisterClient(sendChan, nil)
 
 	// Wait for registration to be processed.
 	for i := 0; i < 100 && b.ClientCount() != 1; i++ {

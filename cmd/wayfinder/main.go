@@ -273,9 +273,15 @@ func main() {
 
 	mux := http.NewServeMux()
 
-	wsHandler := ws.New(broadcaster, logger, cfg.AllowedOrigins)
+	// Scoped fan-out (WF2-21): with multi-tenancy on, each /ws client is filtered
+	// to the feeds its tenant subscribes to; single-tenant → nil resolver (unscoped).
+	var scopeResolver ws.ScopeResolver
+	if dbPool != nil {
+		scopeResolver = newScopeResolver(store.NewSubscriptionRepo(dbPool))
+	}
+	wsHandler := ws.New(broadcaster, logger, cfg.AllowedOrigins, scopeResolver)
 	// The live picture is tenant-scoped: gate /ws with the tenant middleware when
-	// multi-tenancy is enabled (the scoped fan-out itself follows in WF2-21).
+	// multi-tenancy is enabled; the middleware sets the Identity the resolver reads.
 	if tenantMW != nil {
 		mux.Handle("/ws", tenantMW(wsHandler))
 	} else {
@@ -702,6 +708,30 @@ func setupTenancy(ctx context.Context, cfg Config, logger *slog.Logger) (func(ht
 	}
 	logger.Info("multi-tenancy enabled", slog.String("auth_mode", string(cfg.AuthMode)))
 	return tenant.Middleware(authenticator, store.NewUserRepo(pool), logger), pool, nil
+}
+
+// feedLister is the subset of *store.SubscriptionRepo the scope resolver needs
+// (kept small so the resolver is unit-testable with a fake).
+type feedLister interface {
+	ListFeedIDsByTenant(ctx context.Context, tenantID int64) ([]int64, error)
+}
+
+// newScopeResolver builds the /ws scope resolver (WF2-21): it reads the tenant
+// Identity placed in the request context by the middleware and resolves the feeds
+// that tenant subscribes to. Fail-closed: a request without an identity is
+// rejected (the middleware should already have guaranteed one).
+func newScopeResolver(subs feedLister) ws.ScopeResolver {
+	return func(r *http.Request) (*broadcast.Scope, error) {
+		id, ok := tenant.FromContext(r.Context())
+		if !ok {
+			return nil, fmt.Errorf("scoped /ws requires a tenant identity")
+		}
+		feedIDs, err := subs.ListFeedIDsByTenant(r.Context(), id.TenantID)
+		if err != nil {
+			return nil, fmt.Errorf("resolve subscriptions: %w", err)
+		}
+		return broadcast.NewScope(feedIDs), nil
+	}
 }
 
 // adminWhoamiHandler reports the caller's resolved tenant Identity as JSON. It

@@ -25,23 +25,34 @@ const (
 	messageBufferSize = 256
 )
 
+// ScopeResolver resolves a connecting request to the tenant scope that filters
+// its track stream (WF2-21). It runs at the handshake, with the tenant Identity
+// already in the request context (the tenant middleware gates /ws). Returning an
+// error rejects the connection fail-closed; returning a nil *broadcast.Scope
+// means unscoped (single-tenant: receives every feed). A nil resolver disables
+// scoping entirely (single-tenant deployments).
+type ScopeResolver func(r *http.Request) (*broadcast.Scope, error)
+
 // Handler is an HTTP handler for WebSocket connections.
 type Handler struct {
 	broadcaster    *broadcast.Broadcaster
 	logger         *slog.Logger
 	allowedOrigins []string
+	scopeResolver  ScopeResolver
 	upgrader       websocket.Upgrader
 }
 
 // New creates a new WebSocket handler. allowedOrigins is an additional
 // allowlist of origins (scheme://host[:port]) permitted to open a WebSocket
 // connection, beyond same-origin requests, which are always allowed (ADR
-// 0003: fail-closed origin check on /ws).
-func New(broadcaster *broadcast.Broadcaster, logger *slog.Logger, allowedOrigins []string) *Handler {
+// 0003: fail-closed origin check on /ws). scopeResolver (may be nil) resolves the
+// per-tenant track scope at connect (WF2-21); nil means unscoped.
+func New(broadcaster *broadcast.Broadcaster, logger *slog.Logger, allowedOrigins []string, scopeResolver ScopeResolver) *Handler {
 	h := &Handler{
 		broadcaster:    broadcaster,
 		logger:         logger,
 		allowedOrigins: allowedOrigins,
+		scopeResolver:  scopeResolver,
 	}
 	h.upgrader = websocket.Upgrader{
 		ReadBufferSize:  1024,
@@ -84,6 +95,19 @@ func (h *Handler) checkOrigin(r *http.Request) bool {
 
 // ServeHTTP upgrades HTTP connections to WebSocket and manages the client.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Resolve the tenant scope before upgrading, so a failure can still return an
+	// HTTP status. Fail-closed: no resolved scope ⇒ no stream (WF2-21).
+	var scope *broadcast.Scope
+	if h.scopeResolver != nil {
+		s, err := h.scopeResolver(r)
+		if err != nil {
+			h.logger.Warn("websocket scope resolution failed", slog.String("error", err.Error()))
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		scope = s
+	}
+
 	conn, err := h.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		h.logger.Error("upgrade websocket", slog.String("error", err.Error()))
@@ -93,8 +117,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Create a send channel for this client.
 	sendChan := make(chan broadcast.Message, messageBufferSize)
 
-	// Register the client with the broadcaster.
-	client := h.broadcaster.RegisterClient(sendChan)
+	// Register the client with the broadcaster, scoped to its tenant's feeds.
+	client := h.broadcaster.RegisterClient(sendChan, scope)
 
 	h.logger.Debug("websocket client connected", slog.String("remote", r.RemoteAddr))
 
