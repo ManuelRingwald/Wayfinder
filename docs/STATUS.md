@@ -7,7 +7,24 @@
 > 🗺️ **Roadmap:** Arbeitspakete, Findings und empfohlene Reihenfolge stehen in
 > `docs/ROADMAP.md` (Stichwort „Roadmap" im Chat zeigt diese Liste).
 
-- **Zuletzt aktualisiert:** 2026-06-19 — **WF2-10.3b „View-Config-Repository"
+- **Zuletzt aktualisiert:** 2026-06-19 — **WF2-11.1 „AuthN: Mode + builtin-
+  Primitive" abgeschlossen (🔒 S4 · Opus 4.8).** Neues Paket `pkg/auth` (ersetzt
+  perspektivisch den einzelnen geteilten Token aus ADR 0003). `auth.go`: `Mode`
+  (proxy/builtin/none) + `ParseMode` (Fallback none mit `ok=false`),
+  `Authenticator`-Interface, `ErrUnauthenticated` (fail-closed). `password.go`:
+  **argon2id** (PHC-Format, Zufalls-Salt, konstante-Zeit-Vergleich via
+  `crypto/subtle`). `session.go`: **HMAC-SHA256-signiertes** Session-Token (Mint/
+  Parse; Signatur in konstanter Zeit vor Feld-Vertrauen geprüft; `ErrSessionInvalid`/
+  `ErrSessionExpired`). `authenticator.go`: `NoneAuthenticator` (fixes Subject),
+  `BuiltinAuthenticator` (Session-Cookie → Subject, fail-closed). **Dep-Linie
+  lean:** einzige neue Abhängigkeit `golang.org/x/crypto` (argon2); Rest aus der
+  Standardbibliothek (`crypto/hmac`, `crypto/subtle`) — kein selbstgebautes
+  Primitiv. **10 DB-freie Tests** (Hash/Verify+Salting, Session Tampering/Expiry/
+  Wrong-Key, ParseMode, Builtin fail-closed) grün. Register NFR-SEC-004 (Impl/
+  Tests), Milestone `docs/milestones/WF2-11.1_Auth_Builtin_Primitives.md`. Gates
+  grün (`go build/vet/test`, `gofmt`); `go 1.25` unverändert. **Nächster Schritt:**
+  WF2-11.2 (proxy-Modus OIDC-Validierung; neue Dep `go-oidc` vorab abstimmen).
+- **Vorherige Aktualisierung:** 2026-06-19 — **WF2-10.3b „View-Config-Repository"
   abgeschlossen — WF2-10 (PERSISTENZ-SCHICHT) KOMPLETT (S3 · Sonnet 4.6 /
   Opus-Review).** Neu: `view_configs.go` (`BBox`, `ViewConfig` mit `UserID *int64`
   = nil/Tenant-Default; JSONB `aoi *BBox` nullable + `layers map[string]bool`),
@@ -517,11 +534,11 @@
 | **WF2-01** | ADR 0006 „Konfig-/Identitäts-Persistenz" | S4 · Opus 4.8 | ✅ erledigt |
 | **WF2-02** | ADR 0007 „Cloud-Ingest & Feed-Fan-out" (NATS JetStream) | S4 · Opus 4.8 | ✅ erledigt |
 
-**Stufe 1 — in Arbeit:** **WF2-10 ✅ komplett** (10.1 Migrationsrunner · 10.2
-Tenant/User · 10.3a Feed/Subscription/Entitlement · 10.3b ViewConfig) — alle 6
-Tabellen-Repos, **real gegen PostgreSQL 16** via `scripts/pg-test.sh`. **➡️
-Nächster: WF2-11 (AuthN)** 🔒 S4 · Opus 4.8 — `WAYFINDER_AUTH_MODE`, OIDC-Token-
-Validierung, subject→user→tenant.
+**Stufe 1 — in Arbeit:** **WF2-10 ✅ komplett** (alle 6 Tabellen-Repos, real gegen
+PostgreSQL 16) · **WF2-11.1 ✅** (`pkg/auth`: Mode, argon2id, HMAC-Session,
+None-/Builtin-Authenticator; 10 DB-freie Tests). **➡️ Nächster: WF2-11.2**
+(proxy-Modus OIDC-Token-Validierung, 🔒 S4 · Opus 4.8; neue Dep `go-oidc` vorab
+abstimmen).
 
 Offen, **ASD-Kern (mandanten-unabhängig, parallel möglich** — nicht im kritischen
 Pfad, Details/Abgleich in ROADMAP §2):
@@ -550,23 +567,24 @@ Pfad, Details/Abgleich in ROADMAP §2):
 
 ## 3. Nächster Schritt
 
-➡️ **WF2-11: AuthN — echtes Nutzer-/Session-Modell** 🔒 S4 · Opus 4.8, nach
+➡️ **WF2-11.2: proxy-Modus — OIDC-Token-Validierung** 🔒 S4 · Opus 4.8, nach
 Ankündigung & „Go".
 
-Setzt ADR 0006 §5 um: `WAYFINDER_AUTH_MODE` ∈ {proxy, builtin, none}; im
-proxy-Modus Validierung des weitergereichten OIDC-Tokens (Issuer/Audience/
-Signatur), im builtin-Modus argon2id; Auflösung **subject→user→tenant** über
-`UserRepo.GetBySubject` (10.2). Löst den heutigen einzelnen geteilten Token
-(ADR 0003) ab. Sicherheitskritisch (🔒) → Opus 4.8, mit Negativtests.
+Validiert das vom Reverse-Proxy weitergereichte OIDC-Token (Issuer/Audience/
+Signatur gegen JWKS) und extrahiert das Subject — `ProxyAuthenticator` in
+`pkg/auth`. **Bringt eine neue Abhängigkeit (`go-oidc`)** — wird **vor** dem Ziehen
+mit dem Projektverantwortlichen abgestimmt (lean-Linie). Tests gegen einen
+Test-Issuer/JWKS.
 
-Danach WF2-12 (Tenant-Context-Middleware, fail-closed), WF2-13 (Admin-Bootstrap).
+Danach WF2-12 (HTTP-Middleware: subject→user→tenant via `UserRepo.GetBySubject`,
+fail-closed; Login-Handler builtin), WF2-13 (Admin-Bootstrap).
 
 **Erledigt in dieser Sitzung:** **Stufe 0 komplett** (WF2-00/01/02, ADR
-0005/0006/0007) **+ WF2-10 komplett** (10.1 Migrationsrunner · 10.2 Tenant/User ·
-10.3a Feed/Subscription/Entitlement · 10.3b ViewConfig) — alle 6 Tabellen-Repos,
-real gegen PostgreSQL 16 getestet. ADR-0006-Nachtrag: goose verworfen, Go-Baseline
+0005/0006/0007) **+ WF2-10 komplett** (alle 6 Tabellen-Repos, real gegen
+PostgreSQL 16) **+ WF2-11.1** (`pkg/auth` builtin-Primitive: argon2id, HMAC-Session,
+Mode, None-/Builtin-Authenticator). ADR-0006-Nachtrag: goose verworfen, Go-Baseline
 1.25. Register FR-TEN-001/002, FR-FEED-001, NFR-SEC-003/004, NFR-SCALE-001;
-Test-Runner `scripts/pg-test.sh`.
+Test-Runner `scripts/pg-test.sh`; neue Dep `golang.org/x/crypto`.
 
 **Parallel möglich (nicht kritischer Pfad):** ASD-011/012/013 (ASD-Kern,
 ROADMAP §2) — widerspruchsfrei zu 2.0, von einem leichteren Modell ziehbar.
