@@ -7,7 +7,26 @@
 > 🗺️ **Roadmap:** Arbeitspakete, Findings und empfohlene Reihenfolge stehen in
 > `docs/ROADMAP.md` (Stichwort „Roadmap" im Chat zeigt diese Liste).
 
-- **Zuletzt aktualisiert:** 2026-06-19 — **WF2-11.2 „AuthN: proxy-Modus OIDC" —
+- **Zuletzt aktualisiert:** 2026-06-19 — **WF2-12.1 „Tenant-Context-Middleware +
+  Authenticator-Factory" abgeschlossen (🔒 S4 · Opus 4.8).** Hier kommen Identität
+  (`pkg/auth`) und Persistenz (`pkg/store`) zusammen. `pkg/auth/factory.go`:
+  `Config` + `NewAuthenticator(ctx, cfg)` baut den Authenticator je Modus,
+  **fail-closed-Konfiguration** (builtin ohne Session-Key / proxy ohne Issuer+
+  Audience → Fehler). Neues Paket **`pkg/tenant`**: `Identity` (TenantID/UserID/
+  Subject/Role — Isolations-Anker), Context-Helfer `WithIdentity`/`FromContext`,
+  `UserLookup`-Interface (`*store.UserRepo` erfüllt es), **`Middleware`**:
+  authentifiziert → löst **subject→user→tenant** via `GetBySubject` auf → legt
+  Identity in den Request-Kontext; **fail-closed** (ungültige Identität *oder*
+  unbekanntes Subject *oder* DB-Fehler → **401**, `next` nie erreicht, keine
+  Ursachen-Leakage). **DB-freie Tests** (`factory_test.go`, `tenant_test.go`):
+  Authenticator je Modus + Validierung; Middleware-Erfolgspfad + 3× fail-closed
+  (Auth-Fehler/unbekanntes Subject/DB-Fehler → 401). `GetBySubject` ist bereits
+  in WF2-10.2 real gegen PG verifiziert. Register NFR-SEC-003 (HTTP-Rand-
+  Enforcement) + NFR-SEC-004, Milestone
+  `docs/milestones/WF2-12.1_Tenant_Context_Middleware.md`. Gates grün; `go 1.25`
+  unverändert. **Nächster Schritt:** WF2-12.2 (HTTP-Verdrahtung in `main.go` +
+  builtin-Login) nach Ankündigung & „Go".
+- **Vorherige Aktualisierung:** 2026-06-19 — **WF2-11.2 „AuthN: proxy-Modus OIDC" —
   WF2-11 (AUTHN) KOMPLETT (🔒 S4 · Opus 4.8).** `pkg/auth/proxy.go`:
   `ProxyAuthenticator` validiert das vom Reverse-Proxy weitergereichte
   OIDC-Bearer-Token (**Issuer/Audience/Signatur gegen JWKS, Ablauf**) via
@@ -550,11 +569,11 @@
 | **WF2-01** | ADR 0006 „Konfig-/Identitäts-Persistenz" | S4 · Opus 4.8 | ✅ erledigt |
 | **WF2-02** | ADR 0007 „Cloud-Ingest & Feed-Fan-out" (NATS JetStream) | S4 · Opus 4.8 | ✅ erledigt |
 
-**Stufe 1 — in Arbeit:** **WF2-10 ✅** (alle 6 Tabellen-Repos, real gegen
-PostgreSQL 16) · **WF2-11 ✅ (AuthN komplett)** — `pkg/auth` liefert in allen 3
-Modi ein Subject: 11.1 (Mode/argon2id/HMAC-Session/None+Builtin) + 11.2
-(`ProxyAuthenticator`, go-oidc-Validierung). **➡️ Nächster: WF2-12** (Tenant-
-Context-Middleware, subject→user→tenant fail-closed) 🔒 S4 · Opus 4.8.
+**Stufe 1 — in Arbeit:** **WF2-10 ✅** (6 Tabellen-Repos, real gegen PG16) ·
+**WF2-11 ✅** (AuthN, alle 3 Modi) · **WF2-12.1 ✅** (`pkg/auth`-Factory + neues
+`pkg/tenant`: `Middleware` subject→user→tenant **fail-closed**, DB-frei getestet).
+**➡️ Nächster: WF2-12.2** (HTTP-Verdrahtung in `main.go`: DB-Pool/Migrationen beim
+Start, Middleware am Mux, builtin-Login) 🔒 S4 · Opus 4.8.
 
 Offen, **ASD-Kern (mandanten-unabhängig, parallel möglich** — nicht im kritischen
 Pfad, Details/Abgleich in ROADMAP §2):
@@ -583,15 +602,15 @@ Pfad, Details/Abgleich in ROADMAP §2):
 
 ## 3. Nächster Schritt
 
-➡️ **WF2-12: Tenant-Context-Middleware** 🔒 S4 · Opus 4.8, nach Ankündigung & „Go".
+➡️ **WF2-12.2: HTTP-Verdrahtung + builtin-Login** 🔒 S4 · Opus 4.8, nach
+Ankündigung & „Go".
 
-Verdrahtet `pkg/auth` in den HTTP-Pfad: Authenticator-**Factory** aus
-`WAYFINDER_AUTH_MODE` + Config; **Middleware** ruft `Authenticate`, löst
-**subject→user→tenant** über `store.UserRepo.GetBySubject` auf und legt den
-Mandanten **fail-closed** in den Request-Kontext (ohne gültigen Mandanten kein
-Zugriff, NFR-SEC-003/004); dazu der **builtin-Login-Handler** (Passwort prüfen →
-Session-Cookie setzen). Erstes Häppchen voraussichtlich Factory + Context +
-Middleware; Login-Handler separat.
+Bringt WF2-12 in den laufenden Server: in `main.go` DB-Pool öffnen + Migrationen
+beim Start (`store.Open`/`Migrate`), Auth-`Config` aus `WAYFINDER_AUTH_MODE`/
+`_DB_URL`/… laden, `tenant.Middleware` um die geschützten Routen legen; dazu der
+**builtin-Login-Handler** (`auth.VerifyPassword` → `auth.MintSession`-Cookie). Neue
+**aktive** ENV-Variablen (`WAYFINDER_DB_URL`, `WAYFINDER_AUTH_MODE`, …) →
+INSTALLATION/TECHNICAL nachziehen. Real gegen PG getestet (`scripts/pg-test.sh`).
 
 Danach WF2-13 (Admin-Bootstrap), dann **Stufe 2** (mandanten-isolierter Stream,
 WF2-20/21/22 — der sicherheitskritische Kern).
@@ -599,10 +618,11 @@ WF2-20/21/22 — der sicherheitskritische Kern).
 **Erledigt in dieser Sitzung:** **Stufe 0 komplett** (WF2-00/01/02, ADR
 0005/0006/0007) **+ WF2-10 komplett** (alle 6 Tabellen-Repos, real gegen
 PostgreSQL 16) **+ WF2-11 komplett** (AuthN: 11.1 builtin-Primitive argon2id/HMAC-
-Session/Mode/None+Builtin · 11.2 proxy-Modus `ProxyAuthenticator` go-oidc).
-ADR-0006-Nachtrag: goose verworfen, Go-Baseline 1.25. Register FR-TEN-001/002,
-FR-FEED-001, NFR-SEC-003/004, NFR-SCALE-001; Test-Runner `scripts/pg-test.sh`;
-neue Deps `golang.org/x/crypto`, `github.com/coreos/go-oidc/v3`.
+Session/Mode/None+Builtin · 11.2 proxy-Modus `ProxyAuthenticator` go-oidc)
+**+ WF2-12.1** (`pkg/auth`-Factory + `pkg/tenant` Middleware subject→user→tenant
+fail-closed). ADR-0006-Nachtrag: goose verworfen, Go-Baseline 1.25. Register
+FR-TEN-001/002, FR-FEED-001, NFR-SEC-003/004, NFR-SCALE-001; Test-Runner
+`scripts/pg-test.sh`; neue Deps `golang.org/x/crypto`, `github.com/coreos/go-oidc/v3`.
 
 **Parallel möglich (nicht kritischer Pfad):** ASD-011/012/013 (ASD-Kern,
 ROADMAP §2) — widerspruchsfrei zu 2.0, von einem leichteren Modell ziehbar.
