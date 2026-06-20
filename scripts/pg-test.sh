@@ -37,5 +37,10 @@ pg "$PGBIN/createdb -h '$WORKDIR' -p $PORT wayfinder_test"
 
 # Not `exec`: that would replace this shell and skip the cleanup trap, leaking the
 # temporary server. Run go test normally; its exit code propagates (set -e).
+#
+# -p 1 serializes the per-package test binaries: the integration tests share this
+# one database and TRUNCATE/seed the same tables, so running package binaries in
+# parallel (the default, GOMAXPROCS) lets them stomp on each other. Correctness on
+# a shared cluster beats the small speed-up here.
 export WAYFINDER_TEST_DB_URL="postgres://postgres@127.0.0.1:$PORT/wayfinder_test?sslmode=disable"
-go test ./... "$@"
+go test -p 1 ./... "$@"

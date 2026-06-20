@@ -97,14 +97,19 @@ JWKS). Neue Deps: `golang.org/x/crypto` (argon2), `github.com/coreos/go-oidc/v3`
   Registriert **nur in `builtin`-Modus**. DB-freie Login-Tests + real-PG
   `CredentialRepo`-Test. *(proxy-Modus war schon voll funktionsfähig.)*
 
-**✅ Stufe 1 (Identität & Mandanten-Grundgerüst) bis auf WF2-13 abgeschlossen** —
-Persistenz (WF2-10), AuthN in 3 Modi (WF2-11), Tenant-Context + builtin-Login
-(WF2-12).
+- **WF2-13 ✅** — Admin-Bootstrap: Subcommand `wayfinder bootstrap` (`cmd/wayfinder/
+  bootstrap.go`, idempotentes Get-or-Create erster Tenant/Admin/Credential, kein
+  Cross-Tenant-Re-Homing) + `/admin`-Rollen-Gate (`pkg/tenant/authz.go`
+  `RequireRole`, fail-closed `403`). DB-freie + real-PG-Tests + E2E-Rauchtest.
 
-**➡️ Nächster Schritt:** **WF2-13 — Admin-Bootstrap** (ersten Tenant/Nutzer +
-Passwort anlegen, `/admin`-Auth-Gate) **S2–S3 · Sonnet 4.6**, nach Ankündigung &
-„Go". Danach **Stufe 2** (mandanten-isolierter Stream, WF2-20/21/22 — der
-sicherheitskritische Kern).
+**✅ Stufe 1 (Identität & Mandanten-Grundgerüst) abgeschlossen** — Persistenz
+(WF2-10), AuthN in 3 Modi (WF2-11), Tenant-Context + builtin-Login (WF2-12),
+Bootstrap + Admin-Gate (WF2-13).
+
+**➡️ Nächster Schritt: Stufe 2 — der sicherheitskritische Kern.** **WF2-20**
+(Feed-Registry & Multi-Feed-Receiver: 1→N Feeds, `feed_id` pro Track) 🔒
+**S4 · Opus 4.8**, nach Ankündigung & „Go". Danach WF2-21 (scoped Fan-out) +
+WF2-22 (Isolations-Testsuite, Pflicht-Negativtests „A sieht nie B").
 
 ---
 
@@ -129,12 +134,12 @@ Details & Begründung: Konzept §7/§8.
 | **WF2-10** 🔒 | Persistenz-Schicht, Migrationen & Repositories (`pkg/store`, pgx) | **S3 · Sonnet 4.6** (+Opus-Review) | WF2-01 | ✅ **erledigt** (10.1–10.3b) |
 | **WF2-11** 🔒 | AuthN: echtes Nutzer-/Session-Modell (`pkg/auth`; argon2id, HMAC-Session, OIDC@Proxy) | **S4 · Opus 4.8** | WF2-10 | ✅ **erledigt** (11.1 + 11.2) |
 | **WF2-12** 🔒 | Tenant-Context-Middleware (jeder HTTP/WS-Request → Tenant-ID, fail-closed) | **S4 · Opus 4.8** | WF2-11 | ✅ **erledigt** (12.1 Middleware + 12.2 Verdrahtung + 12.3 builtin-Login) |
-| **WF2-13** | Admin-Bootstrap (create-tenant/-user, `/admin`-Auth-Gate) | **S2–S3 · Sonnet 4.6** | WF2-12 | ➡️ **nächster** |
+| **WF2-13** | Admin-Bootstrap (create-tenant/-user, `/admin`-Auth-Gate) | **S2–S3 · Sonnet 4.6** | WF2-12 | ✅ **erledigt** (`bootstrap`-Subcommand + `RequireRole`-Gate) |
 
 ### Stufe 2 — Mandanten-isolierter Datenstrom (sicherheitskritischer Kern)
 | AP | Inhalt | Stufe · Modell | Abh. | Status |
 |----|--------|----------------|------|--------|
-| **WF2-20** 🔒 | Feed-Registry & Multi-Feed-Receiver (1→N Feeds; `feed_id` pro Track) | **S4 · Opus 4.8** | WF2-01, WF2-02 | geplant |
+| **WF2-20** 🔒 | Feed-Registry & Multi-Feed-Receiver (1→N Feeds; `feed_id` pro Track) | **S4 · Opus 4.8** | WF2-01, WF2-02 | ➡️ **nächster** |
 | **WF2-21** 🔒 | Subscription-Modell & scoped Fan-out (`broadcast()` → Prädikat feed∩AOI∩FL∩Kat) | **S4–S5 · Opus 4.8 / Fable 5** | WF2-12, WF2-20 | geplant |
 | **WF2-22** 🔒 | Isolations-Testsuite (Negativ-/Property-/Fuzz-Tests; A sieht nie B) | **S4 · Opus 4.8** | WF2-21 | geplant |
 | **WF2-23** | Pro-Mandant-Metriken & Audit-Log (`tenant`-Label, Audit-Event) | **S3 · Sonnet 4.6** | WF2-21 | geplant |
@@ -266,6 +271,7 @@ Architektur-Wirkung — nicht auf dem kritischen Pfad, aber jederzeit wertstifte
 - ✅ **WF2-12.1 — Tenant-Context-Middleware** (`pkg/auth/factory.go` `NewAuthenticator`; neues `pkg/tenant`: `Identity`/Context, `Middleware` subject→user→tenant fail-closed). DB-freie Tests (Erfolg + 3× fail-closed → 401). Milestone `docs/milestones/WF2-12.1_Tenant_Context_Middleware.md`.
 - ✅ **WF2-12.2 — Tenancy-Verdrahtung im Server** (`main.go` `setupTenancy`: DB-Open+Migrate+Authenticator+`tenant.Middleware` auf `/ws`, nur bei `WAYFINDER_DB_URL`; sonst Single-Tenant). ENV-Vars in INSTALLATION/TECHNICAL; real-PG-Integrationstest. Milestone `docs/milestones/WF2-12.2_Tenancy_HTTP_Wiring.md`.
 - ✅ **WF2-12.3 — Builtin-Login** (Migration `00003_credentials` + `pkg/store/credentials.go` `CredentialRepo` Set-Upsert/GetHash; `pkg/tenant/login.go` `/api/login` timing-gehärtet → `auth.MintSession`-HttpOnly-Cookie + `/api/logout`; `WAYFINDER_SESSION_TTL`; nur in `builtin`-Modus registriert). DB-freie Login-Tests + real-PG `CredentialRepo`-Test. **→ WF2-12 (Tenant-Context) komplett.** Milestone `docs/milestones/WF2-12.3_Builtin_Login.md`.
+- ✅ **WF2-13 — Admin-Bootstrap** (`cmd/wayfinder/bootstrap.go`: Subcommand `wayfinder bootstrap`, idempotentes Get-or-Create erster Tenant/Admin + optional builtin-Passwort via `WAYFINDER_BOOTSTRAP_PASSWORD`, kein Cross-Tenant-Re-Homing; `pkg/tenant/authz.go` `RequireRole`-Gate auf `/admin`, fail-closed `403`). DB-freie Tests (`validate`, `RequireRole`) + real-PG `TestIntegrationBootstrap` + E2E-Rauchtest. **→ Stufe 1 komplett.** Milestone `docs/milestones/WF2-13_Admin_Bootstrap.md`.
 
 **Cross-Project / Firefly:**
 - ✅ Paket #6 / Coverage-Werkzeug — Radar-Ringe-Overlay (`pkg/coverage`, `/api/coverage/rings`, Frontend-Layer-Toggle, Firefly `SensorModel`-Erweiterung; PR #27)
