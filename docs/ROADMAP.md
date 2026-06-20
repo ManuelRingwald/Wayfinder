@@ -70,13 +70,17 @@ Umbau vom einprozessigen, beim-Start-konfigurierten **Single-Tenant-ASD** zur
   Queries statt sqlc; `Tenant`/`User`/`Role`-Typen, `GetBySubject` = Identität→
   Mandant). **Real gegen PostgreSQL 16 getestet** via `scripts/pg-test.sh`.
 - **WF2-10.3a ✅** — Repos `feeds`/`subscriptions`/`entitlements` (JSONB-`sensor_mix`;
-  `subscriptions` = isolations-kritisch, `ListFeedsByTenant` ist die WF2-21-Query;
-  Entitlements default-deny). Inkl. Daten-Isolations-Test (Frankfurt sieht nie
-  Stuttgarts Feed). Real gegen PostgreSQL 16 getestet.
+  `subscriptions` = isolations-kritisch; Entitlements default-deny). Daten-Isolations-Test.
+- **WF2-10.3b ✅** — `view_configs`-Repo (JSONB AOI/Layers, Tenant-Default +
+  Nutzer-Override, `GetEffective`); **Migration `00002`** (Partial-Unique-Index,
+  zeigt Schema-Evolution des Runners). Real gegen PostgreSQL 16 getestet.
 
-**➡️ Nächster Schritt:** **WF2-10.3b — `view_configs`-Repo** (JSONB-lastig:
-AOI/Layers, tenant-Default + Nutzer-Override, Upsert über Partial-Unique-Index)
-**S3 · Sonnet 4.6 (+Opus-Review)**, nach Ankündigung & „Go".
+**✅ WF2-10 (Persistenz-Schicht) abgeschlossen** — alle 6 Tabellen-Repos vorhanden
+und real gegen Postgres verifiziert.
+
+**➡️ Nächster Schritt:** **WF2-11 — AuthN: echtes Nutzer-/Session-Modell**
+(`WAYFINDER_AUTH_MODE` proxy/builtin/none; OIDC-Token-Validierung; subject→user→
+tenant über `UserRepo.GetBySubject`) 🔒 **S4 · Opus 4.8**, nach Ankündigung & „Go".
 
 ---
 
@@ -98,8 +102,8 @@ Details & Begründung: Konzept §7/§8.
 ### Stufe 1 — Identität & Mandanten-Grundgerüst (ohne Datenfluss-Änderung)
 | AP | Inhalt | Stufe · Modell | Abh. | Status |
 |----|--------|----------------|------|--------|
-| **WF2-10** 🔒 | Persistenz-Schicht, Migrationen & Repositories (`pkg/store`, pgx) | **S3 · Sonnet 4.6** (+Opus-Review) | WF2-01 | 🔵 in Arbeit (10.1, 10.2, 10.3a ✅; 10.3b offen) |
-| **WF2-11** 🔒 | AuthN: echtes Nutzer-/Session-Modell (OIDC@Proxy o. eingebaut; Tenant-Claim) | **S4 · Opus 4.8** | WF2-10 | geplant |
+| **WF2-10** 🔒 | Persistenz-Schicht, Migrationen & Repositories (`pkg/store`, pgx) | **S3 · Sonnet 4.6** (+Opus-Review) | WF2-01 | ✅ **erledigt** (10.1–10.3b) |
+| **WF2-11** 🔒 | AuthN: echtes Nutzer-/Session-Modell (OIDC@Proxy o. eingebaut; Tenant-Claim) | **S4 · Opus 4.8** | WF2-10 | **➡️ NÄCHSTER** |
 | **WF2-12** 🔒 | Tenant-Context-Middleware (jeder HTTP/WS-Request → Tenant-ID, fail-closed) | **S4 · Opus 4.8** | WF2-11 | geplant |
 | **WF2-13** | Admin-Bootstrap (create-tenant/-user, `/admin`-Auth-Gate) | **S2–S3 · Sonnet 4.6** | WF2-12 | geplant |
 
@@ -232,6 +236,7 @@ Architektur-Wirkung — nicht auf dem kritischen Pfad, aber jederzeit wertstifte
 - ✅ **WF2-10.1 — Persistenz-Schicht** (`pkg/store`: pgx-Pool, eingebetteter In-House-Migrationsrunner, Schema `00001_init`, DB-freie Tests; ADR 0006 Nachtrag: goose→Runner, Go-Baseline 1.25). Milestone `docs/milestones/WF2-10.1_Persistence_Layer.md`.
 - ✅ **WF2-10.2 — Tenant-/User-Repositories** (`models.go`, `tenants.go`, `users.go`, `repo.go`; handgeschriebene pgx-Queries; `GetBySubject` = Identität→Mandant). Tests DB-frei + Integration; **real gegen PostgreSQL 16** via `scripts/pg-test.sh`. Milestone `docs/milestones/WF2-10.2_Tenant_User_Repos.md`.
 - ✅ **WF2-10.3a — Feed-/Subscription-/Entitlement-Repositories** (`feeds.go`, `subscriptions.go`, `entitlements.go`; JSONB-`sensor_mix`, `ListFeedsByTenant` = WF2-21-Query, Entitlements default-deny). Daten-Isolations-Test + real gegen PostgreSQL 16. Milestone `docs/milestones/WF2-10.3a_Feed_Subscription_Entitlement_Repos.md`.
+- ✅ **WF2-10.3b — View-Config-Repository** (`view_configs.go`; BBox/ViewConfig, Tenant-Default + Nutzer-Override, `GetEffective`; Migration `00002` Partial-Unique-Index). **→ WF2-10 (Persistenz-Schicht) komplett.** Milestone `docs/milestones/WF2-10.3b_ViewConfig_Repo.md`.
 
 **Cross-Project / Firefly:**
 - ✅ Paket #6 / Coverage-Werkzeug — Radar-Ringe-Overlay (`pkg/coverage`, `/api/coverage/rings`, Frontend-Layer-Toggle, Firefly `SensorModel`-Erweiterung; PR #27)
