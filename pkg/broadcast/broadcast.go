@@ -36,6 +36,35 @@ type TrackBatch struct {
 	Tracks []cat062.DecodedTrack
 }
 
+// Scope decides which tracks a client may receive (WF2-21 — the cross-tenant
+// isolation boundary). In WF2-21.1 it is feed-level: a client sees a track only
+// if the track's feed is in the allowed set, resolved from the tenant's
+// subscriptions at connect time. A nil Scope is unscoped — single-tenant, sees
+// every feed. View filters (AOI/FL/category) layer on in WF2-21.2.
+type Scope struct {
+	feeds map[int64]bool
+}
+
+// NewScope builds a feed-level scope from the allowed feed ids. An empty list
+// yields a scope that allows nothing — fail-closed: a tenant with no
+// subscriptions sees no tracks.
+func NewScope(feedIDs []int64) *Scope {
+	s := &Scope{feeds: make(map[int64]bool, len(feedIDs))}
+	for _, id := range feedIDs {
+		s.feeds[id] = true
+	}
+	return s
+}
+
+// AllowsFeed reports whether a client with this scope may receive tracks from the
+// given feed. A nil scope (single-tenant) allows every feed.
+func (s *Scope) AllowsFeed(feedID int64) bool {
+	if s == nil {
+		return true
+	}
+	return s.feeds[feedID]
+}
+
 // TrackMessage represents a single track in JSON format.
 type TrackMessage struct {
 	// FeedID is the catalogue feed this track arrived on (WF2-20). Omitted in the
@@ -91,9 +120,11 @@ type Broadcaster struct {
 	evicted atomic.Int64
 }
 
-// Client represents a connected WebSocket client.
+// Client represents a connected WebSocket client. scope decides which feeds'
+// tracks it may receive (nil = unscoped / single-tenant).
 type Client struct {
-	send chan Message
+	send  chan Message
+	scope *Scope
 }
 
 // New creates a new Broadcaster.
@@ -113,9 +144,10 @@ func (b *Broadcaster) TracksChan() chan<- TrackBatch {
 	return b.trackChan
 }
 
-// RegisterClient adds a new client to receive broadcasts.
-func (b *Broadcaster) RegisterClient(sendChan chan Message) *Client {
-	c := &Client{send: sendChan}
+// RegisterClient adds a new client to receive broadcasts, filtered by scope.
+// A nil scope is unscoped (single-tenant: receives every feed).
+func (b *Broadcaster) RegisterClient(sendChan chan Message, scope *Scope) *Client {
+	c := &Client{send: sendChan, scope: scope}
 	b.registerChan <- c
 	return c
 }
@@ -143,8 +175,7 @@ func (b *Broadcaster) Run(ctx context.Context) error {
 			b.logger.Debug("client unregistered", slog.Int("clients", b.clientCount()))
 
 		case batch := <-b.trackChan:
-			msg := b.tracksToMessage(batch)
-			b.broadcast(msg)
+			b.broadcastTracks(batch)
 
 		case msg := <-b.messageChan:
 			b.broadcast(msg)
@@ -209,7 +240,34 @@ func (b *Broadcaster) tracksToMessage(batch TrackBatch) Message {
 	return msg
 }
 
-// broadcast sends a message to all connected clients.
+// broadcastTracks delivers a feed's tracks only to clients whose scope allows
+// that feed — the feed-level cross-tenant isolation boundary (WF2-21.1). A client
+// not subscribed to the batch's feed receives nothing from it.
+func (b *Broadcaster) broadcastTracks(batch TrackBatch) {
+	msg := b.tracksToMessage(batch)
+	b.logger.Debug("broadcasting tracks",
+		slog.Int64("feed_id", batch.FeedID),
+		slog.Int("tracks", len(msg.Tracks)),
+		slog.Int("clients", b.clientCount()))
+
+	b.clients.Range(func(key, value any) bool {
+		c := key.(*Client)
+		if !c.scope.AllowsFeed(batch.FeedID) {
+			return true // not subscribed to this feed → isolation, skip
+		}
+		select {
+		case c.send <- msg:
+		default:
+			b.logger.Warn("client send channel full, evicting client")
+			b.evicted.Add(1)
+			b.UnregisterClient(c)
+		}
+		return true
+	})
+}
+
+// broadcast sends a message to all connected clients (used for global, non-track
+// messages such as the feed-health status, which is not feed-scoped).
 func (b *Broadcaster) broadcast(msg Message) {
 	b.logger.Debug("broadcasting", slog.Int("tracks", len(msg.Tracks)), slog.Int("clients", b.clientCount()))
 

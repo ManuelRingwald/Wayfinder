@@ -376,6 +376,16 @@ feedcmd.go`): `wayfinder feed add -name -group [-port] [-region] [-sensor-mix]`
 und `wayfinder feed list` pflegen den Katalog, bis die Admin-API existiert
 (WF2-31). NATS-/Stream-Feed-Source folgt WF2-53.
 
+**Scoped Fan-out (WF2-21.1, 🔒 NFR-SEC-003):** der Broadcaster stellt einem
+`/ws`-Client einen Track **nur** zu, wenn dessen Mandant den Feed abonniert hat.
+`broadcast.Scope` (Menge erlaubter `feed_id`; nil = unscoped/Single-Tenant, leer =
+nichts/fail-closed) hängt am `Client`; `broadcastTracks` prüft
+`scope.AllowsFeed(feed_id)` pro Batch/Client (Feed-Health über `messageChan` bleibt
+**global**). `ws.ScopeResolver` löst den Scope am Handshake **vor** dem Upgrade auf
+(Fehler → `403`, kein Stream); `cmd/wayfinder.newScopeResolver` liest die
+Tenant-Identity (Middleware) + `subscriptions.ListFeedIDsByTenant`. Sicht-Filter
+(AOI/FL/Kategorie) folgt WF2-21.2.
+
 ### 6.5 Betrieb
 
 | Variable | Default | Typ | Beschreibung |
