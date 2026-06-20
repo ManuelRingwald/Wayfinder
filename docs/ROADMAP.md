@@ -78,9 +78,14 @@ Umbau vom einprozessigen, beim-Start-konfigurierten **Single-Tenant-ASD** zur
 **✅ WF2-10 (Persistenz-Schicht) abgeschlossen** — alle 6 Tabellen-Repos vorhanden
 und real gegen Postgres verifiziert.
 
-**➡️ Nächster Schritt:** **WF2-11 — AuthN: echtes Nutzer-/Session-Modell**
-(`WAYFINDER_AUTH_MODE` proxy/builtin/none; OIDC-Token-Validierung; subject→user→
-tenant über `UserRepo.GetBySubject`) 🔒 **S4 · Opus 4.8**, nach Ankündigung & „Go".
+**WF2-11 (AuthN) — in Arbeit:** **WF2-11.1 ✅** — `pkg/auth`: Auth-Mode
+(proxy/builtin/none), argon2id-Passwort-Hashing, HMAC-Session-Token,
+None-/Builtin-Authenticator (DB-frei, 10 Tests). Einzige neue Dep:
+`golang.org/x/crypto` (argon2).
+
+**➡️ Nächster Schritt:** **WF2-11.2 — proxy-Modus: OIDC-Token-Validierung**
+(Issuer/Audience/Signatur gegen JWKS) 🔒 **S4 · Opus 4.8** — bringt **eine** neue
+Abhängigkeit (`go-oidc`), wird vor dem Ziehen abgestimmt; nach Ankündigung & „Go".
 
 ---
 
@@ -103,7 +108,7 @@ Details & Begründung: Konzept §7/§8.
 | AP | Inhalt | Stufe · Modell | Abh. | Status |
 |----|--------|----------------|------|--------|
 | **WF2-10** 🔒 | Persistenz-Schicht, Migrationen & Repositories (`pkg/store`, pgx) | **S3 · Sonnet 4.6** (+Opus-Review) | WF2-01 | ✅ **erledigt** (10.1–10.3b) |
-| **WF2-11** 🔒 | AuthN: echtes Nutzer-/Session-Modell (OIDC@Proxy o. eingebaut; Tenant-Claim) | **S4 · Opus 4.8** | WF2-10 | **➡️ NÄCHSTER** |
+| **WF2-11** 🔒 | AuthN: echtes Nutzer-/Session-Modell (`pkg/auth`; argon2id, HMAC-Session, OIDC@Proxy) | **S4 · Opus 4.8** | WF2-10 | 🔵 in Arbeit (11.1 ✅; 11.2 OIDC offen) |
 | **WF2-12** 🔒 | Tenant-Context-Middleware (jeder HTTP/WS-Request → Tenant-ID, fail-closed) | **S4 · Opus 4.8** | WF2-11 | geplant |
 | **WF2-13** | Admin-Bootstrap (create-tenant/-user, `/admin`-Auth-Gate) | **S2–S3 · Sonnet 4.6** | WF2-12 | geplant |
 
@@ -237,6 +242,7 @@ Architektur-Wirkung — nicht auf dem kritischen Pfad, aber jederzeit wertstifte
 - ✅ **WF2-10.2 — Tenant-/User-Repositories** (`models.go`, `tenants.go`, `users.go`, `repo.go`; handgeschriebene pgx-Queries; `GetBySubject` = Identität→Mandant). Tests DB-frei + Integration; **real gegen PostgreSQL 16** via `scripts/pg-test.sh`. Milestone `docs/milestones/WF2-10.2_Tenant_User_Repos.md`.
 - ✅ **WF2-10.3a — Feed-/Subscription-/Entitlement-Repositories** (`feeds.go`, `subscriptions.go`, `entitlements.go`; JSONB-`sensor_mix`, `ListFeedsByTenant` = WF2-21-Query, Entitlements default-deny). Daten-Isolations-Test + real gegen PostgreSQL 16. Milestone `docs/milestones/WF2-10.3a_Feed_Subscription_Entitlement_Repos.md`.
 - ✅ **WF2-10.3b — View-Config-Repository** (`view_configs.go`; BBox/ViewConfig, Tenant-Default + Nutzer-Override, `GetEffective`; Migration `00002` Partial-Unique-Index). **→ WF2-10 (Persistenz-Schicht) komplett.** Milestone `docs/milestones/WF2-10.3b_ViewConfig_Repo.md`.
+- ✅ **WF2-11.1 — AuthN builtin-Primitive** (`pkg/auth`: Mode/ParseMode, argon2id-Passwort-Hashing, HMAC-Session-Token, None-/Builtin-Authenticator; `golang.org/x/crypto`). 10 DB-freie Tests. Milestone `docs/milestones/WF2-11.1_Auth_Builtin_Primitives.md`.
 
 **Cross-Project / Firefly:**
 - ✅ Paket #6 / Coverage-Werkzeug — Radar-Ringe-Overlay (`pkg/coverage`, `/api/coverage/rings`, Frontend-Layer-Toggle, Firefly `SensorModel`-Erweiterung; PR #27)
