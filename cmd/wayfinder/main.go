@@ -21,6 +21,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/manuelringwald/wayfinder/internal/webui"
+	"github.com/manuelringwald/wayfinder/pkg/adminapi"
 	"github.com/manuelringwald/wayfinder/pkg/aeronautical"
 	"github.com/manuelringwald/wayfinder/pkg/auth"
 	"github.com/manuelringwald/wayfinder/pkg/broadcast"
@@ -325,13 +326,15 @@ func main() {
 		logger.Info("builtin login enabled", slog.String("path", "/api/login"))
 	}
 
-	// Admin gate (WF2-13): /admin is role-gated to tenant_admin/super_admin. For
-	// now it serves a minimal "whoami" so an admin can verify their access; the
-	// admin API/UI builds behind this gate in WF2-31/32. Only mounted with
-	// multi-tenancy active — the gate needs an Identity from the tenant middleware.
+	// Admin gate (WF2-13): /admin is role-gated to tenant_admin/super_admin. The
+	// whoami lets an admin verify access; the tenant-scoped admin REST API
+	// (WF2-31) sits behind the same gate. Only mounted with multi-tenancy active —
+	// the gate needs an Identity from the tenant middleware.
 	if tenantMW != nil {
-		admin := tenant.RequireRole(store.RoleTenantAdmin, store.RoleSuperAdmin)(adminWhoamiHandler())
-		mux.Handle("/admin", tenantMW(admin))
+		requireAdmin := tenant.RequireRole(store.RoleTenantAdmin, store.RoleSuperAdmin)
+		mux.Handle("/admin", tenantMW(requireAdmin(adminWhoamiHandler())))
+		adminAPI := adminapi.New(store.NewViewConfigRepo(dbPool), store.NewSubscriptionRepo(dbPool), store.NewFeedRepo(dbPool), logger)
+		mux.Handle("/api/admin/", tenantMW(requireAdmin(adminAPI)))
 	}
 
 	// The per-tenant middleware (on /ws) supersedes the legacy single shared

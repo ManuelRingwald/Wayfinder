@@ -488,7 +488,36 @@ WAYFINDER_DB_URL=postgres://… WAYFINDER_BOOTSTRAP_PASSWORD='…' \
 > 🔒 **`/admin`-Endpoint:** Bei aktiver Multi-Tenancy ist `/admin` rollen-gegated
 > (`tenant_admin`/`super_admin`, sonst `403`) und liefert derzeit eine minimale
 > „whoami"-Antwort (eigene Identität als JSON) zur Zugriffsprüfung. Die
-> eigentliche Admin-API/-UI folgt in WF2-31/32.
+> eigentliche Admin-UI folgt in WF2-32.
+
+#### Admin-API (WF2-31)
+
+Hinter demselben Rollen-Gate (`tenant_admin`/`super_admin`) liegt ein
+**tenant-skopiertes REST-API** unter `/api/admin/*`. Die Mandanten-ID kommt
+**immer aus der angemeldeten Identität** — ein Admin verwaltet nur die **eigene**
+Mandanten-Konfiguration.
+
+| Methode + Pfad | Wirkung |
+|---|---|
+| `GET /api/admin/view` | Eigene effektive Sicht (Zentrum/Zoom/AOI/FL/Layer); `404` wenn keine gesetzt. |
+| `PUT /api/admin/view` | Eigene Tenant-Default-Sicht setzen (server-validiert; `400` bei ungültig). |
+| `GET /api/admin/subscriptions` | Eigene abonnierte Feeds. |
+| `GET /api/admin/feeds` | Feed-Katalog (read-only). |
+
+Beispiel:
+
+```bash
+curl -X PUT https://asd.example.com/api/admin/view \
+  -H 'Content-Type: application/json' \
+  -d '{"center_lat":50.1,"center_lon":8.7,"zoom":9,
+       "aoi":{"min_lat":49,"min_lon":8,"max_lat":51,"max_lon":10},
+       "fl_min":100,"fl_max":300}'
+```
+
+> Eine View-Änderung wirkt auf **neue** `/ws`-Verbindungen (der Scope wird beim
+> Connect aufgelöst); bestehende Verbindungen werden erst mit Live-Apply (WF2-33)
+> nachgezogen. Feed-Abos (Grants) setzt bis auf Weiteres der Plattform-Betreiber
+> direkt in der DB (`subscriptions`).
 
 #### Feed-Katalog & Multi-Feed-Empfang (WF2-20)
 

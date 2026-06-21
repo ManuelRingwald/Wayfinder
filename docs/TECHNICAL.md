@@ -370,7 +370,16 @@ Passwort via `WAYFINDER_BOOTSTRAP_PASSWORD`) an; liest `WAYFINDER_DB_URL`,
 migriert, verweigert das Re-Homing eines Subjects in einen anderen Mandanten.
 **`/admin`-Gate:** `tenant.RequireRole(tenant_admin, super_admin)` hinter der
 Tenant-Middleware (fail-closed `403` ohne passende Rolle/Identität); liefert eine
-minimale whoami-JSON-Antwort, Admin-API/-UI folgt WF2-31/32.
+minimale whoami-JSON-Antwort, Admin-UI folgt WF2-32.
+
+**Admin-API (WF2-31, `pkg/adminapi`):** tenant-skopiertes REST unter `/api/admin/*`
+hinter `tenantMW`+`RequireRole(tenant_admin, super_admin)`. Die `tenant_id` kommt
+**aus der Identity**, nie aus Pfad/Body (Isolation per Konstruktion). `GET/PUT
+/api/admin/view` (Tenant-Default-Sicht, **server-validiert** in `validateView`:
+Lat/Lon/Zoom-Bereiche, AOI wohlgeformt, `fl_min ≤ fl_max`), `GET
+/api/admin/subscriptions` (eigene Feeds), `GET /api/admin/feeds` (Katalog,
+read-only). DTOs verbergen Infra-Felder (multicast_group/port). Subscription-Writes
+(Billing/super_admin, cross-tenant) und der Config-Cache (WF2-30) folgen später.
 
 **Multi-Feed-Empfang (WF2-20.2):** der `feeds`-Katalog (DB) treibt **N Receiver**
 (einer je Feed, je `feed_id` aus 20.1). `cmd/wayfinder/feeds.go`: `resolveFeeds`

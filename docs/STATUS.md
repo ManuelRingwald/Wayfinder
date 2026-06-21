@@ -7,7 +7,35 @@
 > 🗺️ **Roadmap:** Arbeitspakete, Findings und empfohlene Reihenfolge stehen in
 > `docs/ROADMAP.md` (Stichwort „Roadmap" im Chat zeigt diese Liste).
 
-- **Zuletzt aktualisiert:** 2026-06-20 — **WF2-23.2 „Pro-Mandant-Metriken"
+- **Zuletzt aktualisiert:** 2026-06-20 — **WF2-31 „Tenant-skopiertes Admin-API"
+  abgeschlossen — BEGINN STUFE 3 (🔒 S3 · Sonnet 4.6 / Opus-Review).**
+  **Reihenfolge-Entscheid des Projektverantwortlichen:** Stufe 3 startet mit der
+  **Admin-API (WF2-31)** statt mit dem Config-Service (WF2-30) — sichtbarer
+  Business-Value + testbare Endpunkte vor vorzeitiger Infrastruktur; REST direkt
+  auf den Repos, Caching (WF2-30) später bei gemessenem Bedarf. Neues Paket
+  **`pkg/adminapi`** (`Handler` mit internem `ServeMux`, Methode+Pfad-Muster →
+  auto-`405`): `GET/PUT /api/admin/view` (Tenant-Default-Sicht Zentrum/Zoom/AOI/FL/
+  Layer, **server-validiert** `validateView`: Lat/Lon/Zoom-Bereiche, AOI wohlgeformt,
+  `fl_min ≤ fl_max`), `GET /api/admin/subscriptions` (eigene Feeds), `GET
+  /api/admin/feeds` (Katalog read-only). **Isolation per Konstruktion (der Kern):**
+  jeder Handler nimmt die `tenant_id` **aus der Identity** (`tenant.FromContext`),
+  **nie** aus Pfad/Body → ein Admin berührt nur die **eigene** Config (NFR-SEC-003);
+  ohne Identity `401`. DTOs verbergen Infra-Felder (multicast_group/port).
+  **Verdrahtung** (`main.go`): `mux.Handle("/api/admin/", tenantMW(requireAdmin(
+  adminapi.New(...))))` — gleicher `RequireRole(tenant_admin, super_admin)`-Gate wie
+  `/admin`, nur bei aktiver Tenancy; kleine Store-Interfaces machen die Handler
+  fake-bar. **Kein Schema-Change, keine neue Dep.** **Tests:** DB-frei
+  (`adminapi_test.go`): Tenant-Scoping (`TestPutViewIsTenantScoped`/`…Subscriptions…`
+  beweisen Store-Aufruf mit Identity-`tenant_id`), `validateView`-Tabelle (alle
+  Regeln → `400`, erreicht Store nicht), `401`/`404`/`405`; real-PG
+  `TestIntegrationAdminAPI` (PUT→GET-Round-Trip AOI+FL, subs/feeds). Gates grün
+  (`go build/vet/test`, `gofmt`, `pg-test.sh`); `go 1.25` unverändert. INSTALLATION
+  §7 + TECHNICAL §6 (Admin-API) + Register **FR-ADMIN-001**; Milestone
+  `docs/milestones/WF2-31_Admin_API.md`. **Abgrenzung:** Subscription-Writes
+  (Feed-Grant = Billing/super_admin, cross-tenant) bewusst Folgeschritt; PUT view
+  wirkt auf **neue** Connects (Live-Apply = WF2-33). **Nächster Schritt:** WF2-32
+  (Admin-UI auf diesem API) oder der Sub-Write-/super_admin-Pfad — nach Abstimmung.
+- **Vorherige Aktualisierung:** 2026-06-20 — **WF2-23.2 „Pro-Mandant-Metriken"
   abgeschlossen — WF2-23 + 🎉 STUFE 2 KOMPLETT (🔒 S3 · Sonnet 4.6 / Opus-Review).**
   Macht die Isolation **pro Mandant beobachtbar** (Billing/SLA). **`pkg/metrics`:**
   Label-Support — `Label{Name,Value}`, `Metric.With(…)`, `Handler` rendert
@@ -837,13 +865,15 @@
 **✅ Stufe 1 komplett:** WF2-10 (Persistenz) · WF2-11 (AuthN, 3 Modi) · WF2-12
 (Tenant-Context + builtin-Login) · WF2-13 (Admin-Bootstrap + `/admin`-Gate).
 
-**🎉 Stufe 2 (sicherheitskritischer Kern) KOMPLETT:** **WF2-20 ✅** (Multi-Feed +
-`feed_id` pro Track) · **WF2-21 ✅** (scoped Fan-out: Feed-Isolation + AOI/FL-Sicht,
-fail-open) · **WF2-22 ✅** (Isolations-Testsuite Property + Fuzz) · **WF2-23 ✅**
-(23.1 Audit-Log + 23.2 Pro-Mandant-Metriken `…{tenant}`). Der mandanten-isolierte
-Datenstrom steht, ist getestet, beobachtbar und auditierbar. **➡️ Nächster: Stufe 3
-— WF2-30** (Config-Service: Hot-Reload der Mandanten-/View-Config aus DB ohne
-Neustart, In-Proc-TTL) S3–S4 · Sonnet 4.6 / Opus 4.8.
+**🎉 Stufe 2 KOMPLETT:** WF2-20 (Multi-Feed) · WF2-21 (scoped Fan-out Feed+AOI/FL,
+fail-open) · WF2-22 (Isolations-Property/Fuzz) · WF2-23 (Audit + Pro-Tenant-Metriken).
+
+**🔵 Stufe 3 — begonnen (Dynamische Konfiguration & Admin):** **WF2-31 ✅**
+(tenant-skopiertes Admin-API `pkg/adminapi`: view GET/PUT server-validiert,
+subs/feeds read; `tenant_id` aus Identity, hinter `RequireRole`). Reihenfolge-
+Entscheid: **Admin-API vor Config-Cache (WF2-30 zurückgestellt)**. **➡️ Nächster:
+WF2-32** (Admin-UI, Vue 3 + Vuetify auf dem WF2-31-API) S3 · Sonnet 4.6 —
+*alternativ vorziehbar: Subscription-Write-/super_admin-Pfad.*
 
 Offen, **ASD-Kern (mandanten-unabhängig, parallel möglich** — nicht im kritischen
 Pfad, Details/Abgleich in ROADMAP §2):
@@ -872,16 +902,15 @@ Pfad, Details/Abgleich in ROADMAP §2):
 
 ## 3. Nächster Schritt
 
-➡️ **Stufe 3 — WF2-30: Config-Service** S3–S4 · Sonnet 4.6 / Opus 4.8, nach
-Ankündigung & „Go".
+➡️ **WF2-32 — Admin-UI** S3 · Sonnet 4.6, nach Ankündigung & „Go".
 
-Beginn von Stufe 3 (dynamische Konfiguration & Admin-UI). Der Config-Service liest
-Mandanten-/View-/Abo-Konfiguration aus der DB und macht Änderungen **ohne Neustart**
-wirksam (Hot-Reload, In-Proc-TTL-Cache; Redis bleibt zurückgestellt bis gemessener
-Bedarf, ADR 0006). Grundlage für die Admin-API (WF2-31), die Admin-UI (WF2-32) und
-schließlich Live-Apply auf der laufenden Subscription (WF2-33, re-skopieren ohne
-Reconnect). **Offener Abstimmungspunkt für die Ankündigung:** Verhältnis zum
-Connect-Snapshot aus WF2-21 (heute wird der Scope einmalig am Handshake aufgelöst).
+Vue-3/Vuetify-Oberfläche unter `/admin`, die das **WF2-31-API** bedient:
+Formulare/Slider für die Tenant-Default-Sicht (Zentrum/Zoom/AOI/FL/Layer), Anzeige
+der eigenen Abos + des Feed-Katalogs. Konsistent zum bestehenden ASD-Frontend (ADR
+0002). **Alternativ vorziehbar:** der **Subscription-Write-/super_admin-Pfad**
+(Feed-Grants = Billing, cross-tenant, eigenes Rollen-Design) — beim nächsten Go
+abzustimmen. Danach **WF2-33** (Live-Apply: laufende Subscription re-skopieren ohne
+Reconnect) und ggf. **WF2-30** (Config-Cache), wenn Metriken den Bedarf zeigen.
 
 **Erledigt in dieser Sitzung:** **Stufe 0 komplett** (WF2-00/01/02, ADR
 0005/0006/0007) **+ STUFE 1 KOMPLETT** — **WF2-10** (alle 6 Tabellen-Repos, real
@@ -899,8 +928,10 @@ AOI/FL-Band als harte server-seitige Grenze `broadcast.ViewFilter`/`resolveViewF
 **fail-open** bei fehlendem Attribut) **+ WF2-22** (Isolations-Testsuite Property +
 Fuzz, 755k execs 0 Fehler, kein Befund) **+ WF2-23 komplett** (23.1 Audit-Log
 strukturiertes `slog`-Event „wer sah welchen Scope"; 23.2 Pro-Mandant-Metriken
-`…{tenant}`, stabile tenant_id, race-clean) → **🎉 STUFE 2 KOMPLETT**.
-ADR-0006-Nachtrag: goose verworfen, Go-Baseline 1.25. Register FR-CFG-001,
+`…{tenant}`, stabile tenant_id, race-clean) → **🎉 STUFE 2 KOMPLETT** **+ Stufe 3
+begonnen: WF2-31** (tenant-skopiertes Admin-API `pkg/adminapi`, view GET/PUT
+server-validiert + subs/feeds read, `tenant_id` aus Identity, hinter `RequireRole`).
+ADR-0006-Nachtrag: goose verworfen, Go-Baseline 1.25. Register FR-CFG-001, FR-ADMIN-001,
 FR-TEN-001/002, FR-FEED-001, NFR-SEC-003/004, NFR-SCALE-001; Test-Runner
 `scripts/pg-test.sh` (jetzt `./...`, `-p 1`); neue Deps `golang.org/x/crypto`,
 `github.com/coreos/go-oidc/v3`. Subcommands: `bootstrap`, `feed`.
