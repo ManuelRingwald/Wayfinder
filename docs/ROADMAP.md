@@ -175,10 +175,16 @@ getestet und beobachtbar/auditierbar.
   Namespace bereinigt: Rollen-Probe nach `GET /api/admin/whoami`, **SPA-History-
   Fallback** in `webui.Handler`. Vitest (Validierung + Store) + Go (SPA-Fallback +
   whoami). **→ Admin-Backend + UI komplett.**
+- **WF2-33 ✅** — Live-Apply: View-/Abo-Änderungen ziehen **aktive** `/ws`-Streams
+  live nach, ohne Reconnect. Re-Scope als Kommando durch den Single-Goroutine-Actor
+  (`rescopeChan` → `Run`): **kein Lock am heißen Pfad, keine Race** (`-race`-Test).
+  Zwei-Phasen (Snapshot immutable Identity → Resolve off-Run pro User → Apply in
+  Run). Shrink: kein Delete-Signal, Frontend coastet aus (keep it simple). Auslöser:
+  `putView`/`grant`/`revoke` → injizierter `RescopeFunc`. **→ Stufe 3 komplett.**
 
-**➡️ Nächster Schritt:** **WF2-33 — Live-Apply** (laufende Subscription re-skopieren,
-kein Reconnect) **S4 · Opus 4.8** — oder **WF2-30** (Config-Cache) bei gemessenem
-Bedarf; Reihenfolge nach Ankündigung & „Go".
+**➡️ Nächster Schritt:** **Stufe 4** (Sensor-/Stream-Management) oder ASD-Kern;
+**WF2-30** (Config-Cache) bleibt zurückgestellt (YAGNI). Reihenfolge nach
+Ankündigung & „Go".
 
 ---
 
@@ -219,7 +225,7 @@ Details & Begründung: Konzept §7/§8.
 | **WF2-31** 🔒 | Admin-API (REST, tenant-skopiert, server-validiert: Zentrum/Radius/FL/Abos) | **S3 · Sonnet 4.6** | WF2-13 | ✅ **erledigt** (view GET/PUT + subs/feeds read + super_admin grant/revoke cross-tenant) |
 | **WF2-30** | Config-Service (Hot-Reload aus DB, In-Proc-TTL/Redis, ohne Neustart) | **S3–S4 · Sonnet 4.6 / Opus 4.8** | WF2-10 | ⏸️ **zurückgestellt** (erst bei gemessenem Cache-Bedarf, nach WF2-31-Entscheid) |
 | **WF2-32** | Admin-UI (`/admin`, Vue 3 + Vuetify, History-Mode, kompletter Komponenten-Austausch; Validierungs-Parität, Rollen-Gating) | **S3 · Sonnet 4.6** | WF2-31 | ✅ **erledigt** (View-Editor + Abos/Feeds + super_admin-Provisioning; `whoami`→`/api/admin/whoami`; SPA-History-Fallback; Live-Apply → WF2-33) |
-| **WF2-33** 🔒 | Live-Apply auf der Datenebene (laufende Subscription re-skopieren, kein Reconnect) | **S4 · Opus 4.8** | WF2-21, WF2-31 | geplant |
+| **WF2-33** 🔒 | Live-Apply auf der Datenebene (laufende Subscription re-skopieren, kein Reconnect) | **S4 · Opus 4.8** | WF2-21, WF2-31 | ✅ **erledigt** (Re-Scope via Actor-Kommando, `-race`-bewiesen; Shrink → Frontend-Coast; `whoami`-Stufe-3 komplett) |
 
 ### Stufe 4 — Sensor-/Stream-Management (innerhalb der CAT062-Realität)
 | AP | Inhalt | Stufe · Modell | Abh. | Status |
@@ -355,6 +361,7 @@ Architektur-Wirkung — nicht auf dem kritischen Pfad, aber jederzeit wertstifte
 - ✅ **WF2-31 — Tenant-skopiertes Admin-API** (`pkg/adminapi`: `GET/PUT /api/admin/view` server-validiert, `GET /api/admin/subscriptions`, `GET /api/admin/feeds`; `tenant_id` aus Identity → Isolation per Konstruktion; hinter `RequireRole`). DB-freie Tenant-Scoping-/Validierungs-Tests + real-PG `TestIntegrationAdminAPI`. **Beginn Stufe 3** (Reihenfolge-Entscheid: Admin-API vor Config-Cache WF2-30). Milestone `docs/milestones/WF2-31_Admin_API.md`.
 - ✅ **WF2-31b — Subscription-Grants (super_admin, cross-tenant)** (`pkg/adminapi`: `GET /api/admin/tenants`, `GET/POST/DELETE /api/admin/tenants/{id}/subscriptions[/{feedID}]`; Ziel aus dem Pfad; Doppel-Gate `RequireRole`+`requireSuper`; `TenantStore`/`Subscribe`/`Unsubscribe`/`FeedStore.GetByID`). Cross-Tenant-Negativtest `TestCrossTenantRoutesForbidTenantAdmin` (tenant_admin → 403) + real-PG grant→list→revoke. **→ Admin-Backend komplett.** Milestone `docs/milestones/WF2-31b_Subscription_Grants.md`.
 - ✅ **WF2-32 — Admin-UI** (Frontend, Vue 3 + Vuetify, `vue-router` **History-Mode**): Browser-Route `/admin` als **eigenständige View** (ASD-Karte wird unmountet, kein Overlay — Kurskorrektur), `App.vue`→Shell + `views/AsdView.vue`/`views/AdminView.vue`; View-Editor mit **Client-Validierungs-Parität** (`src/admin/validateView.js` ↔ Server-`validateView`) vor dem PUT, Abos/Feeds read-only, **super_admin-Provisioning** (grant/revoke) hinter `isSuperAdmin`-Gate; Pinia-Store `stores/admin.js`. Backend-Namespace bereinigt: Rollen-Probe `/admin`→`GET /api/admin/whoami`, **SPA-History-Fallback** in `internal/webui/webui.go`. Tests: Vitest (`validateView`/Store, 62 grün) + Go (`webui_test.go` SPA-Fallback, `adminapi` whoami). Neue Frontend-Dep `vue-router`; kein Schema-Change. Milestone `docs/milestones/WF2-32_Admin_UI.md`. **→ Admin-Backend + UI komplett.**
+- ✅ **WF2-33 — Live-Apply (laufende Subscriptions re-skopieren, ohne Reconnect)** (`pkg/broadcast`: `Scope.UserID` + immutable Client-Identity, `ClientsForTenant`/`ApplyScopes`/`rescopeChan` + Run-Case; `cmd/wayfinder`: `resolveScope`-Refactor + `rescopeTenant`; `pkg/adminapi`: `RescopeFunc`-Hook auf `putView`/`grant`/`revoke`). **Thread-Safety per Konstruktion** — Scope-Tausch als Kommando durch den Single-Goroutine-Actor, kein Lock am heißen Pfad, Run-Loop nie blockiert; `TestRescopeRaceUnderLoad` unter `-race`. **Per-User-korrekt** (gleiche Auflösung wie Connect). **Shrink** ohne Delete-Signal (Frontend-Coast, keep it simple). Tests: `pkg/broadcast/rescope_test.go` (Shrink/Grant/Revoke/Target-only/Skip-unknown/Race), `cmd/wayfinder/rescope_test.go` (Ende-zu-Ende), `pkg/adminapi` (Trigger + kein-Trigger-bei-400). Kein Schema-Change, keine neue Dep. Milestone `docs/milestones/WF2-33_Live_Apply.md`. **→ Stufe 3 komplett.**
 
 **Cross-Project / Firefly:**
 - ✅ Paket #6 / Coverage-Werkzeug — Radar-Ringe-Overlay (`pkg/coverage`, `/api/coverage/rings`, Frontend-Layer-Toggle, Firefly `SensorModel`-Erweiterung; PR #27)

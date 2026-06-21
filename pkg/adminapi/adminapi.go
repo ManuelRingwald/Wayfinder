@@ -43,21 +43,31 @@ type TenantStore interface {
 	GetByID(ctx context.Context, id int64) (store.Tenant, error)
 }
 
+// RescopeFunc is invoked after a mutation that changes what a tenant's connected
+// clients may see (a view edit, or a feed grant/revoke), so their live /ws streams
+// are re-scoped in place without a reconnect (WF2-33). It is wired in main.go to
+// the broadcaster; nil disables live-apply (clients then pick the change up on
+// their next connect). It must not block on the request path beyond a quick
+// resolve + enqueue.
+type RescopeFunc func(ctx context.Context, tenantID int64)
+
 // Handler routes the /api/admin/* endpoints.
 type Handler struct {
 	views   ViewStore
 	subs    SubscriptionStore
 	feeds   FeedStore
 	tenants TenantStore
+	rescope RescopeFunc
 	logger  *slog.Logger
 	mux     *http.ServeMux
 }
 
 // New builds the admin API handler. Method+path patterns give automatic 405s for
 // the wrong method. The cross-tenant provisioning routes (/api/admin/tenants/…)
-// are additionally restricted to super_admin (requireSuper).
-func New(views ViewStore, subs SubscriptionStore, feeds FeedStore, tenants TenantStore, logger *slog.Logger) *Handler {
-	h := &Handler{views: views, subs: subs, feeds: feeds, tenants: tenants, logger: logger}
+// are additionally restricted to super_admin (requireSuper). rescope (may be nil)
+// re-scopes a tenant's live streams after a mutation (WF2-33).
+func New(views ViewStore, subs SubscriptionStore, feeds FeedStore, tenants TenantStore, logger *slog.Logger, rescope RescopeFunc) *Handler {
+	h := &Handler{views: views, subs: subs, feeds: feeds, tenants: tenants, rescope: rescope, logger: logger}
 	mux := http.NewServeMux()
 	// whoami: the SPA's role probe (WF2-32). It sits behind the same admin gate, so
 	// a 200 here both confirms access and tells the client which panels to render.
@@ -161,6 +171,7 @@ func (h *Handler) putView(w http.ResponseWriter, r *http.Request) {
 		h.internalError(w, "upsert view", err)
 		return
 	}
+	h.triggerRescope(r.Context(), id.TenantID) // live-apply the new view (WF2-33)
 	writeJSON(w, http.StatusOK, toViewDTO(out))
 }
 
@@ -207,6 +218,15 @@ func (h *Handler) requireSuper(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 		next(w, r)
+	}
+}
+
+// triggerRescope re-scopes the tenant's live /ws streams after a successful
+// mutation (WF2-33). No-op when live-apply is not wired (rescope == nil), e.g.
+// single-tenant mode or unit tests that don't exercise it.
+func (h *Handler) triggerRescope(ctx context.Context, tenantID int64) {
+	if h.rescope != nil {
+		h.rescope(ctx, tenantID)
 	}
 }
 
@@ -263,6 +283,7 @@ func (h *Handler) grantSubscription(w http.ResponseWriter, r *http.Request) {
 		h.internalError(w, "grant subscription", err)
 		return
 	}
+	h.triggerRescope(r.Context(), tid) // live-apply the new grant (WF2-33)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -281,6 +302,7 @@ func (h *Handler) revokeSubscription(w http.ResponseWriter, r *http.Request) {
 		h.internalError(w, "revoke subscription", err)
 		return
 	}
+	h.triggerRescope(r.Context(), tid) // live-apply the revoke (WF2-33)
 	w.WriteHeader(http.StatusNoContent)
 }
 

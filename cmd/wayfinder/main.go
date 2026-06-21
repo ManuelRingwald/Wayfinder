@@ -334,7 +334,14 @@ func main() {
 	// needs an Identity from the tenant middleware.
 	if tenantMW != nil {
 		requireAdmin := tenant.RequireRole(store.RoleTenantAdmin, store.RoleSuperAdmin)
-		adminAPI := adminapi.New(store.NewViewConfigRepo(dbPool), store.NewSubscriptionRepo(dbPool), store.NewFeedRepo(dbPool), store.NewTenantRepo(dbPool), logger)
+		viewRepo := store.NewViewConfigRepo(dbPool)
+		subRepo := store.NewSubscriptionRepo(dbPool)
+		// Live-apply (WF2-33): when an admin changes a tenant's view or feed
+		// grants, re-scope that tenant's connected clients in place — no reconnect.
+		rescope := func(ctx context.Context, tenantID int64) {
+			rescopeTenant(ctx, broadcaster, subRepo, viewRepo, logger, tenantID)
+		}
+		adminAPI := adminapi.New(viewRepo, subRepo, store.NewFeedRepo(dbPool), store.NewTenantRepo(dbPool), logger, rescope)
 		mux.Handle("/api/admin/", tenantMW(requireAdmin(adminAPI)))
 	}
 
@@ -725,11 +732,32 @@ type viewGetter interface {
 	GetEffective(ctx context.Context, tenantID, userID int64) (store.ViewConfig, error)
 }
 
+// resolveScope resolves a tenant/user to the broadcast scope that filters their
+// stream: the feeds the tenant subscribes to (WF2-21.1) plus the effective view
+// filter (WF2-21.2). It is shared by the /ws connect resolver and the live
+// re-scope (WF2-33), so a freshly connected client and a re-scoped one always end
+// up with an identical scope. The feed ids and view filter are returned alongside
+// the scope for the connect-time audit record (those fields are unexported on
+// Scope).
+func resolveScope(ctx context.Context, subs feedLister, views viewGetter, tenantID, userID int64) (*broadcast.Scope, []int64, *broadcast.ViewFilter, error) {
+	feedIDs, err := subs.ListFeedIDsByTenant(ctx, tenantID)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("resolve subscriptions: %w", err)
+	}
+	view, err := resolveViewFilter(ctx, views, tenantID, userID)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("resolve view: %w", err)
+	}
+	scope := broadcast.NewScopeWithView(feedIDs, view)
+	scope.TenantID = tenantID // for per-tenant metrics (WF2-23.2)
+	scope.UserID = userID     // lets the live re-scope re-resolve this user (WF2-33)
+	return scope, feedIDs, view, nil
+}
+
 // newScopeResolver builds the /ws scope resolver (WF2-21): it reads the tenant
-// Identity placed in the request context by the middleware and resolves the feeds
-// that tenant subscribes to (WF2-21.1) plus the effective view filter (WF2-21.2).
-// On success it emits a structured audit record (WF2-23.1). Fail-closed: a request
-// without an identity, or whose subscription/view lookup fails, is rejected.
+// Identity placed in the request context by the middleware, resolves the scope,
+// and emits a structured audit record (WF2-23.1). Fail-closed: a request without
+// an identity, or whose subscription/view lookup fails, is rejected.
 func newScopeResolver(subs feedLister, views viewGetter, logger *slog.Logger) ws.ScopeResolver {
 	audit := logger.With(slog.String("component", "audit"))
 	return func(r *http.Request) (*broadcast.Scope, error) {
@@ -737,18 +765,48 @@ func newScopeResolver(subs feedLister, views viewGetter, logger *slog.Logger) ws
 		if !ok {
 			return nil, fmt.Errorf("scoped /ws requires a tenant identity")
 		}
-		feedIDs, err := subs.ListFeedIDsByTenant(r.Context(), id.TenantID)
+		scope, feedIDs, view, err := resolveScope(r.Context(), subs, views, id.TenantID, id.UserID)
 		if err != nil {
-			return nil, fmt.Errorf("resolve subscriptions: %w", err)
-		}
-		view, err := resolveViewFilter(r.Context(), views, id.TenantID, id.UserID)
-		if err != nil {
-			return nil, fmt.Errorf("resolve view: %w", err)
+			return nil, err
 		}
 		logScopeAudit(audit, r, id, feedIDs, view)
-		scope := broadcast.NewScopeWithView(feedIDs, view)
-		scope.TenantID = id.TenantID // for per-tenant metrics (WF2-23.2)
 		return scope, nil
+	}
+}
+
+// rescopeTenant re-resolves the scope of every connected client of a tenant and
+// applies it live (WF2-33), so a view or subscription change takes effect without
+// a reconnect. The DB resolution runs here, off the broadcaster's Run goroutine;
+// only the in-memory swap is handed to Run via ApplyScopes. Feeds are per-tenant
+// (resolved once); the effective view may differ per user (resolved per distinct
+// user). On any resolution error the whole batch is skipped — clients keep their
+// current scope (safe: a reconnect or the next change reconciles them). A no-op
+// when no client of the tenant is connected.
+func rescopeTenant(ctx context.Context, b *broadcast.Broadcaster, subs feedLister, views viewGetter, logger *slog.Logger, tenantID int64) {
+	refs := b.ClientsForTenant(tenantID)
+	if len(refs) == 0 {
+		return
+	}
+	byUser := make(map[int64]*broadcast.Scope)
+	out := make(map[*broadcast.Client]*broadcast.Scope, len(refs))
+	for _, ref := range refs {
+		scope, ok := byUser[ref.UserID]
+		if !ok {
+			s, _, _, err := resolveScope(ctx, subs, views, tenantID, ref.UserID)
+			if err != nil {
+				logger.Error("live re-scope: resolve failed, keeping current scopes",
+					slog.Int64("tenant_id", tenantID), slog.Int64("user_id", ref.UserID),
+					slog.String("error", err.Error()))
+				return
+			}
+			byUser[ref.UserID] = s
+			scope = s
+		}
+		out[ref.Client] = scope
+	}
+	if err := b.ApplyScopes(ctx, out); err != nil {
+		logger.Warn("live re-scope: apply interrupted",
+			slog.Int64("tenant_id", tenantID), slog.String("error", err.Error()))
 	}
 }
 

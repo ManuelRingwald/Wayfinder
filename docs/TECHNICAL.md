@@ -430,6 +430,20 @@ Config → keine Beschränkung. **Lebenszyklus** (confirmed/tentative/coasting) 
 bewusst **client-seitig** (Declutter, reversibel); echte Klassifizierung wird ein
 späteres server-seitiges Premium-Feature (nach Track-Anreicherung, WF2-40).
 
+**Live-Apply (WF2-33):** Ändert ein Admin View oder Feed-Grants, werden die
+**aktiven** `/ws`-Streams des Mandanten **live re-skopiert** — ohne Reconnect. Der
+Broadcaster ist ein **Single-Goroutine-Actor**; der Scope-Tausch ist ein Kommando
+durch denselben `Run`-Loop (`rescopeChan`/`ApplyScopes`), in dem auch
+`broadcastTracks` läuft → **kein Lock am heißen Pfad, keine Race**, Run-Loop nie
+blockiert. Ablauf: `cmd/wayfinder.rescopeTenant` schnappt die betroffenen Clients
+(`ClientsForTenant`, liest nur immutable Identität), löst **off-Run** pro distinct
+User neu auf (`resolveScope`, identisch zum Connect) und reicht den Tausch an `Run`
+(`ApplyScopes`); Disconnects zwischen Snapshot und Apply werden übersprungen. Bei
+**verkleinerter AOI** sendet der Server außenliegende Tracks schlicht nicht mehr
+(kein Lösch-Signal) — das Frontend coastet sie über den Client-Timeout aus.
+Ausgelöst von `pkg/adminapi` (`putView`/`grant`/`revoke`) über einen injizierten
+`RescopeFunc`; bei Validierungsfehler (`400`) erfolgt **kein** Re-Scope.
+
 **Isolations-Gate (WF2-22, NFR-SEC-003):** `pkg/broadcast/isolation_test.go`
 sichert das Fan-out-Prädikat als Property-/Fuzz-Gate ab (Differential-Test gegen
 ein unabhängiges Oracle + Ende-zu-Ende-Property + `FuzzScopeFilter`). Die Property-

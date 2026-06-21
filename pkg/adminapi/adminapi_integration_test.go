@@ -47,7 +47,7 @@ func TestIntegrationAdminAPI(t *testing.T) {
 	}
 
 	h := New(store.NewViewConfigRepo(pool), store.NewSubscriptionRepo(pool), store.NewFeedRepo(pool),
-		store.NewTenantRepo(pool), slog.New(slog.NewTextHandler(io.Discard, nil)))
+		store.NewTenantRepo(pool), slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
 
 	req := func(method, path, body string, role store.Role) *httptest.ResponseRecorder {
 		var r *http.Request

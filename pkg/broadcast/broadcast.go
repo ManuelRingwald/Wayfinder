@@ -47,8 +47,12 @@ type Scope struct {
 	// metrics labelling (WF2-23.2). 0 means single-tenant / unattributed. It does
 	// not affect isolation (that is the feed allow-set + view filter).
 	TenantID int64
-	feeds    map[int64]bool
-	view     *ViewFilter // nil = no view restriction within the allowed feeds
+	// UserID is the user behind the connection. Like TenantID it does not affect
+	// isolation; it is carried so a live re-scope (WF2-33) can re-resolve this
+	// connection's *effective* view, which may be a per-user override.
+	UserID int64
+	feeds  map[int64]bool
+	view   *ViewFilter // nil = no view restriction within the allowed feeds
 }
 
 // NewScope builds a feed-level scope from the allowed feed ids. An empty list
@@ -188,6 +192,9 @@ type Broadcaster struct {
 	registerChan   chan *Client
 	unregisterChan chan *Client
 	messageChan    chan Message
+	// rescopeChan carries live re-scope batches (WF2-33). Buffered so the admin
+	// path enqueues without blocking; applied on the Run goroutine.
+	rescopeChan chan map[*Client]*Scope
 
 	evicted atomic.Int64
 
@@ -213,8 +220,18 @@ type TenantMetric struct {
 // tracks it may receive and the view filter applied within them (nil = unscoped
 // / single-tenant).
 type Client struct {
-	send  chan Message
+	send chan Message
+	// scope is the mutable isolation/view filter. It is read and written ONLY on
+	// the Run goroutine (broadcastTracks reads it, applyScopes swaps it on a live
+	// re-scope), so it needs no lock — the broadcaster is a single-goroutine
+	// actor (WF2-33).
 	scope *Scope
+	// tenantID and userID are the immutable identity of the connection, copied
+	// from the scope at registration. They never change for the life of the
+	// client (a re-scope keeps the same tenant/user), so ClientsForTenant may read
+	// them concurrently with Run without ever touching the mutable scope.
+	tenantID int64
+	userID   int64
 }
 
 // New creates a new Broadcaster.
@@ -225,6 +242,7 @@ func New(logger *slog.Logger) *Broadcaster {
 		registerChan:   make(chan *Client, 10),
 		unregisterChan: make(chan *Client, 10),
 		messageChan:    make(chan Message, 10),
+		rescopeChan:    make(chan map[*Client]*Scope, 16),
 		tenant:         make(map[int64]*tenantCounters),
 	}
 }
@@ -239,6 +257,12 @@ func (b *Broadcaster) TracksChan() chan<- TrackBatch {
 // A nil scope is unscoped (single-tenant: receives every feed).
 func (b *Broadcaster) RegisterClient(sendChan chan Message, scope *Scope) *Client {
 	c := &Client{send: sendChan, scope: scope}
+	if scope != nil {
+		// Pin the immutable identity so a later re-scope can find this client
+		// without reading the mutable scope from another goroutine (WF2-33).
+		c.tenantID = scope.TenantID
+		c.userID = scope.UserID
+	}
 	b.registerChan <- c
 	return c
 }
@@ -246,6 +270,71 @@ func (b *Broadcaster) RegisterClient(sendChan chan Message, scope *Scope) *Clien
 // UnregisterClient removes a client from the broadcast list.
 func (b *Broadcaster) UnregisterClient(c *Client) {
 	b.unregisterChan <- c
+}
+
+// ClientRef identifies a connected client and the user behind it, for live
+// re-scoping (WF2-33). The Client handle is opaque; UserID lets the caller
+// re-resolve that connection's effective view (which may be a per-user override).
+type ClientRef struct {
+	Client *Client
+	UserID int64
+}
+
+// ClientsForTenant snapshots every connected client of the given tenant. It is
+// the first phase of a live re-scope (WF2-33): it reads only the immutable
+// identity fields (never the mutable scope), so it is safe to call concurrently
+// with the Run loop. The caller then resolves fresh scopes *off* the hot path and
+// applies them via ApplyScopes. tenant 0 (single-tenant / unattributed) is never
+// re-scoped.
+func (b *Broadcaster) ClientsForTenant(tenantID int64) []ClientRef {
+	if tenantID == 0 {
+		return nil
+	}
+	var refs []ClientRef
+	b.clients.Range(func(key, _ any) bool {
+		c := key.(*Client)
+		if c.tenantID == tenantID {
+			refs = append(refs, ClientRef{Client: c, UserID: c.userID})
+		}
+		return true
+	})
+	return refs
+}
+
+// ApplyScopes hands a batch of freshly resolved scopes to the Run loop to swap
+// onto the named clients (WF2-33, the apply phase). The swap happens *inside* Run
+// — the same goroutine that evaluates tracks — so an active connection's scope is
+// never mutated concurrently with its own track evaluation: no lock, no race. The
+// Run loop is never blocked; this only enqueues onto a buffered channel, bounded
+// by ctx so a shutdown cannot deadlock the caller. A nil/empty map is a no-op.
+func (b *Broadcaster) ApplyScopes(ctx context.Context, scopes map[*Client]*Scope) error {
+	if len(scopes) == 0 {
+		return nil
+	}
+	select {
+	case b.rescopeChan <- scopes:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// applyScopes swaps the new scope onto each still-connected client. It runs on
+// the Run goroutine, preserving the invariant that c.scope is only ever written
+// here and read in broadcastTracks (same goroutine → no synchronisation needed).
+// A client that disconnected between snapshot and apply is skipped — its entry in
+// b.clients is gone, so a stale handle can never resurrect it.
+func (b *Broadcaster) applyScopes(scopes map[*Client]*Scope) {
+	n := 0
+	for c, s := range scopes {
+		if _, ok := b.clients.Load(c); ok {
+			c.scope = s
+			n++
+		}
+	}
+	if n > 0 {
+		b.logger.Debug("rescoped clients", slog.Int("count", n))
+	}
 }
 
 // Run starts the broadcaster loop (blocks until context is cancelled).
@@ -272,6 +361,9 @@ func (b *Broadcaster) Run(ctx context.Context) error {
 
 		case msg := <-b.messageChan:
 			b.broadcast(msg)
+
+		case scopes := <-b.rescopeChan:
+			b.applyScopes(scopes)
 		}
 	}
 }
