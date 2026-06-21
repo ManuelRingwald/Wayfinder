@@ -7,7 +7,36 @@
 > 🗺️ **Roadmap:** Arbeitspakete, Findings und empfohlene Reihenfolge stehen in
 > `docs/ROADMAP.md` (Stichwort „Roadmap" im Chat zeigt diese Liste).
 
-- **Zuletzt aktualisiert:** 2026-06-20 — **WF2-21.1 „Scoped Fan-out: Feed-Level-
+- **Zuletzt aktualisiert:** 2026-06-20 — **WF2-21.2 „Scoped Fan-out: Sicht-Filter
+  (AOI + FL-Band)" abgeschlossen — WF2-21 KOMPLETT (🔒 S4 · Opus 4.8).** Über die
+  in 21.1 erlaubten Feeds legt sich jetzt der **Sicht-Ausschnitt** des Mandanten:
+  nur Tracks **im AOI** und im **FL-Band** verlassen den Server. Per Projektentscheid
+  eine **harte server-seitige Grenze** (Datensparsamkeit/Billing/kein F12-Leck),
+  **nicht** nur Frontend-Declutter. **`pkg/broadcast`:** `BBox` +
+  `ViewFilter{AOI, FLMinFt, FLMaxFt}`; `Scope` trägt `view`; `NewScopeWithView`;
+  `ViewFilter.admits` (AOI exakt; FL **fail-open** — Track ohne gemessene FL wird
+  **zugestellt**, nie verworfen); `Scope.filterView` (Fast-Path ohne View, sonst
+  per-Client gefilterte Kopie); `broadcastTracks` wendet erst `AllowsFeed` (21.1)
+  dann `filterView` (21.2) an, leere Sicht → nichts gesendet. **`cmd/wayfinder`:**
+  `newScopeResolver(subs, views)` zieht `view_configs.GetEffective` heran;
+  `resolveViewFilter` mappt `ViewConfig`→`ViewFilter` (**FL von Flugfläche in Fuß,
+  ×100**), kein/leeres Config → nil (keine Beschränkung), Lookup-Fehler → fail-closed.
+  **Fehlerrichtung kompromisslos „im Zweifel senden"** (False-Positive ≫
+  False-Negative). **Lebenszyklus** (confirmed/tentative/coasting) bleibt bewusst
+  **client-seitig** (Einsatzleiter muss coasting einblenden können); echte
+  Klassifizierung (Freund/Feind/Rettung) wird später ein server-seitiges
+  **Premium-Feature** (nach Firefly-Anreicherung, WF2-40). **Kein Schema-Change.**
+  **Tests:** `TestViewFilterAdmits` (AOI N/E außerhalb, unter/über FL, **kein FL →
+  fail-open**, Kante inklusiv) + `TestBroadcastViewScoping` (zwei Clients am selben
+  Feed: AOI-skopiert vs. voll) + `TestResolveViewFilter` (DB-frei: Mapping/FL→Fuß/
+  nil-Fälle/Fehler) + **real-PG** `TestIntegrationResolveViewFilter` (JSONB-AOI +
+  FL round-trip über `GetEffective`); `…FailsClosed` um View-Lookup-Fehler erweitert.
+  Gates grün (`go build/vet/test`, `gofmt`, `pg-test.sh`); `go 1.25` unverändert.
+  TECHNICAL §6 + INSTALLATION §7 (AOI/FL-Sicht, fail-open) + Register NFR-SEC-003;
+  Milestone `docs/milestones/WF2-21.2_View_Filter.md`. **Abgrenzung:** Scope ist
+  Connect-Snapshot (Live-Apply = WF2-33). **Nächster Schritt:** WF2-22
+  (Isolations-Testsuite Property-/Fuzz „A sieht nie B") nach Ankündigung & „Go".
+- **Vorherige Aktualisierung:** 2026-06-20 — **WF2-21.1 „Scoped Fan-out: Feed-Level-
   Isolation" abgeschlossen (🔒 S4–S5 · Opus 4.8) — DER ISOLATIONS-KERN.** Bisher
   schickte der Broadcaster jedem Client alles (all-to-all); jetzt erhält ein Client
   einen Track **nur**, wenn sein Mandant den Feed **abonniert** hat — server-seitig,
@@ -738,11 +767,11 @@
 (Tenant-Context + builtin-Login) · WF2-13 (Admin-Bootstrap + `/admin`-Gate).
 
 **🔵 Stufe 2 — in Arbeit (sicherheitskritischer Kern):** **WF2-20 ✅** (Multi-Feed
-+ `feed_id` pro Track) · **WF2-21.1 ✅** (scoped Fan-out **Feed-Ebene**:
-`broadcast.Scope`, Track nur an abonnierte Feeds, fail-closed; Pflicht-Negativtest
-„A bekommt nie B's Feed"). **➡️ Nächster: WF2-21.2** (Sicht-Filter AOI/FL-Band/
-Kategorie aus `view_configs.GetEffective`) 🔒 S4 · Opus 4.8. Danach WF2-22
-(Isolations-Testsuite Property-/Fuzz, breite „A sieht nie B").
++ `feed_id` pro Track) · **WF2-21 ✅** (scoped Fan-out: 21.1 Feed-Isolation +
+21.2 Sicht-Filter AOI/FL-Band als harte server-seitige Grenze, fail-open;
+Pflicht-Negativtest „A bekommt nie B's Feed"). **➡️ Nächster: WF2-22**
+(Isolations-Testsuite: Property-/Fuzz, breite generierte „A sieht nie B"-Abdeckung
+über Feeds **und** AOI/FL) 🔒 S4 · Opus 4.8. Danach WF2-23 (Pro-Tenant-Metriken/Audit).
 
 Offen, **ASD-Kern (mandanten-unabhängig, parallel möglich** — nicht im kritischen
 Pfad, Details/Abgleich in ROADMAP §2):
@@ -771,17 +800,15 @@ Pfad, Details/Abgleich in ROADMAP §2):
 
 ## 3. Nächster Schritt
 
-➡️ **WF2-21.2 — Sicht-Filter (AOI/FL-Band/Kategorie)** 🔒 S4 · Opus 4.8, nach
-Ankündigung & „Go".
+➡️ **WF2-22 — Isolations-Testsuite** 🔒 S4 · Opus 4.8, nach Ankündigung & „Go".
 
-Zweiter Halbschritt von WF2-21: über die in 21.1 erlaubten Feeds den **Sicht-Filter
-des Mandanten** legen. `view_configs.GetEffective(tenantID, userID)` liefert
-AOI (BBox) + FL-Band (`fl_min`/`fl_max`) + Layer/Kategorie; der `Scope` wird um
-diese Felder erweitert und `broadcastTracks` filtert **einzelne Tracks** innerhalb
-eines erlaubten Feeds (Position in AOI, Flugfläche im Band, Kategorie erlaubt). Die
-Feed-Isolation aus 21.1 bleibt die harte Grenze; der Sicht-Filter ist die
-Komfort-/Skopierungsebene darüber. Danach **WF2-22** (Isolations-Testsuite:
-Property-/Fuzz, breite „A sieht nie B"-Abdeckung).
+Härtet die Cross-Tenant-Isolation (NFR-SEC-003) als **Regressions-Gate**:
+Property-/Fuzz-Tests, die zufällige Tenant-/Abo-/View-Konstellationen und
+Track-Ströme generieren und **beweisen**, dass ein Client **nie** einen Track
+außerhalb seines Scopes (Feed ∧ AOI ∧ FL) erhält — über die punktuellen
+Negativtests aus 21.1/21.2 hinaus, mit breiter generierter Abdeckung. So wird das
+Isolations-Prädikat gegen künftige Änderungen am Fan-out abgesichert. Danach
+**WF2-23** (Pro-Tenant-Metriken & Audit-Log).
 
 **Erledigt in dieser Sitzung:** **Stufe 0 komplett** (WF2-00/01/02, ADR
 0005/0006/0007) **+ STUFE 1 KOMPLETT** — **WF2-10** (alle 6 Tabellen-Repos, real
@@ -793,8 +820,10 @@ gehärtet) **+ WF2-13** (Admin-Bootstrap-Subcommand idempotent + `/admin`-Rollen
 Gate `RequireRole`) **+ Stufe 2: WF2-20 komplett** (20.1 `feed_id`-Durchstich
 Receiver→Broadcaster→Wire `WAYFINDER_FEED_ID`; 20.2 Multi-Feed-Receiver aus
 DB-Katalog + Feed-CLI `wayfinder feed add/list` + ENV-Fallback + `main()`-Reorder)
-**+ WF2-21.1** (scoped Fan-out Feed-Isolation: `broadcast.Scope`/`ws.ScopeResolver`,
-fail-closed, Pflicht-Negativtest „A bekommt nie B's Feed"). ADR-0006-Nachtrag:
+**+ WF2-21 komplett** (21.1 Feed-Isolation `broadcast.Scope`/`ws.ScopeResolver`,
+fail-closed, Pflicht-Negativtest „A bekommt nie B's Feed"; 21.2 Sicht-Filter
+AOI/FL-Band als harte server-seitige Grenze `broadcast.ViewFilter`/`resolveViewFilter`,
+**fail-open** bei fehlendem Attribut). ADR-0006-Nachtrag:
 goose verworfen, Go-Baseline 1.25. Register FR-CFG-001,
 FR-TEN-001/002, FR-FEED-001, NFR-SEC-003/004, NFR-SCALE-001; Test-Runner
 `scripts/pg-test.sh` (jetzt `./...`, `-p 1`); neue Deps `golang.org/x/crypto`,

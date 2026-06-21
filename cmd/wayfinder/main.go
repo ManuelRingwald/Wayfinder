@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -277,7 +278,7 @@ func main() {
 	// to the feeds its tenant subscribes to; single-tenant → nil resolver (unscoped).
 	var scopeResolver ws.ScopeResolver
 	if dbPool != nil {
-		scopeResolver = newScopeResolver(store.NewSubscriptionRepo(dbPool))
+		scopeResolver = newScopeResolver(store.NewSubscriptionRepo(dbPool), store.NewViewConfigRepo(dbPool))
 	}
 	wsHandler := ws.New(broadcaster, logger, cfg.AllowedOrigins, scopeResolver)
 	// The live picture is tenant-scoped: gate /ws with the tenant middleware when
@@ -710,17 +711,22 @@ func setupTenancy(ctx context.Context, cfg Config, logger *slog.Logger) (func(ht
 	return tenant.Middleware(authenticator, store.NewUserRepo(pool), logger), pool, nil
 }
 
-// feedLister is the subset of *store.SubscriptionRepo the scope resolver needs
-// (kept small so the resolver is unit-testable with a fake).
+// feedLister and viewGetter are the slices of *store.SubscriptionRepo /
+// *store.ViewConfigRepo the scope resolver needs (kept small so the resolver is
+// unit-testable with fakes).
 type feedLister interface {
 	ListFeedIDsByTenant(ctx context.Context, tenantID int64) ([]int64, error)
+}
+type viewGetter interface {
+	GetEffective(ctx context.Context, tenantID, userID int64) (store.ViewConfig, error)
 }
 
 // newScopeResolver builds the /ws scope resolver (WF2-21): it reads the tenant
 // Identity placed in the request context by the middleware and resolves the feeds
-// that tenant subscribes to. Fail-closed: a request without an identity is
-// rejected (the middleware should already have guaranteed one).
-func newScopeResolver(subs feedLister) ws.ScopeResolver {
+// that tenant subscribes to (WF2-21.1) plus the effective view filter (WF2-21.2).
+// Fail-closed: a request without an identity, or whose subscription/view lookup
+// fails, is rejected (no stream).
+func newScopeResolver(subs feedLister, views viewGetter) ws.ScopeResolver {
 	return func(r *http.Request) (*broadcast.Scope, error) {
 		id, ok := tenant.FromContext(r.Context())
 		if !ok {
@@ -730,8 +736,43 @@ func newScopeResolver(subs feedLister) ws.ScopeResolver {
 		if err != nil {
 			return nil, fmt.Errorf("resolve subscriptions: %w", err)
 		}
-		return broadcast.NewScope(feedIDs), nil
+		view, err := resolveViewFilter(r.Context(), views, id.TenantID, id.UserID)
+		if err != nil {
+			return nil, fmt.Errorf("resolve view: %w", err)
+		}
+		return broadcast.NewScopeWithView(feedIDs, view), nil
 	}
+}
+
+// resolveViewFilter maps the tenant/user's effective view config (if any) to a
+// broadcast.ViewFilter. No config — or a config with neither AOI nor FL bounds —
+// yields nil (no view restriction within the allowed feeds). Flight levels are
+// stored in FL (hundreds of feet) and converted to feet for comparison.
+func resolveViewFilter(ctx context.Context, views viewGetter, tenantID, userID int64) (*broadcast.ViewFilter, error) {
+	vc, err := views.GetEffective(ctx, tenantID, userID)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	vf := &broadcast.ViewFilter{}
+	if vc.AOI != nil {
+		vf.AOI = &broadcast.BBox{MinLat: vc.AOI.MinLat, MinLon: vc.AOI.MinLon, MaxLat: vc.AOI.MaxLat, MaxLon: vc.AOI.MaxLon}
+	}
+	if vc.FLMin != nil {
+		ft := float64(*vc.FLMin) * 100
+		vf.FLMinFt = &ft
+	}
+	if vc.FLMax != nil {
+		ft := float64(*vc.FLMax) * 100
+		vf.FLMaxFt = &ft
+	}
+	if vf.AOI == nil && vf.FLMinFt == nil && vf.FLMaxFt == nil {
+		return nil, nil // config exists but imposes no restriction → fast path
+	}
+	return vf, nil
 }
 
 // adminWhoamiHandler reports the caller's resolved tenant Identity as JSON. It
