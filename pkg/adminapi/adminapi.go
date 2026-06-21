@@ -13,13 +13,15 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strconv"
 
 	"github.com/manuelringwald/wayfinder/pkg/store"
 	"github.com/manuelringwald/wayfinder/pkg/tenant"
 )
 
-// ViewStore, SubscriptionStore and FeedStore are the slices of the store repos
-// the API needs (small interfaces so handlers are unit-testable with fakes).
+// ViewStore, SubscriptionStore, FeedStore and TenantStore are the slices of the
+// store repos the API needs (small interfaces so handlers are unit-testable with
+// fakes).
 type ViewStore interface {
 	GetEffective(ctx context.Context, tenantID, userID int64) (store.ViewConfig, error)
 	UpsertTenantDefault(ctx context.Context, tenantID int64, vc store.ViewConfig) (store.ViewConfig, error)
@@ -27,30 +29,46 @@ type ViewStore interface {
 
 type SubscriptionStore interface {
 	ListFeedsByTenant(ctx context.Context, tenantID int64) ([]store.Feed, error)
+	Subscribe(ctx context.Context, tenantID, feedID int64) error
+	Unsubscribe(ctx context.Context, tenantID, feedID int64) error
 }
 
 type FeedStore interface {
 	List(ctx context.Context) ([]store.Feed, error)
+	GetByID(ctx context.Context, id int64) (store.Feed, error)
+}
+
+type TenantStore interface {
+	List(ctx context.Context) ([]store.Tenant, error)
+	GetByID(ctx context.Context, id int64) (store.Tenant, error)
 }
 
 // Handler routes the /api/admin/* endpoints.
 type Handler struct {
-	views  ViewStore
-	subs   SubscriptionStore
-	feeds  FeedStore
-	logger *slog.Logger
-	mux    *http.ServeMux
+	views   ViewStore
+	subs    SubscriptionStore
+	feeds   FeedStore
+	tenants TenantStore
+	logger  *slog.Logger
+	mux     *http.ServeMux
 }
 
 // New builds the admin API handler. Method+path patterns give automatic 405s for
-// the wrong method.
-func New(views ViewStore, subs SubscriptionStore, feeds FeedStore, logger *slog.Logger) *Handler {
-	h := &Handler{views: views, subs: subs, feeds: feeds, logger: logger}
+// the wrong method. The cross-tenant provisioning routes (/api/admin/tenants/…)
+// are additionally restricted to super_admin (requireSuper).
+func New(views ViewStore, subs SubscriptionStore, feeds FeedStore, tenants TenantStore, logger *slog.Logger) *Handler {
+	h := &Handler{views: views, subs: subs, feeds: feeds, tenants: tenants, logger: logger}
 	mux := http.NewServeMux()
+	// tenant_admin self-service (tenant from the Identity).
 	mux.HandleFunc("GET /api/admin/view", h.getView)
 	mux.HandleFunc("PUT /api/admin/view", h.putView)
 	mux.HandleFunc("GET /api/admin/subscriptions", h.getSubscriptions)
 	mux.HandleFunc("GET /api/admin/feeds", h.getFeeds)
+	// super_admin provisioning (target tenant from the path, cross-tenant).
+	mux.HandleFunc("GET /api/admin/tenants", h.requireSuper(h.listTenants))
+	mux.HandleFunc("GET /api/admin/tenants/{tenantID}/subscriptions", h.requireSuper(h.listTenantSubscriptions))
+	mux.HandleFunc("POST /api/admin/tenants/{tenantID}/subscriptions", h.requireSuper(h.grantSubscription))
+	mux.HandleFunc("DELETE /api/admin/tenants/{tenantID}/subscriptions/{feedID}", h.requireSuper(h.revokeSubscription))
 	h.mux = mux
 	return h
 }
@@ -145,6 +163,118 @@ func (h *Handler) getFeeds(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, toFeedDTOs(feeds))
 }
 
+// requireSuper restricts a handler to super_admin. The outer gate already lets
+// only tenant_admin/super_admin through; this is the extra step that gates the
+// **cross-tenant** provisioning routes — super_admin is the only role allowed to
+// grant/revoke another tenant's feed access (the billing/entitlement boundary).
+func (h *Handler) requireSuper(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, ok := tenant.FromContext(r.Context())
+		if !ok {
+			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+		if id.Role != store.RoleSuperAdmin {
+			writeError(w, http.StatusForbidden, "super_admin required")
+			return
+		}
+		next(w, r)
+	}
+}
+
+func (h *Handler) listTenants(w http.ResponseWriter, r *http.Request) {
+	ts, err := h.tenants.List(r.Context())
+	if err != nil {
+		h.internalError(w, "list tenants", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toTenantDTOs(ts))
+}
+
+func (h *Handler) listTenantSubscriptions(w http.ResponseWriter, r *http.Request) {
+	tid, err := pathInt(r, "tenantID")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid tenant id")
+		return
+	}
+	if !h.tenantExists(w, r, tid) {
+		return
+	}
+	feeds, err := h.subs.ListFeedsByTenant(r.Context(), tid)
+	if err != nil {
+		h.internalError(w, "list tenant subscriptions", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toFeedDTOs(feeds))
+}
+
+func (h *Handler) grantSubscription(w http.ResponseWriter, r *http.Request) {
+	tid, err := pathInt(r, "tenantID")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid tenant id")
+		return
+	}
+	var body struct {
+		FeedID int64 `json:"feed_id"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body); err != nil || body.FeedID == 0 {
+		writeError(w, http.StatusBadRequest, "invalid body: expected {\"feed_id\": <id>}")
+		return
+	}
+	if !h.tenantExists(w, r, tid) {
+		return
+	}
+	if _, err := h.feeds.GetByID(r.Context(), body.FeedID); errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "feed not found")
+		return
+	} else if err != nil {
+		h.internalError(w, "get feed", err)
+		return
+	}
+	if err := h.subs.Subscribe(r.Context(), tid, body.FeedID); err != nil { // idempotent
+		h.internalError(w, "grant subscription", err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) revokeSubscription(w http.ResponseWriter, r *http.Request) {
+	tid, err := pathInt(r, "tenantID")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid tenant id")
+		return
+	}
+	fid, err := pathInt(r, "feedID")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid feed id")
+		return
+	}
+	if err := h.subs.Unsubscribe(r.Context(), tid, fid); err != nil { // idempotent
+		h.internalError(w, "revoke subscription", err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// tenantExists writes a 404 (or 500) and returns false if the target tenant does
+// not exist; callers stop on false.
+func (h *Handler) tenantExists(w http.ResponseWriter, r *http.Request, tenantID int64) bool {
+	_, err := h.tenants.GetByID(r.Context(), tenantID)
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "tenant not found")
+		return false
+	}
+	if err != nil {
+		h.internalError(w, "get tenant", err)
+		return false
+	}
+	return true
+}
+
+func pathInt(r *http.Request, name string) (int64, error) {
+	return strconv.ParseInt(r.PathValue(name), 10, 64)
+}
+
 // validateView enforces the geographic/flight-level invariants server-side so a
 // client can never store an out-of-range or inverted view.
 func validateView(d viewDTO) error {
@@ -194,6 +324,22 @@ func toFeedDTOs(feeds []store.Feed) []feedDTO {
 	out := make([]feedDTO, len(feeds))
 	for i, f := range feeds {
 		out[i] = feedDTO{ID: f.ID, Name: f.Name, Region: f.Region, SensorMix: f.SensorMix}
+	}
+	return out
+}
+
+// tenantDTO is the admin-facing shape of a tenant (super_admin provisioning view).
+type tenantDTO struct {
+	ID     int64  `json:"id"`
+	Slug   string `json:"slug"`
+	Name   string `json:"name"`
+	Status string `json:"status"`
+}
+
+func toTenantDTOs(tenants []store.Tenant) []tenantDTO {
+	out := make([]tenantDTO, len(tenants))
+	for i, t := range tenants {
+		out[i] = tenantDTO{ID: t.ID, Slug: t.Slug, Name: t.Name, Status: t.Status}
 	}
 	return out
 }

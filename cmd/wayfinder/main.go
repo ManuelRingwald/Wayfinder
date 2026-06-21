@@ -333,7 +333,7 @@ func main() {
 	if tenantMW != nil {
 		requireAdmin := tenant.RequireRole(store.RoleTenantAdmin, store.RoleSuperAdmin)
 		mux.Handle("/admin", tenantMW(requireAdmin(adminWhoamiHandler())))
-		adminAPI := adminapi.New(store.NewViewConfigRepo(dbPool), store.NewSubscriptionRepo(dbPool), store.NewFeedRepo(dbPool), logger)
+		adminAPI := adminapi.New(store.NewViewConfigRepo(dbPool), store.NewSubscriptionRepo(dbPool), store.NewFeedRepo(dbPool), store.NewTenantRepo(dbPool), logger)
 		mux.Handle("/api/admin/", tenantMW(requireAdmin(adminAPI)))
 	}
 

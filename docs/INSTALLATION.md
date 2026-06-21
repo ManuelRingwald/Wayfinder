@@ -516,8 +516,24 @@ curl -X PUT https://asd.example.com/api/admin/view \
 
 > Eine View-Änderung wirkt auf **neue** `/ws`-Verbindungen (der Scope wird beim
 > Connect aufgelöst); bestehende Verbindungen werden erst mit Live-Apply (WF2-33)
-> nachgezogen. Feed-Abos (Grants) setzt bis auf Weiteres der Plattform-Betreiber
-> direkt in der DB (`subscriptions`).
+> nachgezogen.
+
+**Provisioning (nur `super_admin`, cross-tenant, WF2-31b):** Feed-Zugänge werden
+über das API gegrantet/entzogen — die Ziel-Mandanten-ID steht im **Pfad** (nicht in
+der Identity). Nur `super_admin` darf diese Routen (sonst `403`):
+
+| Methode + Pfad | Wirkung |
+|---|---|
+| `GET /api/admin/tenants` | Alle Mandanten. |
+| `GET /api/admin/tenants/{tenantID}/subscriptions` | Abos eines Mandanten. |
+| `POST /api/admin/tenants/{tenantID}/subscriptions` | Feed granten (`{"feed_id":…}`), idempotent. |
+| `DELETE /api/admin/tenants/{tenantID}/subscriptions/{feedID}` | Feed entziehen. |
+
+```bash
+# Feed 3 dem Mandanten 5 zuweisen (super_admin)
+curl -X POST https://asd.example.com/api/admin/tenants/5/subscriptions \
+  -H 'Content-Type: application/json' -d '{"feed_id":3}'
+```
 
 #### Feed-Katalog & Multi-Feed-Empfang (WF2-20)
 

@@ -7,7 +7,34 @@
 > 🗺️ **Roadmap:** Arbeitspakete, Findings und empfohlene Reihenfolge stehen in
 > `docs/ROADMAP.md` (Stichwort „Roadmap" im Chat zeigt diese Liste).
 
-- **Zuletzt aktualisiert:** 2026-06-20 — **WF2-31 „Tenant-skopiertes Admin-API"
+- **Zuletzt aktualisiert:** 2026-06-20 — **WF2-31b „Subscription-Grants
+  (super_admin, cross-tenant)" abgeschlossen — ADMIN-BACKEND KOMPLETT
+  (🔒 S3 +S4-Touch · Sonnet 4.6 / Opus-Review).** Vervollständigt WF2-31: der
+  Plattform-Betreiber grant/entzieht Feed-Zugänge **mandantenübergreifend** per API
+  (Provisioning ohne DB-Poking, geschäftskritisch fürs SaaS-Modell). **Rollen-Modell
+  (das Fundament):** **tenant_admin** = nur eigener Mandant (`tenant_id` aus
+  Identity, WF2-31); **super_admin** = cross-tenant (Ziel-`tenant_id` aus dem
+  **Pfad**) und **einzige** schreibende Rolle dafür. Neue super_admin-only-
+  Endpunkte (`pkg/adminapi`): `GET /api/admin/tenants`, `GET/POST
+  /api/admin/tenants/{tenantID}/subscriptions`, `DELETE …/{feedID}`. **Doppel-Gate:**
+  äußerer `RequireRole(tenant_admin, super_admin)` + in-handler **`requireSuper`**
+  (`Identity.Role == super_admin`, sonst `403`). Validierung: Pfad-IDs via
+  `r.PathValue` (ungültig → `400`), Ziel-Tenant/Feed müssen existieren (`404`),
+  Body wohlgeformt (`400`); Grant/Revoke idempotent (`204`). Neue Store-Interfaces
+  (`TenantStore`; `SubscriptionStore`+Subscribe/Unsubscribe; `FeedStore`+GetByID),
+  echte Repos erfüllen sie; `adminapi.New` bekommt den `TenantRepo`. **Kein
+  Schema-Change.** **Tests:** DB-frei Grant/Revoke-Targeting (Ziel aus Pfad),
+  `TestGrantValidation` (404/400-Tabelle, erreicht Store nicht), **Cross-Tenant-
+  Negativtest `TestCrossTenantRoutesForbidTenantAdmin`** (tenant_admin auf **jeder**
+  Provisioning-Route → `403`, kein Grant/Revoke); real-PG `TestIntegrationAdminAPI`
+  (super_admin **grant → tenant_admin GET subscriptions zeigt Feed → revoke → leer**;
+  tenant_admin-Grant → `403`; GET tenants). Gates grün (`go build/vet/test`,
+  `gofmt`, `pg-test.sh`); `go 1.25` unverändert. INSTALLATION §7 + TECHNICAL §6
+  (super_admin-Routen) + Register FR-ADMIN-001; Milestone
+  `docs/milestones/WF2-31b_Subscription_Grants.md`. **→ WF2-31 (Admin-API) komplett:
+  tenant_admin-Selbstbedienung + super_admin-Provisioning.** **Nächster Schritt:**
+  WF2-32 (Admin-UI, Vue 3 + Vuetify als Consumer dieses API) nach Ankündigung & „Go".
+- **Vorherige Aktualisierung:** 2026-06-20 — **WF2-31 „Tenant-skopiertes Admin-API"
   abgeschlossen — BEGINN STUFE 3 (🔒 S3 · Sonnet 4.6 / Opus-Review).**
   **Reihenfolge-Entscheid des Projektverantwortlichen:** Stufe 3 startet mit der
   **Admin-API (WF2-31)** statt mit dem Config-Service (WF2-30) — sichtbarer
@@ -868,12 +895,13 @@
 **🎉 Stufe 2 KOMPLETT:** WF2-20 (Multi-Feed) · WF2-21 (scoped Fan-out Feed+AOI/FL,
 fail-open) · WF2-22 (Isolations-Property/Fuzz) · WF2-23 (Audit + Pro-Tenant-Metriken).
 
-**🔵 Stufe 3 — begonnen (Dynamische Konfiguration & Admin):** **WF2-31 ✅**
-(tenant-skopiertes Admin-API `pkg/adminapi`: view GET/PUT server-validiert,
-subs/feeds read; `tenant_id` aus Identity, hinter `RequireRole`). Reihenfolge-
-Entscheid: **Admin-API vor Config-Cache (WF2-30 zurückgestellt)**. **➡️ Nächster:
-WF2-32** (Admin-UI, Vue 3 + Vuetify auf dem WF2-31-API) S3 · Sonnet 4.6 —
-*alternativ vorziehbar: Subscription-Write-/super_admin-Pfad.*
+**🔵 Stufe 3 — in Arbeit (Dynamische Konfiguration & Admin):** **WF2-31 ✅**
+(tenant-skopiertes Admin-API: view GET/PUT server-validiert, subs/feeds read;
+`tenant_id` aus Identity) **+ WF2-31b ✅** (super_admin-Provisioning cross-tenant:
+tenants/grants/revoke, Ziel aus Pfad, Doppel-Gate `requireSuper`; Cross-Tenant-
+Negativtest) → **Admin-Backend komplett**. Reihenfolge-Entscheid: **Admin-API vor
+Config-Cache (WF2-30 zurückgestellt)**. **➡️ Nächster: WF2-32** (Admin-UI, Vue 3 +
+Vuetify als Consumer des WF2-31-API) S3 · Sonnet 4.6.
 
 Offen, **ASD-Kern (mandanten-unabhängig, parallel möglich** — nicht im kritischen
 Pfad, Details/Abgleich in ROADMAP §2):
@@ -904,12 +932,11 @@ Pfad, Details/Abgleich in ROADMAP §2):
 
 ➡️ **WF2-32 — Admin-UI** S3 · Sonnet 4.6, nach Ankündigung & „Go".
 
-Vue-3/Vuetify-Oberfläche unter `/admin`, die das **WF2-31-API** bedient:
+Vue-3/Vuetify-Oberfläche unter `/admin`, die das **komplette WF2-31-API** bedient:
 Formulare/Slider für die Tenant-Default-Sicht (Zentrum/Zoom/AOI/FL/Layer), Anzeige
-der eigenen Abos + des Feed-Katalogs. Konsistent zum bestehenden ASD-Frontend (ADR
-0002). **Alternativ vorziehbar:** der **Subscription-Write-/super_admin-Pfad**
-(Feed-Grants = Billing, cross-tenant, eigenes Rollen-Design) — beim nächsten Go
-abzustimmen. Danach **WF2-33** (Live-Apply: laufende Subscription re-skopieren ohne
+der eigenen Abos + des Feed-Katalogs; für `super_admin` zusätzlich die Provisioning-
+Ansicht (Mandanten, Feed-Grants/-Revokes). Konsistent zum bestehenden ASD-Frontend
+(ADR 0002). Danach **WF2-33** (Live-Apply: laufende Subscription re-skopieren ohne
 Reconnect) und ggf. **WF2-30** (Config-Cache), wenn Metriken den Bedarf zeigen.
 
 **Erledigt in dieser Sitzung:** **Stufe 0 komplett** (WF2-00/01/02, ADR
@@ -930,7 +957,9 @@ Fuzz, 755k execs 0 Fehler, kein Befund) **+ WF2-23 komplett** (23.1 Audit-Log
 strukturiertes `slog`-Event „wer sah welchen Scope"; 23.2 Pro-Mandant-Metriken
 `…{tenant}`, stabile tenant_id, race-clean) → **🎉 STUFE 2 KOMPLETT** **+ Stufe 3
 begonnen: WF2-31** (tenant-skopiertes Admin-API `pkg/adminapi`, view GET/PUT
-server-validiert + subs/feeds read, `tenant_id` aus Identity, hinter `RequireRole`).
+server-validiert + subs/feeds read, `tenant_id` aus Identity, hinter `RequireRole`)
+**+ WF2-31b** (super_admin-Provisioning cross-tenant: tenants/grants/revoke, Ziel aus
+Pfad, Doppel-Gate `requireSuper`, Cross-Tenant-Negativtest → Admin-Backend komplett).
 ADR-0006-Nachtrag: goose verworfen, Go-Baseline 1.25. Register FR-CFG-001, FR-ADMIN-001,
 FR-TEN-001/002, FR-FEED-001, NFR-SEC-003/004, NFR-SCALE-001; Test-Runner
 `scripts/pg-test.sh` (jetzt `./...`, `-p 1`); neue Deps `golang.org/x/crypto`,
