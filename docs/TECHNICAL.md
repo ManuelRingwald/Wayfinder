@@ -403,6 +403,15 @@ ein unabhängiges Oracle + Ende-zu-Ende-Property + `FuzzScopeFilter`). Die Prope
 und Fuzz-Seed-Tests laufen im normalen `go test`; erweitertes Fuzzing on-demand:
 `go test ./pkg/broadcast/ -run '^$' -fuzz FuzzScopeFilter -fuzztime 30s`.
 
+**Audit-Log (WF2-23.1, NFR-SEC-003):** Bei jedem `/ws`-Connect schreibt der
+Scope-Resolver ein **strukturiertes `slog`-Event** (`component=audit`,
+`event=ws_connect`) mit `tenant_id`, `user_id`, `subject`, `role`, `feeds`,
+`aoi`, `fl_min_ft`/`fl_max_ft`, `remote` — der Nachweis „welcher Tenant sah welchen
+Scope". 12-Factor: keine DB-Audit-Tabelle, Querying via externe Log-Senke
+(ELK/Datadog). **Kardinalitäts-Regel:** hochkardinale Identität (`user_id`,
+`subject`, `remote`) **nur** im Audit-Log, **nie** als Metrik-Label (Tenant-Label
+für Metriken folgt WF2-23.2).
+
 ### 6.5 Betrieb
 
 | Variable | Default | Typ | Beschreibung |
