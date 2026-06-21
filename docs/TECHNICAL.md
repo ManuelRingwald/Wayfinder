@@ -232,8 +232,15 @@ externe Prometheus-Bibliothek — der Exporter ist handgerollt in
 
 | Metrik | Typ | Beschreibung |
 |--------|-----|--------------|
-| `wayfinder_ws_clients_connected` | Gauge | Anzahl aktuell verbundener Browser-Clients |
+| `wayfinder_ws_clients_connected` | Gauge | Anzahl aktuell verbundener Browser-Clients (global, ungelabelt) |
 | `wayfinder_ws_clients_evicted_total` | Counter | Anzahl Clients, die wegen vollem Send-Channel entfernt wurden (langsame oder hängende Verbindungen) |
+| `wayfinder_tenant_ws_clients_connected{tenant="…"}` | Gauge | **Pro Mandant** verbundene Clients (WF2-23.2). Label-Wert = stabile `tenant_id`. Nur im Multi-Mandanten-Betrieb. |
+| `wayfinder_tenant_tracks_delivered_total{tenant="…"}` | Counter | **Pro Mandant** zugestellte Track-Nachrichten (WF2-23.2), fürs Billing/SLA-Monitoring. |
+
+> **Kardinalitäts-Regel (WF2-23):** Metrik-Labels sind auf das **kontrollierte
+> `tenant`-Label** (stabile `tenant_id`) beschränkt. Hochkardinale Identität
+> (`user_id`, `subject`, `session`) gehört **ausschließlich** ins Audit-Log
+> (§6 Audit), nie in Metriken.
 
 ### 5.3 CAT065-Feed-Health
 

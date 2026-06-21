@@ -3,6 +3,7 @@ package broadcast
 import (
 	"context"
 	"log/slog"
+	"sort"
 	"sync"
 	"sync/atomic"
 
@@ -42,8 +43,12 @@ type TrackBatch struct {
 // subscriptions at connect time. A nil Scope is unscoped — single-tenant, sees
 // every feed. View filters (AOI/FL/category) layer on in WF2-21.2.
 type Scope struct {
-	feeds map[int64]bool
-	view  *ViewFilter // nil = no view restriction within the allowed feeds
+	// TenantID is the tenant this scope belongs to, used only for per-tenant
+	// metrics labelling (WF2-23.2). 0 means single-tenant / unattributed. It does
+	// not affect isolation (that is the feed allow-set + view filter).
+	TenantID int64
+	feeds    map[int64]bool
+	view     *ViewFilter // nil = no view restriction within the allowed feeds
 }
 
 // NewScope builds a feed-level scope from the allowed feed ids. An empty list
@@ -185,6 +190,23 @@ type Broadcaster struct {
 	messageChan    chan Message
 
 	evicted atomic.Int64
+
+	// Per-tenant counters for /metrics (WF2-23.2). Written only from the Run
+	// goroutine, read from the probe server, guarded by tenantMu.
+	tenantMu sync.Mutex
+	tenant   map[int64]*tenantCounters
+}
+
+type tenantCounters struct {
+	connected int64
+	delivered int64
+}
+
+// TenantMetric is a snapshot of one tenant's broadcast counters.
+type TenantMetric struct {
+	TenantID  int64
+	Connected int64 // currently connected WebSocket clients
+	Delivered int64 // total track messages delivered to this tenant's clients
 }
 
 // Client represents a connected WebSocket client. scope decides which feeds'
@@ -203,6 +225,7 @@ func New(logger *slog.Logger) *Broadcaster {
 		registerChan:   make(chan *Client, 10),
 		unregisterChan: make(chan *Client, 10),
 		messageChan:    make(chan Message, 10),
+		tenant:         make(map[int64]*tenantCounters),
 	}
 }
 
@@ -235,10 +258,12 @@ func (b *Broadcaster) Run(ctx context.Context) error {
 
 		case c := <-b.registerChan:
 			b.clients.Store(c, true)
+			b.tenantConnectedDelta(c, +1)
 			b.logger.Debug("client registered", slog.Int("clients", b.clientCount()))
 
 		case c := <-b.unregisterChan:
 			b.clients.Delete(c)
+			b.tenantConnectedDelta(c, -1)
 			close(c.send)
 			b.logger.Debug("client unregistered", slog.Int("clients", b.clientCount()))
 
@@ -329,6 +354,7 @@ func (b *Broadcaster) broadcastTracks(batch TrackBatch) {
 		}
 		select {
 		case c.send <- cmsg:
+			b.tenantDelivered(c, len(cmsg.Tracks))
 		default:
 			b.logger.Warn("client send channel full, evicting client")
 			b.evicted.Add(1)
@@ -336,6 +362,51 @@ func (b *Broadcaster) broadcastTracks(batch TrackBatch) {
 		}
 		return true
 	})
+}
+
+// tenantConnectedDelta adjusts a tenant's connected-client gauge (WF2-23.2).
+// No-op for unscoped (single-tenant) clients.
+func (b *Broadcaster) tenantConnectedDelta(c *Client, delta int64) {
+	if c.scope == nil || c.scope.TenantID == 0 {
+		return
+	}
+	b.tenantMu.Lock()
+	b.tenantCounters(c.scope.TenantID).connected += delta
+	b.tenantMu.Unlock()
+}
+
+// tenantDelivered adds to a tenant's delivered-track counter (WF2-23.2).
+func (b *Broadcaster) tenantDelivered(c *Client, n int) {
+	if c.scope == nil || c.scope.TenantID == 0 || n == 0 {
+		return
+	}
+	b.tenantMu.Lock()
+	b.tenantCounters(c.scope.TenantID).delivered += int64(n)
+	b.tenantMu.Unlock()
+}
+
+// tenantCounters returns the (lazily created) counters for a tenant. Caller holds
+// tenantMu.
+func (b *Broadcaster) tenantCounters(tid int64) *tenantCounters {
+	tc := b.tenant[tid]
+	if tc == nil {
+		tc = &tenantCounters{}
+		b.tenant[tid] = tc
+	}
+	return tc
+}
+
+// TenantMetrics returns a snapshot of the per-tenant broadcast counters, sorted
+// by tenant id for stable /metrics output (WF2-23.2).
+func (b *Broadcaster) TenantMetrics() []TenantMetric {
+	b.tenantMu.Lock()
+	defer b.tenantMu.Unlock()
+	out := make([]TenantMetric, 0, len(b.tenant))
+	for tid, tc := range b.tenant {
+		out = append(out, TenantMetric{TenantID: tid, Connected: tc.connected, Delivered: tc.delivered})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].TenantID < out[j].TenantID })
+	return out
 }
 
 // broadcast sends a message to all connected clients (used for global, non-track

@@ -359,6 +359,66 @@ func TestBroadcastViewScoping(t *testing.T) {
 	}
 }
 
+// TestBroadcasterTenantMetrics verifies the per-tenant counters (WF2-23.2):
+// connected clients and delivered tracks are tallied per tenant, and unregister
+// decrements the connected gauge.
+func TestBroadcasterTenantMetrics(t *testing.T) {
+	b := New(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	go b.Run(ctx)
+
+	s1 := NewScope([]int64{1})
+	s1.TenantID = 1
+	s2 := NewScope([]int64{2})
+	s2.TenantID = 2
+	ch1 := make(chan Message, 10)
+	ch2 := make(chan Message, 10)
+	c1 := b.RegisterClient(ch1, s1)
+	b.RegisterClient(ch2, s2)
+	for i := 0; i < 200 && b.ClientCount() != 2; i++ {
+		time.Sleep(time.Millisecond)
+	}
+
+	// Tenant 1's feed → 2 tracks to tenant 1 only; tenant 2's feed → 3 to tenant 2.
+	b.trackChan <- TrackBatch{FeedID: 1, Tracks: make([]cat062.DecodedTrack, 2)}
+	b.trackChan <- TrackBatch{FeedID: 2, Tracks: make([]cat062.DecodedTrack, 3)}
+	<-ch1
+	<-ch2
+
+	byTenant := func() map[int64]TenantMetric {
+		m := map[int64]TenantMetric{}
+		for _, tm := range b.TenantMetrics() {
+			m[tm.TenantID] = tm
+		}
+		return m
+	}
+	waitFor := func(cond func(map[int64]TenantMetric) bool) map[int64]TenantMetric {
+		for i := 0; i < 200; i++ {
+			if m := byTenant(); cond(m) {
+				return m
+			}
+			time.Sleep(time.Millisecond)
+		}
+		return byTenant()
+	}
+
+	m := waitFor(func(m map[int64]TenantMetric) bool { return m[1].Delivered == 2 && m[2].Delivered == 3 })
+	if m[1].Connected != 1 || m[1].Delivered != 2 {
+		t.Errorf("tenant 1 = %+v, want connected 1 delivered 2", m[1])
+	}
+	if m[2].Connected != 1 || m[2].Delivered != 3 {
+		t.Errorf("tenant 2 = %+v, want connected 1 delivered 3", m[2])
+	}
+
+	// Unregister tenant 1's client → its connected gauge drops to 0 (delivered stays).
+	b.UnregisterClient(c1)
+	m = waitFor(func(m map[int64]TenantMetric) bool { return m[1].Connected == 0 })
+	if m[1].Connected != 0 || m[1].Delivered != 2 {
+		t.Errorf("tenant 1 after unregister = %+v, want connected 0 delivered 2", m[1])
+	}
+}
+
 // TestBroadcastEvictsClientWithFullSendChannel verifies that a client whose
 // send channel is full (i.e., not being drained) is evicted instead of
 // blocking the broadcaster.
