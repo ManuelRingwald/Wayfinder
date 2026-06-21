@@ -278,7 +278,7 @@ func main() {
 	// to the feeds its tenant subscribes to; single-tenant → nil resolver (unscoped).
 	var scopeResolver ws.ScopeResolver
 	if dbPool != nil {
-		scopeResolver = newScopeResolver(store.NewSubscriptionRepo(dbPool), store.NewViewConfigRepo(dbPool))
+		scopeResolver = newScopeResolver(store.NewSubscriptionRepo(dbPool), store.NewViewConfigRepo(dbPool), logger)
 	}
 	wsHandler := ws.New(broadcaster, logger, cfg.AllowedOrigins, scopeResolver)
 	// The live picture is tenant-scoped: gate /ws with the tenant middleware when
@@ -724,9 +724,10 @@ type viewGetter interface {
 // newScopeResolver builds the /ws scope resolver (WF2-21): it reads the tenant
 // Identity placed in the request context by the middleware and resolves the feeds
 // that tenant subscribes to (WF2-21.1) plus the effective view filter (WF2-21.2).
-// Fail-closed: a request without an identity, or whose subscription/view lookup
-// fails, is rejected (no stream).
-func newScopeResolver(subs feedLister, views viewGetter) ws.ScopeResolver {
+// On success it emits a structured audit record (WF2-23.1). Fail-closed: a request
+// without an identity, or whose subscription/view lookup fails, is rejected.
+func newScopeResolver(subs feedLister, views viewGetter, logger *slog.Logger) ws.ScopeResolver {
+	audit := logger.With(slog.String("component", "audit"))
 	return func(r *http.Request) (*broadcast.Scope, error) {
 		id, ok := tenant.FromContext(r.Context())
 		if !ok {
@@ -740,8 +741,39 @@ func newScopeResolver(subs feedLister, views viewGetter) ws.ScopeResolver {
 		if err != nil {
 			return nil, fmt.Errorf("resolve view: %w", err)
 		}
+		logScopeAudit(audit, r, id, feedIDs, view)
 		return broadcast.NewScopeWithView(feedIDs, view), nil
 	}
+}
+
+// logScopeAudit records which tenant/user was authorized for which scope at /ws
+// connect (WF2-23.1, NFR-SEC-003 audit trail). High-cardinality identity
+// (user_id, subject) belongs here in the structured log — shipped to an external
+// sink (12-factor) — never as a metric label.
+func logScopeAudit(audit *slog.Logger, r *http.Request, id tenant.Identity, feedIDs []int64, view *broadcast.ViewFilter) {
+	attrs := []any{
+		slog.String("event", "ws_connect"),
+		slog.Int64("tenant_id", id.TenantID),
+		slog.Int64("user_id", id.UserID),
+		slog.String("subject", id.Subject),
+		slog.String("role", string(id.Role)),
+		slog.Any("feeds", feedIDs),
+		slog.String("remote", r.RemoteAddr),
+	}
+	if view != nil {
+		if view.AOI != nil {
+			attrs = append(attrs, slog.Group("aoi",
+				slog.Float64("min_lat", view.AOI.MinLat), slog.Float64("min_lon", view.AOI.MinLon),
+				slog.Float64("max_lat", view.AOI.MaxLat), slog.Float64("max_lon", view.AOI.MaxLon)))
+		}
+		if view.FLMinFt != nil {
+			attrs = append(attrs, slog.Float64("fl_min_ft", *view.FLMinFt))
+		}
+		if view.FLMaxFt != nil {
+			attrs = append(attrs, slog.Float64("fl_max_ft", *view.FLMaxFt))
+		}
+	}
+	audit.Info("ws scope authorized", attrs...)
 }
 
 // resolveViewFilter maps the tenant/user's effective view config (if any) to a

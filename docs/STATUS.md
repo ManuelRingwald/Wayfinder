@@ -7,7 +7,29 @@
 > 🗺️ **Roadmap:** Arbeitspakete, Findings und empfohlene Reihenfolge stehen in
 > `docs/ROADMAP.md` (Stichwort „Roadmap" im Chat zeigt diese Liste).
 
-- **Zuletzt aktualisiert:** 2026-06-20 — **WF2-22 „Isolations-Testsuite (Property +
+- **Zuletzt aktualisiert:** 2026-06-20 — **WF2-23.1 „Audit-Log" abgeschlossen
+  (🔒 S2–S3 · Sonnet 4.6 / Opus-Review).** Erster Halbschritt von WF2-23: die
+  NFR-SEC-003-**Audit-Spur** „welcher Tenant sah welchen Scope". Bei jedem
+  `/ws`-Connect schreibt der Scope-Resolver ein **strukturiertes `slog`-Event**.
+  **Projektentscheid:** 12-Factor mit `slog`, **keine DB-Audit-Tabelle** (performant
+  beim Connect, Querying via externe Senke ELK/Datadog). `cmd/wayfinder/main.go`:
+  `newScopeResolver(subs, views, logger)` baut einen Audit-Sub-Logger
+  (`logger.With("component","audit")`); **`logScopeAudit`** emittiert am
+  Autorisierungs-Punkt (Feeds+View aufgelöst, vor Upgrade) `ws scope authorized` mit
+  `event=ws_connect`, `tenant_id`, `user_id`, `subject`, `role`, `feeds`,
+  `aoi`-Gruppe, `fl_min_ft`/`fl_max_ft`, `remote`. **Kardinalitäts-Disziplin
+  (Projektvorgabe):** hochkardinale Identität (`user_id`/`subject`/`remote`) lebt
+  **nur** im Audit-Log, **nie** als Metrik-Label (Tenant-Label folgt 23.2). **Kein
+  Schema-Change, keine neue Dep.** **Test:** `TestScopeResolverEmitsAudit` (JSON-
+  `slog`-Handler in Buffer → Event geparst: component/event/tenant_id/user_id/
+  subject/feeds[2]/aoi/fl in Fuß); bestehende Resolver-Tests auf Logger-Signatur
+  angepasst. Gates grün (`go build/vet/test`, `gofmt`, `pg-test.sh`); `go 1.25`
+  unverändert. TECHNICAL §6 + INSTALLATION §7 (Audit-Event/Log-Senke) + Register
+  NFR-SEC-003; Milestone `docs/milestones/WF2-23.1_Audit_Log.md`. **Nächster
+  Schritt:** WF2-23.2 (Pro-Mandant-Metriken: `pkg/metrics`-Label-Support +
+  Broadcaster zählt je Mandant → `…{tenant="…"}`) — schließt Stufe 2 ab — nach
+  Ankündigung & „Go".
+- **Vorherige Aktualisierung:** 2026-06-20 — **WF2-22 „Isolations-Testsuite (Property +
   Fuzz)" abgeschlossen (🔒 S4 · Opus 4.8) — sicherheitskritischer Kern testseitig
   abgesichert.** ADR 0005/NFR-SEC-003 verlangen Pflicht-Negativtests **als Gate**;
   21.1/21.2 hatten punktuelle, WF2-22 macht daraus ein **breites generiertes
@@ -790,9 +812,10 @@
 
 **🔵 Stufe 2 — fast komplett (sicherheitskritischer Kern):** **WF2-20 ✅** (Multi-Feed
 + `feed_id` pro Track) · **WF2-21 ✅** (scoped Fan-out: Feed-Isolation + AOI/FL-Sicht,
-fail-open) · **WF2-22 ✅** (Isolations-Testsuite Property + Fuzz, kein Befund —
-Kern testseitig abgesichert). **➡️ Nächster: WF2-23** (Pro-Mandant-Metriken &
-Audit-Log: `tenant`-Label + Audit-Event) 🔒 S3 · Sonnet 4.6 — **schließt Stufe 2 ab.**
+fail-open) · **WF2-22 ✅** (Isolations-Testsuite Property + Fuzz) · **WF2-23.1 ✅**
+(Audit-Log: `slog`-Event „wer sah welchen Scope" beim Connect). **➡️ Nächster:
+WF2-23.2** (Pro-Mandant-Metriken: `tenant`-Label, je Mandant Clients + zugestellte
+Tracks) 🔒 S3 · Sonnet 4.6 — **schließt WF2-23 und Stufe 2 ab.**
 
 Offen, **ASD-Kern (mandanten-unabhängig, parallel möglich** — nicht im kritischen
 Pfad, Details/Abgleich in ROADMAP §2):
@@ -821,15 +844,17 @@ Pfad, Details/Abgleich in ROADMAP §2):
 
 ## 3. Nächster Schritt
 
-➡️ **WF2-23 — Pro-Mandant-Metriken & Audit-Log** 🔒 S3 · Sonnet 4.6 (+🔒-Review),
-nach Ankündigung & „Go" — **schließt Stufe 2 ab.**
+➡️ **WF2-23.2 — Pro-Mandant-Metriken** 🔒 S3 · Sonnet 4.6 (+🔒-Review), nach
+Ankündigung & „Go" — **schließt WF2-23 und Stufe 2 ab.**
 
-Macht die Mandanten-Isolation **beobachtbar & auditierbar**: ein `tenant`-Label an
-den relevanten Metriken (z. B. zugestellte Tracks / Clients je Mandant) und ein
-**Audit-Event** „welcher Tenant sah welchen Scope" (Feed-Set + AOI/FL beim
-Connect). Damit ist nachweisbar, **wer was sehen durfte** (Zert-/Compliance-Spur,
-NFR-SEC-003 letzter Punkt). Danach ist **Stufe 2 komplett** und Stufe 3
-(dynamische Konfiguration & Admin-UI, WF2-30 ff.) beginnt.
+Macht die Isolation **beobachtbar pro Mandant**: `pkg/metrics` um Label-Unterstützung
+erweitern (`name{tenant="…"} value`); der Broadcaster zählt je Mandant **verbundene
+Clients** (Gauge) und **zugestellte Tracks** (Counter) — dafür muss die `tenant_id`
+in den Broadcaster-`Client` (heute nur `scope`). Exponiert z. B.
+`wayfinder_ws_clients_connected{tenant="…"}`, `wayfinder_tracks_delivered_total{tenant="…"}`
+fürs Billing/SLA-Monitoring. **Strikt:** nur das `tenant`-Label, **keine**
+hochkardinalen Labels (user_id/session_id bleiben im Audit-Log). Danach ist
+**Stufe 2 komplett**; Stufe 3 (dynamische Konfiguration & Admin-UI, WF2-30 ff.) beginnt.
 
 **Erledigt in dieser Sitzung:** **Stufe 0 komplett** (WF2-00/01/02, ADR
 0005/0006/0007) **+ STUFE 1 KOMPLETT** — **WF2-10** (alle 6 Tabellen-Repos, real
@@ -845,8 +870,9 @@ DB-Katalog + Feed-CLI `wayfinder feed add/list` + ENV-Fallback + `main()`-Reorde
 fail-closed, Pflicht-Negativtest „A bekommt nie B's Feed"; 21.2 Sicht-Filter
 AOI/FL-Band als harte server-seitige Grenze `broadcast.ViewFilter`/`resolveViewFilter`,
 **fail-open** bei fehlendem Attribut) **+ WF2-22** (Isolations-Testsuite Property +
-Fuzz, 755k execs 0 Fehler, kein Befund). ADR-0006-Nachtrag:
-goose verworfen, Go-Baseline 1.25. Register FR-CFG-001,
+Fuzz, 755k execs 0 Fehler, kein Befund) **+ WF2-23.1** (Audit-Log: strukturiertes
+`slog`-Event „wer sah welchen Scope" beim `/ws`-Connect, 12-Factor/keine DB).
+ADR-0006-Nachtrag: goose verworfen, Go-Baseline 1.25. Register FR-CFG-001,
 FR-TEN-001/002, FR-FEED-001, NFR-SEC-003/004, NFR-SCALE-001; Test-Runner
 `scripts/pg-test.sh` (jetzt `./...`, `-p 1`); neue Deps `golang.org/x/crypto`,
 `github.com/coreos/go-oidc/v3`. Subcommands: `bootstrap`, `feed`.

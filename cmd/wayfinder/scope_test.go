@@ -1,8 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -39,7 +42,7 @@ func withIdentity(tenantID int64) *http.Request {
 }
 
 func TestNewScopeResolver(t *testing.T) {
-	resolve := newScopeResolver(fakeFeedLister{feeds: []int64{1, 2}}, noView)
+	resolve := newScopeResolver(fakeFeedLister{feeds: []int64{1, 2}}, noView, discardLogger())
 
 	scope, err := resolve(withIdentity(7))
 	if err != nil {
@@ -55,21 +58,59 @@ func TestNewScopeResolver(t *testing.T) {
 
 func TestNewScopeResolverFailsClosed(t *testing.T) {
 	// No identity in context → fail-closed error (no stream is opened).
-	resolve := newScopeResolver(fakeFeedLister{feeds: []int64{1}}, noView)
+	resolve := newScopeResolver(fakeFeedLister{feeds: []int64{1}}, noView, discardLogger())
 	if _, err := resolve(httptest.NewRequest(http.MethodGet, "/ws", nil)); err == nil {
 		t.Error("expected error without a tenant identity")
 	}
 
 	// A subscription lookup error must not yield a scope.
-	subErr := newScopeResolver(fakeFeedLister{err: errors.New("db down")}, noView)
+	subErr := newScopeResolver(fakeFeedLister{err: errors.New("db down")}, noView, discardLogger())
 	if _, err := subErr(withIdentity(7)); err == nil {
 		t.Error("expected error when subscription lookup fails")
 	}
 
 	// A view lookup error (other than ErrNotFound) must not yield a scope.
-	viewErr := newScopeResolver(fakeFeedLister{feeds: []int64{1}}, fakeViewGetter{err: errors.New("db down")})
+	viewErr := newScopeResolver(fakeFeedLister{feeds: []int64{1}}, fakeViewGetter{err: errors.New("db down")}, discardLogger())
 	if _, err := viewErr(withIdentity(7)); err == nil {
 		t.Error("expected error when view lookup fails")
+	}
+}
+
+func TestScopeResolverEmitsAudit(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&buf, nil))
+	flMin, flMax := 100, 300
+	views := fakeViewGetter{vc: store.ViewConfig{
+		AOI:   &store.BBox{MinLat: 49, MinLon: 8, MaxLat: 51, MaxLon: 10},
+		FLMin: &flMin, FLMax: &flMax,
+	}}
+	resolve := newScopeResolver(fakeFeedLister{feeds: []int64{1, 2}}, views, logger)
+
+	req := httptest.NewRequest(http.MethodGet, "/ws", nil)
+	req = req.WithContext(tenant.WithIdentity(req.Context(),
+		tenant.Identity{TenantID: 7, UserID: 3, Subject: "alice", Role: store.RoleOperator}))
+	if _, err := resolve(req); err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+
+	var rec map[string]any
+	if err := json.NewDecoder(&buf).Decode(&rec); err != nil {
+		t.Fatalf("audit record is not valid JSON: %v", err)
+	}
+	if rec["component"] != "audit" || rec["event"] != "ws_connect" {
+		t.Errorf("audit envelope = component:%v event:%v", rec["component"], rec["event"])
+	}
+	if rec["tenant_id"] != float64(7) || rec["user_id"] != float64(3) || rec["subject"] != "alice" {
+		t.Errorf("audit identity = %+v", rec)
+	}
+	if feeds, ok := rec["feeds"].([]any); !ok || len(feeds) != 2 {
+		t.Errorf("audit feeds = %v, want 2 entries", rec["feeds"])
+	}
+	if _, ok := rec["aoi"].(map[string]any); !ok {
+		t.Errorf("audit aoi missing/!object: %v", rec["aoi"])
+	}
+	if rec["fl_min_ft"] != float64(10000) || rec["fl_max_ft"] != float64(30000) {
+		t.Errorf("audit FL (feet) = min:%v max:%v", rec["fl_min_ft"], rec["fl_max_ft"])
 	}
 }
 

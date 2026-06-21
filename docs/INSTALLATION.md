@@ -535,6 +535,12 @@ WAYFINDER_DB_URL=postgres://… wayfinder feed list
 > Flugzeug verschlucken). Der Lebenszyklus-Filter (confirmed/tentative/coasting)
 > bleibt rein im Frontend (Declutter). Ohne AOI/FL-Eintrag wird der ganze
 > abonnierte Feed zugestellt.
+>
+> 📝 **Audit-Log:** Jeder `/ws`-Connect erzeugt ein strukturiertes `slog`-Event
+> (`component=audit`, `event=ws_connect`) mit Mandant, Nutzer und aufgelöstem Scope
+> (Feeds + AOI/FL) — der Compliance-Nachweis „wer sah welchen Scope". Es geht in den
+> normalen Log-Strom (`stderr`, JSON); für Auswertung/Aufbewahrung in eine externe
+> Log-Senke leiten (ELK/Datadog o. Ä.). Keine DB-Audit-Tabelle.
 
 ### 7.5 Betrieb
 
