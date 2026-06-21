@@ -383,8 +383,19 @@ nichts/fail-closed) hängt am `Client`; `broadcastTracks` prüft
 `scope.AllowsFeed(feed_id)` pro Batch/Client (Feed-Health über `messageChan` bleibt
 **global**). `ws.ScopeResolver` löst den Scope am Handshake **vor** dem Upgrade auf
 (Fehler → `403`, kein Stream); `cmd/wayfinder.newScopeResolver` liest die
-Tenant-Identity (Middleware) + `subscriptions.ListFeedIDsByTenant`. Sicht-Filter
-(AOI/FL/Kategorie) folgt WF2-21.2.
+Tenant-Identity (Middleware) + `subscriptions.ListFeedIDsByTenant`.
+
+**Sicht-Filter (WF2-21.2, harte AOI/FL-Grenze):** Über die erlaubten Feeds legt
+`broadcast.ViewFilter` (AOI-BBox + FL-Band in Fuß) eine **server-seitige
+Datensparsamkeits-Grenze** — Tracks außerhalb verlassen den Server nicht
+(Bandbreite/Billing/kein F12-Leck). `broadcastTracks` filtert pro Client die
+einzelnen Tracks (`Scope.filterView`); **fail-open**: ein Track ohne gemessene FL
+wird zugestellt, nie verworfen (NFR-SEC-003 Safety: nie ein reales Flugzeug
+verschlucken). `resolveViewFilter` mappt `view_configs.GetEffective` (User-Override
+→ Tenant-Default) → `ViewFilter` (FL von Flugfläche in Fuß, ×100); kein/leeres
+Config → keine Beschränkung. **Lebenszyklus** (confirmed/tentative/coasting) bleibt
+bewusst **client-seitig** (Declutter, reversibel); echte Klassifizierung wird ein
+späteres server-seitiges Premium-Feature (nach Track-Anreicherung, WF2-40).
 
 ### 6.5 Betrieb
 

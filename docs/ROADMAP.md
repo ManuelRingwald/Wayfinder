@@ -122,10 +122,16 @@ Bootstrap + Admin-Gate (WF2-13).
   `subscriptions.ListFeedIDsByTenant`. **Pflicht-Negativtest** „A bekommt nie
   B's Feed" (`TestBroadcastFeedIsolation`). Single-Tenant bleibt all-to-all.
 
-**➡️ Nächster Schritt:** **WF2-21.2 — Sicht-Filter** (AOI/FL-Band/Kategorie aus
-`view_configs.GetEffective` über die erlaubten Feeds gelegt) 🔒 **S4 · Opus 4.8**,
-nach Ankündigung & „Go". Danach WF2-22 (Isolations-Testsuite Property-/Fuzz,
-breite „A sieht nie B"-Abdeckung).
+- **WF2-21.2 ✅** — Sicht-Filter **AOI + FL-Band** als **harte server-seitige
+  Grenze** (Datensparsamkeit/Billing/kein F12-Leck), **fail-open** bei fehlendem
+  Attribut: `broadcast.ViewFilter`/`Scope.filterView` (per-Client-Track-Filter);
+  `resolveViewFilter` via `view_configs.GetEffective` (FL→Fuß). Lebenszyklus bleibt
+  client-seitig; Klassifizierung später (Premium, WF2-40). **→ WF2-21 komplett.**
+
+**➡️ Nächster Schritt:** **WF2-22 — Isolations-Testsuite** (Property-/Fuzz-Tests:
+breite, generierte „A sieht nie B"-Abdeckung über Feeds **und** AOI/FL, als Gate
+gegen Regressionen am Isolations-Prädikat) 🔒 **S4 · Opus 4.8**, nach Ankündigung
+& „Go".
 
 ---
 
@@ -156,8 +162,8 @@ Details & Begründung: Konzept §7/§8.
 | AP | Inhalt | Stufe · Modell | Abh. | Status |
 |----|--------|----------------|------|--------|
 | **WF2-20** 🔒 | Feed-Registry & Multi-Feed-Receiver (1→N Feeds; `feed_id` pro Track) | **S4 · Opus 4.8** | WF2-01, WF2-02 | ✅ **erledigt** (20.1 `feed_id`-Naht + 20.2 Multi-Feed + Feed-CLI) |
-| **WF2-21** 🔒 | Subscription-Modell & scoped Fan-out (`broadcast()` → Prädikat feed∩AOI∩FL∩Kat) | **S4–S5 · Opus 4.8 / Fable 5** | WF2-12, WF2-20 | 🔵 in Arbeit (21.1 Feed-Isolation ✅; 21.2 Sicht-Filter offen) |
-| **WF2-22** 🔒 | Isolations-Testsuite (Negativ-/Property-/Fuzz-Tests; A sieht nie B) | **S4 · Opus 4.8** | WF2-21 | geplant |
+| **WF2-21** 🔒 | Subscription-Modell & scoped Fan-out (`broadcast()` → Prädikat feed∩AOI∩FL) | **S4–S5 · Opus 4.8 / Fable 5** | WF2-12, WF2-20 | ✅ **erledigt** (21.1 Feed-Isolation + 21.2 AOI/FL-Sicht-Filter) |
+| **WF2-22** 🔒 | Isolations-Testsuite (Negativ-/Property-/Fuzz-Tests; A sieht nie B) | **S4 · Opus 4.8** | WF2-21 | ➡️ **nächster** |
 | **WF2-23** | Pro-Mandant-Metriken & Audit-Log (`tenant`-Label, Audit-Event) | **S3 · Sonnet 4.6** | WF2-21 | geplant |
 
 ### Stufe 3 — Dynamische Konfiguration & Admin-UI
@@ -294,7 +300,8 @@ Architektur-Wirkung — nicht auf dem kritischen Pfad, aber jederzeit wertstifte
 - ✅ **WF2-13 — Admin-Bootstrap** (`cmd/wayfinder/bootstrap.go`: Subcommand `wayfinder bootstrap`, idempotentes Get-or-Create erster Tenant/Admin + optional builtin-Passwort via `WAYFINDER_BOOTSTRAP_PASSWORD`, kein Cross-Tenant-Re-Homing; `pkg/tenant/authz.go` `RequireRole`-Gate auf `/admin`, fail-closed `403`). DB-freie Tests (`validate`, `RequireRole`) + real-PG `TestIntegrationBootstrap` + E2E-Rauchtest. **→ Stufe 1 komplett.** Milestone `docs/milestones/WF2-13_Admin_Bootstrap.md`.
 - ✅ **WF2-20.1 — `feed_id`-Durchstich** (`receiver.Config.FeedID` + Handler-Signatur `(feedID, tracks)`; `broadcast.TrackBatch{FeedID,Tracks}` stempelt `TrackMessage.feed_id`; `WAYFINDER_FEED_ID`). Attribution-Naht Receiver→Broadcaster→Wire; Single-Tenant unverändert. Tests: `TestHandleTracksStampsFeedID`, `TestTracksToMessage` (feed_id). Milestone `docs/milestones/WF2-20.1_FeedID_Plumbing.md`.
 - ✅ **WF2-20.2 — Multi-Feed-Receiver** (`cmd/wayfinder/feeds.go` `resolveFeeds`/`buildReceivers`: DB-`feeds`-Katalog → N Receiver je `feed_id`, ENV-Fallback bei leerem Katalog/kein-DB; `main()`-Reorder DB-vor-Receiver, per-Feed-Listen-Skip, Decode-Fehler-Summe; Feed-CLI `cmd/wayfinder/feedcmd.go` `feed add`/`feed list`). DB-freie + real-PG (`TestIntegrationFeedCatalogue`) + E2E-Rauchtest. **→ WF2-20 komplett.** Milestone `docs/milestones/WF2-20.2_Multi_Feed_Receiver.md`.
-- ✅ **WF2-21.1 — Scoped Fan-out (Feed-Isolation)** (`pkg/broadcast` `Scope`/`NewScope`/`AllowsFeed` + `broadcastTracks` feed-gefiltert, Feed-Health bleibt global; `pkg/ws` `ScopeResolver` am Handshake fail-closed `403`; `cmd/wayfinder.newScopeResolver` via `subscriptions.ListFeedIDsByTenant`). **Pflicht-Negativtest** `TestBroadcastFeedIsolation` (A bekommt nie B's Feed) + `TestScopeAllowsFeed` + Resolver-Tests (fail-closed). Single-Tenant unverändert. Milestone `docs/milestones/WF2-21.1_Feed_Level_Isolation.md`. *(Sicht-Filter folgt WF2-21.2.)*
+- ✅ **WF2-21.1 — Scoped Fan-out (Feed-Isolation)** (`pkg/broadcast` `Scope`/`NewScope`/`AllowsFeed` + `broadcastTracks` feed-gefiltert, Feed-Health bleibt global; `pkg/ws` `ScopeResolver` am Handshake fail-closed `403`; `cmd/wayfinder.newScopeResolver` via `subscriptions.ListFeedIDsByTenant`). **Pflicht-Negativtest** `TestBroadcastFeedIsolation` (A bekommt nie B's Feed) + `TestScopeAllowsFeed` + Resolver-Tests (fail-closed). Single-Tenant unverändert. Milestone `docs/milestones/WF2-21.1_Feed_Level_Isolation.md`.
+- ✅ **WF2-21.2 — Scoped Fan-out (Sicht-Filter AOI/FL)** (`pkg/broadcast` `BBox`/`ViewFilter`/`Scope.filterView` — harte server-seitige AOI/FL-Grenze, **fail-open** bei fehlendem Attribut; `cmd/wayfinder.resolveViewFilter` via `view_configs.GetEffective`, FL→Fuß). Tests: `TestViewFilterAdmits` (inkl. fail-open) + `TestBroadcastViewScoping` + `TestResolveViewFilter` + real-PG `TestIntegrationResolveViewFilter`. Lebenszyklus client-seitig; Klassifizierung später (WF2-40). **→ WF2-21 komplett.** Milestone `docs/milestones/WF2-21.2_View_Filter.md`.
 
 **Cross-Project / Firefly:**
 - ✅ Paket #6 / Coverage-Werkzeug — Radar-Ringe-Overlay (`pkg/coverage`, `/api/coverage/rings`, Frontend-Layer-Toggle, Firefly `SensorModel`-Erweiterung; PR #27)

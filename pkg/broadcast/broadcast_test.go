@@ -274,6 +274,91 @@ func TestBroadcastFeedIsolation(t *testing.T) {
 	}
 }
 
+// fl returns a pointer to a flight level expressed in feet.
+func flFt(ft float64) *float64 { return &ft }
+
+// TestViewFilterAdmits covers the AOI + FL-band predicate, including the
+// fail-open rule: a track without a measured flight level is always admitted.
+func TestViewFilterAdmits(t *testing.T) {
+	// AOI roughly around Frankfurt; FL band 100..300 (10000..30000 ft).
+	view := &ViewFilter{
+		AOI:     &BBox{MinLat: 49, MinLon: 8, MaxLat: 51, MaxLon: 10},
+		FLMinFt: flFt(10000),
+		FLMaxFt: flFt(30000),
+	}
+	inside := func(lat, lon float64, flightFt *float64) TrackMessage {
+		return TrackMessage{Latitude: lat, Longitude: lon, FlightLevelFt: flightFt}
+	}
+
+	cases := map[string]struct {
+		t    TrackMessage
+		want bool
+	}{
+		"inside AOI + FL band":      {inside(50, 9, flFt(20000)), true},
+		"outside AOI (north)":       {inside(52, 9, flFt(20000)), false},
+		"outside AOI (east)":        {inside(50, 11, flFt(20000)), false},
+		"below FL band":             {inside(50, 9, flFt(5000)), false},
+		"above FL band":             {inside(50, 9, flFt(40000)), false},
+		"in AOI, no FL (fail-open)": {inside(50, 9, nil), true},
+		"on AOI edge (inclusive)":   {inside(49, 8, flFt(10000)), true},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			if got := view.admits(tc.t); got != tc.want {
+				t.Errorf("admits = %v, want %v", got, tc.want)
+			}
+		})
+	}
+
+	// A nil view admits everything.
+	var none *ViewFilter
+	if !none.admits(inside(0, 0, nil)) {
+		t.Error("nil view must admit every track")
+	}
+}
+
+// TestBroadcastViewScoping verifies that within an allowed feed, a client only
+// receives the tracks inside its AOI/FL view (WF2-21.2), while an unscoped client
+// receives all of them.
+func TestBroadcastViewScoping(t *testing.T) {
+	b := New(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	go b.Run(ctx)
+
+	viewChan := make(chan Message, 10)
+	allChan := make(chan Message, 10)
+	view := &ViewFilter{AOI: &BBox{MinLat: 49, MinLon: 8, MaxLat: 51, MaxLon: 10}}
+	b.RegisterClient(viewChan, NewScopeWithView([]int64{1}, view)) // AOI-scoped
+	b.RegisterClient(allChan, NewScope([]int64{1}))                // same feed, no view
+	for i := 0; i < 100 && b.ClientCount() != 2; i++ {
+		time.Sleep(time.Millisecond)
+	}
+
+	// Two tracks on feed 1: one inside the AOI, one well outside.
+	b.trackChan <- TrackBatch{FeedID: 1, Tracks: []cat062.DecodedTrack{
+		{TrackNum: 1, WGS84: cat062.WGS84Position{Latitude: 50, Longitude: 9}},
+		{TrackNum: 2, WGS84: cat062.WGS84Position{Latitude: 10, Longitude: 80}},
+	}}
+
+	select {
+	case msg := <-viewChan:
+		if len(msg.Tracks) != 1 || msg.Tracks[0].TrackNum != 1 {
+			t.Fatalf("AOI client: got %+v, want only the in-AOI track 1", msg.Tracks)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("AOI client: timeout")
+	}
+	select {
+	case msg := <-allChan:
+		if len(msg.Tracks) != 2 {
+			t.Fatalf("unscoped client: got %d tracks, want 2 (no view filter)", len(msg.Tracks))
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("unscoped client: timeout")
+	}
+}
+
 // TestBroadcastEvictsClientWithFullSendChannel verifies that a client whose
 // send channel is full (i.e., not being drained) is evicted instead of
 // blocking the broadcaster.

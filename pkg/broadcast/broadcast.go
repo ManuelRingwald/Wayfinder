@@ -43,6 +43,7 @@ type TrackBatch struct {
 // every feed. View filters (AOI/FL/category) layer on in WF2-21.2.
 type Scope struct {
 	feeds map[int64]bool
+	view  *ViewFilter // nil = no view restriction within the allowed feeds
 }
 
 // NewScope builds a feed-level scope from the allowed feed ids. An empty list
@@ -56,6 +57,30 @@ func NewScope(feedIDs []int64) *Scope {
 	return s
 }
 
+// NewScopeWithView builds a scope with both the feed allow-set and a view filter
+// (WF2-21.2). A nil view means no view restriction within the allowed feeds.
+func NewScopeWithView(feedIDs []int64, view *ViewFilter) *Scope {
+	s := NewScope(feedIDs)
+	s.view = view
+	return s
+}
+
+// filterView returns msg unchanged when the scope has no view filter (fast path);
+// otherwise a copy whose Tracks contain only those the view admits.
+func (s *Scope) filterView(msg Message) Message {
+	if s == nil || s.view == nil {
+		return msg
+	}
+	kept := make([]TrackMessage, 0, len(msg.Tracks))
+	for _, t := range msg.Tracks {
+		if s.view.admits(t) {
+			kept = append(kept, t)
+		}
+	}
+	msg.Tracks = kept // msg is a value copy; the caller's Message is unaffected
+	return msg
+}
+
 // AllowsFeed reports whether a client with this scope may receive tracks from the
 // given feed. A nil scope (single-tenant) allows every feed.
 func (s *Scope) AllowsFeed(feedID int64) bool {
@@ -63,6 +88,48 @@ func (s *Scope) AllowsFeed(feedID int64) bool {
 		return true
 	}
 	return s.feeds[feedID]
+}
+
+// BBox is a WGS84 bounding box in degrees. A track is inside if its position lies
+// within [MinLat,MaxLat] × [MinLon,MaxLon] (inclusive).
+type BBox struct {
+	MinLat, MinLon, MaxLat, MaxLon float64
+}
+
+// ViewFilter is a tenant's view scope within its allowed feeds (WF2-21.2): an
+// optional area of interest and flight-level band, enforced server-side as a
+// data-minimisation boundary — a track outside it never leaves the server
+// (bandwidth, billing, no F12 leak). It is **fail-open**: a track missing the
+// attribute a filter needs (e.g. no measured flight level) is delivered, never
+// dropped — never hide a real aircraft (NFR-SEC-003 safety). Bounds are inclusive.
+type ViewFilter struct {
+	AOI     *BBox    // nil = no area restriction
+	FLMinFt *float64 // nil = no lower bound (feet)
+	FLMaxFt *float64 // nil = no upper bound (feet)
+}
+
+// admits reports whether a track passes the view filter. Position is part of
+// every track, so the AOI check is exact; the flight-level check fails open when
+// the track carries no measured level.
+func (v *ViewFilter) admits(t TrackMessage) bool {
+	if v == nil {
+		return true
+	}
+	if v.AOI != nil {
+		if t.Latitude < v.AOI.MinLat || t.Latitude > v.AOI.MaxLat ||
+			t.Longitude < v.AOI.MinLon || t.Longitude > v.AOI.MaxLon {
+			return false // unambiguously outside the area of interest
+		}
+	}
+	if t.FlightLevelFt != nil { // fail-open: no measured FL ⇒ deliver
+		if v.FLMinFt != nil && *t.FlightLevelFt < *v.FLMinFt {
+			return false
+		}
+		if v.FLMaxFt != nil && *t.FlightLevelFt > *v.FLMaxFt {
+			return false
+		}
+	}
+	return true
 }
 
 // TrackMessage represents a single track in JSON format.
@@ -121,7 +188,8 @@ type Broadcaster struct {
 }
 
 // Client represents a connected WebSocket client. scope decides which feeds'
-// tracks it may receive (nil = unscoped / single-tenant).
+// tracks it may receive and the view filter applied within them (nil = unscoped
+// / single-tenant).
 type Client struct {
 	send  chan Message
 	scope *Scope
@@ -255,8 +323,12 @@ func (b *Broadcaster) broadcastTracks(batch TrackBatch) {
 		if !c.scope.AllowsFeed(batch.FeedID) {
 			return true // not subscribed to this feed → isolation, skip
 		}
+		cmsg := c.scope.filterView(msg) // apply the client's AOI/FL view (WF2-21.2)
+		if len(cmsg.Tracks) == 0 {
+			return true // nothing in this client's view from this batch
+		}
 		select {
-		case c.send <- msg:
+		case c.send <- cmsg:
 		default:
 			b.logger.Warn("client send channel full, evicting client")
 			b.evicted.Add(1)

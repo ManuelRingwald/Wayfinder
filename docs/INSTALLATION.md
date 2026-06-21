@@ -526,6 +526,15 @@ WAYFINDER_DB_URL=postgres://… wayfinder feed list
 > Ein Mandant ohne Abo bekommt **keine** Tracks (fail-closed). Abos werden bis zur
 > Admin-API (WF2-31) direkt in der DB gesetzt (`subscriptions`-Tabelle: `tenant_id`,
 > `feed_id`). Single-Tenant (ohne `WAYFINDER_DB_URL`) sieht unverändert alles.
+>
+> Zusätzlich greift ein **Sicht-Filter** (WF2-21.2): ist in `view_configs` ein
+> **Interessensgebiet (AOI, BBox)** und/oder ein **Flugflächen-Band**
+> (`fl_min`/`fl_max`, in FL) gesetzt, verlassen Tracks außerhalb den Server gar
+> nicht (harte Datensparsamkeits-Grenze — Bandbreite/Billing). **fail-open:** ein
+> Track **ohne** gemessene Flugfläche wird trotzdem zugestellt (nie ein reales
+> Flugzeug verschlucken). Der Lebenszyklus-Filter (confirmed/tentative/coasting)
+> bleibt rein im Frontend (Declutter). Ohne AOI/FL-Eintrag wird der ganze
+> abonnierte Feed zugestellt.
 
 ### 7.5 Betrieb
 
