@@ -378,8 +378,16 @@ hinter `tenantMW`+`RequireRole(tenant_admin, super_admin)`. Die `tenant_id` komm
 /api/admin/view` (Tenant-Default-Sicht, **server-validiert** in `validateView`:
 Lat/Lon/Zoom-Bereiche, AOI wohlgeformt, `fl_min ≤ fl_max`), `GET
 /api/admin/subscriptions` (eigene Feeds), `GET /api/admin/feeds` (Katalog,
-read-only). DTOs verbergen Infra-Felder (multicast_group/port). Subscription-Writes
-(Billing/super_admin, cross-tenant) und der Config-Cache (WF2-30) folgen später.
+read-only). DTOs verbergen Infra-Felder (multicast_group/port).
+
+**super_admin-Provisioning (WF2-31b, cross-tenant):** `GET /api/admin/tenants`,
+`GET/POST /api/admin/tenants/{tenantID}/subscriptions`, `DELETE
+/api/admin/tenants/{tenantID}/subscriptions/{feedID}` — Ziel-`tenant_id` aus dem
+**Pfad**. Doppel-Gate: äußerer `RequireRole(tenant_admin, super_admin)` +
+in-handler `requireSuper` (`Identity.Role == super_admin`, sonst `403`) — die
+einzige cross-tenant-schreibende Rolle (Billing-/Entitlement-Grenze). Validierung:
+Ziel-Tenant/Feed müssen existieren (`404`), Body/Pfad-IDs wohlgeformt (`400`);
+Grant/Revoke idempotent (`204`). Der Config-Cache (WF2-30) folgt später.
 
 **Multi-Feed-Empfang (WF2-20.2):** der `feeds`-Katalog (DB) treibt **N Receiver**
 (einer je Feed, je `feed_id` aus 20.1). `cmd/wayfinder/feeds.go`: `resolveFeeds`

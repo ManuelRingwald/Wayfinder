@@ -162,12 +162,16 @@ getestet und beobachtbar/auditierbar.
 - **WF2-31 ✅** — tenant-skopiertes Admin-API (`pkg/adminapi`): `GET/PUT
   /api/admin/view` (server-validiert), `GET /api/admin/subscriptions`, `GET
   /api/admin/feeds`; `tenant_id` **immer aus der Identity** (Isolation per
-  Konstruktion), hinter `RequireRole(tenant_admin, super_admin)`. DB-frei + real-PG
-  getestet. Subscription-Writes (Billing/super_admin) bewusst Folgeschritt.
+  Konstruktion).
+- **WF2-31b ✅** — super_admin-Provisioning (cross-tenant): `GET /api/admin/tenants`,
+  `GET/POST /api/admin/tenants/{id}/subscriptions`, `DELETE …/{feedID}` — Ziel aus
+  dem **Pfad**, Doppel-Gate (`RequireRole` + in-handler `requireSuper`); **einzige**
+  cross-tenant-schreibende Rolle. Cross-Tenant-Negativtest (tenant_admin → 403) +
+  real-PG grant→list→revoke. **→ Admin-Backend komplett.**
 
 **➡️ Nächster Schritt:** **WF2-32 — Admin-UI** (`/admin`, Vue 3 + Vuetify:
-Formulare/Slider für die View-Config auf dem WF2-31-API) **S3 · Sonnet 4.6**, nach
-Ankündigung & „Go". *(Alternativ vorziehbar: Subscription-Write-/super_admin-Pfad.)*
+Formulare/Slider für die View-Config + Abo-Verwaltung auf dem WF2-31-API)
+**S3 · Sonnet 4.6**, nach Ankündigung & „Go".
 
 ---
 
@@ -205,7 +209,7 @@ Details & Begründung: Konzept §7/§8.
 ### Stufe 3 — Dynamische Konfiguration & Admin-UI
 | AP | Inhalt | Stufe · Modell | Abh. | Status |
 |----|--------|----------------|------|--------|
-| **WF2-31** 🔒 | Admin-API (REST, tenant-skopiert, server-validiert: Zentrum/Radius/FL/Abos) | **S3 · Sonnet 4.6** | WF2-13 | ✅ **erledigt** (view GET/PUT + subs/feeds read; Sub-Writes Folgeschritt) |
+| **WF2-31** 🔒 | Admin-API (REST, tenant-skopiert, server-validiert: Zentrum/Radius/FL/Abos) | **S3 · Sonnet 4.6** | WF2-13 | ✅ **erledigt** (view GET/PUT + subs/feeds read + super_admin grant/revoke cross-tenant) |
 | **WF2-30** | Config-Service (Hot-Reload aus DB, In-Proc-TTL/Redis, ohne Neustart) | **S3–S4 · Sonnet 4.6 / Opus 4.8** | WF2-10 | ⏸️ **zurückgestellt** (erst bei gemessenem Cache-Bedarf, nach WF2-31-Entscheid) |
 | **WF2-32** | Admin-UI (`/admin`, Vue 3 + Vuetify, Formulare/Slider, Live-Apply) | **S3 · Sonnet 4.6** | WF2-31 | geplant |
 | **WF2-33** 🔒 | Live-Apply auf der Datenebene (laufende Subscription re-skopieren, kein Reconnect) | **S4 · Opus 4.8** | WF2-21, WF2-31 | geplant |
@@ -342,6 +346,7 @@ Architektur-Wirkung — nicht auf dem kritischen Pfad, aber jederzeit wertstifte
 - ✅ **WF2-23.1 — Audit-Log** (`cmd/wayfinder.logScopeAudit` + `newScopeResolver`-Logger: strukturiertes `slog`-Event `component=audit`/`ws_connect` mit tenant_id/user_id/subject/role/feeds/aoi/fl beim `/ws`-Connect; 12-Factor, keine DB; hochkardinale Identität nur im Audit-Log). `TestScopeResolverEmitsAudit`. Milestone `docs/milestones/WF2-23.1_Audit_Log.md`.
 - ✅ **WF2-23.2 — Pro-Mandant-Metriken** (`pkg/metrics` Label-Support `Metric.With`/Escaping; `broadcast` per-Tenant-Counter + `TenantMetrics`; `main.go` `/metrics` `wayfinder_tenant_ws_clients_connected{tenant}`/`…_tracks_delivered_total{tenant}`, nur stabile `tenant_id`). Tests `TestHandlerRendersLabels` + `TestBroadcasterTenantMetrics` (race-clean). **→ WF2-23 + STUFE 2 komplett.** Milestone `docs/milestones/WF2-23.2_Per_Tenant_Metrics.md`.
 - ✅ **WF2-31 — Tenant-skopiertes Admin-API** (`pkg/adminapi`: `GET/PUT /api/admin/view` server-validiert, `GET /api/admin/subscriptions`, `GET /api/admin/feeds`; `tenant_id` aus Identity → Isolation per Konstruktion; hinter `RequireRole`). DB-freie Tenant-Scoping-/Validierungs-Tests + real-PG `TestIntegrationAdminAPI`. **Beginn Stufe 3** (Reihenfolge-Entscheid: Admin-API vor Config-Cache WF2-30). Milestone `docs/milestones/WF2-31_Admin_API.md`.
+- ✅ **WF2-31b — Subscription-Grants (super_admin, cross-tenant)** (`pkg/adminapi`: `GET /api/admin/tenants`, `GET/POST/DELETE /api/admin/tenants/{id}/subscriptions[/{feedID}]`; Ziel aus dem Pfad; Doppel-Gate `RequireRole`+`requireSuper`; `TenantStore`/`Subscribe`/`Unsubscribe`/`FeedStore.GetByID`). Cross-Tenant-Negativtest `TestCrossTenantRoutesForbidTenantAdmin` (tenant_admin → 403) + real-PG grant→list→revoke. **→ Admin-Backend komplett.** Milestone `docs/milestones/WF2-31b_Subscription_Grants.md`.
 
 **Cross-Project / Firefly:**
 - ✅ Paket #6 / Coverage-Werkzeug — Radar-Ringe-Overlay (`pkg/coverage`, `/api/coverage/rings`, Frontend-Layer-Toggle, Firefly `SensorModel`-Erweiterung; PR #27)
