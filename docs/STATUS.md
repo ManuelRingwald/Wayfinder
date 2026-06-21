@@ -7,7 +7,29 @@
 > 🗺️ **Roadmap:** Arbeitspakete, Findings und empfohlene Reihenfolge stehen in
 > `docs/ROADMAP.md` (Stichwort „Roadmap" im Chat zeigt diese Liste).
 
-- **Zuletzt aktualisiert:** 2026-06-20 — **WF2-21.2 „Scoped Fan-out: Sicht-Filter
+- **Zuletzt aktualisiert:** 2026-06-20 — **WF2-22 „Isolations-Testsuite (Property +
+  Fuzz)" abgeschlossen (🔒 S4 · Opus 4.8) — sicherheitskritischer Kern testseitig
+  abgesichert.** ADR 0005/NFR-SEC-003 verlangen Pflicht-Negativtests **als Gate**;
+  21.1/21.2 hatten punktuelle, WF2-22 macht daraus ein **breites generiertes
+  Regressions-Gate**. **Test-only — kein Produktivcode-Befund.**
+  `pkg/broadcast/isolation_test.go` (Paket-intern, greift auf `filterView`/`admits`/
+  `AllowsFeed` zu): **`viewAdmitsOracle`** — unabhängige, bewusst simple Referenz des
+  Sicht-Prädikats (Differential-Testing). **`TestFilterViewMatchesOracle`**
+  (deterministisch geseedet, 50 000 Iter): `filterView` behält **exakt** die vom
+  Oracle zugelassenen Tracks, **beide Richtungen** (kein Über-/Unter-Filtern).
+  **`TestBroadcasterIsolationProperty`** (Ende-zu-Ende durch echten `Run`/
+  `RegisterClient`/`trackChan`, 8 Clients × 400 Batches × 6 Feeds): jeder empfangene
+  Track liegt im Client-Scope (Feed erlaubt **und** Sicht zulässt) — treibt reales
+  Fan-out/Goroutine/Eviction. **`FuzzScopeFilter`** (Go-Fuzz, finite Domäne):
+  `filterView`==Oracle + `AllowsFeed` exakt, kein Panic — lokal **755 000 execs,
+  0 Fehler**. Determinismus (feste Seeds) + Fuzz-Seeds laufen im normalen CI;
+  erweitertes Fuzzing on-demand (`-fuzz FuzzScopeFilter`). Gates grün
+  (`go build/vet/test`, `gofmt`, `pg-test.sh`; Fuzz separat); `go 1.25` unverändert.
+  Register NFR-SEC-003 (Property/Fuzz-Gate ✅); TECHNICAL §6 (Fuzz-Lauf-Hinweis);
+  Milestone `docs/milestones/WF2-22_Isolation_Test_Suite.md`. **Nächster Schritt:**
+  WF2-23 (Pro-Mandant-Metriken & Audit-Log) — schließt Stufe 2 ab — nach Ankündigung
+  & „Go".
+- **Vorherige Aktualisierung:** 2026-06-20 — **WF2-21.2 „Scoped Fan-out: Sicht-Filter
   (AOI + FL-Band)" abgeschlossen — WF2-21 KOMPLETT (🔒 S4 · Opus 4.8).** Über die
   in 21.1 erlaubten Feeds legt sich jetzt der **Sicht-Ausschnitt** des Mandanten:
   nur Tracks **im AOI** und im **FL-Band** verlassen den Server. Per Projektentscheid
@@ -766,12 +788,11 @@
 **✅ Stufe 1 komplett:** WF2-10 (Persistenz) · WF2-11 (AuthN, 3 Modi) · WF2-12
 (Tenant-Context + builtin-Login) · WF2-13 (Admin-Bootstrap + `/admin`-Gate).
 
-**🔵 Stufe 2 — in Arbeit (sicherheitskritischer Kern):** **WF2-20 ✅** (Multi-Feed
-+ `feed_id` pro Track) · **WF2-21 ✅** (scoped Fan-out: 21.1 Feed-Isolation +
-21.2 Sicht-Filter AOI/FL-Band als harte server-seitige Grenze, fail-open;
-Pflicht-Negativtest „A bekommt nie B's Feed"). **➡️ Nächster: WF2-22**
-(Isolations-Testsuite: Property-/Fuzz, breite generierte „A sieht nie B"-Abdeckung
-über Feeds **und** AOI/FL) 🔒 S4 · Opus 4.8. Danach WF2-23 (Pro-Tenant-Metriken/Audit).
+**🔵 Stufe 2 — fast komplett (sicherheitskritischer Kern):** **WF2-20 ✅** (Multi-Feed
++ `feed_id` pro Track) · **WF2-21 ✅** (scoped Fan-out: Feed-Isolation + AOI/FL-Sicht,
+fail-open) · **WF2-22 ✅** (Isolations-Testsuite Property + Fuzz, kein Befund —
+Kern testseitig abgesichert). **➡️ Nächster: WF2-23** (Pro-Mandant-Metriken &
+Audit-Log: `tenant`-Label + Audit-Event) 🔒 S3 · Sonnet 4.6 — **schließt Stufe 2 ab.**
 
 Offen, **ASD-Kern (mandanten-unabhängig, parallel möglich** — nicht im kritischen
 Pfad, Details/Abgleich in ROADMAP §2):
@@ -800,15 +821,15 @@ Pfad, Details/Abgleich in ROADMAP §2):
 
 ## 3. Nächster Schritt
 
-➡️ **WF2-22 — Isolations-Testsuite** 🔒 S4 · Opus 4.8, nach Ankündigung & „Go".
+➡️ **WF2-23 — Pro-Mandant-Metriken & Audit-Log** 🔒 S3 · Sonnet 4.6 (+🔒-Review),
+nach Ankündigung & „Go" — **schließt Stufe 2 ab.**
 
-Härtet die Cross-Tenant-Isolation (NFR-SEC-003) als **Regressions-Gate**:
-Property-/Fuzz-Tests, die zufällige Tenant-/Abo-/View-Konstellationen und
-Track-Ströme generieren und **beweisen**, dass ein Client **nie** einen Track
-außerhalb seines Scopes (Feed ∧ AOI ∧ FL) erhält — über die punktuellen
-Negativtests aus 21.1/21.2 hinaus, mit breiter generierter Abdeckung. So wird das
-Isolations-Prädikat gegen künftige Änderungen am Fan-out abgesichert. Danach
-**WF2-23** (Pro-Tenant-Metriken & Audit-Log).
+Macht die Mandanten-Isolation **beobachtbar & auditierbar**: ein `tenant`-Label an
+den relevanten Metriken (z. B. zugestellte Tracks / Clients je Mandant) und ein
+**Audit-Event** „welcher Tenant sah welchen Scope" (Feed-Set + AOI/FL beim
+Connect). Damit ist nachweisbar, **wer was sehen durfte** (Zert-/Compliance-Spur,
+NFR-SEC-003 letzter Punkt). Danach ist **Stufe 2 komplett** und Stufe 3
+(dynamische Konfiguration & Admin-UI, WF2-30 ff.) beginnt.
 
 **Erledigt in dieser Sitzung:** **Stufe 0 komplett** (WF2-00/01/02, ADR
 0005/0006/0007) **+ STUFE 1 KOMPLETT** — **WF2-10** (alle 6 Tabellen-Repos, real
@@ -823,7 +844,8 @@ DB-Katalog + Feed-CLI `wayfinder feed add/list` + ENV-Fallback + `main()`-Reorde
 **+ WF2-21 komplett** (21.1 Feed-Isolation `broadcast.Scope`/`ws.ScopeResolver`,
 fail-closed, Pflicht-Negativtest „A bekommt nie B's Feed"; 21.2 Sicht-Filter
 AOI/FL-Band als harte server-seitige Grenze `broadcast.ViewFilter`/`resolveViewFilter`,
-**fail-open** bei fehlendem Attribut). ADR-0006-Nachtrag:
+**fail-open** bei fehlendem Attribut) **+ WF2-22** (Isolations-Testsuite Property +
+Fuzz, 755k execs 0 Fehler, kein Befund). ADR-0006-Nachtrag:
 goose verworfen, Go-Baseline 1.25. Register FR-CFG-001,
 FR-TEN-001/002, FR-FEED-001, NFR-SEC-003/004, NFR-SCALE-001; Test-Runner
 `scripts/pg-test.sh` (jetzt `./...`, `-p 1`); neue Deps `golang.org/x/crypto`,

@@ -397,6 +397,12 @@ Config → keine Beschränkung. **Lebenszyklus** (confirmed/tentative/coasting) 
 bewusst **client-seitig** (Declutter, reversibel); echte Klassifizierung wird ein
 späteres server-seitiges Premium-Feature (nach Track-Anreicherung, WF2-40).
 
+**Isolations-Gate (WF2-22, NFR-SEC-003):** `pkg/broadcast/isolation_test.go`
+sichert das Fan-out-Prädikat als Property-/Fuzz-Gate ab (Differential-Test gegen
+ein unabhängiges Oracle + Ende-zu-Ende-Property + `FuzzScopeFilter`). Die Property-
+und Fuzz-Seed-Tests laufen im normalen `go test`; erweitertes Fuzzing on-demand:
+`go test ./pkg/broadcast/ -run '^$' -fuzz FuzzScopeFilter -fuzztime 30s`.
+
 ### 6.5 Betrieb
 
 | Variable | Default | Typ | Beschreibung |
