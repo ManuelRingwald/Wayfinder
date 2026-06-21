@@ -742,7 +742,9 @@ func newScopeResolver(subs feedLister, views viewGetter, logger *slog.Logger) ws
 			return nil, fmt.Errorf("resolve view: %w", err)
 		}
 		logScopeAudit(audit, r, id, feedIDs, view)
-		return broadcast.NewScopeWithView(feedIDs, view), nil
+		scope := broadcast.NewScopeWithView(feedIDs, view)
+		scope.TenantID = id.TenantID // for per-tenant metrics (WF2-23.2)
+		return scope, nil
 	}
 }
 
@@ -956,7 +958,7 @@ func startProbeServer(logger *slog.Logger, blockCount, trackCount, tracksCurrent
 		if feedHealth.Status(time.Now()).Stale {
 			feedStale = 1
 		}
-		metrics.Handler(
+		mset := []metrics.Metric{
 			metrics.Counter("wayfinder_cat062_blocks_received_total", "Total number of CAT062 data blocks received via multicast.", blockCount.Load()),
 			metrics.Counter("wayfinder_cat062_tracks_received_total", "Total number of track records received across all CAT062 blocks.", trackCount.Load()),
 			metrics.Counter("wayfinder_cat062_decode_errors_total", "Total number of CAT062 data blocks that failed to decode.", decodeErrors()),
@@ -968,7 +970,18 @@ func startProbeServer(logger *slog.Logger, blockCount, trackCount, tracksCurrent
 			metrics.Counter("wayfinder_openaip_fetch_success_total", "Total number of successful OpenAIP aeronautical fetches (per kind).", aeroService.FetchSuccessCount()),
 			metrics.Counter("wayfinder_openaip_fetch_failures_total", "Total number of failed OpenAIP aeronautical fetches (per kind).", aeroService.FetchFailureCount()),
 			metrics.Gauge("wayfinder_openaip_cache_age_seconds", "Seconds since the last successful OpenAIP fetch, or -1 if never.", aeroService.CacheAgeSeconds(time.Now())),
-		)(w, r)
+		}
+		// Per-tenant series (WF2-23.2). Labelled only by the stable tenant_id —
+		// never by high-cardinality identity (user/session), which stays in the
+		// audit log. Emitted only in multi-tenant mode (tenants present).
+		for _, tm := range broadcaster.TenantMetrics() {
+			lbl := metrics.Label{Name: "tenant", Value: strconv.FormatInt(tm.TenantID, 10)}
+			mset = append(mset,
+				metrics.Gauge("wayfinder_tenant_ws_clients_connected", "Currently connected WebSocket clients per tenant.", tm.Connected).With(lbl),
+				metrics.Counter("wayfinder_tenant_tracks_delivered_total", "Total track messages delivered to a tenant's clients.", tm.Delivered).With(lbl),
+			)
+		}
+		metrics.Handler(mset...)(w, r)
 	})
 
 	addr := ":8080"

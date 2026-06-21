@@ -7,7 +7,34 @@
 > 🗺️ **Roadmap:** Arbeitspakete, Findings und empfohlene Reihenfolge stehen in
 > `docs/ROADMAP.md` (Stichwort „Roadmap" im Chat zeigt diese Liste).
 
-- **Zuletzt aktualisiert:** 2026-06-20 — **WF2-23.1 „Audit-Log" abgeschlossen
+- **Zuletzt aktualisiert:** 2026-06-20 — **WF2-23.2 „Pro-Mandant-Metriken"
+  abgeschlossen — WF2-23 + 🎉 STUFE 2 KOMPLETT (🔒 S3 · Sonnet 4.6 / Opus-Review).**
+  Macht die Isolation **pro Mandant beobachtbar** (Billing/SLA). **`pkg/metrics`:**
+  Label-Support — `Label{Name,Value}`, `Metric.With(…)`, `Handler` rendert
+  `name{k="v"} value` mit Escaping (`\`,`"`,`\n`) und `# HELP`/`# TYPE` **je Name
+  einmal** (mehrere Mandanten-Serien teilen einen Namen). **`pkg/broadcast`:**
+  `Scope.TenantID` (nur Labelling, **keine** Isolations-Wirkung); Broadcaster führt
+  `map[tenantID]{connected,delivered}` unter `tenantMu` — Register `connected++`,
+  Unregister/Evict `connected−−`, erfolgreiche Zustellung `delivered+=len(tracks)`;
+  Snapshot `TenantMetrics()` unter Mutex → **race-clean** (`-race` verifiziert).
+  **`cmd/wayfinder`:** Resolver setzt `scope.TenantID`; `/metrics` hängt je Mandant
+  `wayfinder_tenant_ws_clients_connected{tenant}` (Gauge) +
+  `wayfinder_tenant_tracks_delivered_total{tenant}` (Counter) an (nur Multi-Tenant;
+  single-tenant unverändert). **Projektvorgabe umgesetzt:** Label-Wert = **stabile
+  `tenant_id`** (Billing braucht unveränderliche Schlüssel), **strikt nur** das
+  `tenant`-Label — hochkardinale Identität (user_id/subject/session) bleibt
+  **ausschließlich** im Audit-Log (23.1). **Kein Schema-Change, keine neue Dep.**
+  **Tests:** `pkg/metrics` `TestHandlerRendersLabels` (Labels/Escaping/TYPE-einmal);
+  `pkg/broadcast` `TestBroadcasterTenantMetrics` (zwei Mandanten disjunkte Feeds →
+  korrekte connected/delivered; Unregister dekrementiert; `-race`). Gates grün
+  (`go build/vet/test`, `gofmt`, `pg-test.sh`, `-race`); `go 1.25` unverändert.
+  TECHNICAL §5.2 (neue Metriken + Kardinalitäts-Regel) + Register NFR-OBS-002/
+  NFR-SEC-003; Milestone `docs/milestones/WF2-23.2_Per_Tenant_Metrics.md`.
+  **🎉 STUFE 2 (mandanten-isolierter Datenstrom) komplett:** WF2-20 Multi-Feed ·
+  WF2-21 scoped Fan-out (Feed+AOI/FL) · WF2-22 Isolations-Property/Fuzz · WF2-23
+  Audit+Metriken. **Nächster Schritt:** Stufe 3 — WF2-30 (Config-Service: Hot-Reload
+  aus DB ohne Neustart) nach Ankündigung & „Go".
+- **Vorherige Aktualisierung:** 2026-06-20 — **WF2-23.1 „Audit-Log" abgeschlossen
   (🔒 S2–S3 · Sonnet 4.6 / Opus-Review).** Erster Halbschritt von WF2-23: die
   NFR-SEC-003-**Audit-Spur** „welcher Tenant sah welchen Scope". Bei jedem
   `/ws`-Connect schreibt der Scope-Resolver ein **strukturiertes `slog`-Event**.
@@ -810,12 +837,13 @@
 **✅ Stufe 1 komplett:** WF2-10 (Persistenz) · WF2-11 (AuthN, 3 Modi) · WF2-12
 (Tenant-Context + builtin-Login) · WF2-13 (Admin-Bootstrap + `/admin`-Gate).
 
-**🔵 Stufe 2 — fast komplett (sicherheitskritischer Kern):** **WF2-20 ✅** (Multi-Feed
-+ `feed_id` pro Track) · **WF2-21 ✅** (scoped Fan-out: Feed-Isolation + AOI/FL-Sicht,
-fail-open) · **WF2-22 ✅** (Isolations-Testsuite Property + Fuzz) · **WF2-23.1 ✅**
-(Audit-Log: `slog`-Event „wer sah welchen Scope" beim Connect). **➡️ Nächster:
-WF2-23.2** (Pro-Mandant-Metriken: `tenant`-Label, je Mandant Clients + zugestellte
-Tracks) 🔒 S3 · Sonnet 4.6 — **schließt WF2-23 und Stufe 2 ab.**
+**🎉 Stufe 2 (sicherheitskritischer Kern) KOMPLETT:** **WF2-20 ✅** (Multi-Feed +
+`feed_id` pro Track) · **WF2-21 ✅** (scoped Fan-out: Feed-Isolation + AOI/FL-Sicht,
+fail-open) · **WF2-22 ✅** (Isolations-Testsuite Property + Fuzz) · **WF2-23 ✅**
+(23.1 Audit-Log + 23.2 Pro-Mandant-Metriken `…{tenant}`). Der mandanten-isolierte
+Datenstrom steht, ist getestet, beobachtbar und auditierbar. **➡️ Nächster: Stufe 3
+— WF2-30** (Config-Service: Hot-Reload der Mandanten-/View-Config aus DB ohne
+Neustart, In-Proc-TTL) S3–S4 · Sonnet 4.6 / Opus 4.8.
 
 Offen, **ASD-Kern (mandanten-unabhängig, parallel möglich** — nicht im kritischen
 Pfad, Details/Abgleich in ROADMAP §2):
@@ -844,17 +872,16 @@ Pfad, Details/Abgleich in ROADMAP §2):
 
 ## 3. Nächster Schritt
 
-➡️ **WF2-23.2 — Pro-Mandant-Metriken** 🔒 S3 · Sonnet 4.6 (+🔒-Review), nach
-Ankündigung & „Go" — **schließt WF2-23 und Stufe 2 ab.**
+➡️ **Stufe 3 — WF2-30: Config-Service** S3–S4 · Sonnet 4.6 / Opus 4.8, nach
+Ankündigung & „Go".
 
-Macht die Isolation **beobachtbar pro Mandant**: `pkg/metrics` um Label-Unterstützung
-erweitern (`name{tenant="…"} value`); der Broadcaster zählt je Mandant **verbundene
-Clients** (Gauge) und **zugestellte Tracks** (Counter) — dafür muss die `tenant_id`
-in den Broadcaster-`Client` (heute nur `scope`). Exponiert z. B.
-`wayfinder_ws_clients_connected{tenant="…"}`, `wayfinder_tracks_delivered_total{tenant="…"}`
-fürs Billing/SLA-Monitoring. **Strikt:** nur das `tenant`-Label, **keine**
-hochkardinalen Labels (user_id/session_id bleiben im Audit-Log). Danach ist
-**Stufe 2 komplett**; Stufe 3 (dynamische Konfiguration & Admin-UI, WF2-30 ff.) beginnt.
+Beginn von Stufe 3 (dynamische Konfiguration & Admin-UI). Der Config-Service liest
+Mandanten-/View-/Abo-Konfiguration aus der DB und macht Änderungen **ohne Neustart**
+wirksam (Hot-Reload, In-Proc-TTL-Cache; Redis bleibt zurückgestellt bis gemessener
+Bedarf, ADR 0006). Grundlage für die Admin-API (WF2-31), die Admin-UI (WF2-32) und
+schließlich Live-Apply auf der laufenden Subscription (WF2-33, re-skopieren ohne
+Reconnect). **Offener Abstimmungspunkt für die Ankündigung:** Verhältnis zum
+Connect-Snapshot aus WF2-21 (heute wird der Scope einmalig am Handshake aufgelöst).
 
 **Erledigt in dieser Sitzung:** **Stufe 0 komplett** (WF2-00/01/02, ADR
 0005/0006/0007) **+ STUFE 1 KOMPLETT** — **WF2-10** (alle 6 Tabellen-Repos, real
@@ -870,8 +897,9 @@ DB-Katalog + Feed-CLI `wayfinder feed add/list` + ENV-Fallback + `main()`-Reorde
 fail-closed, Pflicht-Negativtest „A bekommt nie B's Feed"; 21.2 Sicht-Filter
 AOI/FL-Band als harte server-seitige Grenze `broadcast.ViewFilter`/`resolveViewFilter`,
 **fail-open** bei fehlendem Attribut) **+ WF2-22** (Isolations-Testsuite Property +
-Fuzz, 755k execs 0 Fehler, kein Befund) **+ WF2-23.1** (Audit-Log: strukturiertes
-`slog`-Event „wer sah welchen Scope" beim `/ws`-Connect, 12-Factor/keine DB).
+Fuzz, 755k execs 0 Fehler, kein Befund) **+ WF2-23 komplett** (23.1 Audit-Log
+strukturiertes `slog`-Event „wer sah welchen Scope"; 23.2 Pro-Mandant-Metriken
+`…{tenant}`, stabile tenant_id, race-clean) → **🎉 STUFE 2 KOMPLETT**.
 ADR-0006-Nachtrag: goose verworfen, Go-Baseline 1.25. Register FR-CFG-001,
 FR-TEN-001/002, FR-FEED-001, NFR-SEC-003/004, NFR-SCALE-001; Test-Runner
 `scripts/pg-test.sh` (jetzt `./...`, `-p 1`); neue Deps `golang.org/x/crypto`,

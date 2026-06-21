@@ -140,10 +140,20 @@ Bootstrap + Admin-Gate (WF2-13).
   feeds+AOI/FL), 12-Factor (keine DB-Tabelle); hochkardinale Identität nur im
   Audit-Log, nie als Metrik-Label. `TestScopeResolverEmitsAudit`.
 
-**➡️ Nächster Schritt:** **WF2-23.2 — Pro-Mandant-Metriken** (`pkg/metrics` um
-Label-Unterstützung erweitern; Broadcaster zählt je Mandant verbundene Clients +
-zugestellte Tracks → `…{tenant="…"}`) 🔒 **S3 · Sonnet 4.6**, nach Ankündigung &
-„Go" — **schließt WF2-23 und damit Stufe 2 ab.**
+- **WF2-23.2 ✅** — Pro-Mandant-Metriken: `pkg/metrics` Label-Support
+  (`Metric.With`, Escaping, HELP/TYPE je Name einmal); Broadcaster zählt je
+  Mandant verbundene Clients (Gauge) + zugestellte Tracks (Counter) →
+  `wayfinder_tenant_ws_clients_connected{tenant}` / `…_tracks_delivered_total{tenant}`
+  (nur stabile `tenant_id`, race-clean). **→ WF2-23 komplett.**
+
+**🎉 STUFE 2 (mandanten-isolierter Datenstrom) KOMPLETT** — WF2-20 (Multi-Feed) +
+WF2-21 (scoped Fan-out Feed+AOI/FL) + WF2-22 (Isolations-Property/Fuzz) + WF2-23
+(Audit-Log + Pro-Tenant-Metriken). Der sicherheitskritische Kern steht, ist
+getestet und beobachtbar/auditierbar.
+
+**➡️ Nächster Schritt:** **Stufe 3 — WF2-30: Config-Service** (Hot-Reload der
+Mandanten-/View-Konfiguration aus der DB ohne Neustart; In-Proc-TTL, Redis
+zurückgestellt) **S3–S4 · Sonnet 4.6 / Opus 4.8**, nach Ankündigung & „Go".
 
 ---
 
@@ -176,12 +186,12 @@ Details & Begründung: Konzept §7/§8.
 | **WF2-20** 🔒 | Feed-Registry & Multi-Feed-Receiver (1→N Feeds; `feed_id` pro Track) | **S4 · Opus 4.8** | WF2-01, WF2-02 | ✅ **erledigt** (20.1 `feed_id`-Naht + 20.2 Multi-Feed + Feed-CLI) |
 | **WF2-21** 🔒 | Subscription-Modell & scoped Fan-out (`broadcast()` → Prädikat feed∩AOI∩FL) | **S4–S5 · Opus 4.8 / Fable 5** | WF2-12, WF2-20 | ✅ **erledigt** (21.1 Feed-Isolation + 21.2 AOI/FL-Sicht-Filter) |
 | **WF2-22** 🔒 | Isolations-Testsuite (Negativ-/Property-/Fuzz-Tests; A sieht nie B) | **S4 · Opus 4.8** | WF2-21 | ✅ **erledigt** (Property + Fuzz, kein Befund) |
-| **WF2-23** | Pro-Mandant-Metriken & Audit-Log (`tenant`-Label, Audit-Event) | **S3 · Sonnet 4.6** | WF2-21 | 🔵 in Arbeit (23.1 Audit-Log ✅; 23.2 Pro-Tenant-Metriken offen — schließt Stufe 2 ab) |
+| **WF2-23** | Pro-Mandant-Metriken & Audit-Log (`tenant`-Label, Audit-Event) | **S3 · Sonnet 4.6** | WF2-21 | ✅ **erledigt** (23.1 Audit-Log + 23.2 Pro-Tenant-Metriken) — **Stufe 2 komplett** |
 
 ### Stufe 3 — Dynamische Konfiguration & Admin-UI
 | AP | Inhalt | Stufe · Modell | Abh. | Status |
 |----|--------|----------------|------|--------|
-| **WF2-30** | Config-Service (Hot-Reload aus DB, In-Proc-TTL/Redis, ohne Neustart) | **S3–S4 · Sonnet 4.6 / Opus 4.8** | WF2-10 | geplant |
+| **WF2-30** | Config-Service (Hot-Reload aus DB, In-Proc-TTL/Redis, ohne Neustart) | **S3–S4 · Sonnet 4.6 / Opus 4.8** | WF2-10 | ➡️ **nächster** (Beginn Stufe 3) |
 | **WF2-31** 🔒 | Admin-API (REST, tenant-skopiert, server-validiert: Zentrum/Radius/FL/Abos) | **S3 · Sonnet 4.6** | WF2-30, WF2-13 | geplant |
 | **WF2-32** | Admin-UI (`/admin`, Vue 3 + Vuetify, Formulare/Slider, Live-Apply) | **S3 · Sonnet 4.6** | WF2-31 | geplant |
 | **WF2-33** 🔒 | Live-Apply auf der Datenebene (laufende Subscription re-skopieren, kein Reconnect) | **S4 · Opus 4.8** | WF2-21, WF2-31 | geplant |
@@ -315,7 +325,8 @@ Architektur-Wirkung — nicht auf dem kritischen Pfad, aber jederzeit wertstifte
 - ✅ **WF2-21.1 — Scoped Fan-out (Feed-Isolation)** (`pkg/broadcast` `Scope`/`NewScope`/`AllowsFeed` + `broadcastTracks` feed-gefiltert, Feed-Health bleibt global; `pkg/ws` `ScopeResolver` am Handshake fail-closed `403`; `cmd/wayfinder.newScopeResolver` via `subscriptions.ListFeedIDsByTenant`). **Pflicht-Negativtest** `TestBroadcastFeedIsolation` (A bekommt nie B's Feed) + `TestScopeAllowsFeed` + Resolver-Tests (fail-closed). Single-Tenant unverändert. Milestone `docs/milestones/WF2-21.1_Feed_Level_Isolation.md`.
 - ✅ **WF2-21.2 — Scoped Fan-out (Sicht-Filter AOI/FL)** (`pkg/broadcast` `BBox`/`ViewFilter`/`Scope.filterView` — harte server-seitige AOI/FL-Grenze, **fail-open** bei fehlendem Attribut; `cmd/wayfinder.resolveViewFilter` via `view_configs.GetEffective`, FL→Fuß). Tests: `TestViewFilterAdmits` (inkl. fail-open) + `TestBroadcastViewScoping` + `TestResolveViewFilter` + real-PG `TestIntegrationResolveViewFilter`. Lebenszyklus client-seitig; Klassifizierung später (WF2-40). **→ WF2-21 komplett.** Milestone `docs/milestones/WF2-21.2_View_Filter.md`.
 - ✅ **WF2-22 — Isolations-Testsuite** (`pkg/broadcast/isolation_test.go`: Differential-Property `TestFilterViewMatchesOracle` 50k Iter vs. unabhängiges Oracle, Ende-zu-Ende `TestBroadcasterIsolationProperty`, `FuzzScopeFilter` 755k execs 0 Fehler). Test-only, kein Produktivcode-Befund. **→ sicherheitskritischer Kern testseitig abgesichert.** Milestone `docs/milestones/WF2-22_Isolation_Test_Suite.md`.
-- ✅ **WF2-23.1 — Audit-Log** (`cmd/wayfinder.logScopeAudit` + `newScopeResolver`-Logger: strukturiertes `slog`-Event `component=audit`/`ws_connect` mit tenant_id/user_id/subject/role/feeds/aoi/fl beim `/ws`-Connect; 12-Factor, keine DB; hochkardinale Identität nur im Audit-Log). `TestScopeResolverEmitsAudit`. Milestone `docs/milestones/WF2-23.1_Audit_Log.md`. *(Pro-Tenant-Metriken folgen WF2-23.2.)*
+- ✅ **WF2-23.1 — Audit-Log** (`cmd/wayfinder.logScopeAudit` + `newScopeResolver`-Logger: strukturiertes `slog`-Event `component=audit`/`ws_connect` mit tenant_id/user_id/subject/role/feeds/aoi/fl beim `/ws`-Connect; 12-Factor, keine DB; hochkardinale Identität nur im Audit-Log). `TestScopeResolverEmitsAudit`. Milestone `docs/milestones/WF2-23.1_Audit_Log.md`.
+- ✅ **WF2-23.2 — Pro-Mandant-Metriken** (`pkg/metrics` Label-Support `Metric.With`/Escaping; `broadcast` per-Tenant-Counter + `TenantMetrics`; `main.go` `/metrics` `wayfinder_tenant_ws_clients_connected{tenant}`/`…_tracks_delivered_total{tenant}`, nur stabile `tenant_id`). Tests `TestHandlerRendersLabels` + `TestBroadcasterTenantMetrics` (race-clean). **→ WF2-23 + STUFE 2 komplett.** Milestone `docs/milestones/WF2-23.2_Per_Tenant_Metrics.md`.
 
 **Cross-Project / Firefly:**
 - ✅ Paket #6 / Coverage-Werkzeug — Radar-Ringe-Overlay (`pkg/coverage`, `/api/coverage/rings`, Frontend-Layer-Toggle, Firefly `SensorModel`-Erweiterung; PR #27)
