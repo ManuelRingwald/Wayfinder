@@ -59,6 +59,9 @@ type Handler struct {
 func New(views ViewStore, subs SubscriptionStore, feeds FeedStore, tenants TenantStore, logger *slog.Logger) *Handler {
 	h := &Handler{views: views, subs: subs, feeds: feeds, tenants: tenants, logger: logger}
 	mux := http.NewServeMux()
+	// whoami: the SPA's role probe (WF2-32). It sits behind the same admin gate, so
+	// a 200 here both confirms access and tells the client which panels to render.
+	mux.HandleFunc("GET /api/admin/whoami", h.whoami)
 	// tenant_admin self-service (tenant from the Identity).
 	mux.HandleFunc("GET /api/admin/view", h.getView)
 	mux.HandleFunc("PUT /api/admin/view", h.putView)
@@ -74,6 +77,31 @@ func New(views ViewStore, subs SubscriptionStore, feeds FeedStore, tenants Tenan
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) { h.mux.ServeHTTP(w, r) }
+
+// whoamiDTO is the identity the SPA reads on entering /admin: it confirms access
+// (the route is behind the admin gate) and reports the role so the client knows
+// whether to render the super_admin provisioning panel. The role gating in the UI
+// is cosmetic — the server independently enforces it (requireSuper → 403).
+type whoamiDTO struct {
+	Subject  string     `json:"subject"`
+	TenantID int64      `json:"tenant_id"`
+	UserID   int64      `json:"user_id"`
+	Role     store.Role `json:"role"`
+}
+
+func (h *Handler) whoami(w http.ResponseWriter, r *http.Request) {
+	id, ok := tenant.FromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	writeJSON(w, http.StatusOK, whoamiDTO{
+		Subject:  id.Subject,
+		TenantID: id.TenantID,
+		UserID:   id.UserID,
+		Role:     id.Role,
+	})
+}
 
 // viewDTO is the JSON shape of a tenant's view configuration.
 type viewDTO struct {

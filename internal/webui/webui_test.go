@@ -1,0 +1,97 @@
+package webui
+
+import (
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+)
+
+// get drives the embedded handler and returns status, content-type and body.
+func get(t *testing.T, h http.Handler, target string) (int, string, string) {
+	t.Helper()
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, target, nil))
+	res := rr.Result()
+	defer res.Body.Close()
+	body, _ := io.ReadAll(res.Body)
+	return res.StatusCode, res.Header.Get("Content-Type"), string(body)
+}
+
+// indexMarker is a stable fragment of the SPA shell (the mount point Vue uses).
+const indexMarker = `id="app"`
+
+func TestServesIndexAtRoot(t *testing.T) {
+	h, err := Handler()
+	if err != nil {
+		t.Fatalf("Handler: %v", err)
+	}
+	status, ct, body := get(t, h, "/")
+	if status != http.StatusOK {
+		t.Fatalf("root status = %d, want 200", status)
+	}
+	if !strings.Contains(ct, "text/html") {
+		t.Errorf("root content-type = %q, want text/html", ct)
+	}
+	if !strings.Contains(body, indexMarker) {
+		t.Errorf("root body missing %q", indexMarker)
+	}
+}
+
+// TestSPAFallbackServesShell is the core WF2-32 guarantee: client-side deep links
+// that have no corresponding embedded file must return the SPA shell (history
+// mode), not a 404 — otherwise a hard reload of /admin breaks.
+func TestSPAFallbackServesShell(t *testing.T) {
+	h, err := Handler()
+	if err != nil {
+		t.Fatalf("Handler: %v", err)
+	}
+	for _, target := range []string{
+		"/admin",
+		"/admin/",
+		"/admin/tenants/5/subscriptions",
+		"/some/unknown/deep/link",
+		"/assets", // bare directory: falls through to the shell, no listing
+	} {
+		status, ct, body := get(t, h, target)
+		if status != http.StatusOK {
+			t.Errorf("%s status = %d, want 200", target, status)
+		}
+		if !strings.Contains(ct, "text/html") {
+			t.Errorf("%s content-type = %q, want text/html", target, ct)
+		}
+		if !strings.Contains(body, indexMarker) {
+			t.Errorf("%s did not return the SPA shell", target)
+		}
+	}
+}
+
+// TestServesRealAsset checks a genuine embedded asset is served as itself, not
+// shadowed by the fallback. favicon.svg ships in dist/ from the Vite build.
+func TestServesRealAsset(t *testing.T) {
+	h, err := Handler()
+	if err != nil {
+		t.Fatalf("Handler: %v", err)
+	}
+	status, ct, body := get(t, h, "/favicon.svg")
+	if status != http.StatusOK {
+		t.Fatalf("favicon status = %d, want 200", status)
+	}
+	if strings.Contains(ct, "text/html") || strings.Contains(body, indexMarker) {
+		t.Errorf("favicon.svg was shadowed by the SPA shell (ct=%q)", ct)
+	}
+}
+
+// TestUnknownAssetFallsBack documents the deliberate "all not-found → index.html"
+// rule: even a missing path under /assets returns the shell rather than a 404.
+func TestUnknownAssetFallsBack(t *testing.T) {
+	h, err := Handler()
+	if err != nil {
+		t.Fatalf("Handler: %v", err)
+	}
+	status, _, body := get(t, h, "/assets/does-not-exist-12345.js")
+	if status != http.StatusOK || !strings.Contains(body, indexMarker) {
+		t.Errorf("missing asset status=%d shell=%v, want 200+shell", status, strings.Contains(body, indexMarker))
+	}
+}
