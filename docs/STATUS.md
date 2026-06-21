@@ -7,7 +7,37 @@
 > 🗺️ **Roadmap:** Arbeitspakete, Findings und empfohlene Reihenfolge stehen in
 > `docs/ROADMAP.md` (Stichwort „Roadmap" im Chat zeigt diese Liste).
 
-- **Zuletzt aktualisiert:** 2026-06-20 — **WF2-31b „Subscription-Grants
+- **Zuletzt aktualisiert:** 2026-06-21 — **WF2-32 „Admin-UI" abgeschlossen —
+  ADMIN-BACKEND + UI KOMPLETT (S3 · Sonnet 4.6).** Bedienbare Admin-Oberfläche unter
+  `/admin` (Vue 3 + Vuetify, `vue-router` **History-Mode**) als Consumer des
+  WF2-31/31b-API. **Zwei Kurskorrekturen des Projektverantwortlichen umgesetzt:**
+  (1) **History-Mode** statt Hash — saubere Routen `/` (ASD) / `/admin` (Settings);
+  dafür Backend-Namespace bereinigt: Rollen-Probe von `/admin` nach **`GET
+  /api/admin/whoami`** verschoben (in `pkg/adminapi`) + **klassischer SPA-History-
+  Fallback** in `internal/webui/webui.go` (unbekannte Pfade → `index.html`, Deep-
+  Links überleben Reload; API-Surface über speziellere Mux-Pattern **nie**
+  beschattet, mit Go-Test). (2) **Kompletter Komponenten-Austausch, kein Overlay** —
+  `App.vue` ist jetzt dünne Shell (`<v-app><router-view/>`), ASD-Inhalt →
+  `views/AsdView.vue`; **kein `<keep-alive>`** → Navigieren zu `/admin` unmountet die
+  Karte vollständig (`MapCanvas.onUnmounted → mapEngine.destroy()`: WS/Reconnect-
+  Timer/Intervalle/WebGL frei). **Bausteine:** Pinia `stores/admin.js` (apiFetch +
+  Actions + `isSuperAdmin`-Getter), `views/AdminView.vue` (Tabs, Rollen-Probe beim
+  Mount, Provisioning-Tab `v-if=isSuperAdmin`), `components/admin/{AdminViewConfig,
+  AdminSubscriptions,AdminProvisioning}.vue`. **View-Editor mit Client-Validierungs-
+  Parität** (`src/admin/validateView.js` spiegelt Server-`validateView`) **vor** dem
+  PUT. **Sicherheit:** UI-Rollen-Gating ist **kosmetisch** — der Server erzwingt jede
+  Grenze unabhängig (`requireSuper → 403`, Tenant-ID aus Identity); Client-Validierung
+  ist UX, nie die Grenze (Defense-in-Depth). **Tests:** Vitest 62 grün (`validateView`-
+  Parität + Store mit gemocktem `fetch`: whoami/Rollen, `saveView`-DTO, grant/revoke,
+  403-Pfad); Go (`webui_test.go` SPA-Fallback, `adminapi` whoami). `npm run build`
+  regeneriert `dist` (lazy Chunk `AdminView-*.js`). Gates grün (`go build/vet/test`,
+  `gofmt`, `pg-test.sh`, Vitest). Neue Frontend-Dep **`vue-router`**; **kein Schema-
+  Change.** INSTALLATION §7 + TECHNICAL §3 + Register **FR-ADMIN-002** + Milestone
+  `docs/milestones/WF2-32_Admin_UI.md`. **→ Admin-Backend + UI komplett.**
+  **Nächster Schritt:** WF2-33 (Live-Apply, laufende Subscriptions re-skopieren —
+  Reconnect genügt vorerst) **S4 · Opus 4.8** oder WF2-30 (Config-Cache bei
+  gemessenem Bedarf), nach Ankündigung & „Go".
+- **Vorherige Aktualisierung:** 2026-06-20 — **WF2-31b „Subscription-Grants
   (super_admin, cross-tenant)" abgeschlossen — ADMIN-BACKEND KOMPLETT
   (🔒 S3 +S4-Touch · Sonnet 4.6 / Opus-Review).** Vervollständigt WF2-31: der
   Plattform-Betreiber grant/entzieht Feed-Zugänge **mandantenübergreifend** per API
@@ -959,11 +989,16 @@ strukturiertes `slog`-Event „wer sah welchen Scope"; 23.2 Pro-Mandant-Metriken
 begonnen: WF2-31** (tenant-skopiertes Admin-API `pkg/adminapi`, view GET/PUT
 server-validiert + subs/feeds read, `tenant_id` aus Identity, hinter `RequireRole`)
 **+ WF2-31b** (super_admin-Provisioning cross-tenant: tenants/grants/revoke, Ziel aus
-Pfad, Doppel-Gate `requireSuper`, Cross-Tenant-Negativtest → Admin-Backend komplett).
-ADR-0006-Nachtrag: goose verworfen, Go-Baseline 1.25. Register FR-CFG-001, FR-ADMIN-001,
-FR-TEN-001/002, FR-FEED-001, NFR-SEC-003/004, NFR-SCALE-001; Test-Runner
-`scripts/pg-test.sh` (jetzt `./...`, `-p 1`); neue Deps `golang.org/x/crypto`,
-`github.com/coreos/go-oidc/v3`. Subcommands: `bootstrap`, `feed`.
+Pfad, Doppel-Gate `requireSuper`, Cross-Tenant-Negativtest → Admin-Backend komplett)
+**+ WF2-32** (Admin-UI Vue 3 + Vuetify, `vue-router` History-Mode: View-Editor mit
+Client-Validierungs-Parität, Abos/Feeds read-only, super_admin-Provisioning hinter
+`isSuperAdmin`-Gate; kompletter Komponenten-Austausch — Karte wird auf `/admin`
+unmountet; whoami → `/api/admin/whoami`; SPA-History-Fallback in `webui.Handler`) →
+**Admin-Backend + UI komplett**. ADR-0006-Nachtrag: goose verworfen, Go-Baseline 1.25.
+Register FR-CFG-001, FR-ADMIN-001/002, FR-TEN-001/002, FR-FEED-001, NFR-SEC-003/004,
+NFR-SCALE-001; Test-Runner `scripts/pg-test.sh` (jetzt `./...`, `-p 1`); neue Deps
+`golang.org/x/crypto`, `github.com/coreos/go-oidc/v3`, Frontend `vue-router`.
+Subcommands: `bootstrap`, `feed`.
 
 **Parallel möglich (nicht kritischer Pfad):** ASD-011/012/013 (ASD-Kern,
 ROADMAP §2) — widerspruchsfrei zu 2.0, von einem leichteren Modell ziehbar.

@@ -174,12 +174,21 @@ Durch `authMiddleware` geschützt (wenn `WAYFINDER_AUTH_TOKEN` gesetzt).
 
 | Pfad | Methode | Bedeutung |
 |------|---------|-----------|
-| `/` | GET | ASD-Frontend (eingebettete Vue-3-App) |
+| `/` | GET | ASD-Frontend (eingebettete Vue-3-SPA, Route `/`) |
+| `/admin` | GET | Admin-Oberfläche (Vue-SPA-Route, History-Mode; nur sinnvoll bei Multi-Tenancy) — WF2-32 |
 | `/ws` | GET → Upgrade | WebSocket — Track- und Feed-Status-Updates |
 | `/api/map-config` | GET | Kartentheme und Startkonfiguration als JSON |
 | `/api/airspace` | GET | Luftraumstrukturen (GeoJSON, best-effort) |
 | `/api/navaids` | GET | VOR/NDB-Beacons (GeoJSON, best-effort) |
 | `/api/waypoints` | GET | Wegpunkte (GeoJSON, best-effort) |
+| `/api/admin/whoami` | GET | Rollen-Probe (Identität als JSON); rollen-gegated (WF2-32) |
+| `/api/admin/*` | div. | Tenant-skopiertes Admin-API (WF2-31/31b); rollen-gegated |
+
+> **SPA-History-Fallback (WF2-32):** `webui.Handler` liefert für jeden nicht als
+> Datei auflösbaren Pfad die `index.html`-Shell aus (Client-Router übernimmt) —
+> so überleben Deep-Links wie `/admin` einen Reload. Das API-Surface (`/api/…`,
+> `/ws`, Probes) ist über speziellere Mux-Pattern registriert und wird vom Fallback
+> nie beschattet.
 
 ---
 

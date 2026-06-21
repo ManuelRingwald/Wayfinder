@@ -101,6 +101,33 @@ func adminReq(method, path, body string, tenantID int64, role store.Role) *http.
 	return r
 }
 
+// --- whoami role probe (WF2-32) ---------------------------------------------
+
+func TestWhoamiReportsIdentity(t *testing.T) {
+	for _, role := range []store.Role{store.RoleTenantAdmin, store.RoleSuperAdmin} {
+		rec := httptest.NewRecorder()
+		handlerWith(&fakeVS{}, fakeFeeds{}, fakeTenants{}).
+			ServeHTTP(rec, adminReq(http.MethodGet, "/api/admin/whoami", "", 7, role))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("role %s: status = %d, want 200", role, rec.Code)
+		}
+		var got map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &got)
+		if got["tenant_id"] != 7.0 || got["role"] != string(role) {
+			t.Errorf("role %s: whoami body = %v", role, got)
+		}
+	}
+}
+
+func TestWhoamiUnauthorizedWithoutIdentity(t *testing.T) {
+	rec := httptest.NewRecorder()
+	handlerWith(&fakeVS{}, fakeFeeds{}, fakeTenants{}).
+		ServeHTTP(rec, adminReq(http.MethodGet, "/api/admin/whoami", "", 0, ""))
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", rec.Code)
+	}
+}
+
 // --- tenant_admin self-service (tenant from Identity) -----------------------
 
 func TestGetView(t *testing.T) {

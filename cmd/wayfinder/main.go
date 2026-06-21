@@ -326,13 +326,14 @@ func main() {
 		logger.Info("builtin login enabled", slog.String("path", "/api/login"))
 	}
 
-	// Admin gate (WF2-13): /admin is role-gated to tenant_admin/super_admin. The
-	// whoami lets an admin verify access; the tenant-scoped admin REST API
-	// (WF2-31) sits behind the same gate. Only mounted with multi-tenancy active —
-	// the gate needs an Identity from the tenant middleware.
+	// Admin surface (WF2-13/31/32): the tenant-scoped admin REST API is role-gated
+	// to tenant_admin/super_admin and carries the whoami role probe the SPA reads on
+	// entering /admin (GET /api/admin/whoami). The browser route /admin itself is no
+	// longer a backend endpoint — it is served by the SPA shell via the history-mode
+	// fallback in webui.Handler. Only mounted with multi-tenancy active — the gate
+	// needs an Identity from the tenant middleware.
 	if tenantMW != nil {
 		requireAdmin := tenant.RequireRole(store.RoleTenantAdmin, store.RoleSuperAdmin)
-		mux.Handle("/admin", tenantMW(requireAdmin(adminWhoamiHandler())))
 		adminAPI := adminapi.New(store.NewViewConfigRepo(dbPool), store.NewSubscriptionRepo(dbPool), store.NewFeedRepo(dbPool), store.NewTenantRepo(dbPool), logger)
 		mux.Handle("/api/admin/", tenantMW(requireAdmin(adminAPI)))
 	}
@@ -810,27 +811,6 @@ func resolveViewFilter(ctx context.Context, views viewGetter, tenantID, userID i
 		return nil, nil // config exists but imposes no restriction → fast path
 	}
 	return vf, nil
-}
-
-// adminWhoamiHandler reports the caller's resolved tenant Identity as JSON. It
-// sits behind the /admin role gate (WF2-13) so an admin can confirm their access;
-// the real admin surface (tenant/user/subscription management) follows in
-// WF2-31/32. The handler trusts the Identity placed in context by the middleware.
-func adminWhoamiHandler() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		id, ok := tenant.FromContext(r.Context())
-		if !ok {
-			http.Error(w, "forbidden", http.StatusForbidden)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"subject":   id.Subject,
-			"tenant_id": id.TenantID,
-			"user_id":   id.UserID,
-			"role":      id.Role,
-		})
-	}
 }
 
 // parseLogLevel parses the documented slog level names ("debug", "info",

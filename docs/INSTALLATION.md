@@ -485,10 +485,15 @@ WAYFINDER_DB_URL=postgres://… WAYFINDER_BOOTSTRAP_PASSWORD='…' \
 | `-password` | *(leer)* | builtin-Passwort (besser über `WAYFINDER_BOOTSTRAP_PASSWORD`). |
 | `WAYFINDER_BOOTSTRAP_PASSWORD` | *(leer)* | builtin-Passwort (bevorzugt; nicht in der Prozessliste sichtbar). |
 
-> 🔒 **`/admin`-Endpoint:** Bei aktiver Multi-Tenancy ist `/admin` rollen-gegated
-> (`tenant_admin`/`super_admin`, sonst `403`) und liefert derzeit eine minimale
-> „whoami"-Antwort (eigene Identität als JSON) zur Zugriffsprüfung. Die
-> eigentliche Admin-UI folgt in WF2-32.
+> 🔒 **`/admin` (Browser-Route, WF2-32):** Bei aktiver Multi-Tenancy ist `/admin`
+> die **Admin-Oberfläche** (Vue-SPA, History-Mode) — eine **eigenständige View**,
+> die die ASD-Karte vollständig ersetzt (kein Overlay; die Karte wird unmounted).
+> Der Server liefert für unbekannte Pfade die SPA-Shell aus (`webui.Handler`-
+> Fallback), sodass Deep-Links wie `/admin` einen Reload überleben. Die Oberfläche
+> konsumiert das Admin-API und ist durch dessen Rollen-Gate geschützt; die Rollen-
+> Probe liegt auf `GET /api/admin/whoami` (`tenant_admin`/`super_admin`, sonst
+> `403`). Der Provisioning-Bereich ist nur für `super_admin` sichtbar (kosmetisch —
+> der Server erzwingt es unabhängig).
 
 #### Admin-API (WF2-31)
 
@@ -499,6 +504,7 @@ Mandanten-Konfiguration.
 
 | Methode + Pfad | Wirkung |
 |---|---|
+| `GET /api/admin/whoami` | Eigene Identität/Rolle als JSON (Rollen-Probe der SPA). |
 | `GET /api/admin/view` | Eigene effektive Sicht (Zentrum/Zoom/AOI/FL/Layer); `404` wenn keine gesetzt. |
 | `PUT /api/admin/view` | Eigene Tenant-Default-Sicht setzen (server-validiert; `400` bei ungültig). |
 | `GET /api/admin/subscriptions` | Eigene abonnierte Feeds. |
