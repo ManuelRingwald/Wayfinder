@@ -84,7 +84,17 @@ func (f fakeTenants) GetByID(_ context.Context, id int64) (store.Tenant, error) 
 }
 
 func handlerWith(vs *fakeVS, ff fakeFeeds, ft fakeTenants) *Handler {
-	return New(vs, vs, ff, ft, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	return New(vs, vs, ff, ft, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+}
+
+// rescopeRecorder captures the tenant ids a handler asks to live-re-scope (WF2-33).
+// Handlers invoke rescope synchronously in the request goroutine, so no locking.
+type rescopeRecorder struct{ calls []int64 }
+
+func (r *rescopeRecorder) fn(_ context.Context, tenantID int64) { r.calls = append(r.calls, tenantID) }
+
+func handlerWithRescope(vs *fakeVS, ff fakeFeeds, ft fakeTenants, rescope RescopeFunc) *Handler {
+	return New(vs, vs, ff, ft, slog.New(slog.NewTextHandler(io.Discard, nil)), rescope)
 }
 
 func adminReq(method, path, body string, tenantID int64, role store.Role) *http.Request {
@@ -125,6 +135,66 @@ func TestWhoamiUnauthorizedWithoutIdentity(t *testing.T) {
 		ServeHTTP(rec, adminReq(http.MethodGet, "/api/admin/whoami", "", 0, ""))
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want 401", rec.Code)
+	}
+}
+
+// --- live re-scope hook (WF2-33) --------------------------------------------
+
+func TestPutViewTriggersRescope(t *testing.T) {
+	rec := &rescopeRecorder{}
+	h := handlerWithRescope(&fakeVS{}, fakeFeeds{}, fakeTenants{}, rec.fn)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, adminReq(http.MethodPut, "/api/admin/view",
+		`{"center_lat":50,"center_lon":9,"zoom":8}`, 7, store.RoleTenantAdmin))
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	if len(rec.calls) != 1 || rec.calls[0] != 7 {
+		t.Errorf("rescope calls = %v, want [7] (tenant from Identity)", rec.calls)
+	}
+}
+
+func TestPutViewInvalidDoesNotRescope(t *testing.T) {
+	rec := &rescopeRecorder{}
+	h := handlerWithRescope(&fakeVS{}, fakeFeeds{}, fakeTenants{}, rec.fn)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, adminReq(http.MethodPut, "/api/admin/view",
+		`{"center_lat":50,"center_lon":9,"zoom":99}`, 7, store.RoleTenantAdmin)) // zoom out of range
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", w.Code)
+	}
+	if len(rec.calls) != 0 {
+		t.Errorf("a rejected view must not re-scope, got %v", rec.calls)
+	}
+}
+
+func TestGrantTriggersRescope(t *testing.T) {
+	rec := &rescopeRecorder{}
+	ft := fakeTenants{byID: map[int64]store.Tenant{5: {ID: 5}}}
+	ff := fakeFeeds{byID: map[int64]store.Feed{3: {ID: 3}}}
+	h := handlerWithRescope(&fakeVS{}, ff, ft, rec.fn)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, adminReq(http.MethodPost, "/api/admin/tenants/5/subscriptions",
+		`{"feed_id":3}`, 1, store.RoleSuperAdmin))
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204", w.Code)
+	}
+	if len(rec.calls) != 1 || rec.calls[0] != 5 {
+		t.Errorf("rescope calls = %v, want [5] (target tenant from path)", rec.calls)
+	}
+}
+
+func TestRevokeTriggersRescope(t *testing.T) {
+	rec := &rescopeRecorder{}
+	h := handlerWithRescope(&fakeVS{}, fakeFeeds{}, fakeTenants{}, rec.fn)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, adminReq(http.MethodDelete, "/api/admin/tenants/5/subscriptions/3",
+		"", 1, store.RoleSuperAdmin))
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204", w.Code)
+	}
+	if len(rec.calls) != 1 || rec.calls[0] != 5 {
+		t.Errorf("rescope calls = %v, want [5]", rec.calls)
 	}
 }
 

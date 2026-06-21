@@ -520,9 +520,11 @@ curl -X PUT https://asd.example.com/api/admin/view \
        "fl_min":100,"fl_max":300}'
 ```
 
-> Eine View-Änderung wirkt auf **neue** `/ws`-Verbindungen (der Scope wird beim
-> Connect aufgelöst); bestehende Verbindungen werden erst mit Live-Apply (WF2-33)
-> nachgezogen.
+> **Live-Apply (WF2-33):** Eine View- oder Abo-Änderung wirkt **sofort auch auf
+> bestehende** `/ws`-Verbindungen des Mandanten — der Scope wird live nachgezogen,
+> **ohne Reconnect**. Verkleinert sich dabei die AOI, sendet der Server für nun
+> außenliegende Tracks einfach keine Updates mehr (kein Lösch-Signal); das Frontend
+> lässt sie über den regulären Coast/Drop-Timeout auslaufen.
 
 **Provisioning (nur `super_admin`, cross-tenant, WF2-31b):** Feed-Zugänge werden
 über das API gegrantet/entzogen — die Ziel-Mandanten-ID steht im **Pfad** (nicht in

@@ -7,7 +7,37 @@
 > 🗺️ **Roadmap:** Arbeitspakete, Findings und empfohlene Reihenfolge stehen in
 > `docs/ROADMAP.md` (Stichwort „Roadmap" im Chat zeigt diese Liste).
 
-- **Zuletzt aktualisiert:** 2026-06-21 — **WF2-32 „Admin-UI" abgeschlossen —
+- **Zuletzt aktualisiert:** 2026-06-21 — **WF2-33 „Live-Apply" abgeschlossen —
+  STUFE 3 KOMPLETT (🔒 S4 · Opus 4.8).** View-/Abo-Änderungen ziehen **aktive**
+  `/ws`-Streams **live** nach, **ohne Reconnect**. **Leitplanke 1 (Thread-Safety):**
+  Der Broadcaster ist ein **Single-Goroutine-Actor** — der Scope-Tausch ist ein
+  Kommando durch denselben `Run`-Loop (`rescopeChan` → `applyScopes`), in dem auch
+  `broadcastTracks` den Scope liest/schreibt → **kein Lock am heißen Pfad, keine
+  Race by construction**, Run-Loop nie blockiert (`ApplyScopes` schiebt nur auf
+  gepufferten Channel, ctx-begrenzt). Bewiesen mit **`TestRescopeRaceUnderLoad`
+  unter `-race`** (3000 Batches × 800 Re-Scopes). **Zwei-Phasen:** Snapshot über
+  **immutable** Client-Identity (`ClientsForTenant`, nie der mutable Scope) →
+  Resolve **off-Run** pro distinct User (`resolveScope`, refaktoriert aus
+  `newScopeResolver` → identisch zum Connect, respektiert User-Overrides) → Apply
+  in `Run` (`clients.Load`-Guard überspringt Disconnects). **Leitplanke 2 (Shrink,
+  keep it simple):** verkleinerte AOI → **kein** Lösch-Signal, Server sendet
+  außenliegende Tracks nicht mehr, Frontend coastet via Client-Timeout aus (null
+  Zusatzcode). **Auslöser:** `pkg/adminapi` `putView`/`grant`/`revoke` → injizierter
+  `RescopeFunc` (`triggerRescope`); bei `400` **kein** Re-Scope. Dateien:
+  `pkg/broadcast/broadcast.go` (`Scope.UserID`, Client-Identity,
+  `ClientsForTenant`/`ApplyScopes`/`rescopeChan`), `cmd/wayfinder/main.go`
+  (`resolveScope`/`rescopeTenant`/Verdrahtung), `pkg/adminapi/adminapi.go`
+  (`RescopeFunc`). **Kein Schema-Change, keine neue Dep.** **Tests:**
+  `pkg/broadcast/rescope_test.go` (Shrink/Grant/Revoke/Target-only/Skip-unknown/
+  Snapshot/**Race**), `cmd/wayfinder/rescope_test.go` (`resolveScope` +
+  Ende-zu-Ende `rescopeTenant`), `pkg/adminapi` (Trigger + **kein** Trigger bei
+  `400`). Gates grün (`go build/vet/test`, **`-race`**, `gofmt`, `pg-test.sh`).
+  Doku: Milestone `WF2-33_Live_Apply.md`, ROADMAP, INSTALLATION §7 (Live-Apply-
+  Note), TECHNICAL §6.6, Register **FR-ADMIN-003**. **→ Stufe 3 komplett (Admin-API
+  + UI + Live-Apply).** **Nächster Schritt:** Stufe 4 (Sensor-/Stream-Management)
+  oder ASD-Kern; WF2-30 (Config-Cache) bleibt zurückgestellt (YAGNI) — nach
+  Ankündigung & „Go".
+- **Vorherige Aktualisierung:** 2026-06-21 — **WF2-32 „Admin-UI" abgeschlossen —
   ADMIN-BACKEND + UI KOMPLETT (S3 · Sonnet 4.6).** Bedienbare Admin-Oberfläche unter
   `/admin` (Vue 3 + Vuetify, `vue-router` **History-Mode**) als Consumer des
   WF2-31/31b-API. **Zwei Kurskorrekturen des Projektverantwortlichen umgesetzt:**
@@ -993,12 +1023,15 @@ Pfad, Doppel-Gate `requireSuper`, Cross-Tenant-Negativtest → Admin-Backend kom
 **+ WF2-32** (Admin-UI Vue 3 + Vuetify, `vue-router` History-Mode: View-Editor mit
 Client-Validierungs-Parität, Abos/Feeds read-only, super_admin-Provisioning hinter
 `isSuperAdmin`-Gate; kompletter Komponenten-Austausch — Karte wird auf `/admin`
-unmountet; whoami → `/api/admin/whoami`; SPA-History-Fallback in `webui.Handler`) →
-**Admin-Backend + UI komplett**. ADR-0006-Nachtrag: goose verworfen, Go-Baseline 1.25.
-Register FR-CFG-001, FR-ADMIN-001/002, FR-TEN-001/002, FR-FEED-001, NFR-SEC-003/004,
-NFR-SCALE-001; Test-Runner `scripts/pg-test.sh` (jetzt `./...`, `-p 1`); neue Deps
-`golang.org/x/crypto`, `github.com/coreos/go-oidc/v3`, Frontend `vue-router`.
-Subcommands: `bootstrap`, `feed`.
+unmountet; whoami → `/api/admin/whoami`; SPA-History-Fallback in `webui.Handler`)
+**+ WF2-33** (Live-Apply: aktive `/ws`-Streams werden bei View-/Abo-Änderung **ohne
+Reconnect** re-skopiert; Scope-Tausch als Kommando durch den Single-Goroutine-Actor
+→ kein Lock am heißen Pfad, `-race`-bewiesen; Shrink → Frontend-Coast) → **STUFE 3
+KOMPLETT**. ADR-0006-Nachtrag: goose verworfen, Go-Baseline 1.25.
+Register FR-CFG-001, FR-ADMIN-001/002/003, FR-TEN-001/002, FR-FEED-001,
+NFR-SEC-003/004, NFR-SCALE-001; Test-Runner `scripts/pg-test.sh` (jetzt `./...`,
+`-p 1`); neue Deps `golang.org/x/crypto`, `github.com/coreos/go-oidc/v3`, Frontend
+`vue-router`. Subcommands: `bootstrap`, `feed`.
 
 **Parallel möglich (nicht kritischer Pfad):** ASD-011/012/013 (ASD-Kern,
 ROADMAP §2) — widerspruchsfrei zu 2.0, von einem leichteren Modell ziehbar.
