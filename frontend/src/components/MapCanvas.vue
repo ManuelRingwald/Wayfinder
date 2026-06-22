@@ -60,6 +60,12 @@ watch(() => ({ ...store.airspaceGroupVisibility }), () => {
   mapEngine?.updateAirspaceFilter()
 }, { deep: true })
 
+// ASD-012: regenerate the range-ring overlay when the operator changes spacing
+// or count (visibility itself is handled by the layerVisibility watcher above).
+watch(() => ({ ...store.rangeRingConfig }), (cfg) => {
+  mapEngine?.updateRangeRings(cfg.spacingNM, cfg.count)
+}, { deep: true })
+
 defineExpose({
   setLayerVisibility: (layer, val) => mapEngine?.setLayerVisibility({ [layer]: val }),
   updateFlFilter: () => mapEngine?.updateFlFilter(),

@@ -20,7 +20,9 @@ import {
   addVectorsLayer,
   addCoverageLayer,
   updateCoverageSource,
+  addRangeRingsLayer,
 } from './layers.js'
+import { rangeRingsGeoJSON } from './rangerings.js'
 import { updateTracksLayer } from './tracks.js'
 import { renderSources, tickFade } from './render.js'
 import { setupLabelDrag } from './drag.js'
@@ -33,6 +35,9 @@ import {
   WAYPOINTS_LAYER_ID,
   COVERAGE_RINGS_LAYER_ID,
   COVERAGE_CENTER_LAYER_ID,
+  RANGE_RINGS_SOURCE_ID,
+  RANGE_RINGS_LAYER_ID,
+  RANGE_RINGS_LABEL_LAYER_ID,
 } from './constants.js'
 
 // initMap creates a MapLibre instance on the given container element, wires
@@ -182,6 +187,10 @@ export async function initMap(container, store, onTrackClick) {
       .then((r) => r.json())
       .then((geojson) => updateCoverageSource(map, geojson))
       .catch((err) => console.warn('coverage rings fetch failed:', err))
+    // ASD-012: range-ring overlay beneath the track layers. Geometry + visibility
+    // are driven by the reactive store (default off; operator opts in).
+    addRangeRingsLayer(map, palette)
+    updateRangeRings(store.rangeRingConfig.spacingNM, store.rangeRingConfig.count)
     // Track layers from bottom to top: trail line → history dots → speed
     // vectors → leader lines → track symbols → deconflicted labels (ASD-002).
     addTrailsLayer(map, palette)
@@ -244,6 +253,7 @@ export async function initMap(container, store, onTrackClick) {
       navaids: [NAVAIDS_LAYER_ID],
       waypoints: [WAYPOINTS_LAYER_ID],
       coverageRings: [COVERAGE_RINGS_LAYER_ID, COVERAGE_RINGS_LAYER_ID + '-inner', COVERAGE_CENTER_LAYER_ID],
+      rangeRings: [RANGE_RINGS_LAYER_ID, RANGE_RINGS_LABEL_LAYER_ID],
     }
     for (const [key, layerIds] of Object.entries(groups)) {
       if (key in vis) {
@@ -302,5 +312,14 @@ export async function initMap(container, store, onTrackClick) {
   function resetNorth() { map.easeTo({ bearing: 0, pitch: 0 }) }
   function recenter()  { map.flyTo({ center: [cfg.center_lon, cfg.center_lat], zoom: cfg.zoom }) }
 
-  return { map, destroy, setLayerVisibility, updateFlFilter, updateAirspaceFilter, zoomIn, zoomOut, resetNorth, recenter }
+  // ASD-012: (re)generate the range-ring geometry from the configured centre and
+  // the operator's spacing/count, then push it to the source. Called on load and
+  // whenever the reactive store config changes (MapCanvas watcher).
+  function updateRangeRings(spacingNM, count) {
+    const src = map.getSource(RANGE_RINGS_SOURCE_ID)
+    if (!src) return
+    src.setData(rangeRingsGeoJSON(cfg.center_lat, cfg.center_lon, spacingNM, count))
+  }
+
+  return { map, destroy, setLayerVisibility, updateFlFilter, updateAirspaceFilter, zoomIn, zoomOut, resetNorth, recenter, updateRangeRings }
 }
