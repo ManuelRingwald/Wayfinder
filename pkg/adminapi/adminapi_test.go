@@ -93,6 +93,7 @@ type fakeEntitlements struct {
 	setTid int64
 	setKey feature.Key
 	setVal bool
+	has    map[feature.Key]bool
 }
 
 func (f *fakeEntitlements) Effective(_ context.Context, _ int64) (map[feature.Key]bool, error) {
@@ -102,6 +103,10 @@ func (f *fakeEntitlements) Effective(_ context.Context, _ int64) (map[feature.Ke
 func (f *fakeEntitlements) Set(_ context.Context, tid int64, key feature.Key, enabled bool) error {
 	f.setTid, f.setKey, f.setVal = tid, key, enabled
 	return f.setErr
+}
+
+func (f *fakeEntitlements) HasFeature(_ context.Context, _ int64, key feature.Key) bool {
+	return f.has[key]
 }
 
 func handlerWith(vs *fakeVS, ff fakeFeeds, ft fakeTenants) *Handler {
@@ -536,5 +541,70 @@ func TestSetTenantEntitlementUnknownTenantIs404(t *testing.T) {
 	}
 	if fe.setTid != 0 {
 		t.Error("Set must not run for a nonexistent tenant")
+	}
+}
+
+// --- WF2-41: multi_feed grant gating (the hard invariant) -------------------
+
+func grantSubReq(feedID string) *http.Request {
+	return adminReq(http.MethodPost, "/api/admin/tenants/5/subscriptions", `{"feed_id":`+feedID+`}`, 99, store.RoleSuperAdmin)
+}
+
+func TestGrantFirstFeedAllowedWithoutMultiFeed(t *testing.T) {
+	vs := &fakeVS{} // no existing subscriptions
+	ff := fakeFeeds{byID: map[int64]store.Feed{3: {ID: 3}}}
+	ft := fakeTenants{byID: map[int64]store.Tenant{5: {ID: 5}}}
+	rec := httptest.NewRecorder()
+	handlerWithEnt(vs, ff, ft, &fakeEntitlements{}).ServeHTTP(rec, grantSubReq("3"))
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("first feed status = %d, want 204", rec.Code)
+	}
+	if vs.grantFeed != 3 {
+		t.Errorf("Subscribe not called for feed 3 (got %d)", vs.grantFeed)
+	}
+}
+
+func TestGrantSecondFeedDeniedWithoutMultiFeed(t *testing.T) {
+	vs := &fakeVS{subsFeeds: []store.Feed{{ID: 3}}} // already holds feed 3
+	ff := fakeFeeds{byID: map[int64]store.Feed{7: {ID: 7}}}
+	ft := fakeTenants{byID: map[int64]store.Tenant{5: {ID: 5}}}
+	rec := httptest.NewRecorder()
+	handlerWithEnt(vs, ff, ft, &fakeEntitlements{}).ServeHTTP(rec, grantSubReq("7"))
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("second feed status = %d, want 409", rec.Code)
+	}
+	if vs.grantFeed != 0 {
+		t.Error("Subscribe must not run when the entitlement gate denies (invalid state never reaches DB)")
+	}
+}
+
+func TestGrantSecondFeedAllowedWithMultiFeed(t *testing.T) {
+	vs := &fakeVS{subsFeeds: []store.Feed{{ID: 3}}}
+	ff := fakeFeeds{byID: map[int64]store.Feed{7: {ID: 7}}}
+	ft := fakeTenants{byID: map[int64]store.Tenant{5: {ID: 5}}}
+	fe := &fakeEntitlements{has: map[feature.Key]bool{feature.MultiFeed: true}}
+	rec := httptest.NewRecorder()
+	handlerWithEnt(vs, ff, ft, fe).ServeHTTP(rec, grantSubReq("7"))
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("second feed (entitled) status = %d, want 204", rec.Code)
+	}
+	if vs.grantFeed != 7 {
+		t.Errorf("Subscribe not called for feed 7 (got %d)", vs.grantFeed)
+	}
+}
+
+func TestGrantReGrantSameFeedIsIdempotent(t *testing.T) {
+	// Re-granting a feed the tenant already holds must stay 204 even without
+	// multi_feed — the feed count does not increase.
+	vs := &fakeVS{subsFeeds: []store.Feed{{ID: 3}}}
+	ff := fakeFeeds{byID: map[int64]store.Feed{3: {ID: 3}}}
+	ft := fakeTenants{byID: map[int64]store.Tenant{5: {ID: 5}}}
+	rec := httptest.NewRecorder()
+	handlerWithEnt(vs, ff, ft, &fakeEntitlements{}).ServeHTTP(rec, grantSubReq("3"))
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("re-grant status = %d, want 204 (idempotent)", rec.Code)
+	}
+	if vs.grantFeed != 3 {
+		t.Errorf("Subscribe not called on idempotent re-grant (got %d)", vs.grantFeed)
 	}
 }
