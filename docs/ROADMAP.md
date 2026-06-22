@@ -232,7 +232,7 @@ Details & Begründung: Konzept §7/§8.
 |----|--------|----------------|------|--------|
 | **WF2-40** | Provenienz aus dem Vertrag als Sicht-Layer (ADS-B ◆, PSR, mehr I062/080; ehrlich „track-abgeleitet") | **S3 · Sonnet 4.6** | WF2-32 | ✅ **erledigt** (Form = Herkunft ◆▢○, Farbe = Zustand; `circle`→`symbol`, 12 Icons; stellt verlorenes FR-ASD-006-Badge wieder her & löst es ab; Detail-Panel + Legende; rein clientseitig) |
 | **WF2-41** | Feed-Sensorklassen-Katalog & Entitlements (Feed-Metadaten; Abos binden an Feeds) | **S3 · Sonnet 4.6** | WF2-20, WF2-50 | geplant |
-| **WF2-42** | Cross-Project-Issue an Firefly: echte Per-Track-Provenienz (FLARM-Diskriminator) = ICD-Änderung | **S2 · Sonnet 4.6** | WF2-40 | geplant (siehe §3) |
+| **WF2-42** | Cross-Project-Issue an Firefly: echte Per-Track-Provenienz (FLARM-Diskriminator) = ICD-Änderung | **S2 · Sonnet 4.6** | WF2-40 | ✅ **erledigt** (Issue [Firefly #30](https://github.com/manuelringwald/firefly/issues/30) `from-wayfinder` angelegt: ICD-v2.5.0-Vorschlag `provenance`-Enum + `source_ages`; Ball bei Firefly — siehe §3) |
 
 ### Stufe 5 — Monetarisierung & HA-Betrieb (optional / zuletzt)
 | AP | Inhalt | Stufe · Modell | Abh. | Status |
