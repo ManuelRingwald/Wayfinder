@@ -65,6 +65,18 @@ export async function initMap(container, store, onTrackClick) {
     zoom: cfg.zoom,
   })
 
+  // ASD-012: native MapLibre controls. ScaleControl gives an absolute distance
+  // reference (nautical miles) at any zoom; the compass-only NavigationControl
+  // shows the current bearing and resets to north on click — replacing the old
+  // hand-rolled reset-north button. Zoom stays on the custom MapControls, so
+  // showZoom is off here to avoid duplicate buttons. Placed on the left edge
+  // (the right edge holds the custom controls + feed chip).
+  map.addControl(new maplibregl.ScaleControl({ unit: 'nautical', maxWidth: 120 }), 'bottom-left')
+  map.addControl(
+    new maplibregl.NavigationControl({ showZoom: false, showCompass: true, visualizePitch: false }),
+    'top-left',
+  )
+
   // Engine-local runtime state — mirrors the original app.js `state`.
   // All mutable ASD data lives here so modules receive it as a parameter.
   const state = {
@@ -309,7 +321,6 @@ export async function initMap(container, store, onTrackClick) {
   // and the chrome layer never needs to reach into it directly.
   function zoomIn()    { map.zoomIn() }
   function zoomOut()   { map.zoomOut() }
-  function resetNorth() { map.easeTo({ bearing: 0, pitch: 0 }) }
   function recenter()  { map.flyTo({ center: [cfg.center_lon, cfg.center_lat], zoom: cfg.zoom }) }
 
   // ASD-012: (re)generate the range-ring geometry from the configured centre and
@@ -321,5 +332,5 @@ export async function initMap(container, store, onTrackClick) {
     src.setData(rangeRingsGeoJSON(cfg.center_lat, cfg.center_lon, spacingNM, count))
   }
 
-  return { map, destroy, setLayerVisibility, updateFlFilter, updateAirspaceFilter, zoomIn, zoomOut, resetNorth, recenter, updateRangeRings }
+  return { map, destroy, setLayerVisibility, updateFlFilter, updateAirspaceFilter, zoomIn, zoomOut, recenter, updateRangeRings }
 }

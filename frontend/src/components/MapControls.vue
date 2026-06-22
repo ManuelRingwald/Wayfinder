@@ -55,17 +55,6 @@
         <v-tooltip activator="parent" location="left" text="Zentrum" />
       </v-btn>
 
-      <!-- North-up — reset map bearing to 0° -->
-      <v-btn
-        icon
-        size="small"
-        :ripple="false"
-        @click="$emit('reset-north')"
-      >
-        <v-icon>mdi-compass-outline</v-icon>
-        <v-tooltip activator="parent" location="left" text="Nord oben" />
-      </v-btn>
-
       <!-- Fullscreen toggle -->
       <v-btn
         icon
@@ -83,7 +72,7 @@
 <script setup>
 import { ref } from 'vue'
 
-defineEmits(['zoom-in', 'zoom-out', 'recenter', 'reset-north'])
+defineEmits(['zoom-in', 'zoom-out', 'recenter'])
 
 const isFullscreen = ref(false)
 

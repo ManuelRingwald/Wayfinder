@@ -5,7 +5,6 @@
       @zoom-in="mapEngine?.zoomIn()"
       @zoom-out="mapEngine?.zoomOut()"
       @recenter="mapEngine?.recenter()"
-      @reset-north="mapEngine?.resetNorth()"
     />
     <!-- ASD-013: FeedStatusChip moved here after app bar removal -->
     <FeedStatusChip class="feed-chip" />
