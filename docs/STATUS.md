@@ -7,7 +7,60 @@
 > 🗺️ **Roadmap:** Arbeitspakete, Findings und empfohlene Reihenfolge stehen in
 > `docs/ROADMAP.md` (Stichwort „Roadmap" im Chat zeigt diese Liste).
 
-- **Zuletzt aktualisiert:** 2026-06-21 — **WF2-33 „Live-Apply" abgeschlossen —
+- **Zuletzt aktualisiert:** 2026-06-22 — **WF2-50 „Feature-Entitlement-Service"
+  abgeschlossen (S3 · Sonnet 4.6, 4 Häppchen).** Pro-Mandant-Feature-Flags **als
+  Daten**, **fail-closed**, entkoppelt von Billing (ADR 0005 §4). **Schlüssel-
+  Befund:** Tabelle `entitlements` + `store.EntitlementRepo` existierten aus
+  WF2-10, waren aber **unverdrahtet** — WF2-50 baute Service/Katalog/Admin/Wiring
+  darauf. **`pkg/feature`:** `HasFeature`/`Effective` = Default-Deny; unbekannter
+  Katalog-Key **oder** Store-Fehler → `false` + Warn-Log + Metrik
+  (`wayfinder_feature_check_failclosed_total{reason}`); getypter Katalog
+  (`stca`/`multi_feed`/`premium_layers`, `IsKnown`); `Set` weist unbekannte Keys
+  ab (`ErrUnknownFeature`→400). **Admin (super_admin = Billing-Grenze):**
+  `GET`/`PUT /api/admin/tenants/{id}/entitlements[/{key}]`, cross-tenant nur
+  super_admin (`requireSuper`); **kein** Live-Apply-Rescope (gatet Verfügbarkeit,
+  nicht Track-Scope). **SPA:** `whoami.features` + Frontend `hasFeature()`
+  (Gating kosmetisch, Server erzwingt). **Wiring:** Service einmal konstruiert,
+  von Admin-API **und** `startProbeServer` geteilt. **Kein Schema-Change, keine
+  Env-Var.** **Tests:** `pkg/feature` (DB-frei: Default-Deny, beide
+  Fail-Closed-Pfade mit Zähler+Warn-Log, `Set`), `adminapi` (super_admin GET/PUT,
+  400/404, **Cross-Tenant 403 auf beiden Routen**, `whoami.features`), **real-PG**
+  Round-Trip (`scripts/pg-test.sh` grün), Frontend `hasFeature`. **Gates:**
+  `go test ./...` + real-PG, `vet`, `gofmt`, `vitest` (80), `build` — alle grün.
+  Commits `28c8bb0`/`dab5878`/`cb0e5d9` + dieser. Doku: Milestone
+  `WF2-50_Feature_Entitlements.md`, ROADMAP (✅), Register **FR-TEN-003**,
+  TECHNICAL (§3 Endpunkte, §5.5 Metrik). **Nächster Schritt:** ASD-Kern
+  (ASD-012/011/013) **oder** WF2-41 (Feed-Sensorklassen, kann jetzt auf
+  `HasFeature("multi_feed")` bauen) — nach Ankündigung & „Go".
+- **Vorherige Aktualisierung:** 2026-06-22 — **WF2-40 „Provenienz als Sicht-Layer"
+  abgeschlossen (S3 · Sonnet 4.6).** Das Track-Symbol kodiert jetzt die
+  **track-abgeleitete Herkunft als Form** — **◆ ADS-B** (kooperativ, frisch
+  ≤ 30 s), **▢ SSR/Mode S**, **○ Primär (PSR)** — während die **Farbe** weiter den
+  **Zustand** trägt (confirmed/coasting/tentative/filtered; Präzedenz/Opazität
+  unverändert). `trackProvenance(track)` (rein, `src/map/provenance.js`) leitet aus
+  `adsb_age_s`+`isAdsbFresh` / `icao_addr` / `mode_3a` / Callsign ab (Präzedenz
+  adsb→ssr→psr). Rendering **ohne SDF**: 12 vorgerenderte (Form×Zustand)-Icons
+  (`addTrackIcons`, Laufzeit-Canvas), Track-Layer **`circle`→`symbol`**, Auswahl per
+  datengetriebenem `icon-image`-`concat`; `TRACK_STATE_COLORS` aus altem
+  `circle-color` faktorisiert. `provenance` wird in `updateTracksLayer` (live) +
+  `renderSources` (fading) auf jedes Feature gelegt. **Textuell/zugänglich (statt
+  Glyph an jedem Datenblock):** Detail-Panel (`TrackDetailCard.vue`) zeigt
+  „Herkunft" im Klartext; Sidebar (`LayerFilterContent.vue`) trägt eine
+  Form-Legende. **Wichtiger Fund & behoben:** Das ADS-B-`◆`-Badge (FR-ASD-006)
+  ging beim **Vue-Port verloren** (alte `internal/webui/static/app.js` = toter
+  Referenz-Code; ausgeliefert wird `dist/`); WF2-40 stellt die ADS-B-Kennzeichnung
+  mit **identischer Frische-Schwelle** als Form ◆ wieder her — **FR-ASD-007 löst
+  FR-ASD-006 ab**. **Kein Backend-/ICD-Change** (alle Felder bereits im WS-JSON).
+  **Tests:** `provenance.test.js` (15 — Wahrheitstabelle + Frische),
+  `tracks.test.js` (`updateTracksLayer provenance`); Symbol-Optik manuell (kein
+  WebGL-Harness, vgl. FR-ASD-001). **Gates grün:** `npm run build` ✅,
+  `vitest run` ✅ (78 Tests). **Doku:** Milestone `WF2-40_Provenance_Layer.md`,
+  ROADMAP (WF2-40 ✅), Register **FR-ASD-007** (+ FR-ASD-006 abgelöst), TECHNICAL
+  §2.2 (Symbologie aktualisiert), INSTALLATION (keine Env-Änderung). **Nächster
+  Schritt:** offene Stufe-4-Pakete (**WF2-41** Feed-Sensorklassen-Katalog, **WF2-42**
+  Cross-Project-Issue „echte Per-Track-Provenienz" an Firefly) oder ASD-Kern — nach
+  Ankündigung & „Go".
+- **Vorherige Aktualisierung:** 2026-06-21 — **WF2-33 „Live-Apply" abgeschlossen —
   STUFE 3 KOMPLETT (🔒 S4 · Opus 4.8).** View-/Abo-Änderungen ziehen **aktive**
   `/ws`-Streams **live** nach, **ohne Reconnect**. **Leitplanke 1 (Thread-Safety):**
   Der Broadcaster ist ein **Single-Goroutine-Actor** — der Scope-Tausch ist ein

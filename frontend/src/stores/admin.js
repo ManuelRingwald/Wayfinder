@@ -42,6 +42,12 @@ export const useAdminStore = defineStore('admin', () => {
   const role = computed(() => identity.value?.role ?? null)
   const isSuperAdmin = computed(() => role.value === 'super_admin')
   const isAuthorized = computed(() => identity.value !== null)
+  // WF2-50: per-tenant feature entitlements, delivered by whoami. UI gating off
+  // these is cosmetic — the server enforces every feature server-side.
+  const features = computed(() => identity.value?.features ?? {})
+  function hasFeature(key) {
+    return features.value[key] === true
+  }
 
   // loadIdentity is the role probe the dashboard runs on entry. A refusal means
   // the principal is not an admin → the UI shows an access notice instead of the
@@ -138,7 +144,7 @@ export const useAdminStore = defineStore('admin', () => {
 
   return {
     identity, accessError, view, feeds, subscriptions, tenants, error, notice,
-    role, isSuperAdmin, isAuthorized,
+    role, isSuperAdmin, isAuthorized, features, hasFeature,
     loadIdentity, loadView, saveView, loadFeeds, loadSubscriptions,
     loadTenants, loadTenantSubscriptions, grant, revoke, clearBanners,
   }

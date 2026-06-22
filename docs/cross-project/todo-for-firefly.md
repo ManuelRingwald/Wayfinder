@@ -79,7 +79,7 @@ ASD-Elemente wie Unsicherheits-Ringe und Label-Inhalte).
 
 | Thema | Wayfinder-Paket | Mögliche Firefly-Wirkung | Auslöser für Issue |
 |-------|-----------------|--------------------------|--------------------|
-| **Per-Track-Sensor-Provenienz** (FLARM/SSR/PSR/ADS-B-Diskriminator je Track) | WF2-40/42 (Stufe 4) | CAT062 trägt heute **keinen** sauberen Per-Track-Sensortyp; echte Provenienz wäre eine **ICD-Änderung** (neues Item/Bit). Enabler: Fireflys SDPS-001 (FEP-Ingestion, #19) + Sensor-Registrierung (#8). | Beginn Stufe 4 |
+| **Per-Track-Sensor-Provenienz** (FLARM/SSR/PSR/ADS-B-Diskriminator je Track) | WF2-40/42 (Stufe 4) | CAT062 trägt heute **keinen** sauberen Per-Track-Sensortyp; echte Provenienz wäre eine **ICD-Änderung** (neues Item/Bit). Enabler: Fireflys SDPS-001 (FEP-Ingestion, #19) + Sensor-Registrierung (#8). | ✅ Issue [#30](https://github.com/manuelringwald/firefly/issues/30) (ICD v2.5.0) |
 | **Feed-pro-Mandant** (Hybrid-Modell, Variante-B-Anteil) | WF2-20 (Stufe 2) | Mehrere Mandanten mit eigenem „Himmel" ⇒ Fireflys **Multicast-Gruppen-/Instanz-Modell** (eine Gruppe je Feed/Einzugsgebiet) abstimmen. | Beginn Stufe 2 |
 | **Konfigurierbarer System-Referenzpunkt** | WF2-20 | Roadmap #4 (Firefly): je Feed ggf. eigener I062/100-Referenzpunkt. | Beginn Stufe 2 |
 | **Ende-zu-Ende-HA** | WF2-52/53 (Stufe 5) | Fireflys SDPS-002 (#20, Main/Standby) ↔ Wayfinders stateless Skalierung + Ingest-Gateway-HA für durchgängige Verfügbarkeit. | Beginn Stufe 5 |
@@ -90,3 +90,37 @@ Prinzip „kein Firefly-Code-Import, Kopplung nur über den CAT062-Draht-Vertrag
 Sensor-Mix bleibt vorerst eine **Feed-Eigenschaft** auf Wayfinder-Seite; eine
 ICD-Erweiterung wird nur angestoßen, falls echte Per-Track-Provenienz operativ
 nötig wird — dann beidseitig per ADR.
+
+---
+
+## WF2-42 (Stufe 4) — Explizite Per-Track-Provenienz → ICD v2.5.0 ⏳
+
+**GitHub Issue:** [Firefly #30](https://github.com/manuelringwald/firefly/issues/30)
+`from-wayfinder` (angelegt 2026-06-22) — **offen**.
+
+**Auslöser:** WF2-40 (gemerged, PR #52) zeigt die Track-Herkunft als Symbol-Form
+(◆ ADS-B / ▢ SSR/Mode S / ○ PSR), klassifiziert sie aber **heuristisch im
+Frontend** (`frontend/src/map/provenance.js`): ADS-B aus `adsb_age_s`-Frische,
+SSR/Mode S aus Präsenz von `icao_addr`/`mode_3a`/Callsign, sonst PSR. Die
+Präsenz von `icao_addr` ist nur ein **Proxy** für „kooperativ" — keine echte
+Sensor-Provenienz, und **FLARM** ist damit gar nicht erkennbar.
+
+**Vorschlag (entschieden: Enum + `source_ages`; additiv, ICD-Minor v2.5.0):**
+
+| Feld | Typ | Form | Zweck |
+|------|-----|------|-------|
+| `provenance` | string-Enum (erweiterbar) | `psr`·`ssr`·`mode_s`·`adsb`·`flarm`·`combined` | Autoritative, dominante Herkunft (Tracker-Präzedenz) |
+| `source_ages` | Objekt | `{ "psr": 4.0, "mode_s": 2.0, "adsb": 1.5 }` | Per-Sensortyp-Alter (nur vorhandene Typen) |
+
+**Begründung (im Issue ausgeführt):** (1) Fusions-Tracks (`combined`) — Enum
+allein lässt das Frontend die **Frische der Teilsignale** (PSR vs. ADS-B) nicht
+validieren, dafür braucht es `source_ages`. (2) **ASTERIX-Treue** — `source_ages`
+bildet **I062/290 (System Track Update Ages)** ab (PSR ✓/SSR/MDS/ADS ✓); der
+Tracker führt die Daten ohnehin, die Weitergabe ist sauber und auditierbar.
+(3) **FLARM** — kein Standard-I062/290-Subfeld; das Enum schließt die Lücke, das
+Alter kommt als dokumentiertes Vendor-Subfeld (I062/SP).
+
+**Wayfinder-Folge (nach Lieferung):** `trackProvenance()` →
+`track.provenance ?? <Heuristik-Fallback>` (vorwärts-/rückwärtskompatibel);
+Frische aus `source_ages.adsb` statt `adsb_age_s`-Proxy. Decoder zieht
+byte-genau gegen Fireflys Referenz-Dump nach (Charter §2/§6).

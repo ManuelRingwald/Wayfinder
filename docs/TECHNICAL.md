@@ -103,8 +103,8 @@ pkg/broadcast.Broadcaster
     │
     ├─► WebSocket /ws  (Port 8081)
     │       └─► JSON TrackMessage  {feed_id, track_num, lat, lon, vx, vy,
-    │                                flight_level_ft, callsign, mode3a,
-    │                                icao_address, adsb_age_s,
+    │                                flight_level_ft, callsign, mode_3a,
+    │                                icao_addr, adsb_age_s,
     │                                coasting, ended, ...}
     └─► (Eviction bei vollem Send-Channel, Warn-Log)
 ```
@@ -119,18 +119,30 @@ ADS-B-Selbstbericht aktualisiert hat. Der Wert gibt das Alter dieses Updates
 in Sekunden an (Auflösung 1/4 s, aus I062/290 ES-Age). Fehlt das Feld, ist
 der Track ein reiner Radar-Track.
 
-Das Frontend wertet dieses Feld für den **ADS-B-Badge** aus:
+Das Frontend leitet daraus — zusammen mit `icao_addr`/`mode_3a`/`callsign` — die
+**track-abgeleitete Herkunft** ab und kodiert sie als **Symbol-Form** (WF2-40).
+Die **Farbe** des Symbols bleibt dabei der Track-Zustand
+(confirmed/coasting/tentative/filtered):
 
-| Bedingung | Darstellung |
-|-----------|-------------|
-| `adsb_age_s` fehlt | kein Badge (reiner Radar-Track) |
-| `adsb_age_s` ≤ 30 s | `◆` im Track-Label (frischer ADS-B-Anteil) |
-| `adsb_age_s` > 30 s | kein Badge (ADS-B-Anteil veraltet) |
+| Symbol | Herkunft | Bedingung |
+|--------|----------|-----------|
+| ◆ Karo (gefüllt)    | ADS-B (kooperativ) | `adsb_age_s` vorhanden **und** ≤ 30 s (frisch) |
+| ▢ Quadrat (gefüllt) | SSR / Mode S       | kein frisches ADS-B, aber `icao_addr`/`mode_3a`/Callsign |
+| ○ Ring (offen)      | Primär (PSR)       | keines der obigen — reine Skin-Paint ohne ID |
 
-Die 30-Sekunden-Schwelle (`ADSB_FRESH_THRESHOLD_S`) ist in
-`internal/webui/static/app.js` definiert und gibt an, ab wann ein ADS-B-Hit
-als nicht mehr frisch gilt (Fireflys Live-Modus sendet typisch alle 5–10 s
-OpenSky-Polls).
+Die 30-Sekunden-Frische-Schwelle (`ADSB_FRESH_THRESHOLD_S`) und die Klassifikation
+liegen in `frontend/src/map/provenance.js` (`trackProvenance`, `isAdsbFresh`); die
+Symbole werden in `frontend/src/map/layers.js` (`addTrackIcons`) zur Laufzeit
+gezeichnet. Das **Track-Detail-Panel** zeigt die Herkunft im Klartext, die
+**Sidebar** eine Form-Legende. **Ehrliche Grenze:** track-abgeleitet, keine
+zertifizierte Per-Plot-Provenienz — CAT062 trägt keine explizite Sensor-Quelle
+pro Plot (offen als WF2-42).
+
+> **Hinweis (Regression behoben):** Bis WF2-40 war ein ADS-B-`◆`-Badge nur im
+> **Data-Block-Label** vorgesehen (frühere `internal/webui/static/app.js`); es
+> ging beim Vue-Port verloren und ist nun als Symbol-Form ◆ wiederhergestellt
+> (Register: **FR-ASD-007** löst **FR-ASD-006** ab). Die alte `static/app.js` ist
+> toter Referenz-Code.
 
 ### 2.3 Ausgang: Feed-Status an den Browser
 
@@ -181,7 +193,8 @@ Durch `authMiddleware` geschützt (wenn `WAYFINDER_AUTH_TOKEN` gesetzt).
 | `/api/airspace` | GET | Luftraumstrukturen (GeoJSON, best-effort) |
 | `/api/navaids` | GET | VOR/NDB-Beacons (GeoJSON, best-effort) |
 | `/api/waypoints` | GET | Wegpunkte (GeoJSON, best-effort) |
-| `/api/admin/whoami` | GET | Rollen-Probe (Identität als JSON); rollen-gegated (WF2-32) |
+| `/api/admin/whoami` | GET | Rollen-Probe + **effektive Feature-Flags** (`features`) als JSON; rollen-gegated (WF2-32/50) |
+| `/api/admin/tenants/{id}/entitlements[/{key}]` | GET/PUT | Feature-Entitlements pro Mandant; **super_admin** (WF2-50) |
 | `/api/admin/*` | div. | Tenant-skopiertes Admin-API (WF2-31/31b); rollen-gegated |
 
 > **SPA-History-Fallback (WF2-32):** `webui.Handler` liefert für jeden nicht als
@@ -266,7 +279,17 @@ externe Prometheus-Bibliothek — der Exporter ist handgerollt in
 | `wayfinder_openaip_fetch_failures_total` | Counter | Anzahl fehlgeschlagener OpenAIP-Datenabrufe |
 | `wayfinder_openaip_cache_age_seconds` | Gauge | Alter des letzten erfolgreichen Cache-Befüllens in Sekunden; `-1` wenn noch kein erfolgreicher Fetch |
 
-### 5.5 Beispiel-Ausgabe
+### 5.5 Feature-Entitlements (Multi-Mandant, WF2-50)
+
+| Metrik | Typ | Bedeutung |
+|--------|-----|-----------|
+| `wayfinder_feature_check_failclosed_total{reason="db_error"}` | Counter | Feature-Checks, die **fail-closed** verweigert wurden, weil der Store einen Fehler lieferte. `> 0` ⇒ DB-/Persistenz-Problem am Entitlement-Pfad (alarmwürdig). |
+| `wayfinder_feature_check_failclosed_total{reason="unknown_key"}` | Counter | Feature-Checks gegen einen **nicht im Katalog** geführten Key (verweigert). `> 0` ⇒ Code-/Konfig-Drift (Tippfehler oder entferntes Feature). |
+
+Nur im Multi-Mandanten-Betrieb (Feature-Gating existiert nur dort). Default-Deny:
+Ein fehlendes Flag ist kein Fehler und erzeugt **keinen** Zähler-Anstieg.
+
+### 5.6 Beispiel-Ausgabe
 
 ```
 # HELP wayfinder_cat062_blocks_received_total Total CAT062 data blocks received

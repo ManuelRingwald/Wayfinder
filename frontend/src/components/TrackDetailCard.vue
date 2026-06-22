@@ -13,6 +13,10 @@
         <v-list-item-title>{{ groundSpeedKt }} kt</v-list-item-title>
         <v-list-item-subtitle>Bodengeschwindigkeit</v-list-item-subtitle>
       </v-list-item>
+      <v-list-item v-if="provenanceLabel" prepend-icon="mdi-radar">
+        <v-list-item-title>{{ provenanceLabel }}</v-list-item-title>
+        <v-list-item-subtitle>Herkunft</v-list-item-subtitle>
+      </v-list-item>
       <v-list-item v-if="track.mode3a != null" prepend-icon="mdi-identifier">
         <v-list-item-title>{{ mode3aStr }}</v-list-item-title>
         <v-list-item-subtitle>Mode 3/A (Squawk)</v-list-item-subtitle>
@@ -32,10 +36,15 @@
 <script setup>
 import { computed } from 'vue'
 import { useAsdStore } from '@/stores/asd.js'
+import { PROVENANCE_LABELS } from '@/map/provenance.js'
 
 const emit = defineEmits(['close'])
 const store = useAsdStore()
 const track = computed(() => store.selectedTrack)
+
+// WF2-40: surveillance source label, from the provenance baked onto the track
+// feature when it was selected (see provenance.js / tracks.js).
+const provenanceLabel = computed(() => PROVENANCE_LABELS[track.value?.provenance] ?? '')
 
 const flLabel = computed(() => {
   if (track.value?.flight_level_ft == null) return ''

@@ -28,6 +28,7 @@ import (
 	"github.com/manuelringwald/wayfinder/pkg/cat062"
 	"github.com/manuelringwald/wayfinder/pkg/cat065"
 	"github.com/manuelringwald/wayfinder/pkg/coverage"
+	"github.com/manuelringwald/wayfinder/pkg/feature"
 	"github.com/manuelringwald/wayfinder/pkg/health"
 	"github.com/manuelringwald/wayfinder/pkg/metrics"
 	"github.com/manuelringwald/wayfinder/pkg/receiver"
@@ -256,6 +257,14 @@ func main() {
 	// Start the aeronautical refresh loop (best-effort, ADR 0004).
 	go aeroService.Run(ctx)
 
+	// Feature entitlements (WF2-50): per-tenant feature flags as data, fail-closed.
+	// Built once here so the admin API and /metrics share one instance. Multi-tenant
+	// only (needs the tenant DB); single-tenant → nil, no feature gating.
+	var featSvc *feature.Service
+	if dbPool != nil {
+		featSvc = feature.New(store.NewEntitlementRepo(dbPool), logger)
+	}
+
 	// Start health/readiness/metrics probe server.
 	decodeErrors := func() int64 {
 		var n int64
@@ -264,7 +273,7 @@ func main() {
 		}
 		return n
 	}
-	go startProbeServer(logger, &blockCount, &trackCount, &tracksCurrent, &heartbeatCount, broadcaster, decodeErrors, feedHealth, aeroService, &lastError)
+	go startProbeServer(logger, &blockCount, &trackCount, &tracksCurrent, &heartbeatCount, broadcaster, decodeErrors, feedHealth, aeroService, &lastError, featSvc)
 
 	// Start WebSocket server.
 	if tenantMW == nil && cfg.AuthToken == "" {
@@ -341,7 +350,7 @@ func main() {
 		rescope := func(ctx context.Context, tenantID int64) {
 			rescopeTenant(ctx, broadcaster, subRepo, viewRepo, logger, tenantID)
 		}
-		adminAPI := adminapi.New(viewRepo, subRepo, store.NewFeedRepo(dbPool), store.NewTenantRepo(dbPool), logger, rescope)
+		adminAPI := adminapi.New(viewRepo, subRepo, store.NewFeedRepo(dbPool), store.NewTenantRepo(dbPool), featSvc, logger, rescope)
 		mux.Handle("/api/admin/", tenantMW(requireAdmin(adminAPI)))
 	}
 
@@ -963,7 +972,7 @@ func coverageRingsHandler(cfg Config) http.HandlerFunc {
 }
 
 // startProbeServer starts an HTTP server for health, readiness and metrics.
-func startProbeServer(logger *slog.Logger, blockCount, trackCount, tracksCurrent, heartbeatCount *atomic.Int64, broadcaster *broadcast.Broadcaster, decodeErrors func() int64, feedHealth *health.FeedHealth, aeroService *aeronautical.Service, lastError *atomic.Pointer[string]) {
+func startProbeServer(logger *slog.Logger, blockCount, trackCount, tracksCurrent, heartbeatCount *atomic.Int64, broadcaster *broadcast.Broadcaster, decodeErrors func() int64, feedHealth *health.FeedHealth, aeroService *aeronautical.Service, lastError *atomic.Pointer[string], featSvc *feature.Service) {
 	mux := http.NewServeMux()
 
 	// /health — liveness check (always ready unless startup failed).
@@ -1020,6 +1029,15 @@ func startProbeServer(logger *slog.Logger, blockCount, trackCount, tracksCurrent
 			mset = append(mset,
 				metrics.Gauge("wayfinder_tenant_ws_clients_connected", "Currently connected WebSocket clients per tenant.", tm.Connected).With(lbl),
 				metrics.Counter("wayfinder_tenant_tracks_delivered_total", "Total track messages delivered to a tenant's clients.", tm.Delivered).With(lbl),
+			)
+		}
+		// Feature entitlement fail-closed counters (WF2-50): non-zero means a check
+		// denied access due to a store error or an unknown key. Multi-tenant only.
+		if featSvc != nil {
+			const help = "Total feature checks that failed closed (denied), by reason."
+			mset = append(mset,
+				metrics.Counter("wayfinder_feature_check_failclosed_total", help, featSvc.DBErrorCount()).With(metrics.Label{Name: "reason", Value: "db_error"}),
+				metrics.Counter("wayfinder_feature_check_failclosed_total", help, featSvc.UnknownKeyCount()).With(metrics.Label{Name: "reason", Value: "unknown_key"}),
 			)
 		}
 		metrics.Handler(mset...)(w, r)

@@ -24,6 +24,7 @@ import {
   LEADER_LINES_SOURCE_ID,
   LEADER_LINES_LAYER_ID,
   LABEL_TEXT_SIZE,
+  TRACK_STATE_COLORS,
   AIRSPACE_GROUPS,
   COVERAGE_SOURCE_ID,
   COVERAGE_RINGS_LAYER_ID,
@@ -129,6 +130,67 @@ export function addAeronauticalIcons(map) {
       ctx.stroke()
     }),
   )
+}
+
+// WF2-40: Provenance track symbols. The SHAPE encodes the surveillance source
+// (◆ ADS-B, ▢ SSR/Mode S, ○ primary/PSR); the fill (or ring) COLOUR encodes the
+// track state — the same colours the old circle layer used, so no state
+// information is lost. Icons are pre-rendered per (shape × state) combination
+// and selected at runtime by a data-driven icon-image expression, which avoids
+// the antialiasing pitfalls of tinting a single SDF icon.
+const TRACK_ICON_STROKE = '#000000' // dark edge for legibility on both bases
+
+function drawDiamond(ctx, c, r) {
+  ctx.beginPath()
+  ctx.moveTo(c, c - r)
+  ctx.lineTo(c + r, c)
+  ctx.lineTo(c, c + r)
+  ctx.lineTo(c - r, c)
+  ctx.closePath()
+}
+
+// makeTrackIcon paints one provenance symbol in the given state colour. ADS-B
+// and SSR are filled (cooperative, carry identity); PSR is an open ring (raw
+// skin paint, no ID) so the data-poorer source reads as "hollow" at a glance.
+function makeTrackIcon(shape, color) {
+  return makeIconImage((ctx, s) => {
+    const c = s / 2
+    ctx.lineJoin = 'round'
+    if (shape === 'psr') {
+      ctx.strokeStyle = color
+      ctx.lineWidth = 2.5
+      ctx.beginPath()
+      ctx.arc(c, c, 6, 0, 2 * Math.PI)
+      ctx.stroke()
+      return
+    }
+    if (shape === 'adsb') {
+      drawDiamond(ctx, c, 8)
+    } else {
+      // ssr: axis-aligned square
+      ctx.beginPath()
+      ctx.rect(c - 6, c - 6, 12, 12)
+    }
+    ctx.fillStyle = color
+    ctx.fill()
+    ctx.strokeStyle = TRACK_ICON_STROKE
+    ctx.lineWidth = 1.5
+    ctx.stroke()
+  })
+}
+
+// addTrackIcons registers the 12 provenance×state track symbols (idempotent).
+// Names follow `wf-trk-<provenance>-<stateKey>`, matched by the track layer's
+// icon-image expression in addTracksLayer.
+export function addTrackIcons(map) {
+  for (const shape of ['adsb', 'ssr', 'psr']) {
+    for (const [stateKey, color] of Object.entries(TRACK_STATE_COLORS)) {
+      const id = `wf-trk-${shape}-${stateKey}`
+      if (!map.hasImage(id)) {
+        map.addImage(id, makeTrackIcon(shape, color), { pixelRatio: 2 })
+      }
+    }
+  }
 }
 
 // addAirspaceLayers registers the airspace source and its fill/outline/label
@@ -253,11 +315,14 @@ export function addWaypointLayers(map, palette) {
   })
 }
 
-// addTracksLayer registers a GeoJSON source and a circle layer for rendering
-// tracks (status-dependent colour). ASD-004b/4c: circle-opacity and
-// text-opacity use data-driven expressions to dim coasting tracks and fade
-// TSE tracks to transparency.
-export function addTracksLayer(map, palette) {
+// addTracksLayer registers a GeoJSON source and a symbol layer for rendering
+// tracks. WF2-40: the icon SHAPE encodes provenance (◆ ADS-B / ▢ SSR / ○ PSR)
+// while the baked-in colour encodes track state (the old circle-color
+// semantics). ASD-004b/4c: icon-opacity uses data-driven expressions to dim
+// coasting tracks and fade TSE tracks to transparency.
+export function addTracksLayer(map) {
+  addTrackIcons(map)
+
   map.addSource(TRACKS_SOURCE_ID, {
     type: 'geojson',
     data: { type: 'FeatureCollection', features: [] },
@@ -265,23 +330,34 @@ export function addTracksLayer(map, palette) {
 
   map.addLayer({
     id: TRACKS_LAYER_ID,
-    type: 'circle',
+    type: 'symbol',
     source: TRACKS_SOURCE_ID,
-    paint: {
-      'circle-radius': 5,
-      'circle-color': [
-        'case',
-        ['get', 'filtered'],
-        '#455a64', // blue-grey: outside FL filter range (ASD-005)
-        ['get', 'coasting'],
-        '#ff9800', // orange: coasting (no recent update)
-        ['get', 'confirmed'],
-        '#4caf50', // green: confirmed track
-        '#9e9e9e', // grey: tentative track
+    layout: {
+      // Select the pre-rendered provenance×state icon. Shape = provenance;
+      // colour follows the same precedence the old circle-color used
+      // (filtered > coasting > confirmed > tentative). coalesce guards a
+      // missing provenance property (defaults to the data-poorest source).
+      'icon-image': [
+        'concat',
+        'wf-trk-',
+        ['coalesce', ['get', 'provenance'], 'psr'],
+        '-',
+        [
+          'case',
+          ['get', 'filtered'], 'filtered',
+          ['get', 'coasting'], 'coasting',
+          ['get', 'confirmed'], 'confirmed',
+          'tentative',
+        ],
       ],
-      'circle-stroke-width': 1,
-      'circle-stroke-color': palette.symbolStroke,
-      'circle-opacity': [
+      'icon-size': 1,
+      // Tracks are the air picture — never let symbol collision drop them.
+      'icon-allow-overlap': true,
+      'icon-ignore-placement': true,
+    },
+    paint: {
+      // Opacity priority unchanged: fade > FL filter > coasting > normal.
+      'icon-opacity': [
         'case',
         ['has', 'fade_opacity'], ['get', 'fade_opacity'],
         ['has', 'fl_opacity'],   ['get', 'fl_opacity'],

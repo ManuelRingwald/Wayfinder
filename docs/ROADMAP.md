@@ -230,14 +230,14 @@ Details & Begründung: Konzept §7/§8.
 ### Stufe 4 — Sensor-/Stream-Management (innerhalb der CAT062-Realität)
 | AP | Inhalt | Stufe · Modell | Abh. | Status |
 |----|--------|----------------|------|--------|
-| **WF2-40** | Provenienz aus dem Vertrag als Sicht-Layer (ADS-B ◆, PSR, mehr I062/080; ehrlich „track-abgeleitet") | **S3 · Sonnet 4.6** | WF2-32 | geplant |
+| **WF2-40** | Provenienz aus dem Vertrag als Sicht-Layer (ADS-B ◆, PSR, mehr I062/080; ehrlich „track-abgeleitet") | **S3 · Sonnet 4.6** | WF2-32 | ✅ **erledigt** (Form = Herkunft ◆▢○, Farbe = Zustand; `circle`→`symbol`, 12 Icons; stellt verlorenes FR-ASD-006-Badge wieder her & löst es ab; Detail-Panel + Legende; rein clientseitig) |
 | **WF2-41** | Feed-Sensorklassen-Katalog & Entitlements (Feed-Metadaten; Abos binden an Feeds) | **S3 · Sonnet 4.6** | WF2-20, WF2-50 | geplant |
-| **WF2-42** | Cross-Project-Issue an Firefly: echte Per-Track-Provenienz (FLARM-Diskriminator) = ICD-Änderung | **S2 · Sonnet 4.6** | WF2-40 | geplant (siehe §3) |
+| **WF2-42** | Cross-Project-Issue an Firefly: echte Per-Track-Provenienz (FLARM-Diskriminator) = ICD-Änderung | **S2 · Sonnet 4.6** | WF2-40 | ✅ **erledigt** (Issue [Firefly #30](https://github.com/manuelringwald/firefly/issues/30) `from-wayfinder` angelegt: ICD-v2.5.0-Vorschlag `provenance`-Enum + `source_ages`; Ball bei Firefly — siehe §3) |
 
 ### Stufe 5 — Monetarisierung & HA-Betrieb (optional / zuletzt)
 | AP | Inhalt | Stufe · Modell | Abh. | Status |
 |----|--------|----------------|------|--------|
-| **WF2-50** | Feature-Entitlement-Service (`tenant.HasFeature(...)`, Flags als Daten) | **S3 · Sonnet 4.6** | WF2-10 | geplant |
+| **WF2-50** | Feature-Entitlement-Service (`tenant.HasFeature(...)`, Flags als Daten) | **S3 · Sonnet 4.6** | WF2-10 | ✅ **erledigt** (`pkg/feature` fail-closed über vorhandenen `EntitlementRepo`; Katalog `stca`/`multi_feed`/`premium_layers`; super_admin GET/PUT entitlements; `whoami.features` + `hasFeature()`; Fail-Closed-Metrik; real-PG-Test) |
 | **WF2-51** 🔒 | Billing-Adapter (Stripe) als separate Plane (Webhook→Entitlement) | **S3 · Sonnet 4.6** (+🔒-Review) | WF2-50 | **ruht** (Kommerz-Entscheid §0) |
 | **WF2-52** | Stateless-Härtung & horizontale Skalierung (kein node-lokaler State; LB ohne Sticky) | **S4–S5 · Opus 4.8 / Fable 5** | WF2-21 | geplant |
 | **WF2-53** | Ingest-Gateway produktiv + HA (mcast→Stream, kein SPOF am Eingang) | **S4–S5 · Opus 4.8 / Fable 5** | WF2-02 | geplant |

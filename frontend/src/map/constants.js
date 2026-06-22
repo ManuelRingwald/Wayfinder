@@ -140,6 +140,18 @@ export const TRACK_COLORS = {
   neutral:          '#43c66b', // green — neutral track
 }
 
+// WF2-40: Track state colours. These were inlined in the track layer's
+// circle-color expression; factored out so the provenance symbol icons
+// (which bake the state colour in at draw time) and any legend share one
+// source of truth. Precedence matches the old expression:
+// filtered > coasting > confirmed > tentative.
+export const TRACK_STATE_COLORS = {
+  filtered:  '#455a64', // blue-grey: outside FL filter range (ASD-005)
+  coasting:  '#ff9800', // orange: no recent update
+  confirmed: '#4caf50', // green: confirmed track
+  tentative: '#9e9e9e', // grey: tentative track
+}
+
 // Foreground palettes per base-map theme (ASD-003 Häppchen 3a). On the dark
 // "Radar Dark Mode" base, labels are light with a dark halo so they stay
 // legible; on the bright OSM base the original dark-on-white palette is used.

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/manuelringwald/wayfinder/pkg/feature"
 	"github.com/manuelringwald/wayfinder/pkg/store"
 	"github.com/manuelringwald/wayfinder/pkg/tenant"
 )
@@ -83,8 +84,32 @@ func (f fakeTenants) GetByID(_ context.Context, id int64) (store.Tenant, error) 
 	return store.Tenant{}, store.ErrNotFound
 }
 
+// fakeEntitlements satisfies EntitlementService and records the last Set call
+// (to prove tenant targeting and that cross-tenant gating blocks before it).
+type fakeEntitlements struct {
+	eff    map[feature.Key]bool
+	effErr error
+	setErr error
+	setTid int64
+	setKey feature.Key
+	setVal bool
+}
+
+func (f *fakeEntitlements) Effective(_ context.Context, _ int64) (map[feature.Key]bool, error) {
+	return f.eff, f.effErr
+}
+
+func (f *fakeEntitlements) Set(_ context.Context, tid int64, key feature.Key, enabled bool) error {
+	f.setTid, f.setKey, f.setVal = tid, key, enabled
+	return f.setErr
+}
+
 func handlerWith(vs *fakeVS, ff fakeFeeds, ft fakeTenants) *Handler {
-	return New(vs, vs, ff, ft, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+	return handlerWithEnt(vs, ff, ft, &fakeEntitlements{})
+}
+
+func handlerWithEnt(vs *fakeVS, ff fakeFeeds, ft fakeTenants, fe EntitlementService) *Handler {
+	return New(vs, vs, ff, ft, fe, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
 }
 
 // rescopeRecorder captures the tenant ids a handler asks to live-re-scope (WF2-33).
@@ -94,7 +119,7 @@ type rescopeRecorder struct{ calls []int64 }
 func (r *rescopeRecorder) fn(_ context.Context, tenantID int64) { r.calls = append(r.calls, tenantID) }
 
 func handlerWithRescope(vs *fakeVS, ff fakeFeeds, ft fakeTenants, rescope RescopeFunc) *Handler {
-	return New(vs, vs, ff, ft, slog.New(slog.NewTextHandler(io.Discard, nil)), rescope)
+	return New(vs, vs, ff, ft, &fakeEntitlements{}, slog.New(slog.NewTextHandler(io.Discard, nil)), rescope)
 }
 
 func adminReq(method, path, body string, tenantID int64, role store.Role) *http.Request {
@@ -126,6 +151,28 @@ func TestWhoamiReportsIdentity(t *testing.T) {
 		if got["tenant_id"] != 7.0 || got["role"] != string(role) {
 			t.Errorf("role %s: whoami body = %v", role, got)
 		}
+	}
+}
+
+func TestWhoamiIncludesEffectiveFeatures(t *testing.T) {
+	fe := &fakeEntitlements{eff: map[feature.Key]bool{feature.STCA: true, feature.MultiFeed: false}}
+	rec := httptest.NewRecorder()
+	handlerWithEnt(&fakeVS{}, fakeFeeds{}, fakeTenants{}, fe).
+		ServeHTTP(rec, adminReq(http.MethodGet, "/api/admin/whoami", "", 7, store.RoleTenantAdmin))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var got struct {
+		Features map[string]bool `json:"features"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !got.Features["stca"] {
+		t.Error("whoami features missing stca=true")
+	}
+	if got.Features["multi_feed"] {
+		t.Error("whoami features multi_feed should be false (default-deny)")
 	}
 }
 
@@ -406,18 +453,88 @@ func TestCrossTenantRoutesForbidTenantAdmin(t *testing.T) {
 		{http.MethodGet, "/api/admin/tenants/5/subscriptions", ""},
 		{http.MethodPost, "/api/admin/tenants/5/subscriptions", `{"feed_id":3}`},
 		{http.MethodDelete, "/api/admin/tenants/5/subscriptions/3", ""},
+		{http.MethodGet, "/api/admin/tenants/5/entitlements", ""},
+		{http.MethodPut, "/api/admin/tenants/5/entitlements/stca", `{"enabled":true}`},
 	}
 	for _, rt := range routes {
 		t.Run(rt.method+" "+rt.path, func(t *testing.T) {
 			vs, ff, ft := provisioningFixture()
+			fe := &fakeEntitlements{}
 			rec := httptest.NewRecorder()
-			handlerWith(vs, ff, ft).ServeHTTP(rec, adminReq(rt.method, rt.path, rt.body, 7, store.RoleTenantAdmin))
+			handlerWithEnt(vs, ff, ft, fe).ServeHTTP(rec, adminReq(rt.method, rt.path, rt.body, 7, store.RoleTenantAdmin))
 			if rec.Code != http.StatusForbidden {
 				t.Errorf("tenant_admin on %s %s = %d, want 403", rt.method, rt.path, rec.Code)
 			}
 			if vs.grantTenant != 0 || vs.revokeTenant != 0 {
 				t.Errorf("tenant_admin must not reach grant/revoke (grant=%d revoke=%d)", vs.grantTenant, vs.revokeTenant)
 			}
+			if fe.setTid != 0 {
+				t.Errorf("tenant_admin must not reach entitlement Set (tid=%d)", fe.setTid)
+			}
 		})
+	}
+}
+
+// --- feature entitlements (WF2-50) ------------------------------------------
+
+func TestListTenantEntitlementsSuperAdmin(t *testing.T) {
+	fe := &fakeEntitlements{eff: map[feature.Key]bool{feature.STCA: true}}
+	ft := fakeTenants{byID: map[int64]store.Tenant{5: {ID: 5}}}
+	rec := httptest.NewRecorder()
+	handlerWithEnt(&fakeVS{}, fakeFeeds{}, ft, fe).
+		ServeHTTP(rec, adminReq(http.MethodGet, "/api/admin/tenants/5/entitlements", "", 99, store.RoleSuperAdmin))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var got []entitlementDTO
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got) != len(feature.All()) {
+		t.Fatalf("got %d entitlements, want full catalogue (%d)", len(got), len(feature.All()))
+	}
+	for _, e := range got { // stca enabled, the rest default-denied
+		want := e.Key == string(feature.STCA)
+		if e.Enabled != want {
+			t.Errorf("entitlement %q enabled=%v, want %v", e.Key, e.Enabled, want)
+		}
+	}
+}
+
+func TestSetTenantEntitlementSuperAdmin(t *testing.T) {
+	fe := &fakeEntitlements{}
+	ft := fakeTenants{byID: map[int64]store.Tenant{5: {ID: 5}}}
+	rec := httptest.NewRecorder()
+	handlerWithEnt(&fakeVS{}, fakeFeeds{}, ft, fe).
+		ServeHTTP(rec, adminReq(http.MethodPut, "/api/admin/tenants/5/entitlements/stca", `{"enabled":true}`, 99, store.RoleSuperAdmin))
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204", rec.Code)
+	}
+	if fe.setTid != 5 || fe.setKey != feature.STCA || !fe.setVal {
+		t.Errorf("Set = (tid=%d key=%q val=%v), want (5, stca, true)", fe.setTid, fe.setKey, fe.setVal)
+	}
+}
+
+func TestSetTenantEntitlementUnknownKeyIs400(t *testing.T) {
+	fe := &fakeEntitlements{setErr: feature.ErrUnknownFeature}
+	ft := fakeTenants{byID: map[int64]store.Tenant{5: {ID: 5}}}
+	rec := httptest.NewRecorder()
+	handlerWithEnt(&fakeVS{}, fakeFeeds{}, ft, fe).
+		ServeHTTP(rec, adminReq(http.MethodPut, "/api/admin/tenants/5/entitlements/bogus", `{"enabled":true}`, 99, store.RoleSuperAdmin))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+}
+
+func TestSetTenantEntitlementUnknownTenantIs404(t *testing.T) {
+	fe := &fakeEntitlements{}
+	rec := httptest.NewRecorder()
+	handlerWithEnt(&fakeVS{}, fakeFeeds{}, fakeTenants{}, fe).
+		ServeHTTP(rec, adminReq(http.MethodPut, "/api/admin/tenants/5/entitlements/stca", `{"enabled":true}`, 99, store.RoleSuperAdmin))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rec.Code)
+	}
+	if fe.setTid != 0 {
+		t.Error("Set must not run for a nonexistent tenant")
 	}
 }

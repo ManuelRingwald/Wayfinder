@@ -39,6 +39,31 @@ describe('admin store — identity & role gating', () => {
     expect(s.isSuperAdmin).toBe(false)
   })
 
+  it('exposes effective feature flags from whoami (WF2-50)', async () => {
+    installFetch({
+      'GET /api/admin/whoami': {
+        status: 200,
+        body: { subject: 'alice', tenant_id: 7, user_id: 1, role: 'tenant_admin',
+          features: { stca: true, multi_feed: false, premium_layers: true } },
+      },
+    })
+    const s = useAdminStore()
+    await s.loadIdentity()
+    expect(s.hasFeature('stca')).toBe(true)
+    expect(s.hasFeature('multi_feed')).toBe(false)
+    expect(s.hasFeature('premium_layers')).toBe(true)
+    expect(s.hasFeature('nonexistent')).toBe(false)
+  })
+
+  it('hasFeature is false when whoami omits features (fail-safe default)', async () => {
+    installFetch({
+      'GET /api/admin/whoami': { status: 200, body: { subject: 'alice', tenant_id: 7, user_id: 1, role: 'tenant_admin' } },
+    })
+    const s = useAdminStore()
+    await s.loadIdentity()
+    expect(s.hasFeature('stca')).toBe(false)
+  })
+
   it('marks super_admin so the provisioning panel is shown', async () => {
     installFetch({
       'GET /api/admin/whoami': { status: 200, body: { subject: 'root', tenant_id: 1, user_id: 1, role: 'super_admin' } },
