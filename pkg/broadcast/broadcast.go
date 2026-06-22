@@ -324,10 +324,24 @@ func (b *Broadcaster) ApplyScopes(ctx context.Context, scopes map[*Client]*Scope
 // here and read in broadcastTracks (same goroutine → no synchronisation needed).
 // A client that disconnected between snapshot and apply is skipped — its entry in
 // b.clients is gone, so a stale handle can never resurrect it.
+//
+// When a feed is revoked (old scope allowed a feed that the new one does not), an
+// empty-tracks frame is sent to the client immediately so the frontend clears any
+// stale tracks from the revoked feed without waiting for the next batch — the
+// next batch from that feed will not arrive because the scope is already updated
+// (NFR-SEC-003).
 func (b *Broadcaster) applyScopes(scopes map[*Client]*Scope) {
 	n := 0
+	purge := Message{Tracks: []TrackMessage{}}
 	for c, s := range scopes {
 		if _, ok := b.clients.Load(c); ok {
+			if hasFeedRevoke(c.scope, s) {
+				select {
+				case c.send <- purge:
+				default:
+					// Client channel full; it will be evicted on the next broadcast.
+				}
+			}
 			c.scope = s
 			n++
 		}
@@ -335,6 +349,21 @@ func (b *Broadcaster) applyScopes(scopes map[*Client]*Scope) {
 	if n > 0 {
 		b.logger.Debug("rescoped clients", slog.Int("count", n))
 	}
+}
+
+// hasFeedRevoke reports whether transitioning from old to next removes any feed
+// that the old scope permitted. A nil old scope (unscoped / single-tenant) has
+// no feed allow-set, so nothing can be revoked.
+func hasFeedRevoke(old, next *Scope) bool {
+	if old == nil {
+		return false
+	}
+	for feedID := range old.feeds {
+		if !next.AllowsFeed(feedID) {
+			return true
+		}
+	}
+	return false
 }
 
 // Run starts the broadcaster loop (blocks until context is cancelled).

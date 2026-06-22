@@ -17,7 +17,7 @@
         <v-list-item-title>{{ provenanceLabel }}</v-list-item-title>
         <v-list-item-subtitle>Herkunft</v-list-item-subtitle>
       </v-list-item>
-      <v-list-item v-if="track.mode3a != null" prepend-icon="mdi-identifier">
+      <v-list-item v-if="track.mode_3a != null" prepend-icon="mdi-identifier">
         <v-list-item-title>{{ mode3aStr }}</v-list-item-title>
         <v-list-item-subtitle>Mode 3/A (Squawk)</v-list-item-subtitle>
       </v-list-item>
@@ -25,7 +25,7 @@
         <v-list-item-title>{{ track.track_num }}</v-list-item-title>
         <v-list-item-subtitle>Track-Nummer</v-list-item-subtitle>
       </v-list-item>
-      <v-list-item v-if="track.status" prepend-icon="mdi-information-outline">
+      <v-list-item prepend-icon="mdi-information-outline">
         <v-list-item-title>{{ statusLabel }}</v-list-item-title>
         <v-list-item-subtitle>Status</v-list-item-subtitle>
       </v-list-item>
@@ -59,14 +59,13 @@ const groundSpeedKt = computed(() => {
 })
 
 const mode3aStr = computed(() => {
-  if (track.value?.mode3a == null) return ''
-  return track.value.mode3a.toString(8).padStart(4, '0')
+  if (track.value?.mode_3a == null) return ''
+  return track.value.mode_3a.toString(8).padStart(4, '0')
 })
 
 const statusLabel = computed(() => {
-  const s = track.value?.status ?? {}
-  if (s.coasting) return 'Coasting'
-  if (s.confirmed) return 'Bestätigt'
+  if (track.value?.coasting) return 'Coasting'
+  if (track.value?.confirmed) return 'Bestätigt'
   return 'Tentativ'
 })
 </script>

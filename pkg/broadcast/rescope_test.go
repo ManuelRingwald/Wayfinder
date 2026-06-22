@@ -83,6 +83,21 @@ func expectNoTrack(t *testing.T, ch <-chan Message) {
 	}
 }
 
+// expectPurge asserts that the next message on ch is an empty-tracks frame sent
+// by applyScopes after a feed revoke (NFR-SEC-003). Call this before
+// expectNoTrack/expectTrack when a revoke was applied.
+func expectPurge(t *testing.T, ch <-chan Message) {
+	t.Helper()
+	select {
+	case msg := <-ch:
+		if len(msg.Tracks) != 0 {
+			t.Fatalf("expected empty-tracks purge after feed revoke, got tracks: %+v", msg.Tracks)
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("timeout: no purge frame received after feed revoke")
+	}
+}
+
 func TestClientsForTenantSnapshot(t *testing.T) {
 	b := discardBroadcaster()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -173,11 +188,13 @@ func TestApplyScopesGrantAndRevokeFeedLive(t *testing.T) {
 	b.trackChan <- feedBatch(2, trackAt(2, 50, 9))
 	expectTrack(t, ch, 2)
 
-	// Revoke back to feed 1 only.
+	// Revoke back to feed 1 only → applyScopes sends a purge to clear feed-2
+	// tracks that are still on the client's screen (NFR-SEC-003).
 	if err := b.ApplyScopes(ctx, map[*Client]*Scope{c: scopeFor(7, 1, []int64{1}, nil)}); err != nil {
 		t.Fatalf("ApplyScopes revoke: %v", err)
 	}
 	waitRescopeApplied(t, b)
+	expectPurge(t, ch) // drain the NFR-SEC-003 purge frame
 	b.trackChan <- feedBatch(2, trackAt(3, 50, 9))
 	expectNoTrack(t, ch)
 }
@@ -196,11 +213,12 @@ func TestApplyScopesOnlyTargetClients(t *testing.T) {
 	b.RegisterClient(chB, scopeFor(9, 3, []int64{1}, nil))
 	waitClients(t, b, 2)
 
-	// Re-scope only A: move it to feed 2.
+	// Re-scope only A: move it to feed 2 (feed 1 revoked → purge sent to A).
 	if err := b.ApplyScopes(ctx, map[*Client]*Scope{cA: scopeFor(7, 1, []int64{2}, nil)}); err != nil {
 		t.Fatalf("ApplyScopes: %v", err)
 	}
 	waitRescopeApplied(t, b)
+	expectPurge(t, chA) // drain the NFR-SEC-003 purge frame for A
 
 	// A feed-1 track now reaches only B (A was moved off feed 1, B untouched).
 	b.trackChan <- feedBatch(1, trackAt(1, 50, 9))
@@ -228,15 +246,97 @@ func TestApplyScopesSkipsUnknownClient(t *testing.T) {
 	stale := &Client{} // never registered
 	if err := b.ApplyScopes(ctx, map[*Client]*Scope{
 		stale: scopeFor(7, 9, []int64{2}, nil),
-		c:     scopeFor(7, 1, []int64{2}, nil),
+		c:     scopeFor(7, 1, []int64{2}, nil), // feed 1 → feed 2 = revoke
 	}); err != nil {
 		t.Fatalf("ApplyScopes: %v", err)
 	}
 	waitRescopeApplied(t, b)
+	expectPurge(t, ch) // drain the NFR-SEC-003 purge (feed 1 revoked from c)
 
 	// Real client picked up its new scope; the stale handle was harmlessly skipped.
 	b.trackChan <- feedBatch(2, trackAt(1, 50, 9))
 	expectTrack(t, ch, 1)
+}
+
+// TestApplyScopesPurgesOnFeedRevoke is the NFR-SEC-003 regression test: when a
+// feed subscription is revoked, applyScopes must immediately send an empty-tracks
+// frame to the affected client so the frontend clears stale tracks without waiting
+// for the next batch — which will never arrive (scope is already updated).
+func TestApplyScopesPurgesOnFeedRevoke(t *testing.T) {
+	b := discardBroadcaster()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	go b.Run(ctx)
+
+	ch := make(chan Message, 10)
+	c := b.RegisterClient(ch, scopeFor(7, 1, []int64{1}, nil))
+	waitClients(t, b, 1)
+
+	// Establish a track in the client's view.
+	b.trackChan <- feedBatch(1, trackAt(10, 50, 9))
+	expectTrack(t, ch, 10)
+
+	// Revoke feed 1 → purge frame must arrive before any next batch.
+	if err := b.ApplyScopes(ctx, map[*Client]*Scope{c: scopeFor(7, 1, []int64{}, nil)}); err != nil {
+		t.Fatalf("ApplyScopes: %v", err)
+	}
+	waitRescopeApplied(t, b)
+	expectPurge(t, ch)
+
+	// Feed-1 tracks are no longer delivered (scope is now empty).
+	b.trackChan <- feedBatch(1, trackAt(10, 50, 9))
+	expectNoTrack(t, ch)
+}
+
+// TestApplyScopesPurgeNotSentOnGrant verifies that a pure feed grant (no revoke)
+// does not produce a spurious purge frame — the client has no stale tracks from
+// the newly allowed feed, so clearing would be wrong.
+func TestApplyScopesPurgeNotSentOnGrant(t *testing.T) {
+	b := discardBroadcaster()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	go b.Run(ctx)
+
+	ch := make(chan Message, 10)
+	c := b.RegisterClient(ch, scopeFor(7, 1, []int64{1}, nil))
+	waitClients(t, b, 1)
+
+	// Grant feed 2 (feed 1 remains) — no revoke, no purge.
+	if err := b.ApplyScopes(ctx, map[*Client]*Scope{c: scopeFor(7, 1, []int64{1, 2}, nil)}); err != nil {
+		t.Fatalf("ApplyScopes: %v", err)
+	}
+	waitRescopeApplied(t, b)
+	// No purge expected — no tracks were revoked.
+	b.trackChan <- feedBatch(2, trackAt(5, 50, 9))
+	expectTrack(t, ch, 5) // feed 2 track arrives directly, no purge drained first
+}
+
+// TestApplyScopesPurgeNotSentOnAOIShrink verifies that a pure AOI shrink (feed
+// set unchanged) does not produce a purge — dropped-AOI tracks coast out via the
+// frontend's own mechanism (WF2-33 design decision).
+func TestApplyScopesPurgeNotSentOnAOIShrink(t *testing.T) {
+	b := discardBroadcaster()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	go b.Run(ctx)
+
+	ch := make(chan Message, 10)
+	big := &ViewFilter{AOI: &BBox{MinLat: 40, MinLon: 0, MaxLat: 60, MaxLon: 20}}
+	c := b.RegisterClient(ch, scopeFor(7, 1, []int64{1}, big))
+	waitClients(t, b, 1)
+
+	b.trackChan <- feedBatch(1, trackAt(1, 45, 5))
+	expectTrack(t, ch, 1)
+
+	// Shrink AOI only — feed set unchanged → no purge.
+	small := &ViewFilter{AOI: &BBox{MinLat: 49.9, MinLon: 8.9, MaxLat: 50.1, MaxLon: 9.1}}
+	if err := b.ApplyScopes(ctx, map[*Client]*Scope{c: scopeFor(7, 1, []int64{1}, small)}); err != nil {
+		t.Fatalf("ApplyScopes: %v", err)
+	}
+	waitRescopeApplied(t, b)
+	// No purge — next in-AOI track arrives cleanly.
+	b.trackChan <- feedBatch(1, trackAt(2, 50, 9))
+	expectTrack(t, ch, 2)
 }
 
 // TestRescopeRaceUnderLoad drives concurrent track batches and re-scopes through

@@ -90,6 +90,32 @@ function makeState() {
   }
 }
 
+// Bug #55: mode_3a and callsign must be baked into feature properties so the
+// TrackDetailCard can display them when the user selects a track.
+describe('updateTracksLayer identity fields (bug #55)', () => {
+  it('bakes mode_3a and callsign onto features when present', () => {
+    const state = makeState()
+    const msg = {
+      tracks: [
+        {
+          latitude: 50, longitude: 8, vx: 0, vy: 0, confirmed: true, coasting: false,
+          track_num: 1, mode_3a: 0o7700, callsign: 'DLH123',
+        },
+        {
+          latitude: 50, longitude: 8, vx: 0, vy: 0, confirmed: true, coasting: false,
+          track_num: 2, // no mode_3a, no callsign
+        },
+      ],
+    }
+    updateTracksLayer(msg, state, () => {}, () => {})
+    const [f1, f2] = state.liveTrackFeatures
+    expect(f1.properties.mode_3a).toBe(0o7700)
+    expect(f1.properties.callsign).toBe('DLH123')
+    expect(f2.properties.mode_3a).toBeNull()
+    expect(f2.properties.callsign).toBeNull()
+  })
+})
+
 describe('updateTracksLayer provenance (WF2-40)', () => {
   it('attaches the derived provenance to every live track feature', () => {
     const state = makeState()
