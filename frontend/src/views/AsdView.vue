@@ -23,6 +23,11 @@
       ref="mapCanvas"
       @track-click="onTrackClick"
     />
+    <!-- Feed health banner (CAT065 heartbeat, bug #54). Floats top-right above
+         the map so it is visible regardless of navigation rail state. -->
+    <div class="feed-status-overlay">
+      <FeedStatusChip />
+    </div>
   </v-main>
 
   <TrackDetailPanel
@@ -38,6 +43,7 @@ import { useAsdStore } from '@/stores/asd.js'
 import NavigationRail from '@/components/NavigationRail.vue'
 import MapCanvas from '@/components/MapCanvas.vue'
 import TrackDetailPanel from '@/components/TrackDetailPanel.vue'
+import FeedStatusChip from '@/components/FeedStatusChip.vue'
 
 const { mdAndUp } = useDisplay()
 const store = useAsdStore()
@@ -64,5 +70,13 @@ function onTrackClick(track) {
   left: 8px;
   z-index: 1100;
   background: rgba(var(--v-theme-surface), 0.9) !important;
+}
+
+.feed-status-overlay {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 500;
+  pointer-events: none;
 }
 </style>

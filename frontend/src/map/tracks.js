@@ -142,6 +142,10 @@ export function updateTracksLayer(msg, state, renderSources, startFadeLoop) {
         // Stored so renderSources() can re-evaluate the FL filter on UI change
         // (ASD-005) without waiting for a new WebSocket update.
         flight_level_ft: typeof track.flight_level_ft === 'number' ? track.flight_level_ft : null,
+        // Bug #55: bake transponder identity into feature properties so the
+        // TrackDetailCard can display them without re-parsing the raw WS frame.
+        mode_3a: track.mode_3a != null ? track.mode_3a : null,
+        callsign: track.callsign != null ? track.callsign : null,
       },
     }
   })

@@ -86,6 +86,10 @@ export function renderSources(map, state, flFilter, labelPins, palette, hiddenCa
       provenance: trackProvenance(track), // WF2-40: keep symbol shape during fade
       filtered: isFlFiltered(track.flight_level_ft, flFilter),
       fade_opacity: fadeOpacity,
+      // Bug #55: carry identity fields through the fade so the detail panel
+      // remains accurate if the user selected this track before TSE.
+      mode_3a: track.mode_3a != null ? track.mode_3a : null,
+      callsign: track.callsign != null ? track.callsign : null,
     }
     if (flOp !== undefined) trackProps.fl_opacity = flOp
     fadingTrackFeatures.push({
