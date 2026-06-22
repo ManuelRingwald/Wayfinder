@@ -185,3 +185,13 @@ oder ein Deploy. Der Feature-Service (`pkg/feature`, WF2-50) liest sie
 fehl, gilt das Feature als **nicht** freigeschaltet. Bewusst **von Billing
 entkoppelt** (ADR 0005 §4) — die Bezahl-Logik (WF2-51) würde nur Entitlements
 *setzen*, der ASD-Kern fragt nur `HasFeature(...)`.
+
+## Range-Ring (Entfernungsring)
+
+Konzentrische Kreise **konstanter Boden-Distanz** (in nautischen Meilen) um einen
+Bezugspunkt — auf dem ASD der konfigurierte Karten-Mittelpunkt. Sie geben dem
+Lotsen ein **Distanz-Raster** („~25 NM draußen") für Staffelung und Sequencing.
+Wayfinder zeichnet sie **geodätisch** (gleiche Distanz in jede Richtung), damit
+sie auf der Web-Mercator-Projektion nicht „gequetscht" erscheinen (ASD-012).
+**Abzugrenzen** vom *Coverage-Ring* (Paket 6), der die **Reichweite eines
+Sensors** zeigt, nicht ein Distanz-Raster.

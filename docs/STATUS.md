@@ -7,7 +7,28 @@
 > 🗺️ **Roadmap:** Arbeitspakete, Findings und empfohlene Reihenfolge stehen in
 > `docs/ROADMAP.md` (Stichwort „Roadmap" im Chat zeigt diese Liste).
 
-- **Zuletzt aktualisiert:** 2026-06-22 — **WF2-50 „Feature-Entitlement-Service"
+- **Zuletzt aktualisiert:** 2026-06-22 — **ASD-012 „Range-Rings + Scale-Bar +
+  Nord-Orientierung" abgeschlossen (S3 · Opus 4.8, 3 Häppchen).** Auf eigenem
+  Branch `claude/asd-012-range-rings` (off `main`, unabhängig von WF2-41; PR #53
+  bleibt WF2-41-only). **(1) Range-Rings:** `rangerings.js` erzeugt konzentrische
+  Kreise **konstanter Boden-Distanz** um den Karten-Mittelpunkt (`/api/map-config`)
+  — **geodätisch** (Destination-Point), **anti-squish im Test bewiesen** (gleiche
+  Meter, ungleiche Grad). **Live operator-konfigurierbar:** Abstand 5/10/15 NM +
+  Anzahl als reaktiver Pinia-State (`rangeRingConfig`, Default 10 NM/5), Sidebar-
+  Toggle + Select/Slider (nur sichtbar wenn aktiv, default aus); MapCanvas-Watcher
+  → `engine.updateRangeRings`. Abgegrenzt von den Sensor-Coverage-Ringen (Paket 6).
+  **(2) Scale-Bar:** MapLibre `ScaleControl{unit:'nautical'}` (unten-links).
+  **(3) Nord-Kompass:** `NavigationControl{showCompass}` (oben-links, Bearing +
+  Klick→Nord); **alter Reset-Nord-Button entfernt** (Declutter). „Track-up" bewusst
+  weggelassen (Multi-Track-ASD). **Tests:** `rangerings.test.js` (9, inkl.
+  Anti-Squish), `vitest` 89 grün, `build` grün; **Optik manuell zu verifizieren**
+  (kein WebGL-Harness). Commits `9c0d0ca`/`a8d39ec`/dieser. Doku: Milestone
+  `ASD-012_Range_Rings.md`, ROADMAP (✅), Register **FR-UI-011**, TECHNICAL §6.6,
+  Glossar. **Branch bereit für Review/PR + visuellen Check.** **Hinweis:** STATUS-
+  Top kollidiert beim Merge trivial mit WF2-41 (beide fügen oben ein) — bewusst,
+  da parallele Branches. **Nächster Schritt:** ASD-011 / ASD-013 oder Stufe-4-Rest
+  — nach Ankündigung & „Go".
+- **Vorherige Aktualisierung:** 2026-06-22 — **WF2-50 „Feature-Entitlement-Service"
   abgeschlossen (S3 · Sonnet 4.6, 4 Häppchen).** Pro-Mandant-Feature-Flags **als
   Daten**, **fail-closed**, entkoppelt von Billing (ADR 0005 §4). **Schlüssel-
   Befund:** Tabelle `entitlements` + `store.EntitlementRepo` existierten aus

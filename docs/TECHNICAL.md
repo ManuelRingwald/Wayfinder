@@ -363,6 +363,20 @@ Auflösung (höchste Priorität zuerst):
 **Endpoint:** `GET /api/coverage/rings` → `application/geo+json` FeatureCollection.
 Wird einmal beim Frontend-Load abgerufen. Leere Collection wenn kein Sensor konfiguriert.
 
+### 6.6 Range-Ring-Overlay & Karten-Controls (ASD-012)
+
+Rein **client-seitige** Anzeigehilfen (keine Env-Variablen, keine Backend-Wirkung):
+
+- **Range-Rings:** konzentrische Kreise **konstanter Boden-Distanz** um den
+  Karten-Mittelpunkt (`/api/map-config`) als Distanz-Raster — abgegrenzt vom
+  Sensor-Coverage-Overlay (§6.5). **Live operator-konfigurierbar** über die
+  Sidebar: Abstand `5/10/15 NM` + Anzahl (Default 10 NM / 5), default
+  ausgeblendet. Geodätisch erzeugt (gleiche Distanz in jede Richtung, **nicht**
+  grad-gestaucht).
+- **Scale-Bar:** MapLibre `ScaleControl` in **nautischen Meilen** (unten-links).
+- **Nord-Kompass:** MapLibre `NavigationControl` (oben-links) zeigt das aktuelle
+  Bearing und setzt per Klick auf Nord; freie Kartendrehung bleibt aktiv.
+
 ### 6.4 Sicherheit
 
 | Variable | Default | Typ | Beschreibung |
