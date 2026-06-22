@@ -185,3 +185,15 @@ oder ein Deploy. Der Feature-Service (`pkg/feature`, WF2-50) liest sie
 fehl, gilt das Feature als **nicht** freigeschaltet. Bewusst **von Billing
 entkoppelt** (ADR 0005 §4) — die Bezahl-Logik (WF2-51) würde nur Entitlements
 *setzen*, der ASD-Kern fragt nur `HasFeature(...)`.
+
+## Sensor-Klasse / Sensor-Mix
+
+Ein Feed (Datenstrom) wird durch seinen **Sensor-Mix** beschrieben — die Menge der
+**Sensor-Klassen**, aus denen seine Tracks gespeist werden: `PSR` (Primärradar),
+`SSR` (Sekundärradar, Mode A/C), `MODE_S`, `ADS-B`, `MLAT` (Multilateration),
+`FLARM`. Wayfinder führt dafür ein **kontrolliertes Vokabular** (`pkg/sensorclass`,
+WF2-41): beim Anlegen eines Feeds werden gängige Schreibweisen kanonisiert
+(„ads-b" → `ADS-B`) und unbekannte Klassen abgewiesen, damit die Feed-Metadaten
+verlässlich und auditierbar bleiben. **Wichtig:** Der Sensor-Mix ist ein
+**Feed-Metadatum**, kein Per-Track-Tag (ADR 0005 §6.4) — die *track-abgeleitete*
+Herkunft am Symbol (WF2-40) ist davon unabhängig.

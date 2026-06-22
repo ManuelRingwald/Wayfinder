@@ -7,7 +7,29 @@
 > 🗺️ **Roadmap:** Arbeitspakete, Findings und empfohlene Reihenfolge stehen in
 > `docs/ROADMAP.md` (Stichwort „Roadmap" im Chat zeigt diese Liste).
 
-- **Zuletzt aktualisiert:** 2026-06-22 — **WF2-50 „Feature-Entitlement-Service"
+- **Zuletzt aktualisiert:** 2026-06-22 — **WF2-41 „Feed-Sensorklassen-Katalog &
+  Entitlements" abgeschlossen (S3 · Sonnet 4.6, 3 Häppchen).** Auf **neuem Branch**
+  `claude/wf2-41-feed-sensor-classes` (PR #52 mit WF2-40/42/50 wurde gemerged →
+  `97744fb`; dieser Branch baut auf `main`). **(A) Sensorklassen-Katalog**
+  `pkg/sensorclass`: kontrolliertes Vokabular (`PSR`/`SSR`/`MODE_S`/`ADS-B`/`MLAT`/
+  `FLARM`), `Parse` mappt **Legacy-Schreibweisen** kanonisch (`ads-b`/`ADS_B`/
+  `1090ES`→`ADS-B`, `Mode A/C`→`SSR`, …), `Canonicalize` normalisiert+dedupliziert
+  und **weist Unbekanntes ab** (`*UnknownClassError`) — erzwungen am **Chokepoint**
+  `FeedRepo.Create` (kein Schema-Change, `sensor_mix` bleibt JSONB). Surfacing
+  `GET /api/admin/sensor-classes`. **(B) Abos binden an Feeds — harte Invariante:**
+  Mandant **ohne** `multi_feed` (WF2-50) hält **max. 1** Feed; zweiter distinkter
+  Grant → **409 Conflict** **vor** `Subscribe` (fail-early, kein invalider
+  DB-Zustand); idempotenter Re-Grant bleibt 204; super_admin muss erst das
+  Entitlement setzen. **Tests:** `pkg/sensorclass` (Legacy-Tabelle/Round-Trip/
+  Dedup/unknown), `adminapi` (1./2. Feed, **409 + `Subscribe` nicht erreicht**,
+  mit `multi_feed` ok, idempotent, `sensor-classes`), **real-PG** (Feed-Validierung
+  + Grant-Gating-Round-Trip). **Gates:** `go test ./...` + real-PG (`pg-test.sh`),
+  `vet`, `gofmt`, `build` — grün. Commits `adf4f01`/`7a88f91`/dieser. Doku:
+  Milestone `WF2-41_Feed_Sensor_Classes.md`, ROADMAP (✅), Register **FR-TEN-004**,
+  TECHNICAL (Endpunkt + 409-Invariante), Glossar. **Branch noch nicht gemerged** —
+  bereit für Review/PR. **Nächster Schritt:** ASD-Kern (ASD-012/011/013) oder
+  Stufe-4-Rest — nach Ankündigung & „Go".
+- **Vorherige Aktualisierung:** 2026-06-22 — **WF2-50 „Feature-Entitlement-Service"
   abgeschlossen (S3 · Sonnet 4.6, 4 Häppchen).** Pro-Mandant-Feature-Flags **als
   Daten**, **fail-closed**, entkoppelt von Billing (ADR 0005 §4). **Schlüssel-
   Befund:** Tabelle `entitlements` + `store.EntitlementRepo` existierten aus

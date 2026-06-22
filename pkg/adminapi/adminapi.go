@@ -16,6 +16,7 @@ import (
 	"strconv"
 
 	"github.com/manuelringwald/wayfinder/pkg/feature"
+	"github.com/manuelringwald/wayfinder/pkg/sensorclass"
 	"github.com/manuelringwald/wayfinder/pkg/store"
 	"github.com/manuelringwald/wayfinder/pkg/tenant"
 )
@@ -92,6 +93,9 @@ func New(views ViewStore, subs SubscriptionStore, feeds FeedStore, tenants Tenan
 	mux.HandleFunc("PUT /api/admin/view", h.putView)
 	mux.HandleFunc("GET /api/admin/subscriptions", h.getSubscriptions)
 	mux.HandleFunc("GET /api/admin/feeds", h.getFeeds)
+	// Read-only reference: the sensor-class catalogue (WF2-41), for the SPA to
+	// render class pickers/legends. Any admin role may read it.
+	mux.HandleFunc("GET /api/admin/sensor-classes", h.getSensorClasses)
 	// super_admin provisioning (target tenant from the path, cross-tenant).
 	mux.HandleFunc("GET /api/admin/tenants", h.requireSuper(h.listTenants))
 	mux.HandleFunc("GET /api/admin/tenants/{tenantID}/subscriptions", h.requireSuper(h.listTenantSubscriptions))
@@ -238,6 +242,24 @@ func (h *Handler) getFeeds(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, toFeedDTOs(feeds))
+}
+
+// sensorClassDTO is one entry of the sensor-class catalogue (WF2-41).
+type sensorClassDTO struct {
+	Class       string `json:"class"`
+	Description string `json:"description"`
+}
+
+func (h *Handler) getSensorClasses(w http.ResponseWriter, r *http.Request) {
+	if _, ok := tenant.FromContext(r.Context()); !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	out := make([]sensorClassDTO, 0, len(sensorclass.All()))
+	for _, c := range sensorclass.All() {
+		out = append(out, sensorClassDTO{Class: string(c), Description: sensorclass.Describe(c)})
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // requireSuper restricts a handler to super_admin. The outer gate already lets

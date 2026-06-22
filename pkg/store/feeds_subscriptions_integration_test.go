@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	"github.com/manuelringwald/wayfinder/pkg/sensorclass"
 )
 
 func TestIntegrationFeedRepo(t *testing.T) {
@@ -41,6 +43,22 @@ func TestIntegrationFeedRepo(t *testing.T) {
 	list, err := repo.List(ctx)
 	if err != nil || len(list) != 2 {
 		t.Fatalf("List len = %d, %v", len(list), err)
+	}
+
+	// WF2-41: an unknown sensor class is rejected before any row is written.
+	_, err = repo.Create(ctx, "Bad", "239.255.0.64", 8602, nil, []string{"PSR", "bogus"})
+	var uce *sensorclass.UnknownClassError
+	if !errors.As(err, &uce) || uce.Token != "bogus" {
+		t.Fatalf("create with unknown class err = %v, want *UnknownClassError{bogus}", err)
+	}
+
+	// Legacy spellings are normalised + deduped to canonical classes on write.
+	f3, err := repo.Create(ctx, "Legacy", "239.255.0.65", 8603, nil, []string{"ads-b", "Mode S", "ADSB"})
+	if err != nil {
+		t.Fatalf("create legacy feed: %v", err)
+	}
+	if len(f3.SensorMix) != 2 || f3.SensorMix[0] != "ADS-B" || f3.SensorMix[1] != "MODE_S" {
+		t.Fatalf("legacy mix not canonicalised/deduped: %+v", f3.SensorMix)
 	}
 }
 

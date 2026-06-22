@@ -608,3 +608,24 @@ func TestGrantReGrantSameFeedIsIdempotent(t *testing.T) {
 		t.Errorf("Subscribe not called on idempotent re-grant (got %d)", vs.grantFeed)
 	}
 }
+
+func TestGetSensorClasses(t *testing.T) {
+	rec := httptest.NewRecorder()
+	handlerWith(&fakeVS{}, fakeFeeds{}, fakeTenants{}).
+		ServeHTTP(rec, adminReq(http.MethodGet, "/api/admin/sensor-classes", "", 7, store.RoleTenantAdmin))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var got []map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got) != 6 {
+		t.Fatalf("got %d sensor classes, want full catalogue of 6", len(got))
+	}
+	for _, e := range got {
+		if e["class"] == "" || e["description"] == "" {
+			t.Errorf("incomplete catalogue entry: %v", e)
+		}
+	}
+}
