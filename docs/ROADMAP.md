@@ -237,7 +237,7 @@ Details & Begründung: Konzept §7/§8.
 ### Stufe 5 — Monetarisierung & HA-Betrieb (optional / zuletzt)
 | AP | Inhalt | Stufe · Modell | Abh. | Status |
 |----|--------|----------------|------|--------|
-| **WF2-50** | Feature-Entitlement-Service (`tenant.HasFeature(...)`, Flags als Daten) | **S3 · Sonnet 4.6** | WF2-10 | geplant |
+| **WF2-50** | Feature-Entitlement-Service (`tenant.HasFeature(...)`, Flags als Daten) | **S3 · Sonnet 4.6** | WF2-10 | ✅ **erledigt** (`pkg/feature` fail-closed über vorhandenen `EntitlementRepo`; Katalog `stca`/`multi_feed`/`premium_layers`; super_admin GET/PUT entitlements; `whoami.features` + `hasFeature()`; Fail-Closed-Metrik; real-PG-Test) |
 | **WF2-51** 🔒 | Billing-Adapter (Stripe) als separate Plane (Webhook→Entitlement) | **S3 · Sonnet 4.6** (+🔒-Review) | WF2-50 | **ruht** (Kommerz-Entscheid §0) |
 | **WF2-52** | Stateless-Härtung & horizontale Skalierung (kein node-lokaler State; LB ohne Sticky) | **S4–S5 · Opus 4.8 / Fable 5** | WF2-21 | geplant |
 | **WF2-53** | Ingest-Gateway produktiv + HA (mcast→Stream, kein SPOF am Eingang) | **S4–S5 · Opus 4.8 / Fable 5** | WF2-02 | geplant |

@@ -193,7 +193,8 @@ Durch `authMiddleware` geschützt (wenn `WAYFINDER_AUTH_TOKEN` gesetzt).
 | `/api/airspace` | GET | Luftraumstrukturen (GeoJSON, best-effort) |
 | `/api/navaids` | GET | VOR/NDB-Beacons (GeoJSON, best-effort) |
 | `/api/waypoints` | GET | Wegpunkte (GeoJSON, best-effort) |
-| `/api/admin/whoami` | GET | Rollen-Probe (Identität als JSON); rollen-gegated (WF2-32) |
+| `/api/admin/whoami` | GET | Rollen-Probe + **effektive Feature-Flags** (`features`) als JSON; rollen-gegated (WF2-32/50) |
+| `/api/admin/tenants/{id}/entitlements[/{key}]` | GET/PUT | Feature-Entitlements pro Mandant; **super_admin** (WF2-50) |
 | `/api/admin/*` | div. | Tenant-skopiertes Admin-API (WF2-31/31b); rollen-gegated |
 
 > **SPA-History-Fallback (WF2-32):** `webui.Handler` liefert für jeden nicht als
@@ -278,7 +279,17 @@ externe Prometheus-Bibliothek — der Exporter ist handgerollt in
 | `wayfinder_openaip_fetch_failures_total` | Counter | Anzahl fehlgeschlagener OpenAIP-Datenabrufe |
 | `wayfinder_openaip_cache_age_seconds` | Gauge | Alter des letzten erfolgreichen Cache-Befüllens in Sekunden; `-1` wenn noch kein erfolgreicher Fetch |
 
-### 5.5 Beispiel-Ausgabe
+### 5.5 Feature-Entitlements (Multi-Mandant, WF2-50)
+
+| Metrik | Typ | Bedeutung |
+|--------|-----|-----------|
+| `wayfinder_feature_check_failclosed_total{reason="db_error"}` | Counter | Feature-Checks, die **fail-closed** verweigert wurden, weil der Store einen Fehler lieferte. `> 0` ⇒ DB-/Persistenz-Problem am Entitlement-Pfad (alarmwürdig). |
+| `wayfinder_feature_check_failclosed_total{reason="unknown_key"}` | Counter | Feature-Checks gegen einen **nicht im Katalog** geführten Key (verweigert). `> 0` ⇒ Code-/Konfig-Drift (Tippfehler oder entferntes Feature). |
+
+Nur im Multi-Mandanten-Betrieb (Feature-Gating existiert nur dort). Default-Deny:
+Ein fehlendes Flag ist kein Fehler und erzeugt **keinen** Zähler-Anstieg.
+
+### 5.6 Beispiel-Ausgabe
 
 ```
 # HELP wayfinder_cat062_blocks_received_total Total CAT062 data blocks received

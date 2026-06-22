@@ -7,7 +7,32 @@
 > 🗺️ **Roadmap:** Arbeitspakete, Findings und empfohlene Reihenfolge stehen in
 > `docs/ROADMAP.md` (Stichwort „Roadmap" im Chat zeigt diese Liste).
 
-- **Zuletzt aktualisiert:** 2026-06-22 — **WF2-40 „Provenienz als Sicht-Layer"
+- **Zuletzt aktualisiert:** 2026-06-22 — **WF2-50 „Feature-Entitlement-Service"
+  abgeschlossen (S3 · Sonnet 4.6, 4 Häppchen).** Pro-Mandant-Feature-Flags **als
+  Daten**, **fail-closed**, entkoppelt von Billing (ADR 0005 §4). **Schlüssel-
+  Befund:** Tabelle `entitlements` + `store.EntitlementRepo` existierten aus
+  WF2-10, waren aber **unverdrahtet** — WF2-50 baute Service/Katalog/Admin/Wiring
+  darauf. **`pkg/feature`:** `HasFeature`/`Effective` = Default-Deny; unbekannter
+  Katalog-Key **oder** Store-Fehler → `false` + Warn-Log + Metrik
+  (`wayfinder_feature_check_failclosed_total{reason}`); getypter Katalog
+  (`stca`/`multi_feed`/`premium_layers`, `IsKnown`); `Set` weist unbekannte Keys
+  ab (`ErrUnknownFeature`→400). **Admin (super_admin = Billing-Grenze):**
+  `GET`/`PUT /api/admin/tenants/{id}/entitlements[/{key}]`, cross-tenant nur
+  super_admin (`requireSuper`); **kein** Live-Apply-Rescope (gatet Verfügbarkeit,
+  nicht Track-Scope). **SPA:** `whoami.features` + Frontend `hasFeature()`
+  (Gating kosmetisch, Server erzwingt). **Wiring:** Service einmal konstruiert,
+  von Admin-API **und** `startProbeServer` geteilt. **Kein Schema-Change, keine
+  Env-Var.** **Tests:** `pkg/feature` (DB-frei: Default-Deny, beide
+  Fail-Closed-Pfade mit Zähler+Warn-Log, `Set`), `adminapi` (super_admin GET/PUT,
+  400/404, **Cross-Tenant 403 auf beiden Routen**, `whoami.features`), **real-PG**
+  Round-Trip (`scripts/pg-test.sh` grün), Frontend `hasFeature`. **Gates:**
+  `go test ./...` + real-PG, `vet`, `gofmt`, `vitest` (80), `build` — alle grün.
+  Commits `28c8bb0`/`dab5878`/`cb0e5d9` + dieser. Doku: Milestone
+  `WF2-50_Feature_Entitlements.md`, ROADMAP (✅), Register **FR-TEN-003**,
+  TECHNICAL (§3 Endpunkte, §5.5 Metrik). **Nächster Schritt:** ASD-Kern
+  (ASD-012/011/013) **oder** WF2-41 (Feed-Sensorklassen, kann jetzt auf
+  `HasFeature("multi_feed")` bauen) — nach Ankündigung & „Go".
+- **Vorherige Aktualisierung:** 2026-06-22 — **WF2-40 „Provenienz als Sicht-Layer"
   abgeschlossen (S3 · Sonnet 4.6).** Das Track-Symbol kodiert jetzt die
   **track-abgeleitete Herkunft als Form** — **◆ ADS-B** (kooperativ, frisch
   ≤ 30 s), **▢ SSR/Mode S**, **○ Primär (PSR)** — während die **Farbe** weiter den

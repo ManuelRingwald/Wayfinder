@@ -173,3 +173,15 @@ Wayfinder ist in Meilensteine aufgeteilt:
 - **M5:** ASD-Elemente (Labels, Trails, Konflikte)
 
 Jeder Meilenstein hat eine Erklärung in `docs/milestones/`.
+
+## Entitlement / Feature-Flag
+
+Ein **Entitlement** ist die als Daten gespeicherte Berechtigung eines Mandanten,
+ein bestimmtes Feature zu nutzen (Tabelle `entitlements`, Schlüssel
+`feature_key`). Wayfinder behandelt Features so als **Flags als Daten**: ob ein
+Mandant z.B. die STCA-Anzeige sieht, entscheidet ein DB-Eintrag, nicht der Code
+oder ein Deploy. Der Feature-Service (`pkg/feature`, WF2-50) liest sie
+**fail-closed** und **default-deny**: fehlt das Flag oder schlägt der Zugriff
+fehl, gilt das Feature als **nicht** freigeschaltet. Bewusst **von Billing
+entkoppelt** (ADR 0005 §4) — die Bezahl-Logik (WF2-51) würde nur Entitlements
+*setzen*, der ASD-Kern fragt nur `HasFeature(...)`.

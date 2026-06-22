@@ -117,4 +117,50 @@ func TestIntegrationAdminAPI(t *testing.T) {
 	if len(tenants) != 1 || tenants[0]["slug"] != "acme" {
 		t.Errorf("tenants = %v", tenants)
 	}
+
+	// --- super_admin feature entitlements: list → set → re-list, + whoami (WF2-50) ---
+	entPath := fmt.Sprintf("/api/admin/tenants/%d/entitlements", ten.ID)
+
+	// A tenant_admin must NOT read another tenant's entitlement provisioning view.
+	if rec := req(http.MethodGet, entPath, "", store.RoleTenantAdmin); rec.Code != http.StatusForbidden {
+		t.Fatalf("tenant_admin entitlements GET = %d, want 403", rec.Code)
+	}
+
+	// Initially the full catalogue is returned, all default-denied.
+	var ents []map[string]any
+	_ = json.Unmarshal(req(http.MethodGet, entPath, "", store.RoleSuperAdmin).Body.Bytes(), &ents)
+	if len(ents) != len(feature.All()) {
+		t.Fatalf("entitlements = %v, want full catalogue of %d", ents, len(feature.All()))
+	}
+	for _, e := range ents {
+		if e["enabled"] != false {
+			t.Errorf("entitlement %v enabled before set, want false", e)
+		}
+	}
+
+	// An unknown feature key is rejected end-to-end by the service catalogue guard.
+	if rec := req(http.MethodPut, entPath+"/bogus", `{"enabled":true}`, store.RoleSuperAdmin); rec.Code != http.StatusBadRequest {
+		t.Fatalf("PUT unknown entitlement = %d, want 400", rec.Code)
+	}
+
+	// Enable stca → it round-trips through the real EntitlementRepo as enabled.
+	if rec := req(http.MethodPut, entPath+"/"+string(feature.STCA), `{"enabled":true}`, store.RoleSuperAdmin); rec.Code != http.StatusNoContent {
+		t.Fatalf("PUT entitlement = %d, want 204; body=%s", rec.Code, rec.Body.String())
+	}
+	_ = json.Unmarshal(req(http.MethodGet, entPath, "", store.RoleSuperAdmin).Body.Bytes(), &ents)
+	enabled := map[string]bool{}
+	for _, e := range ents {
+		enabled[e["key"].(string)] = e["enabled"].(bool)
+	}
+	if !enabled[string(feature.STCA)] {
+		t.Errorf("after set, %s not enabled: %v", feature.STCA, ents)
+	}
+
+	// whoami carries the same effective flag for the tenant's SPA gating.
+	var who map[string]any
+	_ = json.Unmarshal(req(http.MethodGet, "/api/admin/whoami", "", store.RoleTenantAdmin).Body.Bytes(), &who)
+	feats, _ := who["features"].(map[string]any)
+	if feats == nil || feats[string(feature.STCA)] != true {
+		t.Errorf("whoami features = %v, want stca=true", who["features"])
+	}
 }
