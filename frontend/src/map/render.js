@@ -13,6 +13,7 @@ import {
 } from './constants.js'
 import { buildLabel } from './label.js'
 import { isFlFiltered, flOpacity } from './tracks.js'
+import { trackProvenance } from './provenance.js'
 import { deconflictLabels } from './deconflict.js'
 
 // vectorEndpoint: local flat-Earth approximation for speed-vector tip.
@@ -82,6 +83,7 @@ export function renderSources(map, state, flFilter, labelPins, palette, hiddenCa
       vx: track.vx,
       vy: track.vy,
       label: buildLabel(track, ''),
+      provenance: trackProvenance(track), // WF2-40: keep symbol shape during fade
       filtered: isFlFiltered(track.flight_level_ft, flFilter),
       fade_opacity: fadeOpacity,
     }

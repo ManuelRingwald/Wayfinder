@@ -7,7 +7,35 @@
 > 🗺️ **Roadmap:** Arbeitspakete, Findings und empfohlene Reihenfolge stehen in
 > `docs/ROADMAP.md` (Stichwort „Roadmap" im Chat zeigt diese Liste).
 
-- **Zuletzt aktualisiert:** 2026-06-21 — **WF2-33 „Live-Apply" abgeschlossen —
+- **Zuletzt aktualisiert:** 2026-06-22 — **WF2-40 „Provenienz als Sicht-Layer"
+  abgeschlossen (S3 · Sonnet 4.6).** Das Track-Symbol kodiert jetzt die
+  **track-abgeleitete Herkunft als Form** — **◆ ADS-B** (kooperativ, frisch
+  ≤ 30 s), **▢ SSR/Mode S**, **○ Primär (PSR)** — während die **Farbe** weiter den
+  **Zustand** trägt (confirmed/coasting/tentative/filtered; Präzedenz/Opazität
+  unverändert). `trackProvenance(track)` (rein, `src/map/provenance.js`) leitet aus
+  `adsb_age_s`+`isAdsbFresh` / `icao_addr` / `mode_3a` / Callsign ab (Präzedenz
+  adsb→ssr→psr). Rendering **ohne SDF**: 12 vorgerenderte (Form×Zustand)-Icons
+  (`addTrackIcons`, Laufzeit-Canvas), Track-Layer **`circle`→`symbol`**, Auswahl per
+  datengetriebenem `icon-image`-`concat`; `TRACK_STATE_COLORS` aus altem
+  `circle-color` faktorisiert. `provenance` wird in `updateTracksLayer` (live) +
+  `renderSources` (fading) auf jedes Feature gelegt. **Textuell/zugänglich (statt
+  Glyph an jedem Datenblock):** Detail-Panel (`TrackDetailCard.vue`) zeigt
+  „Herkunft" im Klartext; Sidebar (`LayerFilterContent.vue`) trägt eine
+  Form-Legende. **Wichtiger Fund & behoben:** Das ADS-B-`◆`-Badge (FR-ASD-006)
+  ging beim **Vue-Port verloren** (alte `internal/webui/static/app.js` = toter
+  Referenz-Code; ausgeliefert wird `dist/`); WF2-40 stellt die ADS-B-Kennzeichnung
+  mit **identischer Frische-Schwelle** als Form ◆ wieder her — **FR-ASD-007 löst
+  FR-ASD-006 ab**. **Kein Backend-/ICD-Change** (alle Felder bereits im WS-JSON).
+  **Tests:** `provenance.test.js` (15 — Wahrheitstabelle + Frische),
+  `tracks.test.js` (`updateTracksLayer provenance`); Symbol-Optik manuell (kein
+  WebGL-Harness, vgl. FR-ASD-001). **Gates grün:** `npm run build` ✅,
+  `vitest run` ✅ (78 Tests). **Doku:** Milestone `WF2-40_Provenance_Layer.md`,
+  ROADMAP (WF2-40 ✅), Register **FR-ASD-007** (+ FR-ASD-006 abgelöst), TECHNICAL
+  §2.2 (Symbologie aktualisiert), INSTALLATION (keine Env-Änderung). **Nächster
+  Schritt:** offene Stufe-4-Pakete (**WF2-41** Feed-Sensorklassen-Katalog, **WF2-42**
+  Cross-Project-Issue „echte Per-Track-Provenienz" an Firefly) oder ASD-Kern — nach
+  Ankündigung & „Go".
+- **Vorherige Aktualisierung:** 2026-06-21 — **WF2-33 „Live-Apply" abgeschlossen —
   STUFE 3 KOMPLETT (🔒 S4 · Opus 4.8).** View-/Abo-Änderungen ziehen **aktive**
   `/ws`-Streams **live** nach, **ohne Reconnect**. **Leitplanke 1 (Thread-Safety):**
   Der Broadcaster ist ein **Single-Goroutine-Actor** — der Scope-Tausch ist ein

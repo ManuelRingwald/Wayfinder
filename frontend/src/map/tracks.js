@@ -4,6 +4,7 @@
 // object passed by the caller (engine.js), keeping this module pure.
 import { TRAIL_MAX_POINTS, FADE_DURATION_MS, VECTOR_LOOKAHEAD_S, EARTH_RADIUS_M } from './constants.js'
 import { buildLabel } from './label.js'
+import { trackProvenance } from './provenance.js'
 
 // vectorEndpoint computes the geographic point reached after
 // VECTOR_LOOKAHEAD_S seconds of travel at constant velocity (vx/vy in m/s,
@@ -135,6 +136,9 @@ export function updateTracksLayer(msg, state, renderSources, startFadeLoop) {
         vx: track.vx,
         vy: track.vy,
         label: buildLabel(track, vTrend),
+        // WF2-40: surveillance source, drives the track symbol shape and the
+        // detail panel. Derived from the contract fields (see provenance.js).
+        provenance: trackProvenance(track),
         // Stored so renderSources() can re-evaluate the FL filter on UI change
         // (ASD-005) without waiting for a new WebSocket update.
         flight_level_ft: typeof track.flight_level_ft === 'number' ? track.flight_level_ft : null,

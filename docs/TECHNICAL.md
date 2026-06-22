@@ -103,8 +103,8 @@ pkg/broadcast.Broadcaster
     │
     ├─► WebSocket /ws  (Port 8081)
     │       └─► JSON TrackMessage  {feed_id, track_num, lat, lon, vx, vy,
-    │                                flight_level_ft, callsign, mode3a,
-    │                                icao_address, adsb_age_s,
+    │                                flight_level_ft, callsign, mode_3a,
+    │                                icao_addr, adsb_age_s,
     │                                coasting, ended, ...}
     └─► (Eviction bei vollem Send-Channel, Warn-Log)
 ```
@@ -119,18 +119,30 @@ ADS-B-Selbstbericht aktualisiert hat. Der Wert gibt das Alter dieses Updates
 in Sekunden an (Auflösung 1/4 s, aus I062/290 ES-Age). Fehlt das Feld, ist
 der Track ein reiner Radar-Track.
 
-Das Frontend wertet dieses Feld für den **ADS-B-Badge** aus:
+Das Frontend leitet daraus — zusammen mit `icao_addr`/`mode_3a`/`callsign` — die
+**track-abgeleitete Herkunft** ab und kodiert sie als **Symbol-Form** (WF2-40).
+Die **Farbe** des Symbols bleibt dabei der Track-Zustand
+(confirmed/coasting/tentative/filtered):
 
-| Bedingung | Darstellung |
-|-----------|-------------|
-| `adsb_age_s` fehlt | kein Badge (reiner Radar-Track) |
-| `adsb_age_s` ≤ 30 s | `◆` im Track-Label (frischer ADS-B-Anteil) |
-| `adsb_age_s` > 30 s | kein Badge (ADS-B-Anteil veraltet) |
+| Symbol | Herkunft | Bedingung |
+|--------|----------|-----------|
+| ◆ Karo (gefüllt)    | ADS-B (kooperativ) | `adsb_age_s` vorhanden **und** ≤ 30 s (frisch) |
+| ▢ Quadrat (gefüllt) | SSR / Mode S       | kein frisches ADS-B, aber `icao_addr`/`mode_3a`/Callsign |
+| ○ Ring (offen)      | Primär (PSR)       | keines der obigen — reine Skin-Paint ohne ID |
 
-Die 30-Sekunden-Schwelle (`ADSB_FRESH_THRESHOLD_S`) ist in
-`internal/webui/static/app.js` definiert und gibt an, ab wann ein ADS-B-Hit
-als nicht mehr frisch gilt (Fireflys Live-Modus sendet typisch alle 5–10 s
-OpenSky-Polls).
+Die 30-Sekunden-Frische-Schwelle (`ADSB_FRESH_THRESHOLD_S`) und die Klassifikation
+liegen in `frontend/src/map/provenance.js` (`trackProvenance`, `isAdsbFresh`); die
+Symbole werden in `frontend/src/map/layers.js` (`addTrackIcons`) zur Laufzeit
+gezeichnet. Das **Track-Detail-Panel** zeigt die Herkunft im Klartext, die
+**Sidebar** eine Form-Legende. **Ehrliche Grenze:** track-abgeleitet, keine
+zertifizierte Per-Plot-Provenienz — CAT062 trägt keine explizite Sensor-Quelle
+pro Plot (offen als WF2-42).
+
+> **Hinweis (Regression behoben):** Bis WF2-40 war ein ADS-B-`◆`-Badge nur im
+> **Data-Block-Label** vorgesehen (frühere `internal/webui/static/app.js`); es
+> ging beim Vue-Port verloren und ist nun als Symbol-Form ◆ wiederhergestellt
+> (Register: **FR-ASD-007** löst **FR-ASD-006** ab). Die alte `static/app.js` ist
+> toter Referenz-Code.
 
 ### 2.3 Ausgang: Feed-Status an den Browser
 

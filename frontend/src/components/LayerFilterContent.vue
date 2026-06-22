@@ -121,6 +121,18 @@
       />
     </div>
 
+    <!-- ── Spurherkunft (WF2-40): symbol-shape legend ── -->
+    <div class="filter-section-header filter-section-header--spaced">Spurherkunft</div>
+    <div class="legend-caption">Form = Herkunft · Farbe = Status</div>
+    <div
+      v-for="item in provenanceLegend"
+      :key="item.label"
+      class="filter-row filter-row--sub"
+    >
+      <span class="prov-glyph">{{ item.glyph }}</span>
+      <span class="prov-label">{{ item.label }}</span>
+    </div>
+
   </div>
 </template>
 
@@ -135,6 +147,15 @@ const store = useAsdStore()
 const minFL = ref(store.flFilter.minFL)
 const maxFL = ref(store.flFilter.maxFL)
 const hideFiltered = ref(store.flFilter.hide)
+
+// WF2-40: track-symbol provenance legend. Glyphs mirror the map icons drawn in
+// layers.js (◆ ADS-B, ■ SSR/Mode S, ○ primary/PSR). Colour is omitted here on
+// purpose — it encodes track state, not provenance (see caption).
+const provenanceLegend = [
+  { glyph: '◆', label: 'ADS-B (kooperativ)' },
+  { glyph: '■', label: 'SSR / Mode S' },
+  { glyph: '○', label: 'Primär (PSR)' },
+]
 
 function onLayerToggle(layer, val) {
   store.setLayerVisibility(layer, val)
@@ -232,5 +253,25 @@ function onFlFilterChange() {
 :deep(.v-switch .v-switch__thumb) {
   width: 10px;
   height: 10px;
+}
+
+/* WF2-40 provenance legend */
+.legend-caption {
+  padding: 0 14px 6px;
+  font-size: 10px;
+  color: rgba(var(--v-theme-on-surface), 0.45);
+}
+.prov-glyph {
+  width: 14px;
+  margin-right: 8px;
+  text-align: center;
+  font-size: 13px;
+  line-height: 1;
+  color: rgba(var(--v-theme-on-surface), 0.85);
+  flex-shrink: 0;
+}
+.prov-label {
+  font-size: 0.8rem;
+  opacity: 0.85;
 }
 </style>

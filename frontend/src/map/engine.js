@@ -188,7 +188,7 @@ export async function initMap(container, store, onTrackClick) {
     addHistoryDotsLayer(map, palette)
     addVectorsLayer(map, palette)
     addLeaderLinesLayer(map, palette) // ASD-002: under track circles
-    addTracksLayer(map, palette)
+    addTracksLayer(map)
     addLabelsLayer(map, palette)      // ASD-002: above track circles
     state.mapLoaded = true
     store.setMapLoaded(true)

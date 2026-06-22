@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isFlFiltered, flOpacity } from '../tracks.js'
+import { isFlFiltered, flOpacity, updateTracksLayer } from '../tracks.js'
 
 const noFilter = { minFL: null, maxFL: null, hide: false }
 
@@ -73,5 +73,39 @@ describe('flOpacity', () => {
     const filter = { minFL: 100, maxFL: 300, hide: true }
     expect(flOpacity(undefined, filter)).toBeUndefined()
     expect(flOpacity(null, filter)).toBeUndefined()
+  })
+})
+
+// WF2-40: the track symbol shape is driven by a `provenance` property baked
+// onto each feature. This locks in that updateTracksLayer attaches it (the
+// classification logic itself is covered by provenance.test.js).
+function makeState() {
+  return {
+    trackHistory: new Map(),
+    trackFlHistory: new Map(),
+    trackCoasting: new Map(),
+    fadingTracks: new Map(),
+    liveTrackFeatures: [],
+    liveVectorFeatures: [],
+  }
+}
+
+describe('updateTracksLayer provenance (WF2-40)', () => {
+  it('attaches the derived provenance to every live track feature', () => {
+    const state = makeState()
+    const base = { latitude: 50, longitude: 8, vx: 0, vy: 0, confirmed: true, coasting: false }
+    const msg = {
+      tracks: [
+        { ...base, track_num: 1, adsb_age_s: 2 },          // fresh ADS-B
+        { ...base, track_num: 2, icao_addr: 0x3c6dd2 },    // Mode S, no ADS-B
+        { ...base, track_num: 3, adsb_age_s: 120 },        // stale ADS-B, no id
+      ],
+    }
+    updateTracksLayer(msg, state, () => {}, () => {})
+
+    const byNum = Object.fromEntries(
+      state.liveTrackFeatures.map((f) => [f.properties.track_num, f.properties.provenance]),
+    )
+    expect(byNum).toEqual({ 1: 'adsb', 2: 'ssr', 3: 'psr' })
   })
 })
