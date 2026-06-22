@@ -154,6 +154,28 @@ func TestWhoamiReportsIdentity(t *testing.T) {
 	}
 }
 
+func TestWhoamiIncludesEffectiveFeatures(t *testing.T) {
+	fe := &fakeEntitlements{eff: map[feature.Key]bool{feature.STCA: true, feature.MultiFeed: false}}
+	rec := httptest.NewRecorder()
+	handlerWithEnt(&fakeVS{}, fakeFeeds{}, fakeTenants{}, fe).
+		ServeHTTP(rec, adminReq(http.MethodGet, "/api/admin/whoami", "", 7, store.RoleTenantAdmin))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var got struct {
+		Features map[string]bool `json:"features"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !got.Features["stca"] {
+		t.Error("whoami features missing stca=true")
+	}
+	if got.Features["multi_feed"] {
+		t.Error("whoami features multi_feed should be false (default-deny)")
+	}
+}
+
 func TestWhoamiUnauthorizedWithoutIdentity(t *testing.T) {
 	rec := httptest.NewRecorder()
 	handlerWith(&fakeVS{}, fakeFeeds{}, fakeTenants{}).

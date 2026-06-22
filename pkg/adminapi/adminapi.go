@@ -105,14 +105,17 @@ func New(views ViewStore, subs SubscriptionStore, feeds FeedStore, tenants Tenan
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) { h.mux.ServeHTTP(w, r) }
 
 // whoamiDTO is the identity the SPA reads on entering /admin: it confirms access
-// (the route is behind the admin gate) and reports the role so the client knows
-// whether to render the super_admin provisioning panel. The role gating in the UI
-// is cosmetic — the server independently enforces it (requireSuper → 403).
+// (the route is behind the admin gate), reports the role so the client knows
+// whether to render the super_admin provisioning panel, and carries the tenant's
+// effective feature flags (WF2-50) so the SPA can hide entitlement-gated UI. Both
+// the role and the feature gating in the UI are cosmetic — the server enforces
+// them independently (requireSuper → 403; feature gates checked server-side).
 type whoamiDTO struct {
-	Subject  string     `json:"subject"`
-	TenantID int64      `json:"tenant_id"`
-	UserID   int64      `json:"user_id"`
-	Role     store.Role `json:"role"`
+	Subject  string          `json:"subject"`
+	TenantID int64           `json:"tenant_id"`
+	UserID   int64           `json:"user_id"`
+	Role     store.Role      `json:"role"`
+	Features map[string]bool `json:"features"`
 }
 
 func (h *Handler) whoami(w http.ResponseWriter, r *http.Request) {
@@ -126,7 +129,23 @@ func (h *Handler) whoami(w http.ResponseWriter, r *http.Request) {
 		TenantID: id.TenantID,
 		UserID:   id.UserID,
 		Role:     id.Role,
+		Features: h.effectiveFeatures(r.Context(), id.TenantID),
 	})
+}
+
+// effectiveFeatures returns the tenant's feature flags for the SPA to gate UI.
+// Fail-closed: on a backend error the service returns an all-deny map (already
+// logged), so the worst case is hiding a feature, never wrongly exposing one.
+func (h *Handler) effectiveFeatures(ctx context.Context, tenantID int64) map[string]bool {
+	if h.feats == nil {
+		return map[string]bool{}
+	}
+	eff, _ := h.feats.Effective(ctx, tenantID)
+	out := make(map[string]bool, len(eff))
+	for k, v := range eff {
+		out[string(k)] = v
+	}
+	return out
 }
 
 // viewDTO is the JSON shape of a tenant's view configuration.
