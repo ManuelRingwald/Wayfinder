@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/manuelringwald/wayfinder/pkg/feature"
 	"github.com/manuelringwald/wayfinder/pkg/store"
 	"github.com/manuelringwald/wayfinder/pkg/tenant"
 )
@@ -43,6 +44,16 @@ type TenantStore interface {
 	GetByID(ctx context.Context, id int64) (store.Tenant, error)
 }
 
+// EntitlementService is the per-tenant feature surface the admin API needs
+// (satisfied by *feature.Service). Effective lists the full catalog with each
+// key's state (default-deny); Set persists one flag, rejecting unknown keys
+// (WF2-50). Setting entitlements is the billing/provisioning boundary, so the
+// routes using it are super_admin-only.
+type EntitlementService interface {
+	Effective(ctx context.Context, tenantID int64) (map[feature.Key]bool, error)
+	Set(ctx context.Context, tenantID int64, key feature.Key, enabled bool) error
+}
+
 // RescopeFunc is invoked after a mutation that changes what a tenant's connected
 // clients may see (a view edit, or a feed grant/revoke), so their live /ws streams
 // are re-scoped in place without a reconnect (WF2-33). It is wired in main.go to
@@ -57,6 +68,7 @@ type Handler struct {
 	subs    SubscriptionStore
 	feeds   FeedStore
 	tenants TenantStore
+	feats   EntitlementService
 	rescope RescopeFunc
 	logger  *slog.Logger
 	mux     *http.ServeMux
@@ -66,8 +78,8 @@ type Handler struct {
 // the wrong method. The cross-tenant provisioning routes (/api/admin/tenants/…)
 // are additionally restricted to super_admin (requireSuper). rescope (may be nil)
 // re-scopes a tenant's live streams after a mutation (WF2-33).
-func New(views ViewStore, subs SubscriptionStore, feeds FeedStore, tenants TenantStore, logger *slog.Logger, rescope RescopeFunc) *Handler {
-	h := &Handler{views: views, subs: subs, feeds: feeds, tenants: tenants, rescope: rescope, logger: logger}
+func New(views ViewStore, subs SubscriptionStore, feeds FeedStore, tenants TenantStore, feats EntitlementService, logger *slog.Logger, rescope RescopeFunc) *Handler {
+	h := &Handler{views: views, subs: subs, feeds: feeds, tenants: tenants, feats: feats, rescope: rescope, logger: logger}
 	mux := http.NewServeMux()
 	// whoami: the SPA's role probe (WF2-32). It sits behind the same admin gate, so
 	// a 200 here both confirms access and tells the client which panels to render.
@@ -82,6 +94,10 @@ func New(views ViewStore, subs SubscriptionStore, feeds FeedStore, tenants Tenan
 	mux.HandleFunc("GET /api/admin/tenants/{tenantID}/subscriptions", h.requireSuper(h.listTenantSubscriptions))
 	mux.HandleFunc("POST /api/admin/tenants/{tenantID}/subscriptions", h.requireSuper(h.grantSubscription))
 	mux.HandleFunc("DELETE /api/admin/tenants/{tenantID}/subscriptions/{feedID}", h.requireSuper(h.revokeSubscription))
+	// super_admin feature entitlements (WF2-50): list the full catalogue with the
+	// target tenant's state, and set one flag. The billing/provisioning boundary.
+	mux.HandleFunc("GET /api/admin/tenants/{tenantID}/entitlements", h.requireSuper(h.listTenantEntitlements))
+	mux.HandleFunc("PUT /api/admin/tenants/{tenantID}/entitlements/{key}", h.requireSuper(h.setTenantEntitlement))
 	h.mux = mux
 	return h
 }
@@ -304,6 +320,67 @@ func (h *Handler) revokeSubscription(w http.ResponseWriter, r *http.Request) {
 	}
 	h.triggerRescope(r.Context(), tid) // live-apply the revoke (WF2-33)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// entitlementDTO is one feature flag in the admin entitlement view. The full
+// catalogue is always returned so the UI can render every toggle, with enabled
+// reflecting the tenant's state (default-deny for keys never set).
+type entitlementDTO struct {
+	Key         string `json:"key"`
+	Enabled     bool   `json:"enabled"`
+	Description string `json:"description"`
+}
+
+func (h *Handler) listTenantEntitlements(w http.ResponseWriter, r *http.Request) {
+	tid, err := pathInt(r, "tenantID")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid tenant id")
+		return
+	}
+	if !h.tenantExists(w, r, tid) {
+		return
+	}
+	eff, err := h.feats.Effective(r.Context(), tid)
+	if err != nil {
+		h.internalError(w, "list entitlements", err)
+		return
+	}
+	// Present the whole catalogue in a stable order, not just stored rows, so the
+	// UI shows every available feature with its (default-denied) state.
+	out := make([]entitlementDTO, 0, len(feature.All()))
+	for _, k := range feature.All() {
+		out = append(out, entitlementDTO{Key: string(k), Enabled: eff[k], Description: feature.Describe(k)})
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (h *Handler) setTenantEntitlement(w http.ResponseWriter, r *http.Request) {
+	tid, err := pathInt(r, "tenantID")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid tenant id")
+		return
+	}
+	var body struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body: expected {\"enabled\": <bool>}")
+		return
+	}
+	if !h.tenantExists(w, r, tid) {
+		return
+	}
+	// No live-apply rescope (unlike view/subscription edits): entitlements gate
+	// feature availability, not the live track scope. The catalogue guard lives in
+	// the service (Set → ErrUnknownFeature), which we surface as 400.
+	switch err := h.feats.Set(r.Context(), tid, feature.Key(r.PathValue("key")), body.Enabled); {
+	case errors.Is(err, feature.ErrUnknownFeature):
+		writeError(w, http.StatusBadRequest, "unknown feature key")
+	case err != nil:
+		h.internalError(w, "set entitlement", err)
+	default:
+		w.WriteHeader(http.StatusNoContent)
+	}
 }
 
 // tenantExists writes a 404 (or 500) and returns false if the target tenant does

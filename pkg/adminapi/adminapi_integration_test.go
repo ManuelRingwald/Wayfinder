@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/manuelringwald/wayfinder/pkg/feature"
 	"github.com/manuelringwald/wayfinder/pkg/store"
 	"github.com/manuelringwald/wayfinder/pkg/tenant"
 )
@@ -47,7 +48,8 @@ func TestIntegrationAdminAPI(t *testing.T) {
 	}
 
 	h := New(store.NewViewConfigRepo(pool), store.NewSubscriptionRepo(pool), store.NewFeedRepo(pool),
-		store.NewTenantRepo(pool), slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+		store.NewTenantRepo(pool), feature.New(store.NewEntitlementRepo(pool), slog.New(slog.NewTextHandler(io.Discard, nil))),
+		slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
 
 	req := func(method, path, body string, role store.Role) *httptest.ResponseRecorder {
 		var r *http.Request

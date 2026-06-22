@@ -11,9 +11,15 @@ package feature
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"sync/atomic"
 )
+
+// ErrUnknownFeature is returned by Set when the key is not in the catalog. The
+// admin API maps it to 400 so an operator can never persist a typo'd or removed
+// feature key (which would then silently fail closed forever).
+var ErrUnknownFeature = errors.New("feature: unknown feature key")
 
 // Store is the persistence dependency, satisfied by *store.EntitlementRepo. It
 // is kept as a narrow interface here so the service is unit-testable without a
@@ -21,6 +27,7 @@ import (
 type Store interface {
 	IsEnabled(ctx context.Context, tenantID int64, featureKey string) (bool, error)
 	ListByTenant(ctx context.Context, tenantID int64) (map[string]bool, error)
+	Set(ctx context.Context, tenantID int64, featureKey string, enabled bool) error
 }
 
 // Service answers per-tenant feature checks, fail-closed. It is safe for
@@ -85,6 +92,17 @@ func (s *Service) Effective(ctx context.Context, tenantID int64) (map[Key]bool, 
 		}
 	}
 	return out, nil
+}
+
+// Set enables or disables a feature for a tenant. It rejects keys outside the
+// catalog with ErrUnknownFeature, so the database never accumulates flags that
+// no code reads — keeping the catalog the single source of truth for "which
+// features exist". Writing is a super_admin-only action at the admin API edge.
+func (s *Service) Set(ctx context.Context, tenantID int64, key Key, enabled bool) error {
+	if !IsKnown(key) {
+		return ErrUnknownFeature
+	}
+	return s.store.Set(ctx, tenantID, string(key), enabled)
 }
 
 // DBErrorCount returns how many checks failed closed due to a store error

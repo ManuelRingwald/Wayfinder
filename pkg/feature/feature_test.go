@@ -30,6 +30,17 @@ func (f *fakeStore) ListByTenant(_ context.Context, _ int64) (map[string]bool, e
 	return f.list, nil
 }
 
+func (f *fakeStore) Set(_ context.Context, _ int64, key string, enabled bool) error {
+	if f.err != nil {
+		return f.err
+	}
+	if f.list == nil {
+		f.list = map[string]bool{}
+	}
+	f.list[key] = enabled
+	return nil
+}
+
 // countingHandler captures how many records at >=Warn were emitted.
 type countingHandler struct{ warns int }
 
@@ -161,6 +172,28 @@ func TestEffectiveStoreErrorFailsClosed(t *testing.T) {
 	}
 	if logs.warns != 1 {
 		t.Errorf("warn logs = %d, want 1", logs.warns)
+	}
+}
+
+func TestSetRejectsUnknownKey(t *testing.T) {
+	fs := &fakeStore{}
+	svc, _ := newSvc(t, fs)
+	if err := svc.Set(context.Background(), 7, "bogus", true); !errors.Is(err, ErrUnknownFeature) {
+		t.Errorf("Set(unknown) err = %v, want ErrUnknownFeature", err)
+	}
+	if _, reached := fs.list["bogus"]; reached {
+		t.Error("unknown key must not reach the store")
+	}
+}
+
+func TestSetKnownKeyPersists(t *testing.T) {
+	fs := &fakeStore{}
+	svc, _ := newSvc(t, fs)
+	if err := svc.Set(context.Background(), 7, STCA, true); err != nil {
+		t.Fatalf("Set(STCA) err = %v", err)
+	}
+	if !fs.list["stca"] {
+		t.Error("known key not persisted to the store")
 	}
 }
 
