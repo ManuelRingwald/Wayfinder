@@ -65,7 +65,7 @@ func feedAddCommand(args []string, out io.Writer) error {
 	fs.StringVar(&group, "group", "", "multicast group, e.g. 239.255.0.62 (required)")
 	fs.IntVar(&port, "port", 8600, "multicast port")
 	fs.StringVar(&region, "region", "", "region label (optional)")
-	fs.StringVar(&sensorMix, "sensor-mix", "", "comma-separated sensor mix, e.g. PSR,SSR,ADS-B (optional)")
+	fs.StringVar(&sensorMix, "sensor-mix", "", "comma-separated sensor mix, e.g. PSR,SSR,ADS-B (optional; validated against the sensor-class catalogue, common spellings normalised)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}

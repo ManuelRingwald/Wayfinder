@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/manuelringwald/wayfinder/pkg/sensorclass"
 )
 
 // Feed is one upstream CAT062/065 stream in the global catalogue (ADR 0005 §2).
@@ -31,12 +33,16 @@ type FeedRepo struct {
 // NewFeedRepo returns a FeedRepo backed by the given pool.
 func NewFeedRepo(db *pgxpool.Pool) *FeedRepo { return &FeedRepo{db: db} }
 
-// Create inserts a feed. A nil sensorMix is stored as an empty JSON array.
+// Create inserts a feed. The sensor mix is canonicalised and validated against
+// the controlled vocabulary (WF2-41): unknown classes are rejected so the
+// catalogue never stores typo'd metadata; a nil/empty mix becomes an empty JSON
+// array. The error wraps *sensorclass.UnknownClassError (errors.As-able).
 func (r *FeedRepo) Create(ctx context.Context, name, multicastGroup string, port int, region *string, sensorMix []string) (Feed, error) {
-	if sensorMix == nil {
-		sensorMix = []string{}
+	canonical, err := sensorclass.Canonicalize(sensorMix)
+	if err != nil {
+		return Feed{}, wrap("create feed: sensor_mix", err)
 	}
-	mix, err := toJSONB(sensorMix)
+	mix, err := toJSONB(canonical)
 	if err != nil {
 		return Feed{}, wrap("create feed: marshal sensor_mix", err)
 	}
