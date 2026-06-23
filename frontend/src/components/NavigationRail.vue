@@ -33,6 +33,20 @@
             </div>
             <span class="nav-rail__label">{{ s.label }}</span>
           </div>
+
+          <!-- Req 1: Admin entry, pinned to the bottom, visible only to admins -->
+          <div
+            v-if="isAdmin"
+            class="nav-rail__btn nav-rail__btn--admin"
+            role="button"
+            aria-label="Admin"
+            @click="goAdmin"
+          >
+            <div class="nav-rail__pill">
+              <v-icon size="20">mdi-shield-account</v-icon>
+            </div>
+            <span class="nav-rail__label">Admin</span>
+          </div>
         </div>
 
         <!-- Divider + panel (appear only when a section is active) -->
@@ -53,6 +67,12 @@
 
     <!-- ── Mobile layout ── -->
     <template v-else>
+      <v-list-item
+        v-if="isAdmin"
+        prepend-icon="mdi-shield-account"
+        title="Admin"
+        @click="goAdmin"
+      />
       <LayerFilterContent
         @layer-toggle="onLayerToggle"
         @fl-filter-change="onFlFilterChange"
@@ -62,8 +82,10 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useDisplay } from 'vuetify'
+import { useRouter } from 'vue-router'
+import { useAdminStore } from '@/stores/admin.js'
 import LayerFilterContent from './LayerFilterContent.vue'
 
 const props = defineProps({
@@ -72,6 +94,20 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue', 'layer-toggle', 'fl-filter-change'])
 
 const { mdAndUp } = useDisplay()
+
+// Req 1: an Admin entry appears in the rail only for tenant_admin/super_admin.
+// We probe the identity once on mount; fail-closed — an operator (or a
+// single-tenant deployment) gets 401/403/404 and isAdmin stays false. The real
+// guard is server-side (RequireRole on /api/admin/*); this is convenience only.
+const router = useRouter()
+const adminStore = useAdminStore()
+const isAdmin = computed(() => adminStore.isAdmin)
+
+onMounted(() => {
+  if (!adminStore.isAuthorized) adminStore.loadIdentity()
+})
+
+function goAdmin() { router.push('/admin') }
 
 const sections = [
   { id: 'layers', icon: 'mdi-filter-outline', label: 'Filter' },
@@ -115,6 +151,13 @@ function onFlFilterChange(payload) { emit('fl-filter-change', payload) }
   align-items: center;
   padding-top: 12px;
   gap: 4px;
+}
+
+/* Req 1: Admin entry sits at the bottom of the rail (auto top margin pushes it
+   down past the section items). */
+.nav-rail__btn--admin {
+  margin-top: auto;
+  margin-bottom: 12px;
 }
 
 /* MD3 Navigation Rail item: icon + label, centred in the 56px column */

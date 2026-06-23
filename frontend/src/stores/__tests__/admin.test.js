@@ -39,6 +39,26 @@ describe('admin store — identity & role gating', () => {
     expect(s.isSuperAdmin).toBe(false)
   })
 
+  it('isAdmin gates the rail Admin entry to tenant_admin / super_admin', async () => {
+    const cases = [
+      { role: 'tenant_admin', status: 200, want: true },
+      { role: 'super_admin', status: 200, want: true },
+      { role: null, status: 403, want: false }, // operator/non-admin → whoami 403
+    ]
+    for (const c of cases) {
+      setActivePinia(createPinia())
+      installFetch({
+        'GET /api/admin/whoami':
+          c.status === 200
+            ? { status: 200, body: { subject: 'x', tenant_id: 1, user_id: 1, role: c.role } }
+            : { status: c.status, body: { error: 'forbidden' } },
+      })
+      const s = useAdminStore()
+      await s.loadIdentity()
+      expect(s.isAdmin, `role=${c.role} status=${c.status}`).toBe(c.want)
+    }
+  })
+
   it('exposes effective feature flags from whoami (WF2-50)', async () => {
     installFetch({
       'GET /api/admin/whoami': {
