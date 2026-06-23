@@ -1,6 +1,9 @@
 <template>
+  <!-- Feed-health indicator (CAT065 heartbeat, Firefly ADR 0018).
+       Always visible so the operator can confirm the feed monitor is active.
+       States: ok (green) = heartbeat fresh; stale (red) = heartbeat lost;
+       unknown (grey) = no heartbeat received yet (e.g. Firefly not yet running). -->
   <v-chip
-    v-if="store.feedStatus !== 'unknown'"
     :color="chipColor"
     size="small"
     class="font-weight-bold"
