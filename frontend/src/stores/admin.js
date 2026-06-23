@@ -41,6 +41,9 @@ export const useAdminStore = defineStore('admin', () => {
 
   const role = computed(() => identity.value?.role ?? null)
   const isSuperAdmin = computed(() => role.value === 'super_admin')
+  // Admin-rail visibility (Req 1): only tenant_admin or super_admin may reach
+  // /admin. Cosmetic gating — the server enforces /api/admin/* via RequireRole.
+  const isAdmin = computed(() => role.value === 'tenant_admin' || role.value === 'super_admin')
   const isAuthorized = computed(() => identity.value !== null)
   // WF2-50: per-tenant feature entitlements, delivered by whoami. UI gating off
   // these is cosmetic — the server enforces every feature server-side.
@@ -144,7 +147,7 @@ export const useAdminStore = defineStore('admin', () => {
 
   return {
     identity, accessError, view, feeds, subscriptions, tenants, error, notice,
-    role, isSuperAdmin, isAuthorized, features, hasFeature,
+    role, isSuperAdmin, isAdmin, isAuthorized, features, hasFeature,
     loadIdentity, loadView, saveView, loadFeeds, loadSubscriptions,
     loadTenants, loadTenantSubscriptions, grant, revoke, clearBanners,
   }
