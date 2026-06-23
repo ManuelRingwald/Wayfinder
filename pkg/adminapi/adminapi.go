@@ -16,6 +16,7 @@ import (
 	"strconv"
 
 	"github.com/manuelringwald/wayfinder/pkg/feature"
+	"github.com/manuelringwald/wayfinder/pkg/sensorclass"
 	"github.com/manuelringwald/wayfinder/pkg/store"
 	"github.com/manuelringwald/wayfinder/pkg/tenant"
 )
@@ -52,6 +53,9 @@ type TenantStore interface {
 type EntitlementService interface {
 	Effective(ctx context.Context, tenantID int64) (map[feature.Key]bool, error)
 	Set(ctx context.Context, tenantID int64, key feature.Key, enabled bool) error
+	// HasFeature is the fail-closed gate used to enforce feed entitlements at the
+	// grant edge (WF2-41): a tenant without multi_feed may hold at most one feed.
+	HasFeature(ctx context.Context, tenantID int64, key feature.Key) bool
 }
 
 // RescopeFunc is invoked after a mutation that changes what a tenant's connected
@@ -89,6 +93,9 @@ func New(views ViewStore, subs SubscriptionStore, feeds FeedStore, tenants Tenan
 	mux.HandleFunc("PUT /api/admin/view", h.putView)
 	mux.HandleFunc("GET /api/admin/subscriptions", h.getSubscriptions)
 	mux.HandleFunc("GET /api/admin/feeds", h.getFeeds)
+	// Read-only reference: the sensor-class catalogue (WF2-41), for the SPA to
+	// render class pickers/legends. Any admin role may read it.
+	mux.HandleFunc("GET /api/admin/sensor-classes", h.getSensorClasses)
 	// super_admin provisioning (target tenant from the path, cross-tenant).
 	mux.HandleFunc("GET /api/admin/tenants", h.requireSuper(h.listTenants))
 	mux.HandleFunc("GET /api/admin/tenants/{tenantID}/subscriptions", h.requireSuper(h.listTenantSubscriptions))
@@ -237,6 +244,24 @@ func (h *Handler) getFeeds(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, toFeedDTOs(feeds))
 }
 
+// sensorClassDTO is one entry of the sensor-class catalogue (WF2-41).
+type sensorClassDTO struct {
+	Class       string `json:"class"`
+	Description string `json:"description"`
+}
+
+func (h *Handler) getSensorClasses(w http.ResponseWriter, r *http.Request) {
+	if _, ok := tenant.FromContext(r.Context()); !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	out := make([]sensorClassDTO, 0, len(sensorclass.All()))
+	for _, c := range sensorclass.All() {
+		out = append(out, sensorClassDTO{Class: string(c), Description: sensorclass.Describe(c)})
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
 // requireSuper restricts a handler to super_admin. The outer gate already lets
 // only tenant_admin/super_admin through; this is the extra step that gates the
 // **cross-tenant** provisioning routes — super_admin is the only role allowed to
@@ -312,6 +337,30 @@ func (h *Handler) grantSubscription(w http.ResponseWriter, r *http.Request) {
 		return
 	} else if err != nil {
 		h.internalError(w, "get feed", err)
+		return
+	}
+	// WF2-41: a tenant without the multi_feed entitlement may hold at most one
+	// feed. Enforce the invariant here (fail-early) so the invalid state never
+	// reaches the database — granting a *second distinct* feed needs the
+	// entitlement. Re-granting a feed the tenant already has stays idempotent.
+	existing, err := h.subs.ListFeedsByTenant(r.Context(), tid)
+	if err != nil {
+		h.internalError(w, "list subscriptions", err)
+		return
+	}
+	alreadySubscribed := false
+	for _, f := range existing {
+		if f.ID == body.FeedID {
+			alreadySubscribed = true
+			break
+		}
+	}
+	if !alreadySubscribed && len(existing) >= 1 && !h.feats.HasFeature(r.Context(), tid, feature.MultiFeed) {
+		if h.logger != nil {
+			h.logger.Warn("feed grant denied: multi_feed entitlement required",
+				slog.Int64("tenant_id", tid), slog.Int64("feed_id", body.FeedID), slog.Int("current_feeds", len(existing)))
+		}
+		writeError(w, http.StatusConflict, "tenant lacks the multi_feed entitlement (at most one feed without it)")
 		return
 	}
 	if err := h.subs.Subscribe(r.Context(), tid, body.FeedID); err != nil { // idempotent

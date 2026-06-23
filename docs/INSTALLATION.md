@@ -566,7 +566,7 @@ WAYFINDER_DB_URL=postgres://… wayfinder feed list
 | `-group` | *(Pflicht)* | Multicast-Gruppe, z. B. `239.255.0.62`. |
 | `-port` | `8600` | Multicast-Port. |
 | `-region` | *(leer)* | Regions-Label (optional). |
-| `-sensor-mix` | *(leer)* | Kommaseparierter Sensor-Mix, z. B. `PSR,SSR,ADS-B`. |
+| `-sensor-mix` | *(leer)* | Kommaseparierter Sensor-Mix aus dem kontrollierten Vokabular `PSR,SSR,MODE_S,ADS-B,MLAT,FLARM` (WF2-41). Gängige Schreibweisen werden kanonisiert (`ads-b`→`ADS-B`); **unbekannte Klassen werden abgewiesen** (Feed wird nicht angelegt). |
 
 > ℹ️ **Fallback:** Ist der Katalog leer (oder läuft Wayfinder ohne
 > `WAYFINDER_DB_URL`), wird **ein** Feed aus `FIREFLY_CAT062_GROUP`/`_PORT` +

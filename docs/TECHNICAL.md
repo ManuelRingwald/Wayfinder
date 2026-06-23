@@ -195,7 +195,17 @@ Durch `authMiddleware` geschützt (wenn `WAYFINDER_AUTH_TOKEN` gesetzt).
 | `/api/waypoints` | GET | Wegpunkte (GeoJSON, best-effort) |
 | `/api/admin/whoami` | GET | Rollen-Probe + **effektive Feature-Flags** (`features`) als JSON; rollen-gegated (WF2-32/50) |
 | `/api/admin/tenants/{id}/entitlements[/{key}]` | GET/PUT | Feature-Entitlements pro Mandant; **super_admin** (WF2-50) |
+| `/api/admin/sensor-classes` | GET | Sensorklassen-Katalog (read-only Referenz, WF2-41) |
 | `/api/admin/*` | div. | Tenant-skopiertes Admin-API (WF2-31/31b); rollen-gegated |
+
+> **Feed-Sensorklassen & Abo-Entitlement (WF2-41):** Ein Feed trägt eine
+> **Sensorklassen-Zusammensetzung** als Metadatum (`sensor_mix`) aus dem
+> kontrollierten Vokabular `PSR`/`SSR`/`MODE_S`/`ADS-B`/`MLAT`/`FLARM`; gängige
+> Legacy-Schreibweisen werden beim Anlegen kanonisiert, unbekannte Klassen
+> **abgewiesen** (`feed add` → Fehler). **Abos binden an Feeds:** ein Mandant
+> **ohne** `multi_feed`-Entitlement hält **höchstens einen** Feed — ein zweiter
+> distinkter Grant wird mit **409 Conflict** abgewiesen, *bevor* er die DB
+> erreicht (harte Invariante; super_admin muss erst `multi_feed` setzen).
 
 > **SPA-History-Fallback (WF2-32):** `webui.Handler` liefert für jeden nicht als
 > Datei auflösbaren Pfad die `index.html`-Shell aus (Client-Router übernimmt) —

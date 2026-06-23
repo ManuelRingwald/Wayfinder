@@ -8,6 +8,26 @@
 > `docs/ROADMAP.md` (Stichwort „Roadmap" im Chat zeigt diese Liste).
 
 - **Zuletzt aktualisiert:** 2026-06-22 — **Bugfix-Sprint: Issues #54, #55, #56 aus Testlauf abgeschlossen (S2–S4 · Opus 4.8).** Drei Bugs aus dem Testergebnis-Excel (Testlauf auf `main`) behoben und gepusht. **#54 (S2):** `FeedStatusChip.vue` war implementiert aber nie eingebunden — jetzt als absolutes Overlay (top-right) in `AsdView.vue` gemountet; zeigt FEED OK / FEED STALE nach erstem CAT065-Heartbeat. **#55 (S3):** Zwei überlagerte Bugs verhinderten Mode-3/A- und Status-Anzeige im `TrackDetailCard`: (1) `mode_3a`/`callsign` fehlten in Feature-Properties (`tracks.js`, `render.js`); (2) Feldnamen in `TrackDetailCard.vue` falsch (`mode3a` statt `mode_3a`, `track.status.coasting` statt `track.coasting`); `v-if="track.status"` (immer false) entfernt — Status-Zeile jetzt immer sichtbar. **#56 (S4, NFR-SEC-003):** Nach Feed-Revoke + Live-Rescope blieben Tracks des widerrufenen Feeds auf der Karte (kein Lösch-Signal). Fix: `applyScopes` in `broadcast.go` schickt sofort ein leeres Tracks-Frame an betroffene Clients (`hasFeedRevoke`-Prüfung); nur bei Feed-Revoke, nicht bei AOI-Shrink (WF2-33-Entscheidung bleibt). 3 neue Tests + 3 bestehende angepasst (`expectPurge`-Helper). **C2.2:** GitHub-Issue #57 angelegt (Admin-Formular erklärt nicht was Zentrum/Zoom/AOI/FL-Band operativ bedeuten; S2, für Roadmap). **Gates:** `go test` ✅ `-race` ✅ `go vet` ✅ `gofmt` ✅ `vitest 81/81` ✅ `npm build` ✅. Commit `4a1d00d`, Branch `claude/great-keller-b7zpvm`. **Nächster Schritt:** ASD-Kern (ASD-012 Range Rings / ASD-011 / ASD-013) **oder** WF2-41 Feed-Sensorklassen — nach Ankündigung & „Go".
+- **Vorherige Aktualisierung:** 2026-06-22 — **WF2-41 „Feed-Sensorklassen-Katalog &
+  Entitlements" abgeschlossen (S3 · Sonnet 4.6, 3 Häppchen).** Auf **neuem Branch**
+  `claude/wf2-41-feed-sensor-classes` (PR #52 mit WF2-40/42/50 wurde gemerged →
+  `97744fb`; dieser Branch baut auf `main`). **(A) Sensorklassen-Katalog**
+  `pkg/sensorclass`: kontrolliertes Vokabular (`PSR`/`SSR`/`MODE_S`/`ADS-B`/`MLAT`/
+  `FLARM`), `Parse` mappt **Legacy-Schreibweisen** kanonisch (`ads-b`/`ADS_B`/
+  `1090ES`→`ADS-B`, `Mode A/C`→`SSR`, …), `Canonicalize` normalisiert+dedupliziert
+  und **weist Unbekanntes ab** (`*UnknownClassError`) — erzwungen am **Chokepoint**
+  `FeedRepo.Create` (kein Schema-Change, `sensor_mix` bleibt JSONB). Surfacing
+  `GET /api/admin/sensor-classes`. **(B) Abos binden an Feeds — harte Invariante:**
+  Mandant **ohne** `multi_feed` (WF2-50) hält **max. 1** Feed; zweiter distinkter
+  Grant → **409 Conflict** **vor** `Subscribe` (fail-early, kein invalider
+  DB-Zustand); idempotenter Re-Grant bleibt 204; super_admin muss erst das
+  Entitlement setzen. **Tests:** `pkg/sensorclass` (Legacy-Tabelle/Round-Trip/
+  Dedup/unknown), `adminapi` (1./2. Feed, **409 + `Subscribe` nicht erreicht**,
+  mit `multi_feed` ok, idempotent, `sensor-classes`), **real-PG** (Feed-Validierung
+  + Grant-Gating-Round-Trip). **Gates:** `go test ./...` + real-PG (`pg-test.sh`),
+  `vet`, `gofmt`, `build` — grün. Commits `adf4f01`/`7a88f91`/`88d35b2`. Doku:
+  Milestone `WF2-41_Feed_Sensor_Classes.md`, ROADMAP (✅), Register **FR-TEN-004**,
+  TECHNICAL (Endpunkt + 409-Invariante), Glossar.
 - **Vorherige Aktualisierung:** 2026-06-22 — **WF2-50 „Feature-Entitlement-Service"
   abgeschlossen (S3 · Sonnet 4.6, 4 Häppchen).** Pro-Mandant-Feature-Flags **als
   Daten**, **fail-closed**, entkoppelt von Billing (ADR 0005 §4). **Schlüssel-

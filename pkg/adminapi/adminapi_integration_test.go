@@ -163,4 +163,33 @@ func TestIntegrationAdminAPI(t *testing.T) {
 	if feats == nil || feats[string(feature.STCA)] != true {
 		t.Errorf("whoami features = %v, want stca=true", who["features"])
 	}
+
+	// --- WF2-41: multi_feed grant gating (real-PG, end-to-end) ---
+	// The tenant currently holds no feeds (granted+revoked above). Create a
+	// second feed so a 2-feed subscription can be attempted.
+	feed2, err := store.NewFeedRepo(pool).Create(ctx, "Munich", "239.255.0.63", 8601, nil, []string{"ADS-B"})
+	if err != nil {
+		t.Fatalf("create feed2: %v", err)
+	}
+	grantFeed := func(feedID int64) int {
+		return req(http.MethodPost, grantPath, fmt.Sprintf(`{"feed_id":%d}`, feedID), store.RoleSuperAdmin).Code
+	}
+	if code := grantFeed(feed.ID); code != http.StatusNoContent {
+		t.Fatalf("grant 1st feed = %d, want 204", code)
+	}
+	if code := grantFeed(feed2.ID); code != http.StatusConflict {
+		t.Fatalf("grant 2nd feed without multi_feed = %d, want 409", code)
+	}
+	entPut := fmt.Sprintf("/api/admin/tenants/%d/entitlements/%s", ten.ID, feature.MultiFeed)
+	if code := req(http.MethodPut, entPut, `{"enabled":true}`, store.RoleSuperAdmin).Code; code != http.StatusNoContent {
+		t.Fatalf("enable multi_feed = %d, want 204", code)
+	}
+	if code := grantFeed(feed2.ID); code != http.StatusNoContent {
+		t.Fatalf("grant 2nd feed with multi_feed = %d, want 204", code)
+	}
+	var subs2 []map[string]any
+	_ = json.Unmarshal(req(http.MethodGet, "/api/admin/subscriptions", "", store.RoleTenantAdmin).Body.Bytes(), &subs2)
+	if len(subs2) != 2 {
+		t.Errorf("after entitled grant, subscriptions = %d, want 2", len(subs2))
+	}
 }
