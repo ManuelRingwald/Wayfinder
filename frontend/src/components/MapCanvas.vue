@@ -5,7 +5,6 @@
       @zoom-in="mapEngine?.zoomIn()"
       @zoom-out="mapEngine?.zoomOut()"
       @recenter="mapEngine?.recenter()"
-      @reset-north="mapEngine?.resetNorth()"
     />
     <!-- ASD-013: FeedStatusChip moved here after app bar removal -->
     <FeedStatusChip class="feed-chip" />
@@ -58,6 +57,12 @@ watch(() => store.mapLoaded, (loaded) => {
 })
 watch(() => ({ ...store.airspaceGroupVisibility }), () => {
   mapEngine?.updateAirspaceFilter()
+}, { deep: true })
+
+// ASD-012: regenerate the range-ring overlay when the operator changes spacing
+// or count (visibility itself is handled by the layerVisibility watcher above).
+watch(() => ({ ...store.rangeRingConfig }), (cfg) => {
+  mapEngine?.updateRangeRings(cfg.spacingNM, cfg.count)
 }, { deep: true })
 
 defineExpose({

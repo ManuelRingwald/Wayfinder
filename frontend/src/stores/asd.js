@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, reactive } from 'vue'
+import { DEFAULT_RANGE_RING_SPACING_NM, DEFAULT_RANGE_RING_COUNT } from '@/map/constants.js'
 
 export const useAsdStore = defineStore('asd', () => {
   // Map/app state
@@ -15,7 +16,16 @@ export const useAsdStore = defineStore('asd', () => {
     navaids: true,
     waypoints: true,
     coverageRings: true,
+    rangeRings: false, // ASD-012: off by default (declutter); operator opts in
   })
+
+  // ASD-012: operator-tunable range-ring configuration, applied live. The engine
+  // regenerates the overlay from the configured centre whenever this changes.
+  const rangeRingConfig = reactive({
+    spacingNM: DEFAULT_RANGE_RING_SPACING_NM,
+    count: DEFAULT_RANGE_RING_COUNT,
+  })
+  function setRangeRingConfig(updates) { Object.assign(rangeRingConfig, updates) }
 
   // FL filter
   const flFilter = reactive({
@@ -95,6 +105,7 @@ export const useAsdStore = defineStore('asd', () => {
     mapLoaded, palette, feedStatus, layerVisibility, flFilter,
     trackCounts, hiddenCategories,
     airspaceGroupVisibility,
+    rangeRingConfig, setRangeRingConfig,
     selectedTrack, labelPins,
     setFeedStatus, setMapLoaded, setPalette, setLayerVisibility,
     setFlFilter, setTrackCounts, toggleCategoryFilter,

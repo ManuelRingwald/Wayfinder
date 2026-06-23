@@ -29,6 +29,9 @@ import {
   COVERAGE_SOURCE_ID,
   COVERAGE_RINGS_LAYER_ID,
   COVERAGE_CENTER_LAYER_ID,
+  RANGE_RINGS_SOURCE_ID,
+  RANGE_RINGS_LAYER_ID,
+  RANGE_RINGS_LABEL_LAYER_ID,
 } from './constants.js'
 
 // Build a MapLibre 'match' expression keyed on the OpenAIP numeric type field.
@@ -520,6 +523,52 @@ export function addVectorsLayer(map, palette) {
         ['get', 'coasting'], 0.35,
         1.0,
       ],
+    },
+  })
+}
+
+// addRangeRingsLayer registers the ASD-012 range-ring overlay: concentric
+// constant-distance circles (line layer) plus NM labels (symbol layer) on one
+// GeoJSON source. Both start hidden — the operator opts in via the sidebar — and
+// the data is (re)generated from the configured centre + reactive spacing/count
+// (engine.updateRangeRings). The `kind` property splits rings from labels.
+export function addRangeRingsLayer(map, palette) {
+  map.addSource(RANGE_RINGS_SOURCE_ID, {
+    type: 'geojson',
+    data: { type: 'FeatureCollection', features: [] },
+  })
+
+  map.addLayer({
+    id: RANGE_RINGS_LAYER_ID,
+    type: 'line',
+    source: RANGE_RINGS_SOURCE_ID,
+    filter: ['==', ['get', 'kind'], 'ring'],
+    layout: { visibility: 'none' }, // default off (ASD-012; operator enables)
+    paint: {
+      'line-color': palette.rangeRing,
+      'line-width': 1,
+      'line-opacity': 0.55,
+      'line-dasharray': [2, 3],
+    },
+  })
+
+  map.addLayer({
+    id: RANGE_RINGS_LABEL_LAYER_ID,
+    type: 'symbol',
+    source: RANGE_RINGS_SOURCE_ID,
+    filter: ['==', ['get', 'kind'], 'label'],
+    layout: {
+      visibility: 'none',
+      'text-field': ['get', 'label'],
+      'text-font': ['Open Sans Regular'],
+      'text-size': 10,
+      'text-offset': [0, -0.5],
+      'text-allow-overlap': false,
+    },
+    paint: {
+      'text-color': palette.rangeRing,
+      'text-halo-color': palette.labelHalo,
+      'text-halo-width': 1,
     },
   })
 }

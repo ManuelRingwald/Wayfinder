@@ -76,6 +76,48 @@
       />
     </div>
 
+    <div class="filter-row">
+      <v-switch
+        v-model="store.layerVisibility.rangeRings"
+        label="Range-Rings"
+        color="primary"
+        density="compact"
+        hide-details
+        inset
+        @update:model-value="onLayerToggle('rangeRings', $event)"
+      />
+    </div>
+
+    <!-- ASD-012: range-ring spacing + count, shown only while the layer is active -->
+    <template v-if="store.layerVisibility.rangeRings">
+      <div class="filter-row filter-row--sub">
+        <v-select
+          v-model.number="ringSpacing"
+          :items="RANGE_RING_SPACING_OPTIONS_NM"
+          label="Abstand (NM)"
+          variant="outlined"
+          density="compact"
+          hide-details
+          class="ring-input"
+          @update:model-value="onRangeRingChange"
+        />
+      </div>
+      <div class="filter-row filter-row--sub ring-count-row">
+        <span class="ring-count-label">Ringe: {{ ringCount }}</span>
+        <v-slider
+          v-model="ringCount"
+          :min="1"
+          :max="MAX_RANGE_RING_COUNT"
+          :step="1"
+          color="primary"
+          density="compact"
+          hide-details
+          class="ring-slider"
+          @update:model-value="onRangeRingChange"
+        />
+      </div>
+    </template>
+
     <!-- ── FL-Filter ── -->
     <div class="filter-section-header filter-section-header--spaced">FL-Filter</div>
 
@@ -139,7 +181,7 @@
 <script setup>
 import { ref } from 'vue'
 import { useAsdStore } from '@/stores/asd.js'
-import { AIRSPACE_GROUPS } from '@/map/constants.js'
+import { AIRSPACE_GROUPS, RANGE_RING_SPACING_OPTIONS_NM, MAX_RANGE_RING_COUNT } from '@/map/constants.js'
 
 const emit = defineEmits(['layer-toggle', 'fl-filter-change'])
 const store = useAsdStore()
@@ -147,6 +189,14 @@ const store = useAsdStore()
 const minFL = ref(store.flFilter.minFL)
 const maxFL = ref(store.flFilter.maxFL)
 const hideFiltered = ref(store.flFilter.hide)
+
+// ASD-012: local range-ring controls, mirrored into the reactive store on change
+// (the engine regenerates the overlay; MapCanvas watches store.rangeRingConfig).
+const ringSpacing = ref(store.rangeRingConfig.spacingNM)
+const ringCount = ref(store.rangeRingConfig.count)
+function onRangeRingChange() {
+  store.setRangeRingConfig({ spacingNM: ringSpacing.value, count: ringCount.value })
+}
 
 // WF2-40: track-symbol provenance legend. Glyphs mirror the map icons drawn in
 // layers.js (◆ ADS-B, ■ SSR/Mode S, ○ primary/PSR). Colour is omitted here on
@@ -253,6 +303,25 @@ function onFlFilterChange() {
 :deep(.v-switch .v-switch__thumb) {
   width: 10px;
   height: 10px;
+}
+
+/* ASD-012 range-ring controls */
+.ring-input {
+  flex: 1;
+  min-width: 0;
+}
+.ring-count-row {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  padding-top: 4px;
+}
+.ring-count-label {
+  font-size: 0.78rem;
+  opacity: 0.8;
+}
+.ring-slider {
+  margin: 0 4px;
 }
 
 /* WF2-40 provenance legend */

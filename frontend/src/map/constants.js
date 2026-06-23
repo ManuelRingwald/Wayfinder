@@ -56,6 +56,18 @@ export const COVERAGE_SOURCE_ID = 'coverage-rings'
 export const COVERAGE_RINGS_LAYER_ID = 'coverage-rings-lines'
 export const COVERAGE_CENTER_LAYER_ID = 'coverage-center-circles'
 
+// ASD-012: Range-ring overlay — concentric constant-ground-distance circles
+// around the configured display centre, operator-tunable live via the sidebar
+// (distinct from the Paket-6 sensor coverage rings). Spacing/count live as
+// reactive store state (stores/asd.js); these are only the defaults + choices.
+export const RANGE_RINGS_SOURCE_ID = 'range-rings'
+export const RANGE_RINGS_LAYER_ID = 'range-rings-lines'
+export const RANGE_RINGS_LABEL_LAYER_ID = 'range-rings-labels'
+export const RANGE_RING_SPACING_OPTIONS_NM = [5, 10, 15]
+export const DEFAULT_RANGE_RING_SPACING_NM = 10
+export const DEFAULT_RANGE_RING_COUNT = 5
+export const MAX_RANGE_RING_COUNT = 10
+
 // ASD-002: Deconfliction geometry constants (all values in screen pixels).
 // LABEL_TEXT_SIZE      : data-block text size; used as the symbol layer's "text-size".
 // LABEL_SLOT_RADIUS_PX : distance from symbol centre to label anchor candidate.
@@ -168,6 +180,7 @@ export const PALETTES = {
     airspaceText: '#9fc0e8',
     airways: '#2a8fa8',
     aeroHalo: '#000000',
+    rangeRing: '#4a7d96', // ASD-012: subdued cyan-grey distance grid
   },
   osm: {
     label: '#212121',
@@ -180,5 +193,6 @@ export const PALETTES = {
     airspaceText: '#22305a',
     airways: '#1a6a7a',
     aeroHalo: '#ffffff',
+    rangeRing: '#3d6b82', // ASD-012: distance grid, readable on the bright base
   },
 }

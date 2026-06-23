@@ -254,7 +254,7 @@ für **„keine gegensätzlichen Anforderungen"** sind die 2.0-Bezüge je Paket:
 | AP | Inhalt | Stufe · Modell | Status | 2.0-Bezug (Abgleich) |
 |----|--------|----------------|--------|----------------------|
 | **ASD-011** | Erweitertes Track-Detail-Panel (`TrackDetailCard.vue`) | **S2 · Sonnet 4.6** | offen | Reine Sicht, keine Tenancy-Wirkung — jederzeit ziehbar. |
-| **ASD-012** | Range-Rings + Scale-Bar + Nord-/Track-up | **S3 · Opus 4.8** | offen | „Zentrum/Radius" wird in 2.0 **Mandanten-View-Config** (WF2-30/31). Frontend liest schon `/api/map-config` → wird transparent tenant-skopiert; **keine Nacharbeit**, wenn ASD-012 weiter aus `/api/map-config` liest statt aus einer eigenen Konstante. |
+| **ASD-012** ✅ | Range-Rings + Scale-Bar + Nord-/Track-up | **S3 · Opus 4.8** | **erledigt** | Geodätische Range-Rings (konstante Boden-Distanz, anti-squish-getestet), operator-live-konfigurierbar (5/10/15 NM × Anzahl, reaktiver Store); MapLibre `ScaleControl{nautical}` + `NavigationControl{compass}`; alter Reset-Nord-Button entfernt. „Track-up" bewusst weggelassen (Multi-Track-ASD). Liest weiter `/api/map-config` → tenant-skopierbar (WF2-30/31), keine Nacharbeit. |
 | **ASD-013** | Alarm-/Ereignis-Panel (Feed-stale, Track appeared/disappeared, Status) | **S3 · Sonnet 4.6** | offen | Speist sich aus dem WS-Strom → wird nach WF2-21 automatisch **mandanten-skopiert** (nur eigene Events). Heute single-tenant baubar, keine Rearchitektur nötig. |
 
 **Empfehlung:** ASD-011/012/013 als opportunistische Parallel-Spur behandeln

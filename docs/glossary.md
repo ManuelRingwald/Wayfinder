@@ -197,3 +197,13 @@ WF2-41): beim Anlegen eines Feeds werden gängige Schreibweisen kanonisiert
 verlässlich und auditierbar bleiben. **Wichtig:** Der Sensor-Mix ist ein
 **Feed-Metadatum**, kein Per-Track-Tag (ADR 0005 §6.4) — die *track-abgeleitete*
 Herkunft am Symbol (WF2-40) ist davon unabhängig.
+
+## Range-Ring (Entfernungsring)
+
+Konzentrische Kreise **konstanter Boden-Distanz** (in nautischen Meilen) um einen
+Bezugspunkt — auf dem ASD der konfigurierte Karten-Mittelpunkt. Sie geben dem
+Lotsen ein **Distanz-Raster** („~25 NM draußen") für Staffelung und Sequencing.
+Wayfinder zeichnet sie **geodätisch** (gleiche Distanz in jede Richtung), damit
+sie auf der Web-Mercator-Projektion nicht „gequetscht" erscheinen (ASD-012).
+**Abzugrenzen** vom *Coverage-Ring* (Paket 6), der die **Reichweite eines
+Sensors** zeigt, nicht ein Distanz-Raster.
