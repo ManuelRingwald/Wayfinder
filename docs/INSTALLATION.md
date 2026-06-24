@@ -1,308 +1,797 @@
 # Wayfinder — Installationsanleitung
 
-> **Zweck:** Schritt-für-Schritt-Anleitung zum Aufsetzen und Starten von
-> Wayfinder, vom Build bis zum laufenden ASD-Fenster im Browser.
+> **Für wen ist diese Anleitung?** Für alle, die Wayfinder zum Laufen bringen
+> wollen — **auch ohne IT-Hintergrund**. Sie führt Schritt für Schritt vom leeren
+> Rechner bis zum fertigen Luftlagebild im Browser. Befehle einfach **kopieren und
+> einfügen**. Wo etwas auf dem Mac anders ist, steht es ausdrücklich dabei.
+
+> **Zwei Betriebsarten — wählen Sie eine:**
+> - **Einzelplatz (Single-Tenant)** → [Teil 4](#teil-4--einzelplatz-single-tenant-schritt-für-schritt).
+>   Ein Lagebild, **kein Login, keine Datenbank**. Der einfachste Fall — hier
+>   anfangen.
+> - **Mehrere Kunden (Multi-Tenant)** → [Teil 5](#teil-5--mehrere-kunden-multi-tenant-schritt-für-schritt).
+>   Mehrere Mandanten mit **eigenem Login**, Datenbank und Admin-Oberfläche.
 
 ---
 
 ## Inhaltsverzeichnis
 
-1. [Voraussetzungen](#1-voraussetzungen)
-2. [Schnellstart mit Docker (empfohlen)](#2-schnellstart-mit-docker-empfohlen)
-3. [Lokaler Build ohne Docker](#3-lokaler-build-ohne-docker)
-4. [End-to-End mit Firefly](#4-end-to-end-mit-firefly)
-5. [macOS / Windows Docker Desktop](#5-macos--windows-docker-desktop)
-6. [Kubernetes / Cloud-Deployment](#6-kubernetes--cloud-deployment)
-7. [Konfigurationsreferenz](#7-konfigurationsreferenz)
-8. [Verifikation](#8-verifikation)
+1. [Überblick — was läuft hier eigentlich?](#teil-1--überblick--was-läuft-hier-eigentlich)
+2. [Werkzeuge installieren (macOS / Windows / Linux)](#teil-2--werkzeuge-installieren)
+3. [Wayfinder & Firefly herunterladen](#teil-3--wayfinder--firefly-herunterladen)
+4. [**Einzelplatz (Single-Tenant)** — Schritt für Schritt](#teil-4--einzelplatz-single-tenant-schritt-für-schritt)
+5. [**Mehrere Kunden (Multi-Tenant)** — Schritt für Schritt](#teil-5--mehrere-kunden-multi-tenant-schritt-für-schritt)
+6. [Läuft es? — Verifikation](#teil-6--läuft-es--verifikation)
+7. [Wenn etwas nicht geht — Fehlersuche](#teil-7--wenn-etwas-nicht-geht--fehlersuche)
+8. [Konfigurationsreferenz (alle Schalter)](#teil-8--konfigurationsreferenz)
+9. [Produktionsbetrieb (Kubernetes, TLS, Host-Netzwerk)](#teil-9--produktionsbetrieb)
 
 ---
 
-## 1. Voraussetzungen
+## Teil 1 — Überblick: was läuft hier eigentlich?
 
-### Für den Docker-Betrieb
+Wayfinder ist das **ASD** (Air Situation Display) — die Karte mit den Flugzeugen.
+Es zeigt aber **nicht selbst** Flugzeuge an, sondern **empfängt** sie von einem
+zweiten Programm namens **Firefly** (dem Radar-Tracker). Die beiden reden über
+einen Netzwerk-„Draht" (UDP-Multicast) miteinander.
 
-| Komponente | Mindestversion | Hinweis |
-|------------|----------------|---------|
-| Docker | 24.x | |
-| Docker Compose | v2 (`docker compose`) | Compose v1 (`docker-compose`) genügt |
-| Betriebssystem | Linux (Kernel ≥ 5.x) | Für Multicast-Empfang ist `network_mode: host` nötig — auf Linux ohne Einschränkung verfügbar; macOS/Windows: siehe [Abschnitt 5](#5-macos--windows-docker-desktop) |
+```
+┌─────────────┐   Flugzeug-Daten (UDP-Multicast)   ┌─────────────┐   Browser
+│   Firefly   │  ───────────────────────────────►  │  Wayfinder  │  ──────►  🗺️
+│ (rechnet    │        Gruppe 239.255.0.62          │  (zeigt an) │        localhost:8081
+│  Tracks)    │             Port 8600               │             │
+└─────────────┘                                     └─────────────┘
+```
 
-### Für den lokalen Build
+**Wichtig zu verstehen:** Ohne Firefly (oder eine andere Datenquelle) bleibt die
+Karte **leer** — das ist kein Fehler. Deshalb richten wir in dieser Anleitung
+**beide** zusammen ein, damit Sie sofort Flugzeuge sehen.
 
-| Komponente | Mindestversion | Hinweis |
-|------------|----------------|---------|
-| Go | 1.23 | `go version` zum Prüfen |
-| Node.js | 18 LTS | Nur für Frontend-Build nötig |
-| npm | 9+ | Kommt mit Node |
+**Zwei Adressen (Ports), die Wayfinder öffnet:**
 
-### Netzwerk
+| Adresse | Wofür | Wer benutzt das? |
+|---------|-------|------------------|
+| `http://localhost:8081` | **Das Lagebild** (die Karte) | **Sie**, im Browser |
+| `http://localhost:8080` | Technik-Checks (`/health`, `/ready`, `/metrics`) | Monitoring/Betrieb |
 
-Wayfinder empfängt den CAT062/CAT065-Strom von Firefly als **UDP-Multicast**.
-Damit der Empfang funktioniert, müssen beide Prozesse im selben Subnetz
-erreichbar sein und das Multicast-Routing aktiv sein. Auf einem einzelnen
-Linux-Host genügt `network_mode: host` in Docker; auf VM/Cloud-Instanzen muss
-die Netzwerkkarte explizit für Multicast freigeschaltet sein.
+> 💡 **Merksatz:** **81 = sehen** (Browser), **80 = Technik**. Sie öffnen im
+> Alltag nur die **8081**.
 
 ---
 
-## 2. Schnellstart mit Docker (empfohlen)
+## Teil 2 — Werkzeuge installieren
 
-### 2.1 Repository klonen
+Sie brauchen genau **zwei** Werkzeuge: **Docker** (führt Wayfinder & Firefly in
+Containern aus, ohne dass Sie etwas kompilieren müssen) und **Git** (lädt den
+Programmcode herunter).
+
+### 🍎 macOS
+
+1. **Docker Desktop installieren**
+   - Laden Sie es von <https://www.docker.com/products/docker-desktop/> (Button
+     „Download for Mac" — achten Sie auf **Apple Silicon** (M1/M2/M3/M4) bzw.
+     **Intel**, je nach Mac).
+   - Öffnen Sie die heruntergeladene `.dmg`, ziehen Sie **Docker** in den
+     Ordner **Programme**, starten Sie **Docker** aus dem Launchpad.
+   - Warten Sie, bis das Docker-Wal-Symbol oben in der Menüleiste **ruhig**
+     steht (nicht mehr animiert). Erst dann ist Docker bereit.
+
+2. **Git installieren** — öffnen Sie die App **Terminal**
+   (Programme → Dienstprogramme → Terminal) und tippen Sie:
+   ```bash
+   git --version
+   ```
+   Fehlt Git, bietet macOS automatisch an, die „Command Line Tools" zu
+   installieren — auf **Installieren** klicken und warten.
+
+3. **Prüfen, dass alles da ist** — im Terminal:
+   ```bash
+   docker --version
+   docker compose version
+   git --version
+   ```
+   Jede Zeile sollte eine Versionsnummer ausgeben (keine Fehlermeldung).
+
+> ⚠️ **Mac-Besonderheit (wichtig!):** Docker läuft auf dem Mac in einer kleinen
+> internen Linux-Maschine. Der direkte „Host-Netzwerk"-Modus aus vielen
+> Anleitungen funktioniert hier **nicht**. Diese Anleitung umgeht das Problem,
+> indem Firefly und Wayfinder **gemeinsam** in einem Container-Netz laufen — das
+> klappt auf dem Mac **genauso wie auf Linux**. Sie müssen nichts extra tun,
+> einfach den Schritten folgen.
+
+### 🪟 Windows
+
+1. **Docker Desktop** von <https://www.docker.com/products/docker-desktop/>
+   installieren (Button „Download for Windows"). Docker Desktop richtet **WSL 2**
+   automatisch ein — den Anweisungen des Installers folgen, danach **neu starten**.
+2. **Git für Windows** von <https://git-scm.com/download/win> installieren
+   (alle Vorgaben übernehmen).
+3. Danach **Git Bash** öffnen (Startmenü → „Git Bash") und alle folgenden Befehle
+   dort eingeben. Prüfen mit `docker --version`, `docker compose version`,
+   `git --version`.
+
+### 🐧 Linux (Ubuntu/Debian)
 
 ```bash
+# Docker-Engine + Compose-Plugin + Git
+sudo apt-get update
+sudo apt-get install -y docker.io docker-compose-v2 git
+# Den eigenen Benutzer zur docker-Gruppe hinzufügen (danach einmal aus- und
+# wieder einloggen), damit "docker" ohne sudo läuft:
+sudo usermod -aG docker "$USER"
+```
+Prüfen: `docker --version`, `docker compose version`, `git --version`.
+
+---
+
+## Teil 3 — Wayfinder & Firefly herunterladen
+
+Wir legen **einen** Projektordner an, in den **beide** Programme nebeneinander
+kommen. Das ist später wichtig, damit die gemeinsame Konfigurationsdatei beide
+findet.
+
+Im **Terminal** (Mac/Linux) bzw. **Git Bash** (Windows):
+
+```bash
+# 1. Einen Projektordner im Home-Verzeichnis anlegen und hineinwechseln
+mkdir -p ~/asd
+cd ~/asd
+
+# 2. Beide Programme herunterladen
 git clone https://github.com/manuelringwald/wayfinder.git
-cd wayfinder
+git clone https://github.com/manuelringwald/firefly.git
 ```
 
-### 2.2 Starten
+Danach sieht Ihr Ordner so aus:
 
+```
+~/asd/
+├── wayfinder/     ← dieses Programm (die Karte)
+└── firefly/       ← die Datenquelle (rechnet die Flugzeuge)
+```
+
+Prüfen Sie das mit:
 ```bash
-docker compose up
+ls ~/asd
+# Erwartete Ausgabe:  firefly   wayfinder
 ```
 
-Das Image wird beim ersten Start automatisch gebaut (`docker compose up --build`
-für einen Neubau nach Code-Änderungen).
-
-Wayfinder ist dann erreichbar unter:
-
-| Adresse | Inhalt |
-|---------|--------|
-| `http://localhost:8081` | ASD-Karte (Browser) |
-| `http://localhost:8080/health` | Liveness-Probe |
-| `http://localhost:8080/ready` | Readiness-Probe |
-| `http://localhost:8080/metrics` | Prometheus-Metriken |
-
-> **Hinweis:** Ohne laufenden Firefly-Sender sieht die Karte eine leere
-> Luftlage — das ist korrekt. Die Readiness-Probe zeigt `not ready`, bis
-> mindestens ein CAT065-Heartbeat empfangen wurde.
-
-### 2.3 Kartenzentrierung anpassen
-
-Standardmäßig ist die Karte auf Frankfurt (50.0379 N / 8.5622 E, Zoom 8)
-zentriert. Für einen anderen Ausschnitt kann entweder eine Datei
-`wayfinder.yaml` im Projektverzeichnis angelegt werden:
-
-```yaml
-# wayfinder.yaml (aus wayfinder.yaml.example)
-map:
-  center_lat: 48.1374   # München
-  center_lon: 11.5755
-  zoom: 9
-openaip:
-  radius_km: 185        # 100 NM Radius
-```
-
-Alternativ über Umgebungsvariablen in `docker-compose.yml`:
-
-```yaml
-environment:
-  WAYFINDER_MAP_CENTER_LAT: "48.1374"
-  WAYFINDER_MAP_CENTER_LON: "11.5755"
-  WAYFINDER_MAP_ZOOM: "9"
-```
+> ℹ️ Sie brauchen Firefly **nur**, um Test-Flugzeuge zu erzeugen. Haben Sie
+> bereits eine **echte** CAT062-Datenquelle im Netz, können Sie den
+> `firefly`-Teil in den folgenden Compose-Dateien weglassen und stattdessen
+> Gruppe/Port Ihrer echten Quelle eintragen.
 
 ---
 
-## 3. Lokaler Build ohne Docker
+## Teil 4 — Einzelplatz (Single-Tenant): Schritt für Schritt
 
-### 3.1 Backend bauen
+**Das richten wir hier ein:** Ein einzelnes Lagebild auf Ihrem Rechner.
+**Kein Login, keine Datenbank.** Ideal zum Ausprobieren und für den
+Einzelarbeitsplatz.
 
-```bash
-go build -o wayfinder ./cmd/wayfinder
-```
+### Schritt 4.1 — Steuerungsordner anlegen
 
-Für einen statischen Binary (empfohlen für Deployment):
-
-```bash
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o wayfinder ./cmd/wayfinder
-```
-
-### 3.2 Frontend bauen
-
-Das Frontend (`frontend/`) wird mit Vite gebaut und vom Go-Backend als
-eingebettete statische Dateien ausgeliefert. Das Build-Artefakt liegt in
-`internal/webui/dist/` und ist **bereits im Repository eingecheckt** — ein
-lokaler Frontend-Build ist nur nach Änderungen am Frontend-Code nötig.
+Wir legen einen kleinen Ordner an, der nur die beiden Konfigurationsdateien
+enthält (den Programmcode haben wir schon in Teil 3 geladen):
 
 ```bash
-cd frontend
-npm install
-npm run build       # schreibt nach ../internal/webui/dist/
-cd ..
+mkdir -p ~/asd/start-einzelplatz
+cd ~/asd/start-einzelplatz
 ```
 
-Danach Go-Backend neu bauen (Schritt 3.1), damit die neuen dist-Assets
-eingebettet werden.
+### Schritt 4.2 — Die Start-Datei `docker-compose.yml` anlegen
 
-### 3.3 Starten
+Diese Datei beschreibt, **was** gestartet wird. Legen Sie sie an — am
+einfachsten im Terminal mit einem Editor wie `nano`:
 
 ```bash
-./wayfinder
+nano docker-compose.yml
 ```
 
-Oder mit angepasster Konfiguration:
-
-```bash
-WAYFINDER_MAP_CENTER_LAT=48.1374 \
-WAYFINDER_MAP_CENTER_LON=11.5755 \
-WAYFINDER_LOG_LEVEL=debug \
-./wayfinder
-```
-
-### 3.4 Tests
-
-```bash
-go test ./...
-go vet ./...
-```
-
-Frontend-Tests:
-
-```bash
-cd frontend && npm run test -- --run
-```
-
----
-
-## 4. End-to-End mit Firefly
-
-Für ein vollständiges ASD-System müssen Firefly (Sender) und Wayfinder
-(Empfänger) gleichzeitig laufen und über denselben Multicast-Stream verbunden
-sein.
-
-### 4.1 Voraussetzung
-
-Beide Repositories ausgecheckt:
-
-```
-~/
-├── wayfinder/
-└── firefly/      # https://github.com/manuelringwald/firefly
-```
-
-### 4.2 Firefly starten (CAT062-Ausgabe aktivieren)
-
-```bash
-cd firefly
-FIREFLY_CAT062_ENABLED=true \
-FIREFLY_CAT062_GROUP=239.255.0.62 \
-FIREFLY_CAT062_PORT=8600 \
-docker compose up
-```
-
-### 4.3 Wayfinder starten
-
-In einem zweiten Terminal:
-
-```bash
-cd wayfinder
-docker compose up
-```
-
-Beide Container laufen mit `network_mode: host` und sind über den
-Multicast-Socket `239.255.0.62:8600` verbunden. Tracks von Firefly erscheinen
-innerhalb weniger Sekunden auf der Karte unter `http://localhost:8081`.
-
----
-
-## 5. macOS / Windows Docker Desktop
-
-Docker Desktop nutzt eine interne Linux-VM, die **keinen Host-Netzwerk-Stack**
-teilt. `network_mode: host` ist daher wirkungslos. Stattdessen müssen Firefly
-und Wayfinder in einem gemeinsamen **Bridge-Netzwerk** laufen, in dem die VM
-selbst als Multicast-Router fungiert.
-
-### 5.1 Gemeinsames docker-compose.yml erstellen
-
-Lege ein neues Verzeichnis `adsb-stack/` mit folgendem `docker-compose.yml` an:
+Fügen Sie **genau diesen Inhalt** ein (kopieren, im Terminal mit `Cmd+V` bzw.
+`Strg+V` einfügen). Speichern in `nano`: `Strg+O`, `Enter`, dann `Strg+X`.
 
 ```yaml
-version: "3.9"
+# ~/asd/start-einzelplatz/docker-compose.yml
+# Einzelplatz-Aufbau: Firefly (Datenquelle) + Wayfinder (Karte) gemeinsam
+# in einem Container-Netz. Funktioniert auf macOS, Windows und Linux gleich.
+name: wayfinder-einzelplatz
+
 networks:
-  adsb:
+  asd:
     driver: bridge
-    driver_opts:
-      com.docker.network.bridge.enable_ip_masquerade: "true"
 
 services:
+  # Datenquelle: erzeugt Test-Flugzeuge und sendet sie als CAT062-Multicast.
   firefly:
     build: ../firefly
-    networks: [adsb]
+    networks: [asd]
     environment:
+      FIREFLY_SCENE: "frankfurt"          # Test-Szenario rund um Frankfurt
+      FIREFLY_CAT062_ENABLED: "true"      # CAT062-Ausgabe einschalten
+      FIREFLY_CAT062_GROUP: "239.255.0.62"
+      FIREFLY_CAT062_PORT: "8600"
+    restart: unless-stopped
+
+  # Die Karte (das ASD).
+  wayfinder:
+    build: ../wayfinder
+    networks: [asd]
+    ports:
+      - "8081:8081"                       # Browser-Lagebild
+      - "8080:8080"                       # Technik-Checks
+    environment:
+      FIREFLY_CAT062_GROUP: "239.255.0.62"  # muss zu Firefly oben passen
+      FIREFLY_CAT062_PORT: "8600"
+    volumes:
+      - ./wayfinder.yaml:/app/wayfinder.yaml:ro   # Kartenausschnitt (nächster Schritt)
+    restart: unless-stopped
+```
+
+### Schritt 4.3 — Den Kartenausschnitt festlegen (`wayfinder.yaml`)
+
+Diese Datei legt fest, **wo** die Karte beim Start hinschaut. Anlegen:
+
+```bash
+nano wayfinder.yaml
+```
+
+Vollständiges Beispiel (Frankfurt — passt zum `frankfurt`-Szenario von Firefly):
+
+```yaml
+# ~/asd/start-einzelplatz/wayfinder.yaml
+# Kartenausschnitt beim Start. Alle Felder sind optional —
+# was Sie weglassen, behält seinen Standardwert.
+
+map:
+  center_lat: 50.0379    # Breitengrad des Kartenmittelpunkts (Frankfurt)
+  center_lon: 8.5622     # Längengrad des Kartenmittelpunkts
+  zoom: 8                # Zoomstufe: 8 = Region, 10 = Großraum, 12 = Platzrunde
+
+openaip:
+  radius_km: 185         # Umkreis für Lufträume/Navigationspunkte (185 km ≈ 100 NM)
+```
+
+> 📍 **Anderen Ort wählen?** Tragen Sie einfach andere Koordinaten ein. Beispiele:
+> München `48.1374 / 11.5755`, Hamburg `53.5511 / 9.9937`, Wien `48.2082 / 16.3738`.
+> Koordinaten finden Sie z. B., indem Sie in einer Kartensuche rechtsklicken.
+>
+> ⚠️ **Ehrliche Grenze:** Die Datei `wayfinder.yaml` kann **nur** den
+> Kartenausschnitt (`map`) und den OpenAIP-Radius (`openaip`) einstellen. **Alle
+> anderen** Einstellungen (Datenbank, Login, Sicherheit …) laufen über
+> Umgebungsvariablen im `environment:`-Block der `docker-compose.yml` — siehe
+> [Teil 8](#teil-8--konfigurationsreferenz).
+
+### Schritt 4.4 — Starten
+
+Jetzt steht alles bereit. Im selben Ordner (`~/asd/start-einzelplatz`):
+
+```bash
+docker compose up --build
+```
+
+Beim **ersten** Mal dauert das einige Minuten (Docker baut beide Programme).
+Lassen Sie das Fenster offen — hier laufen die Log-Meldungen. Wenn Zeilen wie
+`feed joined` / `listening on :8081` erscheinen, läuft es.
+
+### Schritt 4.5 — Das Lagebild öffnen
+
+Öffnen Sie im Browser: **<http://localhost:8081>**
+
+Sie sehen die dunkle Radar-Karte. Nach wenigen Sekunden tauchen die
+Test-Flugzeuge von Firefly auf, und oben links zeigt ein Banner **FEED OK**
+(grün).
+
+✅ **Fertig!** Zum **Beenden** klicken Sie ins Terminal-Fenster und drücken
+`Strg+C`. Zum erneuten Start genügt künftig `docker compose up` (ohne `--build`).
+
+---
+
+## Teil 5 — Mehrere Kunden (Multi-Tenant): Schritt für Schritt
+
+**Das richten wir hier ein:** Eine Plattform, auf der sich **mehrere Mandanten
+(Kunden)** mit **eigenem Login** anmelden — jeder sieht **nur** die Flugzeuge der
+Feeds, die ihm zugewiesen wurden. Dazu kommen drei neue Bausteine hinzu:
+
+| Baustein | Wozu |
+|----------|------|
+| **PostgreSQL-Datenbank** | Speichert Mandanten, Nutzer, Feeds, Berechtigungen |
+| **Login (`builtin`)** | Benutzername + Passwort, Session über ein Cookie |
+| **Admin-Oberfläche** (`/admin`) | Mandanten verwalten, Feeds zuweisen |
+
+> **Rollen, die es gibt:** `operator` (sieht nur das Lagebild), `tenant_admin`
+> (verwaltet den **eigenen** Mandanten), `super_admin` (verwaltet **alle**
+> Mandanten und weist Feeds zu). Sie legen zuerst **einen `super_admin`** an.
+
+### Schritt 5.1 — Steuerungsordner anlegen
+
+```bash
+mkdir -p ~/asd/start-plattform
+cd ~/asd/start-plattform
+```
+
+### Schritt 5.2 — Die Start-Datei `docker-compose.yml` anlegen
+
+```bash
+nano docker-compose.yml
+```
+
+Vollständiger Inhalt (Datenbank **+** Firefly **+** Wayfinder):
+
+```yaml
+# ~/asd/start-plattform/docker-compose.yml
+# Multi-Tenant-Aufbau: PostgreSQL + Firefly (Datenquelle) + Wayfinder.
+# Funktioniert auf macOS, Windows und Linux gleich.
+name: wayfinder-plattform
+
+networks:
+  asd:
+    driver: bridge
+
+volumes:
+  db-daten:        # damit die Datenbank einen Neustart übersteht
+
+services:
+  # 1) Die Datenbank.
+  db:
+    image: postgres:16-alpine
+    networks: [asd]
+    environment:
+      POSTGRES_USER: "wayfinder"
+      POSTGRES_PASSWORD: "wayfinder"     # für lokal ok; in Produktion ändern!
+      POSTGRES_DB: "wayfinder"
+    volumes:
+      - db-daten:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wayfinder"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # 2) Die Datenquelle (Test-Flugzeuge).
+  firefly:
+    build: ../firefly
+    networks: [asd]
+    environment:
+      FIREFLY_SCENE: "frankfurt"
       FIREFLY_CAT062_ENABLED: "true"
       FIREFLY_CAT062_GROUP: "239.255.0.62"
       FIREFLY_CAT062_PORT: "8600"
+    restart: unless-stopped
 
+  # 3) Die Karte + Plattform.
   wayfinder:
     build: ../wayfinder
-    networks: [adsb]
+    networks: [asd]
+    depends_on:
+      db:
+        condition: service_healthy        # erst starten, wenn die DB bereit ist
     ports:
       - "8081:8081"
       - "8080:8080"
     environment:
       FIREFLY_CAT062_GROUP: "239.255.0.62"
       FIREFLY_CAT062_PORT: "8600"
+      # --- Das schaltet den Multi-Tenant-Betrieb ein: ---
+      WAYFINDER_DB_URL: "postgres://wayfinder:wayfinder@db:5432/wayfinder?sslmode=disable"
+      WAYFINDER_AUTH_MODE: "builtin"      # Login mit Benutzername + Passwort
+      # Geheimer Schlüssel zum Signieren der Login-Cookies — UNBEDINGT ändern,
+      # mind. 32 zufällige Zeichen (z. B. Ausgabe von:  openssl rand -hex 32):
+      WAYFINDER_SESSION_KEY: "BITTE-AENDERN-mind-32-zufaellige-zeichen-einsetzen"
+    volumes:
+      - ./wayfinder.yaml:/app/wayfinder.yaml:ro
+    restart: unless-stopped
 ```
 
-### 5.2 Starten
+> 🔑 **Den Session-Schlüssel jetzt erzeugen:** Tippen Sie `openssl rand -hex 32`
+> ins Terminal, kopieren Sie die ausgegebene Zeichenkette und ersetzen Sie damit
+> den Platzhalter bei `WAYFINDER_SESSION_KEY`. Ohne gültigen Schlüssel startet der
+> `builtin`-Login nicht.
+
+### Schritt 5.3 — Den Kartenausschnitt anlegen (`wayfinder.yaml`)
+
+Genau wie im Einzelplatz-Fall:
 
 ```bash
-cd adsb-stack
-docker compose up
+nano wayfinder.yaml
 ```
 
-> **Hinweis:** Multicast-Routing in Docker Bridge-Netzwerken ist
-> implementierungsabhängig — bei Problemen auf Linux mit Host-Networking
-> ausweichen oder Firefly und Wayfinder als separate Prozesse (kein Docker)
-> auf demselben Host starten.
+```yaml
+# ~/asd/start-plattform/wayfinder.yaml
+map:
+  center_lat: 50.0379
+  center_lon: 8.5622
+  zoom: 8
+openaip:
+  radius_km: 185
+```
+
+### Schritt 5.4 — Den ersten Administrator anlegen (`bootstrap`)
+
+Eine frische Datenbank hat **noch keinen** Nutzer. Der eingebaute Befehl
+`bootstrap` legt den **ersten Mandanten + `super_admin`** an. Er startet die
+Datenbank automatisch mit und richtet das Schema ein.
+
+Geben Sie das **als einen Block** ein (das Passwort wird über eine Variable
+übergeben, damit es **nicht** in der Befehlsliste sichtbar ist):
+
+```bash
+WAYFINDER_BOOTSTRAP_PASSWORD='MeinAdminPasswort123' \
+docker compose run --rm \
+  -e WAYFINDER_BOOTSTRAP_PASSWORD \
+  wayfinder bootstrap \
+    -tenant platform \
+    -tenant-name "Plattform-Betreiber" \
+    -subject admin \
+    -role super_admin
+```
+
+Erwartete Ausgabe (sinngemäß):
+```
+created tenant "platform" (id=1)
+created user "admin" (id=1, role=super_admin)
+set builtin password for user "admin"
+```
+
+> 🔁 Der Befehl ist **idempotent** — Sie können ihn gefahrlos erneut ausführen
+> (z. B. um das Passwort neu zu setzen). Bestehende Mandanten/Nutzer werden
+> wiederverwendet.
+
+### Schritt 5.5 — Feeds in den Katalog aufnehmen
+
+Im Multi-Tenant-Betrieb werden die Datenquellen **in der Datenbank** verwaltet
+(nicht über die `docker-compose.yml`). Nehmen wir den Firefly-Feed auf:
+
+```bash
+docker compose run --rm wayfinder feed add \
+  -name "Frankfurt" \
+  -group 239.255.0.62 \
+  -port 8600 \
+  -sensor-mix PSR,SSR,ADS-B
+```
+
+Erwartete Ausgabe:
+```
+created feed "Frankfurt" (id=1) 239.255.0.62:8600
+```
+
+Den Katalog ansehen:
+```bash
+docker compose run --rm wayfinder feed list
+```
+
+> Der `-sensor-mix` beschreibt, welche Sensorarten der Feed liefert. Erlaubt sind
+> `PSR, SSR, MODE_S, ADS-B, MLAT, FLARM`. Gängige Schreibweisen werden automatisch
+> korrigiert (`ads-b` → `ADS-B`); **unbekannte** Klassen werden abgelehnt.
+
+### Schritt 5.6 — Alles starten
+
+```bash
+docker compose up -d --build
+```
+
+(`-d` = im Hintergrund. Logs ansehen mit `docker compose logs -f wayfinder`.)
+
+### Schritt 5.7 — Als Administrator anmelden
+
+Öffnen Sie **<http://localhost:8081/admin>** und melden Sie sich an:
+
+- **Benutzername:** `admin`
+- **Passwort:** das in Schritt 5.4 gewählte (`MeinAdminPasswort123`)
+
+Sie sehen die Admin-Oberfläche. Als `super_admin` haben Sie zusätzlich den
+**Provisioning-Bereich**, um Feeds an Mandanten zu vergeben.
+
+### Schritt 5.8 — Einen Kunden-Mandanten anlegen
+
+Für jeden Kunden legen Sie einen eigenen Mandanten mit eigenem Login an — wieder
+mit `bootstrap`, diesmal Rolle `tenant_admin`:
+
+```bash
+WAYFINDER_BOOTSTRAP_PASSWORD='KundePasswort456' \
+docker compose run --rm \
+  -e WAYFINDER_BOOTSTRAP_PASSWORD \
+  wayfinder bootstrap \
+    -tenant kunde-nord \
+    -tenant-name "Kunde Nord GmbH" \
+    -subject anna \
+    -role tenant_admin
+```
+
+### Schritt 5.9 — Dem Kunden einen Feed zuweisen
+
+Damit der neue Kunde Flugzeuge sieht, muss ihm ein Feed **zugewiesen** werden.
+Das darf nur ein `super_admin`. Zwei Wege:
+
+**Weg A — über die Admin-Oberfläche (empfohlen):** In `/admin` als `admin`
+angemeldet, im Provisioning-Bereich den Mandanten **„Kunde Nord GmbH"** wählen
+und ihm den Feed **„Frankfurt"** zuweisen.
+
+**Weg B — über die Befehlszeile (mit `curl`):** Zuerst Mandanten- und Feed-IDs
+herausfinden, dann zuweisen. (`{tenant-id}` / `feed_id` aus `feed list` bzw. der
+Admin-Liste.)
+
+```bash
+# Beispiel: Feed 1 dem Mandanten 2 zuweisen — als angemeldeter super_admin.
+curl -X POST http://localhost:8081/api/admin/tenants/2/subscriptions \
+  -H 'Content-Type: application/json' \
+  -d '{"feed_id":1}'
+```
+
+### Schritt 5.10 — Als Kunde anmelden und prüfen
+
+Melden Sie sich (am besten in einem **privaten Browserfenster**) unter
+**<http://localhost:8081/admin>** als `anna` an. Auf dem Lagebild
+(**<http://localhost:8081>**) sieht „Kunde Nord" nun **genau** die Flugzeuge des
+zugewiesenen Feeds — und **keine** anderen.
+
+✅ **Fertig!** Sie haben eine Multi-Tenant-Plattform aufgesetzt. Weitere Kunden:
+Schritte 5.8 + 5.9 wiederholen.
 
 ---
 
-## 6. Kubernetes / Cloud-Deployment
+## Teil 6 — Läuft es? — Verifikation
 
-Wayfinder ist ein **12-Factor-Service** und eignet sich direkt für
-Kubernetes-Deployment.
+Diese Prüfungen funktionieren in **beiden** Betriebsarten. Im Terminal:
 
-### 6.1 Image bauen und pushen
+### 6.1 Läuft der Dienst überhaupt? (Liveness)
+```bash
+curl -s http://localhost:8080/health
+# Erwartet:  ok
+```
+
+### 6.2 Kommen Daten an? (Readiness)
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8080/ready
+# 200 = Feed aktiv (mindestens ein Lebenszeichen empfangen)
+# 503 = Feed noch nie gesehen oder gerade ausgefallen
+```
+
+### 6.3 Im Browser
+Öffnen Sie **<http://localhost:8081>**. Die dunkle Karte erscheint sofort;
+Flugzeuge erscheinen, sobald Firefly sendet — erkennbar am grünen Banner
+**FEED OK** oben links.
+
+### 6.4 Zahlen/Metriken (optional)
+```bash
+curl -s http://localhost:8080/metrics | grep wayfinder_feed_stale
+# wayfinder_feed_stale 0   ← 0 bedeutet: Feed ist frisch/gesund
+```
+
+---
+
+## Teil 7 — Wenn etwas nicht geht — Fehlersuche
+
+| Symptom | Wahrscheinliche Ursache & Lösung |
+|---------|----------------------------------|
+| **Karte bleibt leer, keine Flugzeuge** | Läuft Firefly? `docker compose ps` zeigt alle Dienste als `running`. Logs prüfen: `docker compose logs firefly`. Stimmen `FIREFLY_CAT062_GROUP`/`_PORT` bei **beiden** Diensten überein? |
+| **`/ready` liefert 503** | Es kam noch kein Lebenszeichen (CAT065-Heartbeat). Normal direkt nach dem Start — ein paar Sekunden warten. Bleibt es 503: Firefly sendet nicht / Multicast kommt nicht an (siehe nächste Zeile). |
+| **Flugzeuge erscheinen nie, obwohl Firefly läuft** | Multicast wird im Container-Netz nicht durchgereicht. Stellen Sie sicher, dass Sie die **gemeinsame** Compose aus dieser Anleitung verwenden (Firefly **und** Wayfinder im selben `asd`-Netz). Trennen Sie sie nicht auf zwei Compose-Dateien. |
+| **`docker compose up` bricht mit Build-Fehler ab** | Erstes Bauen braucht Internet (lädt Abhängigkeiten). Verbindung prüfen, dann `docker compose build --no-cache` erneut versuchen. |
+| **`port is already allocated` (8081/8080 belegt)** | Ein anderer Dienst nutzt den Port. Anderen Port abbilden, z. B. `"9091:8081"`, dann `http://localhost:9091` öffnen. |
+| **Mac: Docker-Befehle hängen / „Cannot connect to the Docker daemon"** | Docker Desktop ist nicht gestartet. Docker aus dem Launchpad öffnen, warten bis das Wal-Symbol ruhig steht. |
+| **Multi-Tenant: Login schlägt fehl (401)** | Passwort falsch, **oder** `WAYFINDER_SESSION_KEY` fehlt/ist zu kurz. Schlüssel setzen (`openssl rand -hex 32`), Container neu starten, `bootstrap` ggf. erneut ausführen. |
+| **Multi-Tenant: Kunde sieht keine Flugzeuge** | Dem Mandanten wurde **kein Feed zugewiesen** (Schritt 5.9) — fail-closed ist Absicht. Zuweisung als `super_admin` nachholen. |
+| **Logs ansehen** | `docker compose logs -f wayfinder` (live mitlaufen, `Strg+C` beendet die Anzeige, **nicht** den Dienst). |
+| **Alles sauber neu aufsetzen** | `docker compose down -v` löscht Container **und** die Datenbank-Daten (`-v`!). Danach bei Teil 4/5 neu beginnen. |
+
+---
+
+## Teil 8 — Konfigurationsreferenz
+
+Konfiguriert wird über **Umgebungsvariablen** (im `environment:`-Block der
+`docker-compose.yml`) und optional über die **YAML-Datei** `wayfinder.yaml` (nur
+`map` + `openaip`). **Umgebungsvariablen gewinnen immer** (12-Factor).
+
+### 8.1 Netzwerk & Feed
+
+| Variable | Default | Beschreibung |
+|----------|---------|--------------|
+| `FIREFLY_CAT062_GROUP` | `239.255.0.62` | UDP-Multicast-Gruppe für den CAT062/CAT065-Eingang |
+| `FIREFLY_CAT062_PORT` | `8600` | UDP-Port des Multicast-Stroms |
+| `WAYFINDER_FEED_ID` | `0` | Katalog-Feed-ID dieses Einzel-Feeds (Single-Tenant). Im Multi-Feed-Betrieb liefert der DB-Katalog die IDs. |
+| `WAYFINDER_PROBE_PORT` | `8080` | Port für `/health`, `/ready`, `/metrics` |
+| `WAYFINDER_FEED_STALE_TIMEOUT` | `3` | Sekunden ohne Lebenszeichen, ab denen der Feed als „stale" gilt |
+
+### 8.2 Karte & Darstellung
+
+| Variable | Default | Beschreibung |
+|----------|---------|--------------|
+| `WAYFINDER_MAP_CENTER_LAT` | `50.0379` | Breitengrad des Kartenstartzentrums (Frankfurt) |
+| `WAYFINDER_MAP_CENTER_LON` | `8.5622` | Längengrad des Kartenstartzentrums |
+| `WAYFINDER_MAP_ZOOM` | `8` | Anfangs-Zoom (1–22) |
+| `WAYFINDER_MAP_THEME` | `dark` | `dark` (CARTO Dark, schlüsselfrei) oder `osm` (OpenStreetMap-Raster) |
+| `WAYFINDER_MAP_STYLE_URL` | *(leer)* | Vollständige MapLibre-Style-URL — überschreibt `WAYFINDER_MAP_THEME` |
+
+> Dieselben drei `map`-Werte lassen sich auch in `wayfinder.yaml` setzen (siehe
+> Schritt 4.3). Die Umgebungsvariable gewinnt, falls beides gesetzt ist.
+
+### 8.3 Aeronautische Daten (OpenAIP, optional)
+
+Ohne `WAYFINDER_OPENAIP_API_KEY` ist das Feature aus (Warn-Log, kein Fehler).
+
+| Variable | Default | Beschreibung |
+|----------|---------|--------------|
+| `WAYFINDER_OPENAIP_API_KEY` | *(leer)* | OpenAIP-API-Schlüssel; leer = Feature aus |
+| `WAYFINDER_OPENAIP_RADIUS_KM` | `250` | Umkreis um das Kartenzentrum für Luftraum-/Navaid-Abfragen (auch via `wayfinder.yaml` → `openaip.radius_km`) |
+| `WAYFINDER_OPENAIP_REFRESH` | `24h` | Aktualisierungsintervall (`1h`, `30m`, `24h`) |
+| `WAYFINDER_OPENAIP_BASE_URL` | *(intern)* | Override der OpenAIP-Basis-URL (Tests/Proxies) |
+
+### 8.4 Sicherheit (Browser-Rand)
+
+| Variable | Default | Beschreibung |
+|----------|---------|--------------|
+| `WAYFINDER_ALLOWED_ORIGINS` | *(leer)* | Kommaliste erlaubter Cross-Origin-Domains für `/ws`. Leer = nur Same-Origin |
+| `WAYFINDER_AUTH_TOKEN` | *(leer)* | Bearer-Token für den Browser-Rand (Single-Tenant). Leer = kein Token-Check (Warn-Log). Prüfung via `Authorization: Bearer <token>` oder `?token=<token>` |
+| `WAYFINDER_TLS_CERT` | *(leer)* | Pfad zum TLS-Zertifikat (PEM). Nur aktiv, wenn beide TLS-Werte gesetzt sind |
+| `WAYFINDER_TLS_KEY` | *(leer)* | Pfad zum TLS-Schlüssel (PEM) |
+
+### 8.5 Multi-Mandanten (nur Multi-Tenant)
+
+Multi-Tenancy ist **nur aktiv, wenn `WAYFINDER_DB_URL` gesetzt ist**. Ohne diese
+Variable läuft Wayfinder als Single-Tenant-ASD (keine DB, keine Login-Pflicht).
+Mit gesetzter DB werden die Schema-Migrationen beim Start angewandt und `/ws` ist
+durch die Mandanten-Middleware geschützt (fail-closed: ohne gültigen, einem
+Mandanten zugeordneten Nutzer → `401`).
+
+| Variable | Default | Beschreibung |
+|----------|---------|--------------|
+| `WAYFINDER_DB_URL` | *(leer)* | PostgreSQL-DSN, z. B. `postgres://user:pass@host:5432/wayfinder?sslmode=disable`. Leer = Single-Tenant |
+| `WAYFINDER_AUTH_MODE` | `none` | `builtin` (eingebaute Nutzer + Session-Cookie), `proxy` (OIDC-Token vom Reverse-Proxy) oder `none` (festes Subject, nur mit Netz-Isolation) |
+| `WAYFINDER_SESSION_KEY` | *(leer)* | `builtin`: HMAC-Schlüssel zum Signieren der Session-Cookies (**Pflicht** im builtin-Modus; ≥ 32 zufällige Zeichen) |
+| `WAYFINDER_SESSION_COOKIE` | `wf_session` | `builtin`: Name der Session-Cookie |
+| `WAYFINDER_SESSION_TTL` | `12h` | `builtin`: Session-Lebensdauer (`8h`, `12h` …) |
+| `WAYFINDER_NONE_SUBJECT` | `default` | `none`: festes Subject, das jeder Anfrage zugeordnet wird |
+| `WAYFINDER_OIDC_ISSUER` | *(leer)* | `proxy`: OIDC-Issuer-URL (Pflicht im proxy-Modus) |
+| `WAYFINDER_OIDC_AUDIENCE` | *(leer)* | `proxy`: erwartete Audience/Client-ID (Pflicht im proxy-Modus) |
+
+#### Befehl `bootstrap` — ersten Mandanten/Nutzer anlegen
+
+| Flag / Variable | Default | Beschreibung |
+|-----------------|---------|--------------|
+| `-tenant` | *(Pflicht)* | Mandanten-Slug (eindeutig, z. B. `kunde-nord`) |
+| `-tenant-name` | = Slug | Anzeigename des Mandanten |
+| `-subject` | *(Pflicht)* | Benutzername (builtin) bzw. OIDC-Subject (proxy) |
+| `-email` | *(leer)* | optionale E-Mail |
+| `-role` | `tenant_admin` | `operator` \| `tenant_admin` \| `super_admin` |
+| `-password` | *(leer)* | builtin-Passwort (besser über `WAYFINDER_BOOTSTRAP_PASSWORD`) |
+| `WAYFINDER_BOOTSTRAP_PASSWORD` | *(leer)* | builtin-Passwort (bevorzugt — **nicht** in der Prozessliste sichtbar) |
+
+#### Befehl `feed add` / `feed list` — Feed-Katalog pflegen
+
+| Flag | Default | Beschreibung |
+|------|---------|--------------|
+| `-name` | *(Pflicht)* | Anzeigename des Feeds |
+| `-group` | *(Pflicht)* | Multicast-Gruppe, z. B. `239.255.0.62` |
+| `-port` | `8600` | Multicast-Port |
+| `-region` | *(leer)* | Regions-Label (optional) |
+| `-sensor-mix` | *(leer)* | Kommaliste aus `PSR,SSR,MODE_S,ADS-B,MLAT,FLARM`; gängige Schreibweisen werden normalisiert, Unbekanntes abgelehnt |
+
+#### Admin-Oberfläche & Admin-API
+
+- **`/admin`** (Browser): Verwaltungsoberfläche (eigene View, ersetzt die Karte).
+  Geschützt durch das Rollen-Gate; die Rollen-Probe liegt auf
+  `GET /api/admin/whoami` (`tenant_admin`/`super_admin`, sonst `403`). Der
+  Provisioning-Bereich ist nur für `super_admin` sichtbar.
+- **`/api/admin/*`** (REST): tenant-skopiert — ein `tenant_admin` verwaltet **nur**
+  die **eigene** Konfiguration. Die Mandanten-ID kommt **immer aus der angemeldeten
+  Identität**.
+
+| Methode + Pfad | Wirkung | Rolle |
+|---|---|---|
+| `GET /api/admin/whoami` | Eigene Identität/Rolle (Rollen-Probe) | admin |
+| `GET /api/admin/view` · `PUT /api/admin/view` | Eigene Sicht (Zentrum/Zoom/AOI/FL) lesen/setzen | admin |
+| `GET /api/admin/subscriptions` | Eigene abonnierte Feeds | admin |
+| `GET /api/admin/feeds` | Feed-Katalog (read-only) | admin |
+| `GET /api/admin/tenants` | Alle Mandanten | super_admin |
+| `POST /api/admin/tenants/{id}/subscriptions` | Feed zuweisen (`{"feed_id":…}`), idempotent | super_admin |
+| `DELETE /api/admin/tenants/{id}/subscriptions/{feedID}` | Feed entziehen | super_admin |
+
+> 🔒 **Mandanten-Isolation:** Ein `/ws`-Client sieht **nur** Tracks aus den Feeds,
+> die sein Mandant **abonniert** hat. Kein Abo → keine Tracks (fail-closed).
+> Zusätzlich greift ein optionaler **Sicht-Filter** (Interessensgebiet/AOI +
+> Flugflächen-Band aus `view_configs`): Tracks außerhalb verlassen den Server gar
+> nicht. **fail-open:** ein Track ohne gemessene Flugfläche wird trotzdem
+> zugestellt (nie ein reales Flugzeug verschlucken).
+>
+> 📝 **Audit-Log:** Jeder `/ws`-Connect erzeugt ein strukturiertes Log-Event
+> (`component=audit`, `event=ws_connect`) mit Mandant, Nutzer und aufgelöstem
+> Scope — der Compliance-Nachweis „wer sah welchen Scope". Es geht in den normalen
+> Log-Strom (JSON auf `stderr`); zur Aufbewahrung in eine externe Log-Senke leiten.
+
+### 8.6 Radarabdeckungs-Overlay (optional, Paket 6)
+
+Sensor-Positionen/-Reichweiten für die Coverage-Ringe. `N` = 1, 2, 3, … (max. 20),
+lückenlos beginnend.
+
+| Variable | Default | Beschreibung |
+|----------|---------|--------------|
+| `WAYFINDER_COVERAGE_SENSOR_N_LAT` | *(leer)* | Breitengrad des Radarstandorts |
+| `WAYFINDER_COVERAGE_SENSOR_N_LON` | *(leer)* | Längengrad des Radarstandorts |
+| `WAYFINDER_COVERAGE_SENSOR_N_MAX_RANGE_M` | *(leer)* | Max. Reichweite in Metern (Pflicht; 0 = überspringen) |
+| `WAYFINDER_COVERAGE_SENSOR_N_MIN_RANGE_M` | `0` | Innerer Blindbereich in Metern |
+| `WAYFINDER_COVERAGE_SENSOR_N_LABEL` | *(leer)* | Tooltip-Bezeichnung |
+| `WAYFINDER_COVERAGE_RING_COLOR` | `#5B8DEF` | Farbe aller Ringe (CSS-Hex) |
+
+### 8.7 Betrieb
+
+| Variable | Default | Beschreibung |
+|----------|---------|--------------|
+| `WAYFINDER_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` (ungültig → `info`) |
+| `WAYFINDER_CONFIG_FILE` | `wayfinder.yaml` | Pfad zur optionalen YAML-Datei. Fehlende Datei ist nicht fatal |
+
+### 8.8 Vollständige `wayfinder.yaml`
+
+```yaml
+# wayfinder.yaml — die einzigen unterstützten Felder.
+# Alle anderen Einstellungen laufen über Umgebungsvariablen (siehe oben).
+map:
+  center_lat: 50.0379    # Breitengrad des Startzentrums
+  center_lon: 8.5622     # Längengrad des Startzentrums
+  zoom: 8                # Anfangs-Zoom (1–22)
+openaip:
+  radius_km: 250         # Umkreis für aeronautische Daten (km)
+```
+
+---
+
+## Teil 9 — Produktionsbetrieb
+
+Wayfinder ist ein **12-Factor-Service** und eignet sich direkt für Kubernetes.
+Die folgenden Hinweise richten sich an Betriebs-/IT-Teams.
+
+### 9.1 Image bauen und pushen
 
 ```bash
+cd ~/asd/wayfinder
 docker build -t your-registry/wayfinder:latest .
 docker push your-registry/wayfinder:latest
 ```
 
-### 6.2 Deployment-Hinweise
+### 9.2 Eigenständiger Build ohne Docker (optional)
 
-- **UDP-Multicast** ist in Cloud-Netzwerken (AWS VPC, GCP VPC) standardmäßig
-  blockiert. Wayfinder muss im selben Subnetz wie Firefly laufen, und das
-  Netzwerk muss Multicast-Traffic (Gruppe `239.255.0.62`, Port UDP/8600)
-  zulassen. Alternativ: Firefly und Wayfinder als Sidecar-Container im selben
-  Pod (localhost-Multicast).
-- **Health- und Readiness-Probes** auf Port 8080:
-  ```yaml
-  livenessProbe:
-    httpGet:
-      path: /health
-      port: 8080
-    initialDelaySeconds: 5
-    periodSeconds: 10
-  readinessProbe:
-    httpGet:
-      path: /ready
-      port: 8080
-    initialDelaySeconds: 3
-    periodSeconds: 5
-    failureThreshold: 6
-  ```
-- **Konfiguration** ausschließlich über Umgebungsvariablen (keine Secrets in
-  ConfigMaps — `WAYFINDER_AUTH_TOKEN` als Kubernetes-Secret einbinden).
-- **Graceful Shutdown**: Wayfinder reagiert auf `SIGINT`/`SIGTERM` und
-  schließt alle Verbindungen sauber. `terminationGracePeriodSeconds: 10`
-  genügt.
-- **Logs**: Strukturiertes JSON auf stderr — direkt von Fluentd/Loki/CloudWatch
-  konsumierbar.
+```bash
+# Backend (statisches Binary)
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o wayfinder ./cmd/wayfinder
 
-### 6.3 Minimalbeispiel: Kubernetes-Deployment
+# Frontend (nur nach Änderungen am Frontend-Code nötig; dist/ ist eingecheckt)
+cd frontend && npm install && npm run build && cd ..
+```
+Voraussetzungen dafür: Go 1.23+ und Node.js 18 LTS+.
+
+### 9.3 Host-Netzwerk-Variante (nur Linux)
+
+Im **Produktionsbetrieb auf Linux** mit einer **echten externen** CAT062-Quelle
+ist `network_mode: host` der direkteste Weg (kein Bridge-Multicast nötig). Diese
+Variante funktioniert **nicht** auf macOS/Windows (Docker-VM). Eine
+minimale `docker-compose.yml`:
+
+```yaml
+name: wayfinder-host
+services:
+  wayfinder:
+    image: your-registry/wayfinder:latest
+    network_mode: host          # nur Linux!
+    environment:
+      FIREFLY_CAT062_GROUP: "239.255.0.62"
+      FIREFLY_CAT062_PORT: "8600"
+      WAYFINDER_MAP_CENTER_LAT: "50.0379"
+      WAYFINDER_MAP_CENTER_LON: "8.5622"
+      WAYFINDER_MAP_ZOOM: "8"
+    restart: unless-stopped
+```
+
+### 9.4 Kubernetes-Hinweise
+
+- **UDP-Multicast** ist in Cloud-Netzen (AWS/GCP VPC) i. d. R. blockiert. Wayfinder
+  muss im selben Subnetz wie die Quelle laufen, oder Quelle + Wayfinder als
+  Sidecars im selben Pod (localhost-Multicast).
+- **Health/Readiness-Probes** auf Port 8080 (`/health`, `/ready`).
+- **Secrets** (`WAYFINDER_AUTH_TOKEN`, `WAYFINDER_SESSION_KEY`, `WAYFINDER_DB_URL`)
+  als Kubernetes-Secret einbinden — **nicht** in ConfigMaps.
+- **Graceful Shutdown:** reagiert auf `SIGINT`/`SIGTERM`;
+  `terminationGracePeriodSeconds: 10` genügt.
+- **Logs:** strukturiertes JSON auf `stderr` (Fluentd/Loki/CloudWatch).
 
 ```yaml
 apiVersion: apps/v1
@@ -312,12 +801,10 @@ metadata:
 spec:
   replicas: 1
   selector:
-    matchLabels:
-      app: wayfinder
+    matchLabels: { app: wayfinder }
   template:
     metadata:
-      labels:
-        app: wayfinder
+      labels: { app: wayfinder }
     spec:
       containers:
         - name: wayfinder
@@ -334,321 +821,20 @@ spec:
               value: "info"
             - name: WAYFINDER_AUTH_TOKEN
               valueFrom:
-                secretKeyRef:
-                  name: wayfinder-secrets
-                  key: auth-token
+                secretKeyRef: { name: wayfinder-secrets, key: auth-token }
           livenessProbe:
-            httpGet:
-              path: /health
-              port: 8080
+            httpGet: { path: /health, port: 8080 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
           readinessProbe:
-            httpGet:
-              path: /ready
-              port: 8080
+            httpGet: { path: /ready, port: 8080 }
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            failureThreshold: 6
 ```
 
 ---
 
-## 7. Konfigurationsreferenz
-
-Konfiguration erfolgt über **Umgebungsvariablen** (höchste Priorität) und
-optional über eine **YAML-Datei** (`wayfinder.yaml` im Arbeitsverzeichnis,
-Pfad überschreibbar via `WAYFINDER_CONFIG_FILE`). Env-Vars gewinnen immer.
-
-### 7.1 Netzwerk & Feed
-
-| Variable | Default | Beschreibung |
-|----------|---------|--------------|
-| `FIREFLY_CAT062_GROUP` | `239.255.0.62` | UDP-Multicast-Gruppe für CAT062/CAT065-Eingang |
-| `FIREFLY_CAT062_PORT` | `8600` | UDP-Port des Multicast-Stroms |
-| `WAYFINDER_FEED_ID` | `0` | Katalog-Feed-ID dieses Einzel-Feeds (WF2-20); wird auf jeden Track gestempelt (`feed_id` im WS-Strom). `0` = Single-Tenant. Im Multi-Feed-Modus (WF2-20.2) liefert der DB-Katalog die Feed-IDs. |
-| `WAYFINDER_PROBE_PORT` | `8080` | Port für `/health`, `/ready`, `/metrics` |
-| `WAYFINDER_FEED_STALE_TIMEOUT` | `3` | Sekunden ohne CAT065-Heartbeat, ab denen der Feed als stale gilt |
-
-### 7.2 Karte & Darstellung
-
-| Variable | Default | Beschreibung |
-|----------|---------|--------------|
-| `WAYFINDER_MAP_CENTER_LAT` | `50.0379` | Latitude des Karten-Startzentrums (Frankfurt) |
-| `WAYFINDER_MAP_CENTER_LON` | `8.5622` | Longitude des Karten-Startzentrums |
-| `WAYFINDER_MAP_ZOOM` | `8` | Initialer Zoom-Level (1–22) |
-| `WAYFINDER_MAP_THEME` | `dark` | Karten-Theme: `dark` (CARTO Dark, schlüsselfrei) oder `osm` (OpenStreetMap-Raster) |
-| `WAYFINDER_MAP_STYLE_URL` | *(leer)* | Vollständige MapLibre-Style-URL — überschreibt `WAYFINDER_MAP_THEME` |
-
-### 7.3 Aeronautische Daten (OpenAIP)
-
-Alle Variablen dieser Gruppe sind optional. Ohne `WAYFINDER_OPENAIP_API_KEY`
-ist das Feature deaktiviert (Warn-Log, keine Fehlermeldung an den Client).
-
-| Variable | Default | Beschreibung |
-|----------|---------|--------------|
-| `WAYFINDER_OPENAIP_API_KEY` | *(leer)* | OpenAIP-API-Schlüssel; leer = Feature aus |
-| `WAYFINDER_OPENAIP_RADIUS_KM` | `250` | Radius um das Kartenzentrum für Luftraum-/Navaid-Abfragen |
-| `WAYFINDER_OPENAIP_REFRESH` | `24h` | Refresh-Intervall (Go-Duration-Format: `1h`, `30m`, `24h`) |
-| `WAYFINDER_OPENAIP_BASE_URL` | *(intern)* | Override der OpenAIP-Basis-URL (für Tests/Proxies) |
-
-### 7.5 Radarabdeckungs-Overlay (Paket 6)
-
-Sensor-Positionen und -Reichweiten für das Coverage-Ring-Overlay. N = 1, 2, 3, …
-(max. 20); die Reihe muss lückenlos beginnen — fehlende N=2 stoppt die Auswertung.
-
-| Variable | Default | Beschreibung |
-|----------|---------|--------------|
-| `WAYFINDER_COVERAGE_SENSOR_N_LAT` | *(leer)* | Breitengrad des Radarstandorts (Dezimalgrad WGS84) |
-| `WAYFINDER_COVERAGE_SENSOR_N_LON` | *(leer)* | Längengrad des Radarstandorts (Dezimalgrad WGS84) |
-| `WAYFINDER_COVERAGE_SENSOR_N_MAX_RANGE_M` | *(leer)* | Maximale Reichweite in Metern (Pflicht; 0 = Sensor überspringen) |
-| `WAYFINDER_COVERAGE_SENSOR_N_MIN_RANGE_M` | `0` | Innerer Blindbereich in Metern (0 = kein Blindbereich) |
-| `WAYFINDER_COVERAGE_SENSOR_N_LABEL` | *(leer)* | Tooltip-Bezeichnung des Radars |
-| `WAYFINDER_COVERAGE_RING_COLOR` | `#5B8DEF` | Farbe aller Radarringe (CSS-Hex-Farbe) |
-
-**Beispiel (Frankfurt-Konfiguration):**
-```
-WAYFINDER_COVERAGE_SENSOR_1_LAT=50.0379
-WAYFINDER_COVERAGE_SENSOR_1_LON=8.5622
-WAYFINDER_COVERAGE_SENSOR_1_MAX_RANGE_M=120000
-WAYFINDER_COVERAGE_SENSOR_1_LABEL=Frankfurt-Center
-
-WAYFINDER_COVERAGE_SENSOR_2_LAT=50.0849
-WAYFINDER_COVERAGE_SENSOR_2_LON=8.0638
-WAYFINDER_COVERAGE_SENSOR_2_MAX_RANGE_M=100000
-WAYFINDER_COVERAGE_SENSOR_2_LABEL=Frankfurt-West
-
-WAYFINDER_COVERAGE_SENSOR_3_LAT=50.3558
-WAYFINDER_COVERAGE_SENSOR_3_LON=9.0009
-WAYFINDER_COVERAGE_SENSOR_3_MAX_RANGE_M=100000
-WAYFINDER_COVERAGE_SENSOR_3_LABEL=Frankfurt-Nordost
-```
-
-Die Werte müssen mit den Sensor-Positionen in Fireflys Konfiguration übereinstimmen.
-Ohne konfigurierte Sensoren bleibt das Feature deaktiviert (kein Fehler).
-
-### 7.4 Sicherheit
-
-| Variable | Default | Beschreibung |
-|----------|---------|--------------|
-| `WAYFINDER_ALLOWED_ORIGINS` | *(leer)* | Kommaseparierte Liste erlaubter Cross-Origin-Domains für `/ws`, z. B. `https://asd.example.com`. Leer = nur Same-Origin. |
-| `WAYFINDER_AUTH_TOKEN` | *(leer)* | Bearer-Token für den Browser-Rand. Leer = kein Token-Check (Warn-Log). Prüfung via `Authorization: Bearer <token>` oder `?token=<token>`. |
-| `WAYFINDER_TLS_CERT` | *(leer)* | Pfad zum TLS-Zertifikat (PEM). Nur aktiv, wenn beide Werte gesetzt sind. |
-| `WAYFINDER_TLS_KEY` | *(leer)* | Pfad zum TLS-Schlüssel (PEM). |
-
-### Multi-Mandanten (Wayfinder 2.0)
-
-Multi-Tenancy ist **nur aktiv, wenn `WAYFINDER_DB_URL` gesetzt ist**. Ohne diese
-Variable läuft Wayfinder als Single-Tenant-ASD (kein Datenbank-Zugriff, keine
-Tenant-Middleware — wie bisher). Mit gesetzter DB werden die Schema-Migrationen
-beim Start angewandt und `/ws` durch die Tenant-Middleware geschützt (fail-closed:
-ohne gültigen, einem Mandanten zugeordneten Nutzer → `401`).
-
-| Variable | Default | Beschreibung |
-|----------|---------|--------------|
-| `WAYFINDER_DB_URL` | *(leer)* | PostgreSQL-DSN (z. B. `postgres://user:pass@host:5432/wayfinder`). Leer = Single-Tenant, keine DB. |
-| `WAYFINDER_AUTH_MODE` | `none` | `proxy` (OIDC-Token vom Reverse-Proxy validieren), `builtin` (eingebaute Nutzer + Session-Cookie) oder `none` (fixes Subject, nur mit Netz-Isolation). |
-| `WAYFINDER_OIDC_ISSUER` | *(leer)* | `proxy`: OIDC-Issuer-URL (Discovery/JWKS). Pflicht im proxy-Modus. |
-| `WAYFINDER_OIDC_AUDIENCE` | *(leer)* | `proxy`: erwartete Audience (Client-ID). Pflicht im proxy-Modus. |
-| `WAYFINDER_SESSION_KEY` | *(leer)* | `builtin`: HMAC-Schlüssel zum Signieren der Session-Cookies. Pflicht im builtin-Modus. |
-| `WAYFINDER_SESSION_COOKIE` | `wf_session` | `builtin`: Name der Session-Cookie. |
-| `WAYFINDER_SESSION_TTL` | `12h` | `builtin`: Session-Lebensdauer (Go-Duration, z. B. `8h`). |
-| `WAYFINDER_NONE_SUBJECT` | `default` | `none`: festes Subject, das jeder Anfrage zugeordnet wird. |
-
-> ℹ️ **builtin-Login:** `POST /api/login` mit `{"subject":"…","password":"…"}` →
-> setzt bei Erfolg eine HttpOnly-Session-Cookie (sonst `401`); `POST /api/logout`
-> löscht sie. Passwörter werden als argon2id-Hash gespeichert; Nutzer und
-> Passwörter legt der Admin-Bootstrap (WF2-13) an. Der **proxy-Modus** braucht
-> keinen Login (der vorgelagerte OIDC-Proxy authentifiziert).
-
-#### Admin-Bootstrap (ersten Mandanten/Nutzer anlegen)
-
-Ein frisch aufgesetztes Multi-Mandanten-Deployment hat zunächst **keinen** Nutzer.
-Der Subcommand `wayfinder bootstrap` legt den ersten Mandanten + Admin-Nutzer (und
-im builtin-Modus dessen Passwort) an. Er liest `WAYFINDER_DB_URL`, wendet die
-Migrationen an und ist **idempotent** (mehrfach ausführbar — vorhandener Mandant/
-Nutzer wird wiederverwendet, das Passwort wird neu gesetzt):
-
-```bash
-# proxy-Modus: nur Mandant + Nutzer (das OIDC-subject mappt auf den Nutzer)
-WAYFINDER_DB_URL=postgres://… wayfinder bootstrap \
-    -tenant acme -tenant-name "ACME Air" -subject alice@example.com -role tenant_admin
-
-# builtin-Modus: zusätzlich ein Passwort (über ENV, nicht als Flag — Flags sind
-# in der Prozessliste sichtbar)
-WAYFINDER_DB_URL=postgres://… WAYFINDER_BOOTSTRAP_PASSWORD='…' \
-    wayfinder bootstrap -tenant acme -subject admin -role tenant_admin
-```
-
-| Flag / Variable | Default | Beschreibung |
-|-----------------|---------|--------------|
-| `-tenant` | *(Pflicht)* | Mandanten-Slug (eindeutig). |
-| `-tenant-name` | = Slug | Anzeigename des Mandanten. |
-| `-subject` | *(Pflicht)* | OIDC-Subject (proxy) bzw. Benutzername (builtin) des Admins. |
-| `-email` | *(leer)* | Optionale E-Mail. |
-| `-role` | `tenant_admin` | `operator` \| `tenant_admin` \| `super_admin`. |
-| `-password` | *(leer)* | builtin-Passwort (besser über `WAYFINDER_BOOTSTRAP_PASSWORD`). |
-| `WAYFINDER_BOOTSTRAP_PASSWORD` | *(leer)* | builtin-Passwort (bevorzugt; nicht in der Prozessliste sichtbar). |
-
-> 🔒 **`/admin` (Browser-Route, WF2-32):** Bei aktiver Multi-Tenancy ist `/admin`
-> die **Admin-Oberfläche** (Vue-SPA, History-Mode) — eine **eigenständige View**,
-> die die ASD-Karte vollständig ersetzt (kein Overlay; die Karte wird unmounted).
-> Der Server liefert für unbekannte Pfade die SPA-Shell aus (`webui.Handler`-
-> Fallback), sodass Deep-Links wie `/admin` einen Reload überleben. Die Oberfläche
-> konsumiert das Admin-API und ist durch dessen Rollen-Gate geschützt; die Rollen-
-> Probe liegt auf `GET /api/admin/whoami` (`tenant_admin`/`super_admin`, sonst
-> `403`). Der Provisioning-Bereich ist nur für `super_admin` sichtbar (kosmetisch —
-> der Server erzwingt es unabhängig).
-
-#### Admin-API (WF2-31)
-
-Hinter demselben Rollen-Gate (`tenant_admin`/`super_admin`) liegt ein
-**tenant-skopiertes REST-API** unter `/api/admin/*`. Die Mandanten-ID kommt
-**immer aus der angemeldeten Identität** — ein Admin verwaltet nur die **eigene**
-Mandanten-Konfiguration.
-
-| Methode + Pfad | Wirkung |
-|---|---|
-| `GET /api/admin/whoami` | Eigene Identität/Rolle als JSON (Rollen-Probe der SPA). |
-| `GET /api/admin/view` | Eigene effektive Sicht (Zentrum/Zoom/AOI/FL/Layer); `404` wenn keine gesetzt. |
-| `PUT /api/admin/view` | Eigene Tenant-Default-Sicht setzen (server-validiert; `400` bei ungültig). |
-| `GET /api/admin/subscriptions` | Eigene abonnierte Feeds. |
-| `GET /api/admin/feeds` | Feed-Katalog (read-only). |
-
-Beispiel:
-
-```bash
-curl -X PUT https://asd.example.com/api/admin/view \
-  -H 'Content-Type: application/json' \
-  -d '{"center_lat":50.1,"center_lon":8.7,"zoom":9,
-       "aoi":{"min_lat":49,"min_lon":8,"max_lat":51,"max_lon":10},
-       "fl_min":100,"fl_max":300}'
-```
-
-> **Live-Apply (WF2-33):** Eine View- oder Abo-Änderung wirkt **sofort auch auf
-> bestehende** `/ws`-Verbindungen des Mandanten — der Scope wird live nachgezogen,
-> **ohne Reconnect**. Verkleinert sich dabei die AOI, sendet der Server für nun
-> außenliegende Tracks einfach keine Updates mehr (kein Lösch-Signal); das Frontend
-> lässt sie über den regulären Coast/Drop-Timeout auslaufen.
-
-**Provisioning (nur `super_admin`, cross-tenant, WF2-31b):** Feed-Zugänge werden
-über das API gegrantet/entzogen — die Ziel-Mandanten-ID steht im **Pfad** (nicht in
-der Identity). Nur `super_admin` darf diese Routen (sonst `403`):
-
-| Methode + Pfad | Wirkung |
-|---|---|
-| `GET /api/admin/tenants` | Alle Mandanten. |
-| `GET /api/admin/tenants/{tenantID}/subscriptions` | Abos eines Mandanten. |
-| `POST /api/admin/tenants/{tenantID}/subscriptions` | Feed granten (`{"feed_id":…}`), idempotent. |
-| `DELETE /api/admin/tenants/{tenantID}/subscriptions/{feedID}` | Feed entziehen. |
-
-```bash
-# Feed 3 dem Mandanten 5 zuweisen (super_admin)
-curl -X POST https://asd.example.com/api/admin/tenants/5/subscriptions \
-  -H 'Content-Type: application/json' -d '{"feed_id":3}'
-```
-
-#### Feed-Katalog & Multi-Feed-Empfang (WF2-20)
-
-Im Multi-Mandanten-Betrieb empfängt Wayfinder **mehrere Feeds** gleichzeitig: der
-`feeds`-Katalog in der DB treibt **einen Receiver je Feed** (je eigene
-Multicast-Gruppe/Port); jeder Track wird mit seiner Katalog-`feed_id` gestempelt
-(Basis für die mandanten-skopierte Zustellung, WF2-21). Bis die Admin-API existiert
-(WF2-31), wird der Katalog über das `feed`-Subcommand gepflegt:
-
-```bash
-# Feed in den Katalog aufnehmen
-WAYFINDER_DB_URL=postgres://… wayfinder feed add \
-    -name Frankfurt -group 239.255.0.62 -port 8600 -sensor-mix PSR,SSR,ADS-B
-
-# Katalog anzeigen
-WAYFINDER_DB_URL=postgres://… wayfinder feed list
-```
-
-| Flag | Default | Beschreibung |
-|------|---------|--------------|
-| `-name` | *(Pflicht)* | Anzeigename des Feeds. |
-| `-group` | *(Pflicht)* | Multicast-Gruppe, z. B. `239.255.0.62`. |
-| `-port` | `8600` | Multicast-Port. |
-| `-region` | *(leer)* | Regions-Label (optional). |
-| `-sensor-mix` | *(leer)* | Kommaseparierter Sensor-Mix aus dem kontrollierten Vokabular `PSR,SSR,MODE_S,ADS-B,MLAT,FLARM` (WF2-41). Gängige Schreibweisen werden kanonisiert (`ads-b`→`ADS-B`); **unbekannte Klassen werden abgewiesen** (Feed wird nicht angelegt). |
-
-> ℹ️ **Fallback:** Ist der Katalog leer (oder läuft Wayfinder ohne
-> `WAYFINDER_DB_URL`), wird **ein** Feed aus `FIREFLY_CAT062_GROUP`/`_PORT` +
-> `WAYFINDER_FEED_ID` empfangen — das bisherige Single-Feed-Verhalten. Ein Feed,
-> der nicht beitreten kann, wird übersprungen; kann **kein** Feed beitreten,
-> beendet sich der Dienst. Der NATS-/Cloud-Bus-Pfad folgt später (WF2-53).
-
-> 🔒 **Mandanten-Sicht (WF2-21):** Im Multi-Mandanten-Betrieb sieht ein `/ws`-Client
-> **nur** Tracks aus den Feeds, die sein Mandant **abonniert** hat (`subscriptions`).
-> Ein Mandant ohne Abo bekommt **keine** Tracks (fail-closed). Abos werden bis zur
-> Admin-API (WF2-31) direkt in der DB gesetzt (`subscriptions`-Tabelle: `tenant_id`,
-> `feed_id`). Single-Tenant (ohne `WAYFINDER_DB_URL`) sieht unverändert alles.
->
-> Zusätzlich greift ein **Sicht-Filter** (WF2-21.2): ist in `view_configs` ein
-> **Interessensgebiet (AOI, BBox)** und/oder ein **Flugflächen-Band**
-> (`fl_min`/`fl_max`, in FL) gesetzt, verlassen Tracks außerhalb den Server gar
-> nicht (harte Datensparsamkeits-Grenze — Bandbreite/Billing). **fail-open:** ein
-> Track **ohne** gemessene Flugfläche wird trotzdem zugestellt (nie ein reales
-> Flugzeug verschlucken). Der Lebenszyklus-Filter (confirmed/tentative/coasting)
-> bleibt rein im Frontend (Declutter). Ohne AOI/FL-Eintrag wird der ganze
-> abonnierte Feed zugestellt.
->
-> 📝 **Audit-Log:** Jeder `/ws`-Connect erzeugt ein strukturiertes `slog`-Event
-> (`component=audit`, `event=ws_connect`) mit Mandant, Nutzer und aufgelöstem Scope
-> (Feeds + AOI/FL) — der Compliance-Nachweis „wer sah welchen Scope". Es geht in den
-> normalen Log-Strom (`stderr`, JSON); für Auswertung/Aufbewahrung in eine externe
-> Log-Senke leiten (ELK/Datadog o. Ä.). Keine DB-Audit-Tabelle.
-
-### 7.5 Betrieb
-
-| Variable | Default | Beschreibung |
-|----------|---------|--------------|
-| `WAYFINDER_LOG_LEVEL` | `info` | Log-Level: `debug`, `info`, `warn`, `error`. Ungültige Werte fallen auf `info` zurück. |
-| `WAYFINDER_CONFIG_FILE` | `wayfinder.yaml` | Pfad zur optionalen YAML-Konfigurationsdatei. Fehlende Datei ist nicht fatal. |
-
-### 7.6 YAML-Konfigurationsdatei
-
-Felder aus `wayfinder.yaml` (oder dem per `WAYFINDER_CONFIG_FILE` angegebenen
-Pfad) werden beim Start geladen. Env-Vars überschreiben sie immer.
-Partielle Dateien sind zulässig — nicht angegebene Felder behalten ihre
-Defaults.
-
-```yaml
-map:
-  center_lat: 50.0379   # Latitude des Startzentrums
-  center_lon: 8.5622    # Longitude des Startzentrums
-  zoom: 8               # Initialer Zoom-Level
-openaip:
-  radius_km: 250        # Abfrageradius für aeronautische Daten
-```
-
----
-
-## 8. Verifikation
-
-### 8.1 Liveness
-
-```bash
-curl -s http://localhost:8080/health
-# → "ok"
-```
-
-### 8.2 Readiness
-
-```bash
-curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/ready
-# → "200" wenn Firefly-Feed aktiv (mindestens 1 CAT065-Heartbeat empfangen)
-# → "503" wenn Feed noch nie gesehen oder gerade stale
-```
-
-### 8.3 Metriken
-
-```bash
-curl -s http://localhost:8080/metrics
-```
-
-Ein gesunder Feed zeigt `wayfinder_feed_stale 0` und steigende
-`wayfinder_cat062_blocks_received_total`- bzw.
-`wayfinder_cat065_heartbeats_received_total`-Zähler.
-
-### 8.4 Browser
-
-Browser auf `http://localhost:8081` öffnen. Die Karte erscheint sofort
-(Radar Dark Theme). Tracks erscheinen, sobald Firefly Daten sendet —
-erkennbar am Feed-Status-Banner oben links (grün: **FEED OK**).
+> **Geschafft.** Bei Problemen zuerst [Teil 7](#teil-7--wenn-etwas-nicht-geht--fehlersuche),
+> dann die Logs (`docker compose logs -f wayfinder`). Die tiefergehende technische
+> Dokumentation steht in `docs/TECHNICAL.md`.
