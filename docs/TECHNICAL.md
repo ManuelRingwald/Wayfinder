@@ -1,8 +1,12 @@
 # Wayfinder — Technische Referenz
 
-> **Zweck:** Betriebshandbuch für Systemadministratoren, Integrationspartner
-> und Entwickler. Beschreibt Architektur, Schnittstellen, Metriken,
+> **Zweck:** Technische **Referenz** für Systemadministratoren, Integrations­
+> partner und Entwickler. Beschreibt Architektur, Schnittstellen, Metriken,
 > Konfigurationsparameter und Betriebsverhalten von Wayfinder.
+
+> 📚 **Verwandte Dokumente:** Aufsetzen → `docs/INSTALLATION.md`; **Tagesbetrieb**
+> als aufgabenorientiertes Runbook (Kontrollen, Pflege, Sicherung, Störungs­
+> behebung) → `docs/BETRIEB.md` (Betriebsführungshandbuch).
 
 ---
 

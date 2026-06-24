@@ -12,6 +12,10 @@
 > - **Mehrere Kunden (Multi-Tenant)** → [Teil 5](#teil-5--mehrere-kunden-multi-tenant-schritt-für-schritt).
 >   Mehrere Mandanten mit **eigenem Login**, Datenbank und Admin-Oberfläche.
 
+> 🛠️ **Läuft es schon und Sie wollen es im Alltag betreuen** (kontrollieren,
+> Mandanten/Feeds pflegen, sichern, Störungen beheben)? → **Betriebsführungs­
+> handbuch** `docs/BETRIEB.md`.
+
 ---
 
 ## Inhaltsverzeichnis
@@ -527,6 +531,38 @@ zugewiesenen Feeds — und **keine** anderen.
 
 ✅ **Fertig!** Sie haben eine Multi-Tenant-Plattform aufgesetzt. Weitere Kunden:
 Schritte 5.8 + 5.9 wiederholen.
+
+### Schritt 5.11 — „View as Tenant": die Sicht eines Kunden einsehen (nur `super_admin`)
+
+Für den Support gibt es einen **Read-Only-Einblick**: ein `super_admin` kann die
+Lage **so sehen, wie ein bestimmter Kunde sie sieht** — ohne dessen Passwort, nur
+lesend, vollständig protokolliert (ADR 0008).
+
+So funktioniert es im Browser:
+
+1. Als `super_admin` (`admin`) am Lagebild **<http://localhost:8081>** angemeldet,
+   erscheint oben mittig die Schaltfläche **„Als Mandant ansehen"**.
+2. Mandanten auswählen (z. B. „Kunde Nord GmbH") → die Karte wechselt sofort auf
+   **dessen** Feeds und Sicht; ein **gelber Banner** zeigt
+   „Sie betrachten **Kunde Nord GmbH** — nur Lesen".
+3. Im Banner kann man per **„Mandant wechseln"** direkt zu einem anderen Kunden
+   springen oder mit **„Beenden"** zur eigenen Sicht zurückkehren.
+
+**Wichtig zu wissen:**
+
+- **Nur lesend:** Es lässt sich nichts im Namen des Kunden ändern — Verwaltung
+  läuft immer über die echte Identität.
+- **Nur `super_admin`:** `operator`/`tenant_admin` sehen die Funktion nicht; ein
+  gefälschter Zugriffsversuch wird serverseitig **laut abgewiesen und ins
+  Audit-Log geschrieben**.
+- **Zeitlich befristet:** Der Einblick läuft nach `WAYFINDER_IMPERSONATION_TTL`
+  (Standard 30 min) automatisch ab.
+- **Voraussetzung:** Ein Signing-Key (`WAYFINDER_SESSION_KEY`) muss gesetzt sein —
+  im `builtin`-Aufbau aus Teil 5 ist das bereits der Fall.
+
+> 📖 Die laufende Aufsicht über diese Einblicke (Audit-Spur „wer sah welchen
+> Mandanten") ist im **Betriebsführungshandbuch** (`docs/BETRIEB.md`, Abschnitt
+> Sicherheits-Betrieb) beschrieben.
 
 ---
 
