@@ -641,6 +641,7 @@ Mandanten zugeordneten Nutzer → `401`).
 | `WAYFINDER_SESSION_KEY` | *(leer)* | `builtin`: HMAC-Schlüssel zum Signieren der Session-Cookies (**Pflicht** im builtin-Modus; ≥ 32 zufällige Zeichen) |
 | `WAYFINDER_SESSION_COOKIE` | `wf_session` | `builtin`: Name der Session-Cookie |
 | `WAYFINDER_SESSION_TTL` | `12h` | `builtin`: Session-Lebensdauer (`8h`, `12h` …) |
+| `WAYFINDER_IMPERSONATION_TTL` | `30m` | Lebensdauer des Read-Only-Impersonation-Grants („View as Tenant", ADR 0008). Nur wirksam, wenn ein Signing-Key (`WAYFINDER_SESSION_KEY`) gesetzt ist; sonst ist Impersonation deaktiviert. |
 | `WAYFINDER_NONE_SUBJECT` | `default` | `none`: festes Subject, das jeder Anfrage zugeordnet wird |
 | `WAYFINDER_OIDC_ISSUER` | *(leer)* | `proxy`: OIDC-Issuer-URL (Pflicht im proxy-Modus) |
 | `WAYFINDER_OIDC_AUDIENCE` | *(leer)* | `proxy`: erwartete Audience/Client-ID (Pflicht im proxy-Modus) |

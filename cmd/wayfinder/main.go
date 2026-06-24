@@ -30,6 +30,7 @@ import (
 	"github.com/manuelringwald/wayfinder/pkg/coverage"
 	"github.com/manuelringwald/wayfinder/pkg/feature"
 	"github.com/manuelringwald/wayfinder/pkg/health"
+	"github.com/manuelringwald/wayfinder/pkg/impersonation"
 	"github.com/manuelringwald/wayfinder/pkg/metrics"
 	"github.com/manuelringwald/wayfinder/pkg/receiver"
 	"github.com/manuelringwald/wayfinder/pkg/store"
@@ -288,7 +289,14 @@ func main() {
 	// to the feeds its tenant subscribes to; single-tenant → nil resolver (unscoped).
 	var scopeResolver ws.ScopeResolver
 	if dbPool != nil {
-		scopeResolver = newScopeResolver(store.NewSubscriptionRepo(dbPool), store.NewViewConfigRepo(dbPool), logger)
+		// Cross-tenant read-only impersonation (ADR 0008) needs a signing key;
+		// without one (proxy/none mode without WAYFINDER_SESSION_KEY) it stays
+		// disabled and the resolver behaves exactly as before (impChecker nil).
+		var impChecker impersonation.TenantChecker
+		if len(cfg.SessionKey) > 0 {
+			impChecker = tenantExistsChecker{repo: store.NewTenantRepo(dbPool)}
+		}
+		scopeResolver = newScopeResolver(store.NewSubscriptionRepo(dbPool), store.NewViewConfigRepo(dbPool), impChecker, cfg.SessionKey, logger)
 	}
 	wsHandler := ws.New(broadcaster, logger, cfg.AllowedOrigins, scopeResolver)
 	// The live picture is tenant-scoped: gate /ws with the tenant middleware when
@@ -352,6 +360,26 @@ func main() {
 		}
 		adminAPI := adminapi.New(viewRepo, subRepo, store.NewFeedRepo(dbPool), store.NewTenantRepo(dbPool), featSvc, logger, rescope)
 		mux.Handle("/api/admin/", tenantMW(requireAdmin(adminAPI)))
+
+		// Cross-tenant read-only impersonation (ADR 0008, WF2-34): mint
+		// (super_admin only) and clear the grant cookie. The more-specific
+		// method+path patterns take precedence over the /api/admin/ subtree. Only
+		// wired when a signing key is configured; otherwise impersonation stays
+		// disabled platform-wide (fail-closed), matching the /ws read path.
+		if len(cfg.SessionKey) > 0 {
+			impAudit := logger.With(slog.String("component", "audit"))
+			impCfg := impersonationCookieConfig{
+				key:    cfg.SessionKey,
+				ttl:    cfg.ImpersonationTTL,
+				secure: cfg.TLSCertFile != "" && cfg.TLSKeyFile != "",
+			}
+			impChecker := tenantExistsChecker{repo: store.NewTenantRepo(dbPool)}
+			requireSuper := tenant.RequireRole(store.RoleSuperAdmin)
+			mux.Handle("POST /api/admin/impersonation", tenantMW(requireSuper(startImpersonationHandler(impChecker, impCfg, impAudit))))
+			mux.Handle("DELETE /api/admin/impersonation", tenantMW(requireAdmin(stopImpersonationHandler(impCfg, impAudit))))
+			logger.Info("impersonation enabled (ADR 0008)",
+				slog.String("path", "/api/admin/impersonation"), slog.Duration("ttl", cfg.ImpersonationTTL))
+		}
 	}
 
 	// The per-tenant middleware (on /ws) supersedes the legacy single shared
@@ -437,14 +465,15 @@ type Config struct {
 	// enabled only when DBURL is set; otherwise the server runs as the legacy
 	// single-tenant ASD (ADR 0005 §7, degenerate case) with no database and no
 	// tenant middleware.
-	DBURL         string        // WAYFINDER_DB_URL (PostgreSQL DSN; empty = single-tenant)
-	AuthMode      auth.Mode     // WAYFINDER_AUTH_MODE (proxy|builtin|none, default none)
-	NoneSubject   string        // WAYFINDER_NONE_SUBJECT (ModeNone fixed subject, default "default")
-	SessionKey    []byte        // WAYFINDER_SESSION_KEY (ModeBuiltin HMAC key)
-	SessionCookie string        // WAYFINDER_SESSION_COOKIE (default "wf_session")
-	SessionTTL    time.Duration // WAYFINDER_SESSION_TTL (Go duration, default 12h)
-	OIDCIssuer    string        // WAYFINDER_OIDC_ISSUER (ModeProxy)
-	OIDCAudience  string        // WAYFINDER_OIDC_AUDIENCE (ModeProxy)
+	DBURL            string        // WAYFINDER_DB_URL (PostgreSQL DSN; empty = single-tenant)
+	AuthMode         auth.Mode     // WAYFINDER_AUTH_MODE (proxy|builtin|none, default none)
+	NoneSubject      string        // WAYFINDER_NONE_SUBJECT (ModeNone fixed subject, default "default")
+	SessionKey       []byte        // WAYFINDER_SESSION_KEY (ModeBuiltin HMAC key)
+	SessionCookie    string        // WAYFINDER_SESSION_COOKIE (default "wf_session")
+	SessionTTL       time.Duration // WAYFINDER_SESSION_TTL (Go duration, default 12h)
+	ImpersonationTTL time.Duration // WAYFINDER_IMPERSONATION_TTL (read-only impersonation grant lifetime, default 30m; ADR 0008)
+	OIDCIssuer       string        // WAYFINDER_OIDC_ISSUER (ModeProxy)
+	OIDCAudience     string        // WAYFINDER_OIDC_AUDIENCE (ModeProxy)
 }
 
 // authConfig projects the runtime Config onto the auth package's Config.
@@ -571,6 +600,7 @@ func loadConfig() Config {
 		FeedStaleTimeout: 3 * time.Second,
 		OpenAIPRefresh:   24 * time.Hour,
 		OpenAIPRadiusKM:  250,
+		ImpersonationTTL: 30 * time.Minute,
 	}
 
 	if cfg.MulticastGroup == "" {
@@ -690,6 +720,11 @@ func loadConfig() Config {
 			cfg.SessionTTL = d
 		}
 	}
+	if v := os.Getenv("WAYFINDER_IMPERSONATION_TTL"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			cfg.ImpersonationTTL = d
+		}
+	}
 	cfg.OIDCIssuer = os.Getenv("WAYFINDER_OIDC_ISSUER")
 	cfg.OIDCAudience = os.Getenv("WAYFINDER_OIDC_AUDIENCE")
 
@@ -767,18 +802,52 @@ func resolveScope(ctx context.Context, subs feedLister, views viewGetter, tenant
 // Identity placed in the request context by the middleware, resolves the scope,
 // and emits a structured audit record (WF2-23.1). Fail-closed: a request without
 // an identity, or whose subscription/view lookup fails, is rejected.
-func newScopeResolver(subs feedLister, views viewGetter, logger *slog.Logger) ws.ScopeResolver {
+//
+// Cross-tenant read-only impersonation (ADR 0008): when impersonation is enabled
+// (tenants != nil and a signing key is configured) and the request carries a
+// valid grant from a super_admin, the read scope AND view are resolved against
+// the TARGET tenant instead of the caller's own. The authenticated Identity is
+// untouched; the resulting scope is detached from the target's accounting
+// (TenantID zeroed) so it is excluded from per-tenant metrics and live re-scope.
+// A valid grant from a non-super_admin, or one naming a missing tenant, is a loud
+// failure (handshake reject + audit); an absent/invalid/expired grant falls back
+// to the normal, byte-identical path (so the WF2-22 isolation tests stay valid).
+func newScopeResolver(subs feedLister, views viewGetter, tenants impersonation.TenantChecker, key []byte, logger *slog.Logger) ws.ScopeResolver {
 	audit := logger.With(slog.String("component", "audit"))
+	impersonationOn := tenants != nil && len(key) > 0
 	return func(r *http.Request) (*broadcast.Scope, error) {
 		id, ok := tenant.FromContext(r.Context())
 		if !ok {
 			return nil, fmt.Errorf("scoped /ws requires a tenant identity")
 		}
-		scope, feedIDs, view, err := resolveScope(r.Context(), subs, views, id.TenantID, id.UserID)
+
+		var decision impersonation.Decision
+		if impersonationOn {
+			d, err := impersonation.Resolve(r.Context(), impersonationGrantCookie(r), id, key, tenants)
+			if err != nil {
+				logImpersonationDenied(audit, r, id, err)
+				return nil, err
+			}
+			decision = d
+		}
+
+		readTenant := id.TenantID
+		if decision.Active {
+			readTenant = decision.TargetTenantID
+		}
+		scope, feedIDs, view, err := resolveScope(r.Context(), subs, views, readTenant, id.UserID)
 		if err != nil {
 			return nil, err
 		}
-		logScopeAudit(audit, r, id, feedIDs, view)
+		if decision.Active {
+			// Detach the impersonation session from the target tenant: zeroing
+			// TenantID excludes it from per-tenant billing/SLA metrics (ADR 0008 §6)
+			// and from live re-scope (§4 snapshot-v1) — both key on scope.TenantID —
+			// while the target's feeds+view still drive what the operator reads.
+			scope.TenantID = 0
+			impersonationSessions.Add(1)
+		}
+		logScopeAudit(audit, r, id, feedIDs, view, decision)
 		return scope, nil
 	}
 }
@@ -823,7 +892,7 @@ func rescopeTenant(ctx context.Context, b *broadcast.Broadcaster, subs feedListe
 // connect (WF2-23.1, NFR-SEC-003 audit trail). High-cardinality identity
 // (user_id, subject) belongs here in the structured log — shipped to an external
 // sink (12-factor) — never as a metric label.
-func logScopeAudit(audit *slog.Logger, r *http.Request, id tenant.Identity, feedIDs []int64, view *broadcast.ViewFilter) {
+func logScopeAudit(audit *slog.Logger, r *http.Request, id tenant.Identity, feedIDs []int64, view *broadcast.ViewFilter, imp impersonation.Decision) {
 	attrs := []any{
 		slog.String("event", "ws_connect"),
 		slog.Int64("tenant_id", id.TenantID),
@@ -832,6 +901,13 @@ func logScopeAudit(audit *slog.Logger, r *http.Request, id tenant.Identity, feed
 		slog.String("role", string(id.Role)),
 		slog.Any("feeds", feedIDs),
 		slog.String("remote", r.RemoteAddr),
+	}
+	if imp.Active {
+		// The actor (super_admin) is already logged above (user_id/subject); record
+		// which tenant they viewed read-only (ADR 0008 §7).
+		attrs = append(attrs,
+			slog.Bool("impersonation", true),
+			slog.Int64("impersonated_tenant_id", imp.TargetTenantID))
 	}
 	if view != nil {
 		if view.AOI != nil {
@@ -1015,6 +1091,7 @@ func startProbeServer(logger *slog.Logger, blockCount, trackCount, tracksCurrent
 			metrics.Gauge("wayfinder_tracks_current", "Number of tracks in the most recently received CAT062 block.", tracksCurrent.Load()),
 			metrics.Gauge("wayfinder_ws_clients_connected", "Number of currently connected WebSocket clients.", int64(broadcaster.ClientCount())),
 			metrics.Counter("wayfinder_ws_clients_evicted_total", "Total number of WebSocket clients evicted due to a full send channel.", broadcaster.EvictedCount()),
+			metrics.Counter("wayfinder_impersonation_sessions_total", "Total super_admin read-only impersonation /ws sessions started (ADR 0008). Excluded from the per-tenant series.", impersonationSessions.Load()),
 			metrics.Counter("wayfinder_cat065_heartbeats_received_total", "Total number of CAT065 SDPS-status heartbeats received.", heartbeatCount.Load()),
 			metrics.Gauge("wayfinder_feed_stale", "1 if the CAT065 heartbeat feed is currently stale, else 0.", feedStale),
 			metrics.Counter("wayfinder_openaip_fetch_success_total", "Total number of successful OpenAIP aeronautical fetches (per kind).", aeroService.FetchSuccessCount()),

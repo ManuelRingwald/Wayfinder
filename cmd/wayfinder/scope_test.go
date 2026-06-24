@@ -9,9 +9,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
+	"github.com/manuelringwald/wayfinder/pkg/impersonation"
 	"github.com/manuelringwald/wayfinder/pkg/store"
 	"github.com/manuelringwald/wayfinder/pkg/tenant"
+	"github.com/manuelringwald/wayfinder/pkg/ws"
 )
 
 type fakeFeedLister struct {
@@ -42,7 +45,7 @@ func withIdentity(tenantID int64) *http.Request {
 }
 
 func TestNewScopeResolver(t *testing.T) {
-	resolve := newScopeResolver(fakeFeedLister{feeds: []int64{1, 2}}, noView, discardLogger())
+	resolve := newScopeResolver(fakeFeedLister{feeds: []int64{1, 2}}, noView, nil, nil, discardLogger())
 
 	scope, err := resolve(withIdentity(7))
 	if err != nil {
@@ -58,19 +61,19 @@ func TestNewScopeResolver(t *testing.T) {
 
 func TestNewScopeResolverFailsClosed(t *testing.T) {
 	// No identity in context → fail-closed error (no stream is opened).
-	resolve := newScopeResolver(fakeFeedLister{feeds: []int64{1}}, noView, discardLogger())
+	resolve := newScopeResolver(fakeFeedLister{feeds: []int64{1}}, noView, nil, nil, discardLogger())
 	if _, err := resolve(httptest.NewRequest(http.MethodGet, "/ws", nil)); err == nil {
 		t.Error("expected error without a tenant identity")
 	}
 
 	// A subscription lookup error must not yield a scope.
-	subErr := newScopeResolver(fakeFeedLister{err: errors.New("db down")}, noView, discardLogger())
+	subErr := newScopeResolver(fakeFeedLister{err: errors.New("db down")}, noView, nil, nil, discardLogger())
 	if _, err := subErr(withIdentity(7)); err == nil {
 		t.Error("expected error when subscription lookup fails")
 	}
 
 	// A view lookup error (other than ErrNotFound) must not yield a scope.
-	viewErr := newScopeResolver(fakeFeedLister{feeds: []int64{1}}, fakeViewGetter{err: errors.New("db down")}, discardLogger())
+	viewErr := newScopeResolver(fakeFeedLister{feeds: []int64{1}}, fakeViewGetter{err: errors.New("db down")}, nil, nil, discardLogger())
 	if _, err := viewErr(withIdentity(7)); err == nil {
 		t.Error("expected error when view lookup fails")
 	}
@@ -84,7 +87,7 @@ func TestScopeResolverEmitsAudit(t *testing.T) {
 		AOI:   &store.BBox{MinLat: 49, MinLon: 8, MaxLat: 51, MaxLon: 10},
 		FLMin: &flMin, FLMax: &flMax,
 	}}
-	resolve := newScopeResolver(fakeFeedLister{feeds: []int64{1, 2}}, views, logger)
+	resolve := newScopeResolver(fakeFeedLister{feeds: []int64{1, 2}}, views, nil, nil, logger)
 
 	req := httptest.NewRequest(http.MethodGet, "/ws", nil)
 	req = req.WithContext(tenant.WithIdentity(req.Context(),
@@ -144,5 +147,127 @@ func TestResolveViewFilter(t *testing.T) {
 	// Lookup error (not ErrNotFound) → propagated (fail-closed upstream).
 	if _, err := resolveViewFilter(ctx, fakeViewGetter{err: errors.New("db down")}, 1, 2); err == nil {
 		t.Error("expected lookup error to propagate")
+	}
+}
+
+// --- Cross-tenant read-only impersonation (ADR 0008, WF2-34) ----------------
+
+// feedsByTenant is a tenant-aware feed lister: it returns different feeds per
+// tenant id, so the impersonation tests can prove the scope was resolved against
+// the TARGET tenant and not the caller's own.
+type feedsByTenant map[int64][]int64
+
+func (m feedsByTenant) ListFeedIDsByTenant(_ context.Context, tenantID int64) ([]int64, error) {
+	return m[tenantID], nil
+}
+
+// fakeTenantChecker is a DB-free impersonation.TenantChecker.
+type fakeTenantChecker struct {
+	existing map[int64]bool
+	err      error
+}
+
+func (f fakeTenantChecker) Exists(_ context.Context, tenantID int64) (bool, error) {
+	if f.err != nil {
+		return false, f.err
+	}
+	return f.existing[tenantID], nil
+}
+
+// requestAs builds a /ws request whose context carries an Identity (the caller's
+// real tenant/role) and, when grant != "", an impersonation grant cookie.
+func requestAs(tenantID int64, role store.Role, grant string) *http.Request {
+	r := httptest.NewRequest(http.MethodGet, "/ws", nil)
+	if grant != "" {
+		r.AddCookie(&http.Cookie{Name: impersonation.CookieName, Value: grant})
+	}
+	return r.WithContext(tenant.WithIdentity(r.Context(),
+		tenant.Identity{TenantID: tenantID, UserID: 1, Subject: "actor", Role: role}))
+}
+
+var impKey = []byte("scope-resolver-impersonation-key-32b!")
+
+// impersonationResolver wires a resolver with impersonation enabled: tenants 7
+// (feed 1) and 9 (feeds 2,3) both exist.
+func impersonationResolver() ws.ScopeResolver {
+	feeds := feedsByTenant{7: {1}, 9: {2, 3}}
+	checker := fakeTenantChecker{existing: map[int64]bool{7: true, 9: true}}
+	return newScopeResolver(feeds, noView, checker, impKey, discardLogger())
+}
+
+func TestScopeResolverImpersonationActive(t *testing.T) {
+	resolve := impersonationResolver()
+	grant := impersonation.MintGrant(9, time.Hour, impKey)
+
+	scope, err := resolve(requestAs(7, store.RoleSuperAdmin, grant))
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if !scope.AllowsFeed(2) || !scope.AllowsFeed(3) {
+		t.Error("impersonator must see the TARGET tenant's feeds (2,3)")
+	}
+	if scope.AllowsFeed(1) {
+		t.Error("impersonator must NOT see their OWN tenant's feed (1)")
+	}
+	// Detached from the target tenant → excluded from per-tenant metrics + live
+	// re-scope (ADR 0008 §6/§4 snapshot-v1).
+	if scope.TenantID != 0 {
+		t.Errorf("impersonation scope must have TenantID=0, got %d", scope.TenantID)
+	}
+}
+
+func TestScopeResolverImpersonationDeniedForNonSuper(t *testing.T) {
+	resolve := impersonationResolver()
+	grant := impersonation.MintGrant(9, time.Hour, impKey)
+
+	// A cryptographically valid grant presented by a non-super_admin must be a
+	// loud failure (handshake reject), never silently honoured or ignored.
+	for _, role := range []store.Role{store.RoleOperator, store.RoleTenantAdmin} {
+		if _, err := resolve(requestAs(7, role, grant)); err == nil {
+			t.Errorf("role=%s: a valid grant from a non-super_admin must be rejected", role)
+		}
+	}
+}
+
+func TestScopeResolverImpersonationUnknownTenantRejected(t *testing.T) {
+	resolve := impersonationResolver()
+	grant := impersonation.MintGrant(404, time.Hour, impKey) // tenant 404 does not exist
+
+	if _, err := resolve(requestAs(7, store.RoleSuperAdmin, grant)); err == nil {
+		t.Error("a grant naming a non-existent tenant must be rejected")
+	}
+}
+
+func TestScopeResolverImpersonationExpiredFallsBack(t *testing.T) {
+	resolve := impersonationResolver()
+	expired := impersonation.MintGrant(9, -time.Minute, impKey)
+
+	// An expired grant carries no authority → the default path (the super_admin's
+	// OWN tenant), byte-identical to no impersonation, with no error.
+	scope, err := resolve(requestAs(7, store.RoleSuperAdmin, expired))
+	if err != nil {
+		t.Fatalf("expired grant must fall back to the default path, got %v", err)
+	}
+	if !scope.AllowsFeed(1) || scope.AllowsFeed(2) {
+		t.Error("expired grant → caller sees their OWN tenant (7 → feed 1)")
+	}
+	if scope.TenantID != 7 {
+		t.Errorf("default path must keep the real tenant id, got %d", scope.TenantID)
+	}
+}
+
+func TestScopeResolverImpersonationDisabledWithoutKey(t *testing.T) {
+	// No checker/key → impersonation disabled platform-wide: even a super_admin's
+	// valid-looking grant is ignored, the caller sees their own tenant.
+	feeds := feedsByTenant{7: {1}, 9: {2, 3}}
+	resolve := newScopeResolver(feeds, noView, nil, nil, discardLogger())
+	grant := impersonation.MintGrant(9, time.Hour, impKey)
+
+	scope, err := resolve(requestAs(7, store.RoleSuperAdmin, grant))
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if !scope.AllowsFeed(1) || scope.AllowsFeed(2) {
+		t.Error("with impersonation disabled the grant must be ignored (own tenant scope)")
 	}
 }
