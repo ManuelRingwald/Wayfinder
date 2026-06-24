@@ -10,19 +10,24 @@
     <FeedStatusChip class="feed-chip" />
     <!-- ASD-010: category filter chips top-centre -->
     <TrackFilterChips />
+    <!-- WF2-34: super_admin read-only impersonation banner/switcher (ADR 0008) -->
+    <ImpersonationBar />
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { useAsdStore } from '@/stores/asd.js'
+import { useImpersonationStore } from '@/stores/impersonation.js'
 import { initMap } from '@/map/engine.js'
 import MapControls from './MapControls.vue'
 import TrackFilterChips from './TrackFilterChips.vue'
 import FeedStatusChip from './FeedStatusChip.vue'
+import ImpersonationBar from './ImpersonationBar.vue'
 
 const emit = defineEmits(['track-click'])
 const store = useAsdStore()
+const imp = useImpersonationStore()
 const mapEl = ref(null)
 let mapEngine = null
 
@@ -64,6 +69,14 @@ watch(() => ({ ...store.airspaceGroupVisibility }), () => {
 watch(() => ({ ...store.rangeRingConfig }), (cfg) => {
   mapEngine?.updateRangeRings(cfg.spacingNM, cfg.count)
 }, { deep: true })
+
+// WF2-34: when the super_admin starts/switches/exits read-only impersonation
+// (ADR 0008), reconnect the WebSocket so the new grant cookie — and thus the new
+// tenant scope — takes effect immediately. loadStatus does not bump the nonce, so
+// a normal page load reconnects only via the engine's own connect.
+watch(() => imp.reconnectNonce, () => {
+  mapEngine?.reconnect()
+})
 
 defineExpose({
   setLayerVisibility: (layer, val) => mapEngine?.setLayerVisibility({ [layer]: val }),

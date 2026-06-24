@@ -375,6 +375,7 @@ func main() {
 			}
 			impChecker := tenantExistsChecker{repo: store.NewTenantRepo(dbPool)}
 			requireSuper := tenant.RequireRole(store.RoleSuperAdmin)
+			mux.Handle("GET /api/admin/impersonation", tenantMW(requireAdmin(impersonationStatusHandler(impChecker, impCfg))))
 			mux.Handle("POST /api/admin/impersonation", tenantMW(requireSuper(startImpersonationHandler(impChecker, impCfg, impAudit))))
 			mux.Handle("DELETE /api/admin/impersonation", tenantMW(requireAdmin(stopImpersonationHandler(impCfg, impAudit))))
 			logger.Info("impersonation enabled (ADR 0008)",

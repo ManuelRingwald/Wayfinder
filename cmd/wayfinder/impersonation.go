@@ -130,6 +130,31 @@ func stopImpersonationHandler(cfg impersonationCookieConfig, audit *slog.Logger)
 	}
 }
 
+// impersonationStatusHandler reports the caller's current impersonation state so
+// the SPA can restore the read-only banner after a reload (the grant cookie is
+// HttpOnly and not readable by JS). It is advisory: any non-active outcome — no
+// cookie, an expired grant, or one the caller may not use — is reported as
+// inactive without error; the /ws path remains the enforcement point.
+func impersonationStatusHandler(tenants impersonation.TenantChecker, cfg impersonationCookieConfig) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, ok := tenant.FromContext(r.Context())
+		if !ok {
+			http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+			return
+		}
+		resp := struct {
+			Active   bool  `json:"active"`
+			TenantID int64 `json:"tenant_id,omitempty"`
+		}{}
+		if d, err := impersonation.Resolve(r.Context(), impersonationGrantCookie(r), id, cfg.key, tenants); err == nil && d.Active {
+			resp.Active = true
+			resp.TenantID = d.TargetTenantID
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+	}
+}
+
 // logImpersonationDenied records a refused impersonation attempt — a valid grant
 // presented by a non-super_admin, or one naming a missing tenant (ADR 0008 §3,
 // decision 4: spoofing/misuse attempts must be loud and auditable, never silent).

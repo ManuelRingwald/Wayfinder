@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -124,5 +125,44 @@ func TestStopImpersonationClearsCookie(t *testing.T) {
 	c := grantCookie(rec)
 	if c == nil || c.MaxAge >= 0 {
 		t.Errorf("stop must clear the impersonation cookie (MaxAge<0), got %+v", c)
+	}
+}
+
+func TestImpersonationStatusActive(t *testing.T) {
+	checker := fakeTenantChecker{existing: map[int64]bool{5: true}}
+	h := impersonationStatusHandler(checker, impersonationCookieConfig{key: endpointKey})
+
+	r := superRequest(http.MethodGet, "")
+	r.AddCookie(&http.Cookie{Name: impersonation.CookieName, Value: impersonation.MintGrant(5, time.Hour, endpointKey)})
+	rec := httptest.NewRecorder()
+	h(rec, r)
+
+	var got struct {
+		Active   bool  `json:"active"`
+		TenantID int64 `json:"tenant_id"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !got.Active || got.TenantID != 5 {
+		t.Fatalf("status = %+v, want active tenant 5", got)
+	}
+}
+
+func TestImpersonationStatusInactiveWithoutCookie(t *testing.T) {
+	checker := fakeTenantChecker{existing: map[int64]bool{5: true}}
+	h := impersonationStatusHandler(checker, impersonationCookieConfig{key: endpointKey})
+
+	rec := httptest.NewRecorder()
+	h(rec, superRequest(http.MethodGet, "")) // no grant cookie
+
+	var got struct {
+		Active bool `json:"active"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.Active {
+		t.Error("no cookie → status must be inactive")
 	}
 }
