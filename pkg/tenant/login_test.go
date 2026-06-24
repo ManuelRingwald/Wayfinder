@@ -21,6 +21,22 @@ func (f fakeCreds) GetHash(_ context.Context, userID int64) (string, error) {
 	return h, nil
 }
 
+type fakeTenants struct {
+	byID map[int64]store.Tenant
+	err  error
+}
+
+func (f fakeTenants) GetByID(_ context.Context, id int64) (store.Tenant, error) {
+	if f.err != nil {
+		return store.Tenant{}, f.err
+	}
+	t, ok := f.byID[id]
+	if !ok {
+		return store.Tenant{}, store.ErrNotFound
+	}
+	return t, nil
+}
+
 var loginKey = []byte("login-test-key")
 
 func postLogin(t *testing.T, h http.HandlerFunc, body string) *httptest.ResponseRecorder {
@@ -30,22 +46,25 @@ func postLogin(t *testing.T, h http.HandlerFunc, body string) *httptest.Response
 	return rec
 }
 
-func loginFixture(t *testing.T) (UserLookup, CredentialLookup) {
+func loginFixture(t *testing.T) (UserLookup, CredentialLookup, TenantLookup) {
 	t.Helper()
 	hash, err := auth.HashPassword("s3cret")
 	if err != nil {
 		t.Fatalf("hash: %v", err)
 	}
 	users := fakeUsers{bySubject: map[string]store.User{
-		"bob": {ID: 5, TenantID: 1, Subject: "bob", Role: store.RoleUser},
+		"bob": {ID: 5, TenantID: 1, Subject: "bob", Role: store.RoleUser, Status: store.StatusActive},
 	}}
 	creds := fakeCreds{byUser: map[int64]string{5: hash}}
-	return users, creds
+	tenants := fakeTenants{byID: map[int64]store.Tenant{
+		1: {ID: 1, Slug: "acme", Name: "ACME", Status: store.StatusActive},
+	}}
+	return users, creds, tenants
 }
 
 func TestLoginSuccessSetsValidCookie(t *testing.T) {
-	users, creds := loginFixture(t)
-	h := LoginHandler(users, creds, LoginConfig{SessionKey: loginKey})
+	users, creds, tenants := loginFixture(t)
+	h := LoginHandler(users, creds, tenants, LoginConfig{SessionKey: loginKey})
 
 	rec := postLogin(t, h, `{"subject":"bob","password":"s3cret"}`)
 	if rec.Code != http.StatusNoContent {
@@ -71,10 +90,10 @@ func TestLoginSuccessSetsValidCookie(t *testing.T) {
 }
 
 func TestLoginFailures(t *testing.T) {
-	users, creds := loginFixture(t)
+	users, creds, tenants := loginFixture(t)
 	noCred := fakeCreds{byUser: map[int64]string{}} // user exists, no credential
 	h := func(c CredentialLookup) http.HandlerFunc {
-		return LoginHandler(users, c, LoginConfig{SessionKey: loginKey})
+		return LoginHandler(users, c, tenants, LoginConfig{SessionKey: loginKey})
 	}
 
 	cases := map[string]struct {
@@ -99,9 +118,55 @@ func TestLoginFailures(t *testing.T) {
 	}
 }
 
+// TestLoginEnforcesStatus covers the AP6 pause cascade: a paused account, or an
+// account under a paused tenant, is denied login even with correct credentials,
+// with the same generic 401 (no paused/active enumeration). A tenant lookup
+// error is treated fail-closed as suspended.
+func TestLoginEnforcesStatus(t *testing.T) {
+	hash, err := auth.HashPassword("s3cret")
+	if err != nil {
+		t.Fatalf("hash: %v", err)
+	}
+	creds := fakeCreds{byUser: map[int64]string{5: hash}}
+	activeTenant := fakeTenants{byID: map[int64]store.Tenant{
+		1: {ID: 1, Status: store.StatusActive},
+	}}
+	pausedTenant := fakeTenants{byID: map[int64]store.Tenant{
+		1: {ID: 1, Status: store.StatusPaused},
+	}}
+	usersWith := func(status store.Status) fakeUsers {
+		return fakeUsers{bySubject: map[string]store.User{
+			"bob": {ID: 5, TenantID: 1, Subject: "bob", Role: store.RoleUser, Status: status},
+		}}
+	}
+
+	cases := map[string]struct {
+		users   fakeUsers
+		tenants TenantLookup
+		want    int
+	}{
+		"active account, active tenant": {usersWith(store.StatusActive), activeTenant, http.StatusNoContent},
+		"paused account":                {usersWith(store.StatusPaused), activeTenant, http.StatusUnauthorized},
+		"paused tenant cascades":        {usersWith(store.StatusActive), pausedTenant, http.StatusUnauthorized},
+		"tenant lookup error denies":    {usersWith(store.StatusActive), fakeTenants{err: store.ErrNotFound}, http.StatusUnauthorized},
+		"nil tenants skips cascade":     {usersWith(store.StatusActive), nil, http.StatusNoContent},
+	}
+	for name, tc := range cases {
+		h := LoginHandler(tc.users, creds, tc.tenants, LoginConfig{SessionKey: loginKey})
+		rec := postLogin(t, h, `{"subject":"bob","password":"s3cret"}`)
+		if rec.Code != tc.want {
+			t.Errorf("%s: status = %d, want %d", name, rec.Code, tc.want)
+		}
+		gotCookie := len(rec.Result().Cookies()) != 0
+		if (rec.Code == http.StatusNoContent) != gotCookie {
+			t.Errorf("%s: cookie set = %v, want %v", name, gotCookie, rec.Code == http.StatusNoContent)
+		}
+	}
+}
+
 func TestLoginRejectsNonPost(t *testing.T) {
-	users, creds := loginFixture(t)
-	h := LoginHandler(users, creds, LoginConfig{SessionKey: loginKey})
+	users, creds, tenants := loginFixture(t)
+	h := LoginHandler(users, creds, tenants, LoginConfig{SessionKey: loginKey})
 	rec := httptest.NewRecorder()
 	h(rec, httptest.NewRequest(http.MethodGet, "/api/login", nil))
 	if rec.Code != http.StatusMethodNotAllowed {

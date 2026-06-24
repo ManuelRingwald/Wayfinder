@@ -36,6 +36,69 @@ func testPool(t *testing.T) *pgxpool.Pool {
 	return pool
 }
 
+// TestIntegrationUserStatusLifecycle exercises the AP6 access lifecycle against
+// a real database: the status column defaults to active, can be paused and
+// reactivated, a tenant can be paused, and a user can be deleted (cascading its
+// credential). It also validates 00005's new column + CHECK constraint apply.
+func TestIntegrationUserStatusLifecycle(t *testing.T) {
+	pool := testPool(t)
+	ctx := context.Background()
+	tenants := NewTenantRepo(pool)
+	users := NewUserRepo(pool)
+	creds := NewCredentialRepo(pool)
+
+	ten, err := tenants.Create(ctx, "acme", "ACME")
+	if err != nil {
+		t.Fatalf("create tenant: %v", err)
+	}
+	u, err := users.Create(ctx, ten.ID, "alice", nil, RoleUser)
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	// New rows default to active (non-breaking migration).
+	if u.Status != StatusActive {
+		t.Fatalf("new user status = %q, want active", u.Status)
+	}
+
+	if err := users.SetStatus(ctx, u.ID, StatusPaused); err != nil {
+		t.Fatalf("pause user: %v", err)
+	}
+	if got, _ := users.GetByID(ctx, u.ID); got.Status != StatusPaused {
+		t.Fatalf("after pause status = %q, want paused", got.Status)
+	}
+	if err := users.SetStatus(ctx, u.ID, StatusActive); err != nil {
+		t.Fatalf("reactivate user: %v", err)
+	}
+	if err := users.SetStatus(ctx, 999999, StatusPaused); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("SetStatus(missing) = %v, want ErrNotFound", err)
+	}
+
+	// Tenant pause is a separate lever.
+	if err := tenants.SetStatus(ctx, ten.ID, StatusPaused); err != nil {
+		t.Fatalf("pause tenant: %v", err)
+	}
+	if got, _ := tenants.GetByID(ctx, ten.ID); got.Status != StatusPaused {
+		t.Fatalf("after pause tenant status = %q, want paused", got.Status)
+	}
+
+	// Delete cascades to the credential and is idempotent on a missing row.
+	if err := creds.Set(ctx, u.ID, "$argon2id$hash"); err != nil {
+		t.Fatalf("set credential: %v", err)
+	}
+	if err := users.Delete(ctx, u.ID); err != nil {
+		t.Fatalf("delete user: %v", err)
+	}
+	if _, err := users.GetByID(ctx, u.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("GetByID after delete = %v, want ErrNotFound", err)
+	}
+	if _, err := creds.GetHash(ctx, u.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("credential survived user delete = %v, want ErrNotFound", err)
+	}
+	if err := users.Delete(ctx, u.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("Delete(missing) = %v, want ErrNotFound", err)
+	}
+}
+
 func TestIntegrationTenantRepo(t *testing.T) {
 	pool := testPool(t)
 	ctx := context.Background()

@@ -338,7 +338,8 @@ func main() {
 		}
 		users := store.NewUserRepo(dbPool)
 		creds := store.NewCredentialRepo(dbPool)
-		mux.Handle("/api/login", tenant.LoginHandler(users, creds, loginCfg))
+		tenants := store.NewTenantRepo(dbPool)
+		mux.Handle("/api/login", tenant.LoginHandler(users, creds, tenants, loginCfg))
 		mux.Handle("/api/logout", tenant.LogoutHandler(loginCfg))
 		logger.Info("builtin login enabled", slog.String("path", "/api/login"))
 	}
@@ -358,7 +359,8 @@ func main() {
 		rescope := func(ctx context.Context, tenantID int64) {
 			rescopeTenant(ctx, broadcaster, subRepo, viewRepo, logger, tenantID)
 		}
-		adminAPI := adminapi.New(viewRepo, subRepo, store.NewFeedRepo(dbPool), store.NewTenantRepo(dbPool), featSvc, logger, rescope)
+		adminAPI := adminapi.New(viewRepo, subRepo, store.NewFeedRepo(dbPool), store.NewTenantRepo(dbPool),
+			store.NewUserRepo(dbPool), store.NewCredentialRepo(dbPool), featSvc, logger, rescope)
 		mux.Handle("/api/admin/", tenantMW(requireAdmin(adminAPI)))
 
 		// Cross-tenant read-only impersonation (ADR 0008, WF2-34): mint and clear

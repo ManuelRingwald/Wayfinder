@@ -7,12 +7,20 @@ import (
 	"time"
 
 	"github.com/manuelringwald/wayfinder/pkg/auth"
+	"github.com/manuelringwald/wayfinder/pkg/store"
 )
 
 // CredentialLookup retrieves a user's stored password hash.
 // *store.CredentialRepo satisfies it; tests use a fake.
 type CredentialLookup interface {
 	GetHash(ctx context.Context, userID int64) (string, error)
+}
+
+// TenantLookup retrieves a tenant by id so login can enforce a tenant-level
+// pause (AP6): a paused tenant blocks login for all of its accounts.
+// *store.TenantRepo satisfies it; tests use a fake.
+type TenantLookup interface {
+	GetByID(ctx context.Context, id int64) (store.Tenant, error)
 }
 
 // LoginConfig configures the builtin login/logout handlers.
@@ -49,8 +57,10 @@ type loginRequest struct {
 
 // LoginHandler verifies a builtin-mode subject/password and, on success, sets a
 // signed session cookie (later consumed by auth.BuiltinAuthenticator). Every
-// failure returns the same 401 without revealing whether the subject exists.
-func LoginHandler(users UserLookup, creds CredentialLookup, cfg LoginConfig) http.HandlerFunc {
+// failure returns the same 401 without revealing whether the subject exists, is
+// paused, or simply gave the wrong password. tenants (may be nil) enables the
+// tenant-pause cascade (AP6); when nil only the per-account status is enforced.
+func LoginHandler(users UserLookup, creds CredentialLookup, tenants TenantLookup, cfg LoginConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -65,15 +75,26 @@ func LoginHandler(users UserLookup, creds CredentialLookup, cfg LoginConfig) htt
 		// Always run a password verification (against a dummy hash if the user or
 		// credential is missing) to keep timing uniform.
 		hash := dummyHash
+		suspended := false
 		u, lookupErr := users.GetBySubject(r.Context(), req.Subject)
 		if lookupErr == nil {
 			if h, herr := creds.GetHash(r.Context(), u.ID); herr == nil {
 				hash = h
 			}
+			// AP6: a paused account — or an account under a paused tenant — may not
+			// log in even with correct credentials. Both checks are fail-closed: a
+			// tenant lookup error is treated as suspended. The generic 401 below does
+			// not reveal that this was the reason (no paused/active enumeration).
+			suspended = u.Status == store.StatusPaused
+			if !suspended && tenants != nil {
+				if t, terr := tenants.GetByID(r.Context(), u.TenantID); terr != nil || t.Status == store.StatusPaused {
+					suspended = true
+				}
+			}
 		}
 
 		ok, verr := auth.VerifyPassword(hash, req.Password)
-		if lookupErr != nil || verr != nil || !ok {
+		if lookupErr != nil || verr != nil || !ok || suspended {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}

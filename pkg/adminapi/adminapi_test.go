@@ -71,8 +71,9 @@ func (f fakeFeeds) GetByID(_ context.Context, id int64) (store.Feed, error) {
 }
 
 type fakeTenants struct {
-	list []store.Tenant
-	byID map[int64]store.Tenant
+	list      []store.Tenant
+	byID      map[int64]store.Tenant
+	statusSet map[int64]store.Status // records SetStatus calls (AP6)
 }
 
 func (f fakeTenants) List(_ context.Context) ([]store.Tenant, error) { return f.list, nil }
@@ -82,6 +83,84 @@ func (f fakeTenants) GetByID(_ context.Context, id int64) (store.Tenant, error) 
 		return x, nil
 	}
 	return store.Tenant{}, store.ErrNotFound
+}
+
+func (f fakeTenants) SetStatus(_ context.Context, id int64, status store.Status) error {
+	if f.statusSet != nil {
+		f.statusSet[id] = status
+	}
+	return nil
+}
+
+// fakeUserStore satisfies UserStore and records mutations (AP6 access mgmt).
+type fakeUserStore struct {
+	byID      map[int64]store.User
+	bySubject map[string]store.User
+	listByTen map[int64][]store.User
+	created   store.User
+	createErr error
+	statusSet map[int64]store.Status
+	deleted   map[int64]bool
+	nextID    int64
+}
+
+func (f *fakeUserStore) ListByTenant(_ context.Context, tenantID int64) ([]store.User, error) {
+	return f.listByTen[tenantID], nil
+}
+
+func (f *fakeUserStore) GetByID(_ context.Context, id int64) (store.User, error) {
+	if u, ok := f.byID[id]; ok {
+		return u, nil
+	}
+	return store.User{}, store.ErrNotFound
+}
+
+func (f *fakeUserStore) GetBySubject(_ context.Context, subject string) (store.User, error) {
+	if u, ok := f.bySubject[subject]; ok {
+		return u, nil
+	}
+	return store.User{}, store.ErrNotFound
+}
+
+func (f *fakeUserStore) Create(_ context.Context, tenantID int64, subject string, email *string, role store.Role) (store.User, error) {
+	if f.createErr != nil {
+		return store.User{}, f.createErr
+	}
+	id := f.nextID
+	if id == 0 {
+		id = 1
+	}
+	f.created = store.User{ID: id, TenantID: tenantID, Subject: subject, Email: email, Role: role, Status: store.StatusActive}
+	return f.created, nil
+}
+
+func (f *fakeUserStore) SetStatus(_ context.Context, id int64, status store.Status) error {
+	if f.statusSet == nil {
+		f.statusSet = map[int64]store.Status{}
+	}
+	f.statusSet[id] = status
+	return nil
+}
+
+func (f *fakeUserStore) Delete(_ context.Context, id int64) error {
+	if f.deleted == nil {
+		f.deleted = map[int64]bool{}
+	}
+	f.deleted[id] = true
+	return nil
+}
+
+// fakeCredStore satisfies CredentialStore and records the last hash set.
+type fakeCredStore struct {
+	set map[int64]string
+}
+
+func (f *fakeCredStore) Set(_ context.Context, userID int64, passwordHash string) error {
+	if f.set == nil {
+		f.set = map[int64]string{}
+	}
+	f.set[userID] = passwordHash
+	return nil
 }
 
 // fakeEntitlements satisfies EntitlementService and records the last Set call
@@ -114,7 +193,13 @@ func handlerWith(vs *fakeVS, ff fakeFeeds, ft fakeTenants) *Handler {
 }
 
 func handlerWithEnt(vs *fakeVS, ff fakeFeeds, ft fakeTenants, fe EntitlementService) *Handler {
-	return New(vs, vs, ff, ft, fe, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+	return New(vs, vs, ff, ft, &fakeUserStore{}, &fakeCredStore{}, fe, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+}
+
+// handlerForUsers builds a handler wired with the given user/credential/tenant
+// fakes for the AP6 access-management tests.
+func handlerForUsers(us UserStore, cs CredentialStore, ft fakeTenants) *Handler {
+	return New(&fakeVS{}, &fakeVS{}, fakeFeeds{}, ft, us, cs, &fakeEntitlements{}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
 }
 
 // rescopeRecorder captures the tenant ids a handler asks to live-re-scope (WF2-33).
@@ -124,7 +209,7 @@ type rescopeRecorder struct{ calls []int64 }
 func (r *rescopeRecorder) fn(_ context.Context, tenantID int64) { r.calls = append(r.calls, tenantID) }
 
 func handlerWithRescope(vs *fakeVS, ff fakeFeeds, ft fakeTenants, rescope RescopeFunc) *Handler {
-	return New(vs, vs, ff, ft, &fakeEntitlements{}, slog.New(slog.NewTextHandler(io.Discard, nil)), rescope)
+	return New(vs, vs, ff, ft, &fakeUserStore{}, &fakeCredStore{}, &fakeEntitlements{}, slog.New(slog.NewTextHandler(io.Discard, nil)), rescope)
 }
 
 func adminReq(method, path, body string, tenantID int64, role store.Role) *http.Request {

@@ -20,6 +20,19 @@ func TestRoleValid(t *testing.T) {
 	}
 }
 
+func TestStatusValid(t *testing.T) {
+	for _, s := range []Status{StatusActive, StatusPaused} {
+		if !s.Valid() {
+			t.Errorf("Status(%q).Valid() = false, want true", s)
+		}
+	}
+	for _, s := range []Status{"", "Active", "disabled", "deleted", "suspended"} {
+		if s.Valid() {
+			t.Errorf("Status(%q).Valid() = true, want false", s)
+		}
+	}
+}
+
 func TestWrapMapsNoRowsToNotFound(t *testing.T) {
 	if got := wrap("get tenant", pgx.ErrNoRows); !errors.Is(got, ErrNotFound) {
 		t.Errorf("wrap(pgx.ErrNoRows) = %v, want errors.Is ErrNotFound", got)

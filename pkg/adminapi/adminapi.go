@@ -43,6 +43,7 @@ type FeedStore interface {
 type TenantStore interface {
 	List(ctx context.Context) ([]store.Tenant, error)
 	GetByID(ctx context.Context, id int64) (store.Tenant, error)
+	SetStatus(ctx context.Context, id int64, status store.Status) error
 }
 
 // EntitlementService is the per-tenant feature surface the admin API needs
@@ -72,6 +73,8 @@ type Handler struct {
 	subs    SubscriptionStore
 	feeds   FeedStore
 	tenants TenantStore
+	users   UserStore
+	creds   CredentialStore
 	feats   EntitlementService
 	rescope RescopeFunc
 	logger  *slog.Logger
@@ -82,8 +85,8 @@ type Handler struct {
 // the wrong method. The cross-tenant provisioning routes (/api/admin/tenants/…)
 // are additionally guarded by requireAdmin (defence-in-depth). rescope (may be
 // nil) re-scopes a tenant's live streams after a mutation (WF2-33).
-func New(views ViewStore, subs SubscriptionStore, feeds FeedStore, tenants TenantStore, feats EntitlementService, logger *slog.Logger, rescope RescopeFunc) *Handler {
-	h := &Handler{views: views, subs: subs, feeds: feeds, tenants: tenants, feats: feats, rescope: rescope, logger: logger}
+func New(views ViewStore, subs SubscriptionStore, feeds FeedStore, tenants TenantStore, users UserStore, creds CredentialStore, feats EntitlementService, logger *slog.Logger, rescope RescopeFunc) *Handler {
+	h := &Handler{views: views, subs: subs, feeds: feeds, tenants: tenants, users: users, creds: creds, feats: feats, rescope: rescope, logger: logger}
 	mux := http.NewServeMux()
 	// whoami: the SPA's role probe (WF2-32). It sits behind the same admin gate, so
 	// a 200 here both confirms access and tells the client which panels to render.
@@ -104,6 +107,14 @@ func New(views ViewStore, subs SubscriptionStore, feeds FeedStore, tenants Tenan
 	// tenant's state, and set one flag. The billing/provisioning boundary.
 	mux.HandleFunc("GET /api/admin/tenants/{tenantID}/entitlements", h.requireAdmin(h.listTenantEntitlements))
 	mux.HandleFunc("PUT /api/admin/tenants/{tenantID}/entitlements/{key}", h.requireAdmin(h.setTenantEntitlement))
+	// Access management (AP6): an admin provisions and suspends access accounts
+	// per tenant, and pauses a whole tenant. Cross-tenant → requireAdmin.
+	mux.HandleFunc("PATCH /api/admin/tenants/{tenantID}", h.requireAdmin(h.setTenantStatus))
+	mux.HandleFunc("GET /api/admin/tenants/{tenantID}/users", h.requireAdmin(h.listUsers))
+	mux.HandleFunc("POST /api/admin/tenants/{tenantID}/users", h.requireAdmin(h.createUser))
+	mux.HandleFunc("PATCH /api/admin/tenants/{tenantID}/users/{userID}", h.requireAdmin(h.setUserStatus))
+	mux.HandleFunc("DELETE /api/admin/tenants/{tenantID}/users/{userID}", h.requireAdmin(h.deleteUser))
+	mux.HandleFunc("PUT /api/admin/tenants/{tenantID}/users/{userID}/password", h.requireAdmin(h.setUserPassword))
 	h.mux = mux
 	return h
 }
@@ -532,7 +543,7 @@ type tenantDTO struct {
 func toTenantDTOs(tenants []store.Tenant) []tenantDTO {
 	out := make([]tenantDTO, len(tenants))
 	for i, t := range tenants {
-		out[i] = tenantDTO{ID: t.ID, Slug: t.Slug, Name: t.Name, Status: t.Status}
+		out[i] = tenantDTO{ID: t.ID, Slug: t.Slug, Name: t.Name, Status: string(t.Status)}
 	}
 	return out
 }
