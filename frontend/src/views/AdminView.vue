@@ -25,6 +25,50 @@
         <v-progress-circular indeterminate color="primary" />
       </div>
 
+      <!-- 401: not logged in → show login form -->
+      <v-card
+        v-else-if="admin.accessStatus === 401"
+        class="mx-auto mt-8"
+        max-width="420"
+        variant="outlined"
+      >
+        <v-card-title class="pa-4 pb-0">Anmelden</v-card-title>
+        <v-card-text>
+          <v-alert
+            v-if="loginError"
+            type="error"
+            variant="tonal"
+            density="compact"
+            class="mb-4"
+          >{{ loginError }}</v-alert>
+          <v-form @submit.prevent="submitLogin">
+            <v-text-field
+              v-model="loginSubject"
+              label="Benutzername"
+              autocomplete="username"
+              autofocus
+              class="mb-2"
+            />
+            <v-text-field
+              v-model="loginPassword"
+              label="Passwort"
+              :type="showPassword ? 'text' : 'password'"
+              autocomplete="current-password"
+              :append-inner-icon="showPassword ? 'mdi-eye-off' : 'mdi-eye'"
+              @click:append-inner="showPassword = !showPassword"
+              class="mb-4"
+            />
+            <v-btn
+              type="submit"
+              color="primary"
+              :loading="loginLoading"
+              block
+            >Anmelden</v-btn>
+          </v-form>
+        </v-card-text>
+      </v-card>
+
+      <!-- 403 or other error: no login form, just an access notice -->
       <v-alert
         v-else-if="admin.accessError"
         type="error"
@@ -90,8 +134,26 @@ const admin = useAdminStore()
 const tab = ref('view')
 const loaded = ref(false)
 
+const loginSubject = ref('')
+const loginPassword = ref('')
+const loginLoading = ref(false)
+const loginError = ref(null)
+const showPassword = ref(false)
+
 onMounted(async () => {
   await admin.loadIdentity()
   loaded.value = true
 })
+
+async function submitLogin() {
+  loginError.value = null
+  loginLoading.value = true
+  const r = await admin.login(loginSubject.value, loginPassword.value)
+  loginLoading.value = false
+  if (r.ok) {
+    await admin.loadIdentity()
+  } else {
+    loginError.value = 'Benutzername oder Passwort ungültig.'
+  }
+}
 </script>

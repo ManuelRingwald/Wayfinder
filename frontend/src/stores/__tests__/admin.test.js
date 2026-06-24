@@ -102,6 +102,49 @@ describe('admin store — identity & role gating', () => {
     expect(ok).toBe(false)
     expect(s.isAuthorized).toBe(false)
     expect(s.accessError).toBe('forbidden')
+    expect(s.accessStatus).toBe(403)
+  })
+
+  it('sets accessStatus to 401 when not logged in', async () => {
+    installFetch({
+      'GET /api/admin/whoami': { status: 401, body: { error: 'unauthorized' } },
+    })
+    const s = useAdminStore()
+    await s.loadIdentity()
+    expect(s.accessStatus).toBe(401)
+    expect(s.isAuthorized).toBe(false)
+  })
+
+  it('clears accessStatus and accessError after successful login probe', async () => {
+    installFetch({
+      'GET /api/admin/whoami': { status: 200, body: { subject: 'alice', tenant_id: 7, user_id: 1, role: 'tenant_admin' } },
+    })
+    const s = useAdminStore()
+    await s.loadIdentity()
+    expect(s.accessStatus).toBeNull()
+    expect(s.accessError).toBeNull()
+    expect(s.isAuthorized).toBe(true)
+  })
+})
+
+describe('admin store — login', () => {
+  it('login POSTs subject and password to /api/login', async () => {
+    const calls = installFetch({ 'POST /api/login': { status: 204 } })
+    const s = useAdminStore()
+    const r = await s.login('alice', 's3cr3t')
+    expect(r.ok).toBe(true)
+    expect(r.status).toBe(204)
+    const post = calls.find((c) => c.method === 'POST')
+    expect(post.url).toBe('/api/login')
+    expect(JSON.parse(post.body)).toEqual({ subject: 'alice', password: 's3cr3t' })
+  })
+
+  it('login returns ok:false with 401 on wrong credentials', async () => {
+    installFetch({ 'POST /api/login': { status: 401, body: { error: 'invalid credentials' } } })
+    const s = useAdminStore()
+    const r = await s.login('alice', 'wrong')
+    expect(r.ok).toBe(false)
+    expect(r.status).toBe(401)
   })
 })
 
