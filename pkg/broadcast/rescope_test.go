@@ -411,3 +411,66 @@ func TestRescopeRaceUnderLoad(t *testing.T) {
 	drainCancel() // belt-and-suspenders
 	dw.Wait()
 }
+
+// TestUnregisterTwiceDoesNotPanic is a regression test for a double-close of a
+// client's send channel. A client can be enqueued for unregister more than once —
+// an explicit UnregisterClient (WS disconnect) racing the internal
+// drop-on-full-send paths. The second teardown must be a no-op, not a "close of
+// closed channel" panic that crashes the broadcaster goroutine (and, under load,
+// hangs or aborts the whole process).
+//
+// Determinism: unregisterChan is FIFO and is the only non-empty channel here, so
+// a sentinel client unregistered AFTER the two duplicate unregisters acts as a
+// barrier — once the client count reaches zero (sentinel gone), both duplicate
+// unregisters have necessarily been processed by the Run loop.
+func TestUnregisterTwiceDoesNotPanic(t *testing.T) {
+	b := discardBroadcaster()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go b.Run(ctx)
+
+	victim := b.RegisterClient(make(chan Message, 4), scopeFor(7, 1, []int64{1}, nil))
+	sentinel := b.RegisterClient(make(chan Message, 4), scopeFor(7, 2, []int64{1}, nil))
+	waitClients(t, b, 2)
+
+	// Enqueue the same client for unregister twice, then the sentinel last.
+	b.UnregisterClient(victim)
+	b.UnregisterClient(victim)
+	b.UnregisterClient(sentinel)
+
+	// Reaching zero requires the sentinel — and therefore both victim unregisters
+	// (FIFO) — to have been handled. With the bug, the second victim unregister
+	// panics the Run goroutine before the sentinel is reached, crashing the binary.
+	waitClients(t, b, 0)
+
+	// The broadcaster is still alive and serving: a fresh client registers.
+	_ = b.RegisterClient(make(chan Message, 4), scopeFor(7, 3, []int64{1}, nil))
+	waitClients(t, b, 1)
+}
+
+// TestBroadcastEvictionDoesNotSelfDeadlock is a regression test for a self-
+// deadlock: the drop-on-full-send path runs ON the Run goroutine, so routing an
+// eviction through unregisterChan — which only the Run goroutine drains — blocks
+// the broadcaster the moment that buffer fills. Registering more unresponsive
+// clients than cap(unregisterChan) and broadcasting a single batch evicts them
+// all in one Run iteration; the inline drop must handle that without blocking.
+func TestBroadcastEvictionDoesNotSelfDeadlock(t *testing.T) {
+	b := discardBroadcaster()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go b.Run(ctx)
+
+	// More clients than cap(unregisterChan) (=10), each with an unbuffered,
+	// undrained send channel so every delivery hits the drop path at once.
+	const nClients = 20
+	for i := 0; i < nClients; i++ {
+		b.RegisterClient(make(chan Message), scopeFor(7, int64(i+1), []int64{1}, nil))
+	}
+	waitClients(t, b, nClients)
+
+	// One batch every client is subscribed to → each send fails → each is evicted
+	// in the same broadcast. With the bug, the 11th eviction blocks the Run
+	// goroutine on a full unregisterChan and the count never reaches zero.
+	b.trackChan <- feedBatch(1, trackAt(1, 50, 9))
+	waitClients(t, b, 0)
+}
