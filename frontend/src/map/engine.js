@@ -142,9 +142,10 @@ export async function initMap(container, store, onTrackClick) {
     const wsURL = `${protocol}//${window.location.host}/ws`
 
     console.log('Connecting to', wsURL)
-    ws = new WebSocket(wsURL)
+    const socket = new WebSocket(wsURL)
+    ws = socket
 
-    ws.addEventListener('open', () => {
+    socket.addEventListener('open', () => {
       console.log('WebSocket connected')
       if (reconnectTimer) {
         clearTimeout(reconnectTimer)
@@ -152,7 +153,7 @@ export async function initMap(container, store, onTrackClick) {
       }
     })
 
-    ws.addEventListener('message', (event) => {
+    socket.addEventListener('message', (event) => {
       try {
         const msg = JSON.parse(event.data)
         // Feed-health updates (CAT065 heartbeat) are separate from the track
@@ -173,15 +174,34 @@ export async function initMap(container, store, onTrackClick) {
       }
     })
 
-    ws.addEventListener('close', () => {
+    socket.addEventListener('close', () => {
+      // Ignore the close of a socket we have already superseded — an explicit
+      // reconnect() (e.g. impersonation start/exit, ADR 0008) or a newer
+      // connection. Only the current socket drives the auto-reconnect timer.
+      if (ws !== socket) return
       console.warn('WebSocket disconnected, reconnecting in', reconnectDelay, 'ms')
       ws = null
       reconnectTimer = setTimeout(connectWebSocket, reconnectDelay)
     })
 
-    ws.addEventListener('error', (err) => {
+    socket.addEventListener('error', (err) => {
       console.error('WebSocket error:', err)
     })
+  }
+
+  // reconnect tears down the current socket and opens a fresh one immediately, so
+  // a changed impersonation grant cookie (ADR 0008) takes effect now instead of on
+  // the next natural reconnect. Detaching ws before closing makes the old socket's
+  // close handler no-op (it sees ws !== its own socket), avoiding a double connect.
+  function reconnect() {
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer)
+      reconnectTimer = null
+    }
+    const old = ws
+    ws = null
+    if (old && old.readyState <= WebSocket.OPEN) old.close()
+    connectWebSocket()
   }
 
   // Wire everything once the MapLibre style is fully loaded.
@@ -332,5 +352,5 @@ export async function initMap(container, store, onTrackClick) {
     src.setData(rangeRingsGeoJSON(cfg.center_lat, cfg.center_lon, spacingNM, count))
   }
 
-  return { map, destroy, setLayerVisibility, updateFlFilter, updateAirspaceFilter, zoomIn, zoomOut, recenter, updateRangeRings }
+  return { map, destroy, reconnect, setLayerVisibility, updateFlFilter, updateAirspaceFilter, zoomIn, zoomOut, recenter, updateRangeRings }
 }

@@ -267,9 +267,31 @@ func (b *Broadcaster) RegisterClient(sendChan chan Message, scope *Scope) *Clien
 	return c
 }
 
-// UnregisterClient removes a client from the broadcast list.
+// UnregisterClient asks the broadcaster to remove a client. It is the path for
+// EXTERNAL goroutines (e.g. the WebSocket handler on disconnect): the removal is
+// carried out on the Run goroutine, which drains unregisterChan. Code already
+// running on the Run goroutine must NOT call this — sending to a channel only it
+// receives from deadlocks once the buffer fills — and uses dropClient instead.
 func (b *Broadcaster) UnregisterClient(c *Client) {
 	b.unregisterChan <- c
+}
+
+// dropClient removes a client and closes its send channel. It MUST run on the
+// Run goroutine — the sole owner of client teardown — so the drop-on-full-send
+// paths (broadcastTracks/broadcast) and the unregisterChan case call it directly
+// rather than UnregisterClient: routing those through unregisterChan would make
+// the Run goroutine block sending to a channel only it receives from, deadlocking
+// the broadcaster once the buffer fills. LoadAndDelete makes the close idempotent
+// — a duplicate drop (e.g. an external UnregisterClient racing an eviction of the
+// same client) is a harmless no-op, never a "close of closed channel" panic, and
+// the per-tenant connected gauge is decremented exactly once.
+func (b *Broadcaster) dropClient(c *Client) bool {
+	if _, loaded := b.clients.LoadAndDelete(c); !loaded {
+		return false
+	}
+	b.tenantConnectedDelta(c, -1)
+	close(c.send)
+	return true
 }
 
 // ClientRef identifies a connected client and the user behind it, for live
@@ -380,10 +402,9 @@ func (b *Broadcaster) Run(ctx context.Context) error {
 			b.logger.Debug("client registered", slog.Int("clients", b.clientCount()))
 
 		case c := <-b.unregisterChan:
-			b.clients.Delete(c)
-			b.tenantConnectedDelta(c, -1)
-			close(c.send)
-			b.logger.Debug("client unregistered", slog.Int("clients", b.clientCount()))
+			if b.dropClient(c) {
+				b.logger.Debug("client unregistered", slog.Int("clients", b.clientCount()))
+			}
 
 		case batch := <-b.trackChan:
 			b.broadcastTracks(batch)
@@ -479,7 +500,7 @@ func (b *Broadcaster) broadcastTracks(batch TrackBatch) {
 		default:
 			b.logger.Warn("client send channel full, evicting client")
 			b.evicted.Add(1)
-			b.UnregisterClient(c)
+			b.dropClient(c)
 		}
 		return true
 	})
@@ -543,7 +564,7 @@ func (b *Broadcaster) broadcast(msg Message) {
 			// Client's send channel is full; unregister it.
 			b.logger.Warn("client send channel full, evicting client")
 			b.evicted.Add(1)
-			b.UnregisterClient(c)
+			b.dropClient(c)
 		}
 		return true
 	})

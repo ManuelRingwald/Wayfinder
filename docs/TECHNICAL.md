@@ -1,8 +1,12 @@
 # Wayfinder — Technische Referenz
 
-> **Zweck:** Betriebshandbuch für Systemadministratoren, Integrationspartner
-> und Entwickler. Beschreibt Architektur, Schnittstellen, Metriken,
+> **Zweck:** Technische **Referenz** für Systemadministratoren, Integrations­
+> partner und Entwickler. Beschreibt Architektur, Schnittstellen, Metriken,
 > Konfigurationsparameter und Betriebsverhalten von Wayfinder.
+
+> 📚 **Verwandte Dokumente:** Aufsetzen → `docs/INSTALLATION.md`; **Tagesbetrieb**
+> als aufgabenorientiertes Runbook (Kontrollen, Pflege, Sicherung, Störungs­
+> behebung) → `docs/BETRIEB.md` (Betriebsführungshandbuch).
 
 ---
 
@@ -196,6 +200,7 @@ Durch `authMiddleware` geschützt (wenn `WAYFINDER_AUTH_TOKEN` gesetzt).
 | `/api/admin/whoami` | GET | Rollen-Probe + **effektive Feature-Flags** (`features`) als JSON; rollen-gegated (WF2-32/50) |
 | `/api/admin/tenants/{id}/entitlements[/{key}]` | GET/PUT | Feature-Entitlements pro Mandant; **super_admin** (WF2-50) |
 | `/api/admin/sensor-classes` | GET | Sensorklassen-Katalog (read-only Referenz, WF2-41) |
+| `/api/admin/impersonation` | GET/POST/DELETE | Cross-Tenant Read-Only-Impersonation (ADR 0008): **GET** liefert den aktuellen Status (`{active, tenant_id}`) für den Banner (Reload-fest, da der Cookie HttpOnly ist); **POST** `{"tenant_id":…}` mintet den signierten Grant-Cookie (`super_admin` only, Ziel-Mandant muss existieren → sonst 404); **DELETE** beendet sie (Cookie löschen). Nur aktiv, wenn ein Signing-Key (`WAYFINDER_SESSION_KEY`) konfiguriert ist. |
 | `/api/admin/*` | div. | Tenant-skopiertes Admin-API (WF2-31/31b); rollen-gegated |
 
 > **Feed-Sensorklassen & Abo-Entitlement (WF2-41):** Ein Feed trägt eine
@@ -268,6 +273,7 @@ externe Prometheus-Bibliothek — der Exporter ist handgerollt in
 | `wayfinder_ws_clients_evicted_total` | Counter | Anzahl Clients, die wegen vollem Send-Channel entfernt wurden (langsame oder hängende Verbindungen) |
 | `wayfinder_tenant_ws_clients_connected{tenant="…"}` | Gauge | **Pro Mandant** verbundene Clients (WF2-23.2). Label-Wert = stabile `tenant_id`. Nur im Multi-Mandanten-Betrieb. |
 | `wayfinder_tenant_tracks_delivered_total{tenant="…"}` | Counter | **Pro Mandant** zugestellte Track-Nachrichten (WF2-23.2), fürs Billing/SLA-Monitoring. |
+| `wayfinder_impersonation_sessions_total` | Counter | Gestartete `super_admin`-Read-Only-Impersonation-`/ws`-Sessions (ADR 0008). **Bewusst aus den Pro-Tenant-Serien ausgeschlossen** (die Session läuft mit `scope.TenantID=0`), damit Support-Einblicke Verbrauch/SLA des Ziel-Mandanten nicht verfälschen. |
 
 > **Kardinalitäts-Regel (WF2-23):** Metrik-Labels sind auf das **kontrollierte
 > `tenant`-Label** (stabile `tenant_id`) beschränkt. Hochkardinale Identität
