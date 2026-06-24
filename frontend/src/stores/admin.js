@@ -32,6 +32,7 @@ async function apiFetch(path, options = {}) {
 export const useAdminStore = defineStore('admin', () => {
   const identity = ref(null)     // whoami: { subject, tenant_id, user_id, role }
   const accessError = ref(null)  // set when whoami is refused (401/403)
+  const accessStatus = ref(null) // HTTP status when whoami fails (401 = not logged in, 403 = wrong role)
   const view = ref(null)         // the tenant's effective view config (or null)
   const feeds = ref([])          // full feed catalogue
   const subscriptions = ref([])  // feeds the current tenant is subscribed to
@@ -60,11 +61,23 @@ export const useAdminStore = defineStore('admin', () => {
     if (r.ok) {
       identity.value = r.data
       accessError.value = null
+      accessStatus.value = null
     } else {
       identity.value = null
       accessError.value = r.error
+      accessStatus.value = r.status
     }
     return r.ok
+  }
+
+  // login posts credentials to the builtin auth endpoint. On success the server
+  // sets a wf_session HttpOnly cookie; the caller should follow up with
+  // loadIdentity() to populate the store.
+  async function login(subject, password) {
+    return apiFetch('/api/login', {
+      method: 'POST',
+      body: JSON.stringify({ subject, password }),
+    })
   }
 
   async function loadView() {
@@ -146,9 +159,9 @@ export const useAdminStore = defineStore('admin', () => {
   }
 
   return {
-    identity, accessError, view, feeds, subscriptions, tenants, error, notice,
+    identity, accessError, accessStatus, view, feeds, subscriptions, tenants, error, notice,
     role, isSuperAdmin, isAdmin, isAuthorized, features, hasFeature,
-    loadIdentity, loadView, saveView, loadFeeds, loadSubscriptions,
+    loadIdentity, login, loadView, saveView, loadFeeds, loadSubscriptions,
     loadTenants, loadTenantSubscriptions, grant, revoke, clearBanners,
   }
 })
