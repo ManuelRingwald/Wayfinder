@@ -27,8 +27,8 @@ async function apiFetch(path, options = {}) {
 }
 
 // useAdminStore backs the WF2-32 admin dashboard. It consumes the WF2-31 admin
-// REST API; the role gating it exposes (isSuperAdmin) is cosmetic — the server
-// independently enforces every boundary (requireSuper → 403).
+// REST API; the role gating it exposes (isAdmin) is cosmetic — the server
+// independently enforces every boundary (RequireRole(admin) → 403).
 export const useAdminStore = defineStore('admin', () => {
   const identity = ref(null)     // whoami: { subject, tenant_id, user_id, role }
   const accessError = ref(null)  // set when whoami is refused (401/403)
@@ -36,15 +36,14 @@ export const useAdminStore = defineStore('admin', () => {
   const view = ref(null)         // the tenant's effective view config (or null)
   const feeds = ref([])          // full feed catalogue
   const subscriptions = ref([])  // feeds the current tenant is subscribed to
-  const tenants = ref([])        // super_admin: all tenants
+  const tenants = ref([])        // admin: all tenants (cross-tenant provisioning)
   const error = ref(null)        // last action error (banner)
   const notice = ref(null)       // last success message (banner)
 
   const role = computed(() => identity.value?.role ?? null)
-  const isSuperAdmin = computed(() => role.value === 'super_admin')
-  // Admin-rail visibility (Req 1): only tenant_admin or super_admin may reach
-  // /admin. Cosmetic gating — the server enforces /api/admin/* via RequireRole.
-  const isAdmin = computed(() => role.value === 'tenant_admin' || role.value === 'super_admin')
+  // Admin-rail visibility (Req 1, ADR 0009): only admin may reach /admin.
+  // Cosmetic gating — the server enforces /api/admin/* via RequireRole(admin).
+  const isAdmin = computed(() => role.value === 'admin')
   const isAuthorized = computed(() => identity.value !== null)
   // WF2-50: per-tenant feature entitlements, delivered by whoami. UI gating off
   // these is cosmetic — the server enforces every feature server-side.
@@ -115,7 +114,7 @@ export const useAdminStore = defineStore('admin', () => {
     return r
   }
 
-  // --- super_admin cross-tenant provisioning -------------------------------
+  // --- cross-tenant provisioning (admin) -----------------------------------
 
   async function loadTenants() {
     const r = await apiFetch('/api/admin/tenants')
@@ -160,7 +159,7 @@ export const useAdminStore = defineStore('admin', () => {
 
   return {
     identity, accessError, accessStatus, view, feeds, subscriptions, tenants, error, notice,
-    role, isSuperAdmin, isAdmin, isAuthorized, features, hasFeature,
+    role, isAdmin, isAuthorized, features, hasFeature,
     loadIdentity, login, loadView, saveView, loadFeeds, loadSubscriptions,
     loadTenants, loadTenantSubscriptions, grant, revoke, clearBanners,
   }

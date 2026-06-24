@@ -113,10 +113,10 @@ func Resolve(ctx context.Context, rawGrant string, id tenant.Identity, key []byt
 		// can audit a note because rawGrant was non-empty.
 		return Decision{}, nil
 	}
-	// A cryptographically valid, unexpired grant is honoured ONLY for a
-	// super_admin. Anyone else presenting one is a misuse signal → fail loud,
+	// A cryptographically valid, unexpired grant is honoured ONLY for an
+	// admin. Anyone else presenting one is a misuse signal → fail loud,
 	// before touching the database.
-	if id.Role != store.RoleSuperAdmin {
+	if id.Role != store.RoleAdmin {
 		return Decision{}, ErrDenied
 	}
 	ok, err := tenants.Exists(ctx, tid)

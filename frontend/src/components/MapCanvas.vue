@@ -6,8 +6,6 @@
       @zoom-out="mapEngine?.zoomOut()"
       @recenter="mapEngine?.recenter()"
     />
-    <!-- ASD-013: FeedStatusChip moved here after app bar removal -->
-    <FeedStatusChip class="feed-chip" />
     <!-- ASD-010: category filter chips top-centre -->
     <TrackFilterChips />
     <!-- WF2-34: super_admin read-only impersonation banner/switcher (ADR 0008) -->
@@ -22,7 +20,6 @@ import { useImpersonationStore } from '@/stores/impersonation.js'
 import { initMap } from '@/map/engine.js'
 import MapControls from './MapControls.vue'
 import TrackFilterChips from './TrackFilterChips.vue'
-import FeedStatusChip from './FeedStatusChip.vue'
 import ImpersonationBar from './ImpersonationBar.vue'
 
 const emit = defineEmits(['track-click'])
@@ -84,12 +81,3 @@ defineExpose({
 })
 </script>
 
-<style scoped>
-/* ASD-013: Feed chip anchored top-right, beside map controls. */
-.feed-chip {
-  position: absolute;
-  top: 12px;
-  right: 60px;
-  z-index: 10;
-}
-</style>

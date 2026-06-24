@@ -95,10 +95,10 @@ const emit = defineEmits(['update:modelValue', 'layer-toggle', 'fl-filter-change
 
 const { mdAndUp } = useDisplay()
 
-// Req 1: an Admin entry appears in the rail only for tenant_admin/super_admin.
-// We probe the identity once on mount; fail-closed — an operator (or a
-// single-tenant deployment) gets 401/403/404 and isAdmin stays false. The real
-// guard is server-side (RequireRole on /api/admin/*); this is convenience only.
+// Req 1: an Admin entry appears in the rail only for the admin role (ADR 0009).
+// We probe the identity once on mount; fail-closed — a user (or a single-tenant
+// deployment) gets 401/403/404 and isAdmin stays false. The real guard is
+// server-side (RequireRole(admin) on /api/admin/*); this is convenience only.
 const router = useRouter()
 const adminStore = useAdminStore()
 const isAdmin = computed(() => adminStore.isAdmin)

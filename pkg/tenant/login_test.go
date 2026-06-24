@@ -37,7 +37,7 @@ func loginFixture(t *testing.T) (UserLookup, CredentialLookup) {
 		t.Fatalf("hash: %v", err)
 	}
 	users := fakeUsers{bySubject: map[string]store.User{
-		"bob": {ID: 5, TenantID: 1, Subject: "bob", Role: store.RoleOperator},
+		"bob": {ID: 5, TenantID: 1, Subject: "bob", Role: store.RoleUser},
 	}}
 	creds := fakeCreds{byUser: map[int64]string{5: hash}}
 	return users, creds

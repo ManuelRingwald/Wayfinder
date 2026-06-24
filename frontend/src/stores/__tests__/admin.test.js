@@ -29,21 +29,20 @@ beforeEach(() => {
 describe('admin store — identity & role gating', () => {
   it('loadIdentity stores the identity and exposes the role', async () => {
     installFetch({
-      'GET /api/admin/whoami': { status: 200, body: { subject: 'alice', tenant_id: 7, user_id: 1, role: 'tenant_admin' } },
+      'GET /api/admin/whoami': { status: 200, body: { subject: 'alice', tenant_id: 7, user_id: 1, role: 'admin' } },
     })
     const s = useAdminStore()
     const ok = await s.loadIdentity()
     expect(ok).toBe(true)
     expect(s.isAuthorized).toBe(true)
-    expect(s.role).toBe('tenant_admin')
-    expect(s.isSuperAdmin).toBe(false)
+    expect(s.role).toBe('admin')
+    expect(s.isAdmin).toBe(true)
   })
 
-  it('isAdmin gates the rail Admin entry to tenant_admin / super_admin', async () => {
+  it('isAdmin gates the rail Admin entry to the admin role', async () => {
     const cases = [
-      { role: 'tenant_admin', status: 200, want: true },
-      { role: 'super_admin', status: 200, want: true },
-      { role: null, status: 403, want: false }, // operator/non-admin → whoami 403
+      { role: 'admin', status: 200, want: true },
+      { role: null, status: 403, want: false }, // user/non-admin → whoami 403
     ]
     for (const c of cases) {
       setActivePinia(createPinia())
@@ -63,7 +62,7 @@ describe('admin store — identity & role gating', () => {
     installFetch({
       'GET /api/admin/whoami': {
         status: 200,
-        body: { subject: 'alice', tenant_id: 7, user_id: 1, role: 'tenant_admin',
+        body: { subject: 'alice', tenant_id: 7, user_id: 1, role: 'admin',
           features: { stca: true, multi_feed: false, premium_layers: true } },
       },
     })
@@ -77,20 +76,20 @@ describe('admin store — identity & role gating', () => {
 
   it('hasFeature is false when whoami omits features (fail-safe default)', async () => {
     installFetch({
-      'GET /api/admin/whoami': { status: 200, body: { subject: 'alice', tenant_id: 7, user_id: 1, role: 'tenant_admin' } },
+      'GET /api/admin/whoami': { status: 200, body: { subject: 'alice', tenant_id: 7, user_id: 1, role: 'admin' } },
     })
     const s = useAdminStore()
     await s.loadIdentity()
     expect(s.hasFeature('stca')).toBe(false)
   })
 
-  it('marks super_admin so the provisioning panel is shown', async () => {
+  it('marks admin so the provisioning panel is shown', async () => {
     installFetch({
-      'GET /api/admin/whoami': { status: 200, body: { subject: 'root', tenant_id: 1, user_id: 1, role: 'super_admin' } },
+      'GET /api/admin/whoami': { status: 200, body: { subject: 'root', tenant_id: 1, user_id: 1, role: 'admin' } },
     })
     const s = useAdminStore()
     await s.loadIdentity()
-    expect(s.isSuperAdmin).toBe(true)
+    expect(s.isAdmin).toBe(true)
   })
 
   it('records an access error and stays unauthorized on 403', async () => {
@@ -117,7 +116,7 @@ describe('admin store — identity & role gating', () => {
 
   it('clears accessStatus and accessError after successful login probe', async () => {
     installFetch({
-      'GET /api/admin/whoami': { status: 200, body: { subject: 'alice', tenant_id: 7, user_id: 1, role: 'tenant_admin' } },
+      'GET /api/admin/whoami': { status: 200, body: { subject: 'alice', tenant_id: 7, user_id: 1, role: 'admin' } },
     })
     const s = useAdminStore()
     await s.loadIdentity()
@@ -180,7 +179,7 @@ describe('admin store — view config', () => {
   })
 })
 
-describe('admin store — super_admin provisioning', () => {
+describe('admin store — provisioning', () => {
   it('grant POSTs feed_id to the tenant subscriptions endpoint', async () => {
     const calls = installFetch({ 'POST /api/admin/tenants/42/subscriptions': { status: 204 } })
     const s = useAdminStore()
@@ -201,11 +200,11 @@ describe('admin store — super_admin provisioning', () => {
     expect(del.url).toBe('/api/admin/tenants/42/subscriptions/9')
   })
 
-  it('reports a 403 from grant (tenant_admin attempting cross-tenant write)', async () => {
-    installFetch({ 'POST /api/admin/tenants/42/subscriptions': { status: 403, body: { error: 'super_admin required' } } })
+  it('reports a 403 from grant (user attempting cross-tenant write)', async () => {
+    installFetch({ 'POST /api/admin/tenants/42/subscriptions': { status: 403, body: { error: 'admin required' } } })
     const s = useAdminStore()
     const r = await s.grant(42, 9)
     expect(r.ok).toBe(false)
-    expect(s.error).toBe('super_admin required')
+    expect(s.error).toBe('admin required')
   })
 })

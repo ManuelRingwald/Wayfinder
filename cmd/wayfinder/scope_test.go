@@ -41,7 +41,7 @@ var noView = fakeViewGetter{err: store.ErrNotFound}
 
 func withIdentity(tenantID int64) *http.Request {
 	r := httptest.NewRequest(http.MethodGet, "/ws", nil)
-	return r.WithContext(tenant.WithIdentity(r.Context(), tenant.Identity{TenantID: tenantID, Role: store.RoleOperator}))
+	return r.WithContext(tenant.WithIdentity(r.Context(), tenant.Identity{TenantID: tenantID, Role: store.RoleUser}))
 }
 
 func TestNewScopeResolver(t *testing.T) {
@@ -91,7 +91,7 @@ func TestScopeResolverEmitsAudit(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/ws", nil)
 	req = req.WithContext(tenant.WithIdentity(req.Context(),
-		tenant.Identity{TenantID: 7, UserID: 3, Subject: "alice", Role: store.RoleOperator}))
+		tenant.Identity{TenantID: 7, UserID: 3, Subject: "alice", Role: store.RoleUser}))
 	if _, err := resolve(req); err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
@@ -199,7 +199,7 @@ func TestScopeResolverImpersonationActive(t *testing.T) {
 	resolve := impersonationResolver()
 	grant := impersonation.MintGrant(9, time.Hour, impKey)
 
-	scope, err := resolve(requestAs(7, store.RoleSuperAdmin, grant))
+	scope, err := resolve(requestAs(7, store.RoleAdmin, grant))
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
@@ -216,16 +216,14 @@ func TestScopeResolverImpersonationActive(t *testing.T) {
 	}
 }
 
-func TestScopeResolverImpersonationDeniedForNonSuper(t *testing.T) {
+func TestScopeResolverImpersonationDeniedForNonAdmin(t *testing.T) {
 	resolve := impersonationResolver()
 	grant := impersonation.MintGrant(9, time.Hour, impKey)
 
-	// A cryptographically valid grant presented by a non-super_admin must be a
-	// loud failure (handshake reject), never silently honoured or ignored.
-	for _, role := range []store.Role{store.RoleOperator, store.RoleTenantAdmin} {
-		if _, err := resolve(requestAs(7, role, grant)); err == nil {
-			t.Errorf("role=%s: a valid grant from a non-super_admin must be rejected", role)
-		}
+	// A cryptographically valid grant presented by a non-admin must be a loud
+	// failure (handshake reject), never silently honoured or ignored.
+	if _, err := resolve(requestAs(7, store.RoleUser, grant)); err == nil {
+		t.Errorf("role=user: a valid grant from a non-admin must be rejected")
 	}
 }
 
@@ -233,7 +231,7 @@ func TestScopeResolverImpersonationUnknownTenantRejected(t *testing.T) {
 	resolve := impersonationResolver()
 	grant := impersonation.MintGrant(404, time.Hour, impKey) // tenant 404 does not exist
 
-	if _, err := resolve(requestAs(7, store.RoleSuperAdmin, grant)); err == nil {
+	if _, err := resolve(requestAs(7, store.RoleAdmin, grant)); err == nil {
 		t.Error("a grant naming a non-existent tenant must be rejected")
 	}
 }
@@ -242,9 +240,9 @@ func TestScopeResolverImpersonationExpiredFallsBack(t *testing.T) {
 	resolve := impersonationResolver()
 	expired := impersonation.MintGrant(9, -time.Minute, impKey)
 
-	// An expired grant carries no authority → the default path (the super_admin's
-	// OWN tenant), byte-identical to no impersonation, with no error.
-	scope, err := resolve(requestAs(7, store.RoleSuperAdmin, expired))
+	// An expired grant carries no authority → the default path (the admin's OWN
+	// tenant), byte-identical to no impersonation, with no error.
+	scope, err := resolve(requestAs(7, store.RoleAdmin, expired))
 	if err != nil {
 		t.Fatalf("expired grant must fall back to the default path, got %v", err)
 	}
@@ -257,13 +255,13 @@ func TestScopeResolverImpersonationExpiredFallsBack(t *testing.T) {
 }
 
 func TestScopeResolverImpersonationDisabledWithoutKey(t *testing.T) {
-	// No checker/key → impersonation disabled platform-wide: even a super_admin's
+	// No checker/key → impersonation disabled platform-wide: even an admin's
 	// valid-looking grant is ignored, the caller sees their own tenant.
 	feeds := feedsByTenant{7: {1}, 9: {2, 3}}
 	resolve := newScopeResolver(feeds, noView, nil, nil, discardLogger())
 	grant := impersonation.MintGrant(9, time.Hour, impKey)
 
-	scope, err := resolve(requestAs(7, store.RoleSuperAdmin, grant))
+	scope, err := resolve(requestAs(7, store.RoleAdmin, grant))
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}

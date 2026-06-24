@@ -24,7 +24,7 @@ type bootstrapParams struct {
 	TenantName string     // defaults to TenantSlug when empty
 	Subject    string     // OIDC subject (proxy) or username (builtin)
 	Email      string     // optional
-	Role       store.Role // defaults to tenant_admin
+	Role       store.Role // defaults to admin
 	Password   string     // optional; only stored as a builtin credential when set
 }
 
@@ -38,7 +38,7 @@ func (p bootstrapParams) validate() error {
 		return errors.New("missing -subject")
 	}
 	if !p.Role.Valid() {
-		return fmt.Errorf("invalid -role %q (operator|tenant_admin|super_admin)", p.Role)
+		return fmt.Errorf("invalid -role %q (user|admin)", p.Role)
 	}
 	return nil
 }
@@ -129,7 +129,7 @@ func bootstrapCommand(args []string, out io.Writer) error {
 	fs.StringVar(&p.TenantName, "tenant-name", "", "tenant display name (default: slug)")
 	fs.StringVar(&p.Subject, "subject", "", "admin subject / username (required)")
 	fs.StringVar(&p.Email, "email", "", "admin email (optional)")
-	fs.StringVar(&role, "role", string(store.RoleTenantAdmin), "role: operator|tenant_admin|super_admin")
+	fs.StringVar(&role, "role", string(store.RoleAdmin), "role: user|admin")
 	fs.StringVar(&p.Password, "password", "", "builtin-mode password (prefer WAYFINDER_BOOTSTRAP_PASSWORD)")
 	if err := fs.Parse(args); err != nil {
 		return err

@@ -344,13 +344,13 @@ func main() {
 	}
 
 	// Admin surface (WF2-13/31/32): the tenant-scoped admin REST API is role-gated
-	// to tenant_admin/super_admin and carries the whoami role probe the SPA reads on
+	// to admin (ADR 0009) and carries the whoami role probe the SPA reads on
 	// entering /admin (GET /api/admin/whoami). The browser route /admin itself is no
 	// longer a backend endpoint — it is served by the SPA shell via the history-mode
 	// fallback in webui.Handler. Only mounted with multi-tenancy active — the gate
 	// needs an Identity from the tenant middleware.
 	if tenantMW != nil {
-		requireAdmin := tenant.RequireRole(store.RoleTenantAdmin, store.RoleSuperAdmin)
+		requireAdmin := tenant.RequireRole(store.RoleAdmin)
 		viewRepo := store.NewViewConfigRepo(dbPool)
 		subRepo := store.NewSubscriptionRepo(dbPool)
 		// Live-apply (WF2-33): when an admin changes a tenant's view or feed
@@ -361,11 +361,11 @@ func main() {
 		adminAPI := adminapi.New(viewRepo, subRepo, store.NewFeedRepo(dbPool), store.NewTenantRepo(dbPool), featSvc, logger, rescope)
 		mux.Handle("/api/admin/", tenantMW(requireAdmin(adminAPI)))
 
-		// Cross-tenant read-only impersonation (ADR 0008, WF2-34): mint
-		// (super_admin only) and clear the grant cookie. The more-specific
-		// method+path patterns take precedence over the /api/admin/ subtree. Only
-		// wired when a signing key is configured; otherwise impersonation stays
-		// disabled platform-wide (fail-closed), matching the /ws read path.
+		// Cross-tenant read-only impersonation (ADR 0008, WF2-34): mint and clear
+		// the grant cookie. The more-specific method+path patterns take precedence
+		// over the /api/admin/ subtree. Only wired when a signing key is configured;
+		// otherwise impersonation stays disabled platform-wide (fail-closed),
+		// matching the /ws read path.
 		if len(cfg.SessionKey) > 0 {
 			impAudit := logger.With(slog.String("component", "audit"))
 			impCfg := impersonationCookieConfig{
@@ -374,9 +374,8 @@ func main() {
 				secure: cfg.TLSCertFile != "" && cfg.TLSKeyFile != "",
 			}
 			impChecker := tenantExistsChecker{repo: store.NewTenantRepo(dbPool)}
-			requireSuper := tenant.RequireRole(store.RoleSuperAdmin)
 			mux.Handle("GET /api/admin/impersonation", tenantMW(requireAdmin(impersonationStatusHandler(impChecker, impCfg))))
-			mux.Handle("POST /api/admin/impersonation", tenantMW(requireSuper(startImpersonationHandler(impChecker, impCfg, impAudit))))
+			mux.Handle("POST /api/admin/impersonation", tenantMW(requireAdmin(startImpersonationHandler(impChecker, impCfg, impAudit))))
 			mux.Handle("DELETE /api/admin/impersonation", tenantMW(requireAdmin(stopImpersonationHandler(impCfg, impAudit))))
 			logger.Info("impersonation enabled (ADR 0008)",
 				slog.String("path", "/api/admin/impersonation"), slog.Duration("ttl", cfg.ImpersonationTTL))
@@ -806,11 +805,11 @@ func resolveScope(ctx context.Context, subs feedLister, views viewGetter, tenant
 //
 // Cross-tenant read-only impersonation (ADR 0008): when impersonation is enabled
 // (tenants != nil and a signing key is configured) and the request carries a
-// valid grant from a super_admin, the read scope AND view are resolved against
-// the TARGET tenant instead of the caller's own. The authenticated Identity is
+// valid grant from an admin, the read scope AND view are resolved against the
+// TARGET tenant instead of the caller's own. The authenticated Identity is
 // untouched; the resulting scope is detached from the target's accounting
 // (TenantID zeroed) so it is excluded from per-tenant metrics and live re-scope.
-// A valid grant from a non-super_admin, or one naming a missing tenant, is a loud
+// A valid grant from a non-admin, or one naming a missing tenant, is a loud
 // failure (handshake reject + audit); an absent/invalid/expired grant falls back
 // to the normal, byte-identical path (so the WF2-22 isolation tests stay valid).
 func newScopeResolver(subs feedLister, views viewGetter, tenants impersonation.TenantChecker, key []byte, logger *slog.Logger) ws.ScopeResolver {
@@ -904,7 +903,7 @@ func logScopeAudit(audit *slog.Logger, r *http.Request, id tenant.Identity, feed
 		slog.String("remote", r.RemoteAddr),
 	}
 	if imp.Active {
-		// The actor (super_admin) is already logged above (user_id/subject); record
+		// The admin actor is already logged above (user_id/subject); record
 		// which tenant they viewed read-only (ADR 0008 §7).
 		attrs = append(attrs,
 			slog.Bool("impersonation", true),
@@ -1092,7 +1091,7 @@ func startProbeServer(logger *slog.Logger, blockCount, trackCount, tracksCurrent
 			metrics.Gauge("wayfinder_tracks_current", "Number of tracks in the most recently received CAT062 block.", tracksCurrent.Load()),
 			metrics.Gauge("wayfinder_ws_clients_connected", "Number of currently connected WebSocket clients.", int64(broadcaster.ClientCount())),
 			metrics.Counter("wayfinder_ws_clients_evicted_total", "Total number of WebSocket clients evicted due to a full send channel.", broadcaster.EvictedCount()),
-			metrics.Counter("wayfinder_impersonation_sessions_total", "Total super_admin read-only impersonation /ws sessions started (ADR 0008). Excluded from the per-tenant series.", impersonationSessions.Load()),
+			metrics.Counter("wayfinder_impersonation_sessions_total", "Total admin read-only impersonation /ws sessions started (ADR 0008). Excluded from the per-tenant series.", impersonationSessions.Load()),
 			metrics.Counter("wayfinder_cat065_heartbeats_received_total", "Total number of CAT065 SDPS-status heartbeats received.", heartbeatCount.Load()),
 			metrics.Gauge("wayfinder_feed_stale", "1 if the CAT065 heartbeat feed is currently stale, else 0.", feedStale),
 			metrics.Counter("wayfinder_openaip_fetch_success_total", "Total number of successful OpenAIP aeronautical fetches (per kind).", aeroService.FetchSuccessCount()),

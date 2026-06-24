@@ -144,7 +144,7 @@ func adminReq(method, path, body string, tenantID int64, role store.Role) *http.
 // --- whoami role probe (WF2-32) ---------------------------------------------
 
 func TestWhoamiReportsIdentity(t *testing.T) {
-	for _, role := range []store.Role{store.RoleTenantAdmin, store.RoleSuperAdmin} {
+	for _, role := range []store.Role{store.RoleAdmin, store.RoleAdmin} {
 		rec := httptest.NewRecorder()
 		handlerWith(&fakeVS{}, fakeFeeds{}, fakeTenants{}).
 			ServeHTTP(rec, adminReq(http.MethodGet, "/api/admin/whoami", "", 7, role))
@@ -163,7 +163,7 @@ func TestWhoamiIncludesEffectiveFeatures(t *testing.T) {
 	fe := &fakeEntitlements{eff: map[feature.Key]bool{feature.STCA: true, feature.MultiFeed: false}}
 	rec := httptest.NewRecorder()
 	handlerWithEnt(&fakeVS{}, fakeFeeds{}, fakeTenants{}, fe).
-		ServeHTTP(rec, adminReq(http.MethodGet, "/api/admin/whoami", "", 7, store.RoleTenantAdmin))
+		ServeHTTP(rec, adminReq(http.MethodGet, "/api/admin/whoami", "", 7, store.RoleAdmin))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
@@ -197,7 +197,7 @@ func TestPutViewTriggersRescope(t *testing.T) {
 	h := handlerWithRescope(&fakeVS{}, fakeFeeds{}, fakeTenants{}, rec.fn)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, adminReq(http.MethodPut, "/api/admin/view",
-		`{"center_lat":50,"center_lon":9,"zoom":8}`, 7, store.RoleTenantAdmin))
+		`{"center_lat":50,"center_lon":9,"zoom":8}`, 7, store.RoleAdmin))
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", w.Code)
 	}
@@ -211,7 +211,7 @@ func TestPutViewInvalidDoesNotRescope(t *testing.T) {
 	h := handlerWithRescope(&fakeVS{}, fakeFeeds{}, fakeTenants{}, rec.fn)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, adminReq(http.MethodPut, "/api/admin/view",
-		`{"center_lat":50,"center_lon":9,"zoom":99}`, 7, store.RoleTenantAdmin)) // zoom out of range
+		`{"center_lat":50,"center_lon":9,"zoom":99}`, 7, store.RoleAdmin)) // zoom out of range
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", w.Code)
 	}
@@ -227,7 +227,7 @@ func TestGrantTriggersRescope(t *testing.T) {
 	h := handlerWithRescope(&fakeVS{}, ff, ft, rec.fn)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, adminReq(http.MethodPost, "/api/admin/tenants/5/subscriptions",
-		`{"feed_id":3}`, 1, store.RoleSuperAdmin))
+		`{"feed_id":3}`, 1, store.RoleAdmin))
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want 204", w.Code)
 	}
@@ -241,7 +241,7 @@ func TestRevokeTriggersRescope(t *testing.T) {
 	h := handlerWithRescope(&fakeVS{}, fakeFeeds{}, fakeTenants{}, rec.fn)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, adminReq(http.MethodDelete, "/api/admin/tenants/5/subscriptions/3",
-		"", 1, store.RoleSuperAdmin))
+		"", 1, store.RoleAdmin))
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want 204", w.Code)
 	}
@@ -250,13 +250,13 @@ func TestRevokeTriggersRescope(t *testing.T) {
 	}
 }
 
-// --- tenant_admin self-service (tenant from Identity) -----------------------
+// --- admin self-service (tenant from Identity) -----------------------
 
 func TestGetView(t *testing.T) {
 	flMin := 100
 	vs := &fakeVS{vc: store.ViewConfig{CenterLat: 50, CenterLon: 9, Zoom: 8, FLMin: &flMin}}
 	rec := httptest.NewRecorder()
-	handlerWith(vs, fakeFeeds{}, fakeTenants{}).ServeHTTP(rec, adminReq(http.MethodGet, "/api/admin/view", "", 7, store.RoleTenantAdmin))
+	handlerWith(vs, fakeFeeds{}, fakeTenants{}).ServeHTTP(rec, adminReq(http.MethodGet, "/api/admin/view", "", 7, store.RoleAdmin))
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
@@ -271,7 +271,7 @@ func TestGetView(t *testing.T) {
 func TestGetViewNotFound(t *testing.T) {
 	rec := httptest.NewRecorder()
 	handlerWith(&fakeVS{getErr: store.ErrNotFound}, fakeFeeds{}, fakeTenants{}).
-		ServeHTTP(rec, adminReq(http.MethodGet, "/api/admin/view", "", 7, store.RoleTenantAdmin))
+		ServeHTTP(rec, adminReq(http.MethodGet, "/api/admin/view", "", 7, store.RoleAdmin))
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", rec.Code)
 	}
@@ -292,7 +292,7 @@ func TestPutViewIsTenantScoped(t *testing.T) {
 	vs := &fakeVS{}
 	rec := httptest.NewRecorder()
 	body := `{"center_lat":50,"center_lon":9,"zoom":8,"fl_min":100,"fl_max":300}`
-	handlerWith(vs, fakeFeeds{}, fakeTenants{}).ServeHTTP(rec, adminReq(http.MethodPut, "/api/admin/view", body, 7, store.RoleTenantAdmin))
+	handlerWith(vs, fakeFeeds{}, fakeTenants{}).ServeHTTP(rec, adminReq(http.MethodPut, "/api/admin/view", body, 7, store.RoleAdmin))
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
@@ -319,7 +319,7 @@ func TestPutViewValidation(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			vs := &fakeVS{}
 			rec := httptest.NewRecorder()
-			handlerWith(vs, fakeFeeds{}, fakeTenants{}).ServeHTTP(rec, adminReq(http.MethodPut, "/api/admin/view", body, 7, store.RoleTenantAdmin))
+			handlerWith(vs, fakeFeeds{}, fakeTenants{}).ServeHTTP(rec, adminReq(http.MethodPut, "/api/admin/view", body, 7, store.RoleAdmin))
 			if rec.Code != http.StatusBadRequest {
 				t.Errorf("status = %d, want 400", rec.Code)
 			}
@@ -334,7 +334,7 @@ func TestGetSubscriptionsIsTenantScoped(t *testing.T) {
 	region := "Hessen"
 	vs := &fakeVS{subsFeeds: []store.Feed{{ID: 1, Name: "Frankfurt", Region: &region, SensorMix: []string{"PSR"}}}}
 	rec := httptest.NewRecorder()
-	handlerWith(vs, fakeFeeds{}, fakeTenants{}).ServeHTTP(rec, adminReq(http.MethodGet, "/api/admin/subscriptions", "", 7, store.RoleTenantAdmin))
+	handlerWith(vs, fakeFeeds{}, fakeTenants{}).ServeHTTP(rec, adminReq(http.MethodGet, "/api/admin/subscriptions", "", 7, store.RoleAdmin))
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
@@ -352,7 +352,7 @@ func TestGetSubscriptionsIsTenantScoped(t *testing.T) {
 func TestGetFeeds(t *testing.T) {
 	ff := fakeFeeds{list: []store.Feed{{ID: 1, Name: "Frankfurt"}, {ID: 2, Name: "Stuttgart"}}}
 	rec := httptest.NewRecorder()
-	handlerWith(&fakeVS{}, ff, fakeTenants{}).ServeHTTP(rec, adminReq(http.MethodGet, "/api/admin/feeds", "", 7, store.RoleTenantAdmin))
+	handlerWith(&fakeVS{}, ff, fakeTenants{}).ServeHTTP(rec, adminReq(http.MethodGet, "/api/admin/feeds", "", 7, store.RoleAdmin))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
@@ -365,13 +365,13 @@ func TestGetFeeds(t *testing.T) {
 
 func TestMethodNotAllowed(t *testing.T) {
 	rec := httptest.NewRecorder()
-	handlerWith(&fakeVS{}, fakeFeeds{}, fakeTenants{}).ServeHTTP(rec, adminReq(http.MethodPost, "/api/admin/view", `{}`, 7, store.RoleTenantAdmin))
+	handlerWith(&fakeVS{}, fakeFeeds{}, fakeTenants{}).ServeHTTP(rec, adminReq(http.MethodPost, "/api/admin/view", `{}`, 7, store.RoleAdmin))
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("POST /api/admin/view status = %d, want 405", rec.Code)
 	}
 }
 
-// --- super_admin cross-tenant provisioning ----------------------------------
+// --- cross-tenant provisioning ----------------------------------
 
 func provisioningFixture() (*fakeVS, fakeFeeds, fakeTenants) {
 	return &fakeVS{},
@@ -382,10 +382,10 @@ func provisioningFixture() (*fakeVS, fakeFeeds, fakeTenants) {
 		}
 }
 
-func TestListTenantsSuperAdmin(t *testing.T) {
+func TestListTenantsAdmin(t *testing.T) {
 	vs, ff, ft := provisioningFixture()
 	rec := httptest.NewRecorder()
-	handlerWith(vs, ff, ft).ServeHTTP(rec, adminReq(http.MethodGet, "/api/admin/tenants", "", 99, store.RoleSuperAdmin))
+	handlerWith(vs, ff, ft).ServeHTTP(rec, adminReq(http.MethodGet, "/api/admin/tenants", "", 99, store.RoleAdmin))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
@@ -399,7 +399,7 @@ func TestListTenantsSuperAdmin(t *testing.T) {
 func TestGrantSubscription(t *testing.T) {
 	vs, ff, ft := provisioningFixture()
 	rec := httptest.NewRecorder()
-	handlerWith(vs, ff, ft).ServeHTTP(rec, adminReq(http.MethodPost, "/api/admin/tenants/5/subscriptions", `{"feed_id":3}`, 99, store.RoleSuperAdmin))
+	handlerWith(vs, ff, ft).ServeHTTP(rec, adminReq(http.MethodPost, "/api/admin/tenants/5/subscriptions", `{"feed_id":3}`, 99, store.RoleAdmin))
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want 204; body=%s", rec.Code, rec.Body.String())
 	}
@@ -424,7 +424,7 @@ func TestGrantValidation(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			vs, ff, ft := provisioningFixture()
 			rec := httptest.NewRecorder()
-			handlerWith(vs, ff, ft).ServeHTTP(rec, adminReq(http.MethodPost, tc.path, tc.body, 99, store.RoleSuperAdmin))
+			handlerWith(vs, ff, ft).ServeHTTP(rec, adminReq(http.MethodPost, tc.path, tc.body, 99, store.RoleAdmin))
 			if rec.Code != tc.want {
 				t.Errorf("status = %d, want %d", rec.Code, tc.want)
 			}
@@ -438,7 +438,7 @@ func TestGrantValidation(t *testing.T) {
 func TestRevokeSubscription(t *testing.T) {
 	vs, ff, ft := provisioningFixture()
 	rec := httptest.NewRecorder()
-	handlerWith(vs, ff, ft).ServeHTTP(rec, adminReq(http.MethodDelete, "/api/admin/tenants/5/subscriptions/3", "", 99, store.RoleSuperAdmin))
+	handlerWith(vs, ff, ft).ServeHTTP(rec, adminReq(http.MethodDelete, "/api/admin/tenants/5/subscriptions/3", "", 99, store.RoleAdmin))
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want 204", rec.Code)
 	}
@@ -447,10 +447,9 @@ func TestRevokeSubscription(t *testing.T) {
 	}
 }
 
-// TestCrossTenantRoutesForbidTenantAdmin is the cross-tenant security negative
-// test: a tenant_admin must NOT be able to use the provisioning routes (403), and
-// no grant/revoke may reach the store.
-func TestCrossTenantRoutesForbidTenantAdmin(t *testing.T) {
+// TestCrossTenantRoutesForbidUser verifies that a user (non-admin) cannot reach
+// the provisioning routes and no grant/revoke ever reaches the store.
+func TestCrossTenantRoutesForbidUser(t *testing.T) {
 	routes := []struct {
 		method, path, body string
 	}{
@@ -466,15 +465,15 @@ func TestCrossTenantRoutesForbidTenantAdmin(t *testing.T) {
 			vs, ff, ft := provisioningFixture()
 			fe := &fakeEntitlements{}
 			rec := httptest.NewRecorder()
-			handlerWithEnt(vs, ff, ft, fe).ServeHTTP(rec, adminReq(rt.method, rt.path, rt.body, 7, store.RoleTenantAdmin))
+			handlerWithEnt(vs, ff, ft, fe).ServeHTTP(rec, adminReq(rt.method, rt.path, rt.body, 7, store.RoleUser))
 			if rec.Code != http.StatusForbidden {
-				t.Errorf("tenant_admin on %s %s = %d, want 403", rt.method, rt.path, rec.Code)
+				t.Errorf("user on %s %s = %d, want 403", rt.method, rt.path, rec.Code)
 			}
 			if vs.grantTenant != 0 || vs.revokeTenant != 0 {
-				t.Errorf("tenant_admin must not reach grant/revoke (grant=%d revoke=%d)", vs.grantTenant, vs.revokeTenant)
+				t.Errorf("user must not reach grant/revoke (grant=%d revoke=%d)", vs.grantTenant, vs.revokeTenant)
 			}
 			if fe.setTid != 0 {
-				t.Errorf("tenant_admin must not reach entitlement Set (tid=%d)", fe.setTid)
+				t.Errorf("user must not reach entitlement Set (tid=%d)", fe.setTid)
 			}
 		})
 	}
@@ -482,12 +481,12 @@ func TestCrossTenantRoutesForbidTenantAdmin(t *testing.T) {
 
 // --- feature entitlements (WF2-50) ------------------------------------------
 
-func TestListTenantEntitlementsSuperAdmin(t *testing.T) {
+func TestListTenantEntitlementsAdmin(t *testing.T) {
 	fe := &fakeEntitlements{eff: map[feature.Key]bool{feature.STCA: true}}
 	ft := fakeTenants{byID: map[int64]store.Tenant{5: {ID: 5}}}
 	rec := httptest.NewRecorder()
 	handlerWithEnt(&fakeVS{}, fakeFeeds{}, ft, fe).
-		ServeHTTP(rec, adminReq(http.MethodGet, "/api/admin/tenants/5/entitlements", "", 99, store.RoleSuperAdmin))
+		ServeHTTP(rec, adminReq(http.MethodGet, "/api/admin/tenants/5/entitlements", "", 99, store.RoleAdmin))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
@@ -506,12 +505,12 @@ func TestListTenantEntitlementsSuperAdmin(t *testing.T) {
 	}
 }
 
-func TestSetTenantEntitlementSuperAdmin(t *testing.T) {
+func TestSetTenantEntitlementAdmin(t *testing.T) {
 	fe := &fakeEntitlements{}
 	ft := fakeTenants{byID: map[int64]store.Tenant{5: {ID: 5}}}
 	rec := httptest.NewRecorder()
 	handlerWithEnt(&fakeVS{}, fakeFeeds{}, ft, fe).
-		ServeHTTP(rec, adminReq(http.MethodPut, "/api/admin/tenants/5/entitlements/stca", `{"enabled":true}`, 99, store.RoleSuperAdmin))
+		ServeHTTP(rec, adminReq(http.MethodPut, "/api/admin/tenants/5/entitlements/stca", `{"enabled":true}`, 99, store.RoleAdmin))
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want 204", rec.Code)
 	}
@@ -525,7 +524,7 @@ func TestSetTenantEntitlementUnknownKeyIs400(t *testing.T) {
 	ft := fakeTenants{byID: map[int64]store.Tenant{5: {ID: 5}}}
 	rec := httptest.NewRecorder()
 	handlerWithEnt(&fakeVS{}, fakeFeeds{}, ft, fe).
-		ServeHTTP(rec, adminReq(http.MethodPut, "/api/admin/tenants/5/entitlements/bogus", `{"enabled":true}`, 99, store.RoleSuperAdmin))
+		ServeHTTP(rec, adminReq(http.MethodPut, "/api/admin/tenants/5/entitlements/bogus", `{"enabled":true}`, 99, store.RoleAdmin))
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rec.Code)
 	}
@@ -535,7 +534,7 @@ func TestSetTenantEntitlementUnknownTenantIs404(t *testing.T) {
 	fe := &fakeEntitlements{}
 	rec := httptest.NewRecorder()
 	handlerWithEnt(&fakeVS{}, fakeFeeds{}, fakeTenants{}, fe).
-		ServeHTTP(rec, adminReq(http.MethodPut, "/api/admin/tenants/5/entitlements/stca", `{"enabled":true}`, 99, store.RoleSuperAdmin))
+		ServeHTTP(rec, adminReq(http.MethodPut, "/api/admin/tenants/5/entitlements/stca", `{"enabled":true}`, 99, store.RoleAdmin))
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", rec.Code)
 	}
@@ -547,7 +546,7 @@ func TestSetTenantEntitlementUnknownTenantIs404(t *testing.T) {
 // --- WF2-41: multi_feed grant gating (the hard invariant) -------------------
 
 func grantSubReq(feedID string) *http.Request {
-	return adminReq(http.MethodPost, "/api/admin/tenants/5/subscriptions", `{"feed_id":`+feedID+`}`, 99, store.RoleSuperAdmin)
+	return adminReq(http.MethodPost, "/api/admin/tenants/5/subscriptions", `{"feed_id":`+feedID+`}`, 99, store.RoleAdmin)
 }
 
 func TestGrantFirstFeedAllowedWithoutMultiFeed(t *testing.T) {
@@ -612,7 +611,7 @@ func TestGrantReGrantSameFeedIsIdempotent(t *testing.T) {
 func TestGetSensorClasses(t *testing.T) {
 	rec := httptest.NewRecorder()
 	handlerWith(&fakeVS{}, fakeFeeds{}, fakeTenants{}).
-		ServeHTTP(rec, adminReq(http.MethodGet, "/api/admin/sensor-classes", "", 7, store.RoleTenantAdmin))
+		ServeHTTP(rec, adminReq(http.MethodGet, "/api/admin/sensor-classes", "", 7, store.RoleAdmin))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}

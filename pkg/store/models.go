@@ -2,20 +2,20 @@ package store
 
 import "time"
 
-// Role is a user's authorisation role within their tenant (ADR 0006 §5). It is a
-// closed set; Valid guards writes so an unknown role never reaches the database.
+// Role is a user's authorisation role (ADR 0009 §1). It is a closed,
+// two-value set: user (end user / pilot) and admin (platform operator).
+// Valid guards writes so an unknown role never reaches the database.
 type Role string
 
 const (
-	RoleOperator    Role = "operator"
-	RoleTenantAdmin Role = "tenant_admin"
-	RoleSuperAdmin  Role = "super_admin"
+	RoleUser  Role = "user"
+	RoleAdmin Role = "admin"
 )
 
 // Valid reports whether r is a recognised role.
 func (r Role) Valid() bool {
 	switch r {
-	case RoleOperator, RoleTenantAdmin, RoleSuperAdmin:
+	case RoleUser, RoleAdmin:
 		return true
 	default:
 		return false

@@ -85,11 +85,11 @@ func TestIntegrationUserRepo(t *testing.T) {
 	}
 
 	email := "lotse@ffm.example"
-	u, err := users.Create(ctx, ten.ID, "oidc|abc", &email, RoleOperator)
+	u, err := users.Create(ctx, ten.ID, "oidc|abc", &email, RoleUser)
 	if err != nil {
 		t.Fatalf("create user: %v", err)
 	}
-	if u.TenantID != ten.ID || u.Role != RoleOperator || u.Email == nil || *u.Email != email {
+	if u.TenantID != ten.ID || u.Role != RoleUser || u.Email == nil || *u.Email != email {
 		t.Fatalf("unexpected user: %+v", u)
 	}
 
@@ -100,7 +100,7 @@ func TestIntegrationUserRepo(t *testing.T) {
 	}
 
 	// A nullable email round-trips as nil.
-	u2, err := users.Create(ctx, ten.ID, "oidc|noemail", nil, RoleTenantAdmin)
+	u2, err := users.Create(ctx, ten.ID, "oidc|noemail", nil, RoleAdmin)
 	if err != nil || u2.Email != nil {
 		t.Fatalf("create user without email = %+v, %v", u2, err)
 	}
