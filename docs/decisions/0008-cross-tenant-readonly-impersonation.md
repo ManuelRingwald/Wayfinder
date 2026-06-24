@@ -3,6 +3,12 @@
 - **Status:** **ENTWURF — zur Freigabe vorgelegt** (kein Produktivcode, bis
   freigegeben). Paket **WF2-34**.
 - **Datum:** 2026-06-23
+- **⚠️ Nachtrag (2026-06-24, ADR 0009):** Mit dem Admin-Bereich-Neuschnitt
+  (ADR 0009) wird das Rollen-Modell auf **`admin`/`user`** vereinfacht. Jede
+  Nennung von **`super_admin`** in diesem ADR ist bei der Implementierung als
+  Rolle **`admin`** zu lesen (`requireSuper → requireAdmin`). Der Grant-
+  Mechanismus (signiert, HttpOnly, befristet, read-only, auditiert) bleibt
+  unverändert.
 - **Schnittstellen-relevant:** nein (kein CAT062/065-Draht-Vertrag berührt; rein
   Wayfinder-interner Browser-Rand + Stream-Lese-Scope).
 - **Bezug:** **ADR 0005 / NFR-SEC-003** (harte Cross-Tenant-Isolation — wird hier
