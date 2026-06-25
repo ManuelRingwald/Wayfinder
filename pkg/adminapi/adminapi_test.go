@@ -9,8 +9,10 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/manuelringwald/wayfinder/pkg/feature"
+	"github.com/manuelringwald/wayfinder/pkg/health"
 	"github.com/manuelringwald/wayfinder/pkg/store"
 	"github.com/manuelringwald/wayfinder/pkg/tenant"
 )
@@ -197,13 +199,13 @@ func handlerWith(vs *fakeVS, ff fakeFeeds, ft fakeTenants) *Handler {
 }
 
 func handlerWithEnt(vs *fakeVS, ff fakeFeeds, ft fakeTenants, fe EntitlementService) *Handler {
-	return New(vs, vs, ff, ft, &fakeUserStore{}, &fakeCredStore{}, fe, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+	return New(vs, vs, ff, ft, &fakeUserStore{}, &fakeCredStore{}, fe, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
 }
 
 // handlerForUsers builds a handler wired with the given user/credential/tenant
 // fakes for the AP6 access-management tests.
 func handlerForUsers(us UserStore, cs CredentialStore, ft fakeTenants) *Handler {
-	return New(&fakeVS{}, &fakeVS{}, fakeFeeds{}, ft, us, cs, &fakeEntitlements{}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+	return New(&fakeVS{}, &fakeVS{}, fakeFeeds{}, ft, us, cs, &fakeEntitlements{}, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
 }
 
 // rescopeRecorder captures the tenant ids a handler asks to live-re-scope (WF2-33).
@@ -213,7 +215,7 @@ type rescopeRecorder struct{ calls []int64 }
 func (r *rescopeRecorder) fn(_ context.Context, tenantID int64) { r.calls = append(r.calls, tenantID) }
 
 func handlerWithRescope(vs *fakeVS, ff fakeFeeds, ft fakeTenants, rescope RescopeFunc) *Handler {
-	return New(vs, vs, ff, ft, &fakeUserStore{}, &fakeCredStore{}, &fakeEntitlements{}, slog.New(slog.NewTextHandler(io.Discard, nil)), rescope)
+	return New(vs, vs, ff, ft, &fakeUserStore{}, &fakeCredStore{}, &fakeEntitlements{}, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), rescope)
 }
 
 func adminReq(method, path, body string, tenantID int64, role store.Role) *http.Request {
@@ -549,6 +551,7 @@ func TestCrossTenantRoutesForbidUser(t *testing.T) {
 		{http.MethodGet, "/api/admin/tenants/5/entitlements", ""},
 		{http.MethodPut, "/api/admin/tenants/5/entitlements/stca", `{"enabled":true}`},
 		{http.MethodGet, "/api/admin/overview", ""},
+		{http.MethodGet, "/api/admin/feeds/health", ""},
 		{http.MethodGet, "/api/admin/tenants/5/view", ""},
 		{http.MethodPut, "/api/admin/tenants/5/view", `{"center_lat":50,"center_lon":9,"zoom":8}`},
 	}
@@ -726,7 +729,7 @@ func TestGetSensorClasses(t *testing.T) {
 // handlerForOverview wires the fakes the AP3 overview needs (custom user store
 // for the account count). fakeVS serves both views and subscriptions.
 func handlerForOverview(vs *fakeVS, ff fakeFeeds, ft fakeTenants, us UserStore, fe EntitlementService) *Handler {
-	return New(vs, vs, ff, ft, us, &fakeCredStore{}, fe, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+	return New(vs, vs, ff, ft, us, &fakeCredStore{}, fe, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
 }
 
 func TestGetOverviewAggregates(t *testing.T) {
@@ -796,7 +799,7 @@ func TestPutTenantViewUpsertsAndRescopes(t *testing.T) {
 	vs := &fakeVS{}
 	ft := fakeTenants{byID: map[int64]store.Tenant{5: {ID: 5}}}
 	rr := &rescopeRecorder{}
-	h := New(vs, vs, fakeFeeds{}, ft, &fakeUserStore{}, &fakeCredStore{}, &fakeEntitlements{}, slog.New(slog.NewTextHandler(io.Discard, nil)), rr.fn)
+	h := New(vs, vs, fakeFeeds{}, ft, &fakeUserStore{}, &fakeCredStore{}, &fakeEntitlements{}, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), rr.fn)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, adminReq(http.MethodPut, "/api/admin/tenants/5/view", `{"center_lat":48,"center_lon":11,"zoom":7}`, 99, store.RoleAdmin))
 	if rec.Code != http.StatusOK {
@@ -824,5 +827,98 @@ func TestPutTenantViewRejectsInvalid(t *testing.T) {
 	}
 	if vs.upsertTenant != 0 {
 		t.Error("invalid view must not reach the store")
+	}
+}
+
+// --- AP4: feed health endpoint -----------------------------------------------
+
+// fakeFeedHealth is an in-memory FeedHealthSource for testing.
+type fakeFeedHealth struct {
+	snaps map[int64]health.FeedSnapshot
+}
+
+func (f *fakeFeedHealth) Snapshot(feedID int64, _ time.Time) health.FeedSnapshot {
+	if f.snaps == nil {
+		return health.FeedSnapshot{}
+	}
+	return f.snaps[feedID]
+}
+
+func handlerForHealth(ff fakeFeeds, fh FeedHealthSource) *Handler {
+	ft := fakeTenants{}
+	return New(&fakeVS{}, &fakeVS{}, ff, ft, &fakeUserStore{}, &fakeCredStore{}, &fakeEntitlements{}, fh, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+}
+
+func TestGetFeedsHealthNilSourceReturnsEmpty(t *testing.T) {
+	h := handlerForHealth(fakeFeeds{}, nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, adminReq(http.MethodGet, "/api/admin/feeds/health", "", 1, store.RoleAdmin))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var got []feedHealthDTO
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("got %d items, want 0 (nil source)", len(got))
+	}
+}
+
+func TestGetFeedsHealthReturnsColorAndFields(t *testing.T) {
+	ff := fakeFeeds{list: []store.Feed{{ID: 1, Name: "Berlin"}, {ID: 2, Name: "Vienna"}}}
+	fh := &fakeFeedHealth{snaps: map[int64]health.FeedSnapshot{
+		1: {EverSeen: true, Stale: false, LastHeartbeatAgoS: 0.5, TrackCountRecent: 3},
+		2: {EverSeen: true, Stale: false, LastHeartbeatAgoS: 1.0, TrackCountRecent: 0},
+	}}
+	h := handlerForHealth(ff, fh)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, adminReq(http.MethodGet, "/api/admin/feeds/health", "", 1, store.RoleAdmin))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var got []feedHealthDTO
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d items, want 2", len(got))
+	}
+	// Feed 1: has tracks → green.
+	if got[0].FeedID != 1 || got[0].Color != "green" {
+		t.Errorf("feed 1: got id=%d color=%q, want id=1 color=green", got[0].FeedID, got[0].Color)
+	}
+	// Feed 2: heartbeat but no tracks → yellow.
+	if got[1].FeedID != 2 || got[1].Color != "yellow" {
+		t.Errorf("feed 2: got id=%d color=%q, want id=2 color=yellow", got[1].FeedID, got[1].Color)
+	}
+}
+
+func TestGetFeedsHealthStaleFeedIsRed(t *testing.T) {
+	ff := fakeFeeds{list: []store.Feed{{ID: 7, Name: "Stale"}}}
+	fh := &fakeFeedHealth{snaps: map[int64]health.FeedSnapshot{
+		7: {EverSeen: true, Stale: true, LastHeartbeatAgoS: 10.0, TrackCountRecent: 0},
+	}}
+	h := handlerForHealth(ff, fh)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, adminReq(http.MethodGet, "/api/admin/feeds/health", "", 1, store.RoleAdmin))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var got []feedHealthDTO
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(got) != 1 || got[0].Color != "red" {
+		t.Errorf("stale feed: got %+v, want color=red", got)
+	}
+}
+
+func TestGetFeedsHealthForbidUser(t *testing.T) {
+	h := handlerForHealth(fakeFeeds{}, nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, adminReq(http.MethodGet, "/api/admin/feeds/health", "", 1, store.RoleUser))
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("user on feeds/health = %d, want 403", rec.Code)
 	}
 }

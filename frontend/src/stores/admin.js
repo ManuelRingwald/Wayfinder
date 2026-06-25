@@ -132,6 +132,19 @@ export const useAdminStore = defineStore('admin', () => {
 
   // --- AP3: tenant-centric dashboard ----------------------------------------
 
+  const feedsHealth = ref({}) // AP4: feedId → { color, stale, ever_seen, last_heartbeat_ago_s, track_count_recent }
+
+  // loadFeedsHealth fetches per-feed health state and stores it keyed by feed_id.
+  async function loadFeedsHealth() {
+    const r = await apiFetch('/api/admin/feeds/health')
+    if (r.ok && Array.isArray(r.data)) {
+      const map = {}
+      for (const h of r.data) map[h.feed_id] = h
+      feedsHealth.value = map
+    }
+    return r
+  }
+
   // loadOverview fetches the aggregated per-tenant dashboard (status, features,
   // feeds, account count) in one call and stores it for the overview table.
   async function loadOverview() {
@@ -275,11 +288,11 @@ export const useAdminStore = defineStore('admin', () => {
   }
 
   return {
-    identity, accessError, accessStatus, view, feeds, subscriptions, tenants, overview, error, notice,
+    identity, accessError, accessStatus, view, feeds, subscriptions, tenants, overview, feedsHealth, error, notice,
     role, isAdmin, isAuthorized, features, hasFeature,
     loadIdentity, login, loadView, saveView, loadFeeds, loadSubscriptions,
     loadTenants, loadTenantSubscriptions, grant, revoke,
-    loadOverview, loadTenantView, saveTenantView, loadTenantEntitlements, setTenantEntitlement,
+    loadOverview, loadFeedsHealth, loadTenantView, saveTenantView, loadTenantEntitlements, setTenantEntitlement,
     loadTenantUsers, createUser, setUserStatus, deleteUser, setUserPassword, setTenantStatus,
     clearBanners,
   }

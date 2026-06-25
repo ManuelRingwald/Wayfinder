@@ -490,6 +490,15 @@ aktiven Features, zugewiesenen Feeds und Anzahl der Zugänge); ein Klick auf
 einem Ort die **Standard-Ansicht** (Zentrum + Radius, FL-Band), die **Features**,
 die **Feeds** und die **Zugänge** dieses Kunden verwalten.
 
+> **Feed-Gesundheit (AP4, ADR 0009):** Die einem Mandanten zugewiesenen Feeds
+> tragen in Übersicht und Detailseite einen farbigen **Ampel-Chip**:
+> **grün** = Feed lebt und liefert Tracks, **gelb** = Feed lebt (CAT065-Heartbeat
+> kommt an), liefert aber gerade keine Tracks („leerer Himmel"), **rot** = kein
+> Heartbeat („toter Feed", z. B. Firefly-Sender aus oder Netz-Pfad gestört).
+> So unterscheiden Sie auf einen Blick einen *ruhigen Himmel* von einem
+> *ausgefallenen Feed*. Die Werte stammen aus derselben Quelle wie die
+> `/metrics`-Felder `wayfinder_feed_stale` / `wayfinder_cat065_heartbeats_received_total`.
+
 > **Rollen (ADR 0009):** Es gibt genau zwei Rollen — **`admin`** (Plattform-
 > Betreiber, sieht den ganzen Admin-Bereich) und **`user`** (Endnutzer/Lotse
 > eines Kunden, meldet sich an und sieht nur das zugewiesene Lagebild). Ein
