@@ -35,14 +35,53 @@ func TestRegistryHeartbeatMakesFeedGreen(t *testing.T) {
 	}
 }
 
-func TestRegistryHeartbeatNoTracksIsYellow(t *testing.T) {
+func TestRegistryHeartbeatNoTracksIsGreen(t *testing.T) {
+	// An empty sky (heartbeat healthy, no tracks) is green, not yellow.
+	// Yellow is reserved for degraded sensor fusion (CAT063, Firefly issue #32).
 	r := NewRegistry(3 * time.Second)
 	r.RecordHeartbeat(1, t0)
 	// no RecordTracks call → block=0
 
 	s := r.Snapshot(1, t0.Add(1*time.Second))
+	if got := s.Color(); got != "green" {
+		t.Errorf("color: got %q, want %q", got, "green")
+	}
+}
+
+func TestRegistryDegradedSensorsIsYellow(t *testing.T) {
+	// Yellow = heartbeat healthy but at least one sensor silent.
+	r := NewRegistry(3 * time.Second)
+	r.RecordHeartbeat(1, t0)
+
+	s := r.Snapshot(1, t0.Add(1*time.Second))
+	s.SensorsTotal = 3
+	s.SensorsActive = 2 // one silent
 	if got := s.Color(); got != "yellow" {
-		t.Errorf("color: got %q, want %q", got, "yellow")
+		t.Errorf("color (2/3 sensors): got %q, want %q", got, "yellow")
+	}
+}
+
+func TestRegistryAllSensorsActiveIsGreen(t *testing.T) {
+	r := NewRegistry(3 * time.Second)
+	r.RecordHeartbeat(1, t0)
+
+	s := r.Snapshot(1, t0.Add(1*time.Second))
+	s.SensorsTotal = 3
+	s.SensorsActive = 3
+	if got := s.Color(); got != "green" {
+		t.Errorf("color (3/3 sensors): got %q, want %q", got, "green")
+	}
+}
+
+func TestRegistryUnknownSensorCountIsGreen(t *testing.T) {
+	// SensorsTotal=0 means unknown (no CAT063 yet) — must not trigger yellow.
+	r := NewRegistry(3 * time.Second)
+	r.RecordHeartbeat(1, t0)
+
+	s := r.Snapshot(1, t0.Add(1*time.Second))
+	// SensorsTotal and SensorsActive default to zero
+	if got := s.Color(); got != "green" {
+		t.Errorf("color (no CAT063 data): got %q, want %q", got, "green")
 	}
 }
 

@@ -149,6 +149,9 @@ const state = {
   labelPins: new Map(),
   // Active foreground palette, selected from the configured map theme.
   palette: PALETTES.dark,
+  // Per-feed health status received from the server (WF-3, ADR 0022).
+  // Map<feedID, {color, sensorsActive, sensorsTotal}>
+  feedStatus: new Map(),
 };
 
 async function main() {
@@ -1029,22 +1032,48 @@ function updateTrackHistory(tracks) {
   }
 }
 
-// updateFeedBanner reflects the CAT065 feed-health state (Firefly ADR 0018)
-// in the top-right banner: green "FEED OK", red "FEED STALE" (heartbeat lost),
-// or grey "FEED ?" until the first heartbeat arrives.
+// updateFeedBanner reflects the per-feed health state (Firefly ICD 2.5.0,
+// ADR 0022) in the top-right banner. It tracks all feed statuses and renders
+// the worst color across the subscribed feeds (WF-3, Option B):
+//   - green "FEED OK" — all feeds operational
+//   - yellow "SENSOR AUSFALL" — heartbeat fresh but ≥1 sensor degraded
+//   - red "FEED STALE" — at least one feed's heartbeat is lost
 function updateFeedBanner(feedStatus) {
   const el = document.getElementById("feed-status");
-  if (!el) {
-    return;
+  if (!el) return;
+
+  state.feedStatus.set(feedStatus.feed_id, {
+    color: feedStatus.color,
+    sensorsActive: feedStatus.sensors_active,
+    sensorsTotal: feedStatus.sensors_total,
+  });
+
+  const colorRank = { red: 2, yellow: 1, green: 0 };
+  let worstColor = "green";
+  const degradedFeeds = [];
+
+  for (const [fid, status] of state.feedStatus) {
+    const rank = colorRank[status.color] ?? 0;
+    if (rank > (colorRank[worstColor] ?? 0)) {
+      worstColor = status.color;
+    }
+    if (status.color === "yellow") {
+      degradedFeeds.push({ fid, sensorsActive: status.sensorsActive, sensorsTotal: status.sensorsTotal });
+    }
   }
-  const s = feedStatus.state;
-  el.className = s;
-  if (s === "ok") {
+
+  if (worstColor === "green") {
+    el.className = "ok";
     el.textContent = "● FEED OK";
-  } else if (s === "stale") {
-    el.textContent = "▲ FEED STALE — kein Heartbeat";
+  } else if (worstColor === "yellow") {
+    const info = degradedFeeds
+      .map((f) => `Feed ${f.fid}: ${f.sensorsActive}/${f.sensorsTotal} Radare`)
+      .join(", ");
+    el.className = "yellow";
+    el.textContent = `▲ SENSOR AUSFALL — ${info}`;
   } else {
-    el.textContent = "● FEED ?";
+    el.className = "stale";
+    el.textContent = "▲ FEED STALE — kein Heartbeat";
   }
 }
 

@@ -18,8 +18,9 @@ dafür in `/metrics` schauen, und auch dort nur **global** (ein einziges
 AP4 macht die Feed-Gesundheit **pro Feed** im Dashboard sichtbar — als farbiger
 Ampel-Chip an jedem Feed, in Übersicht und Detailseite:
 
-- **grün** — Heartbeat kommt an **und** Tracks fließen (gesund),
-- **gelb** — Heartbeat kommt an, aber kein Verkehr (**leerer Himmel**),
+- **grün** — Heartbeat frisch, unabhängig vom Verkehr (leerer Himmel ist kein Fehler),
+- **gelb** — Heartbeat frisch, aber Sensor-Teilausfall: `sensors_active < sensors_total`
+  (⏳ erst aktiv nach Eingang von CAT063-Sensor-Status-Meldungen aus Firefly #32),
 - **rot** — kein Heartbeat (**toter Feed**) oder nie gesehen.
 
 ---

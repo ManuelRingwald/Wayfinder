@@ -19,28 +19,37 @@ type FeedSnapshot struct {
 	Stale             bool
 	LastHeartbeatAgoS float64 // seconds since last heartbeat; negative if never seen
 	TrackCountRecent  int64   // size of the most recently received CAT062 block
+
+	// SensorsTotal and SensorsActive are populated once CAT063 sensor-status
+	// messages are decoded (Firefly issue #32 / WF-1). Until then both are zero
+	// ("unknown") and Color() never returns "yellow".
+	SensorsTotal  int
+	SensorsActive int
 }
 
 // Color returns the display colour for this feed:
 //   - "red":    no heartbeat (stale or never seen)
-//   - "yellow": operational but no recent tracks (empty sky)
-//   - "green":  operational with tracks arriving
+//   - "yellow": heartbeat healthy but degraded fusion — at least one configured
+//     sensor is silent (0 < SensorsActive < SensorsTotal, requires CAT063)
+//   - "green":  heartbeat healthy (empty sky counts as green, not yellow)
 func (s FeedSnapshot) Color() string {
 	if !s.EverSeen || s.Stale {
 		return "red"
 	}
-	if s.TrackCountRecent == 0 {
+	if s.SensorsTotal > 0 && s.SensorsActive < s.SensorsTotal {
 		return "yellow"
 	}
 	return "green"
 }
 
 // feedEntry holds per-feed heartbeat tracking and the most-recently-received
-// block size (used as the "recent track count" proxy).
+// block size (used as the "recent track count" proxy) and sensor counts.
 type feedEntry struct {
-	fh    *FeedHealth
-	mu    sync.Mutex
-	block int64 // size of last received CAT062 block
+	fh            *FeedHealth
+	mu            sync.Mutex
+	block         int64 // size of last received CAT062 block
+	sensorsActive int   // active sensors from last CAT063 block
+	sensorsTotal  int   // total sensors from last CAT063 block
 }
 
 // Registry tracks health and recent track activity per feed ID. Feeds are
@@ -91,6 +100,17 @@ func (r *Registry) RecordTracks(feedID int64, count int) {
 	e.mu.Unlock()
 }
 
+// RecordSensors records the sensor counts from the most recent CAT063 block
+// for feedID. active is the number of operational sensors; total is the total
+// number of sensors in the block (Firefly ICD 2.5.0, ADR 0022).
+func (r *Registry) RecordSensors(feedID int64, active, total int) {
+	e := r.getOrCreate(feedID)
+	e.mu.Lock()
+	e.sensorsActive = active
+	e.sensorsTotal = total
+	e.mu.Unlock()
+}
+
 // Snapshot returns the health snapshot for feedID as of now. If feedID has
 // never been registered, it returns the zero value (EverSeen=false, Color "red").
 func (r *Registry) Snapshot(feedID int64, now time.Time) FeedSnapshot {
@@ -108,12 +128,16 @@ func (r *Registry) Snapshot(feedID int64, now time.Time) FeedSnapshot {
 	}
 	e.mu.Lock()
 	block := e.block
+	sensorsActive := e.sensorsActive
+	sensorsTotal := e.sensorsTotal
 	e.mu.Unlock()
 	return FeedSnapshot{
 		EverSeen:          st.EverSeen,
 		Stale:             st.Stale,
 		LastHeartbeatAgoS: agoS,
 		TrackCountRecent:  block,
+		SensorsActive:     sensorsActive,
+		SensorsTotal:      sensorsTotal,
 	}
 }
 

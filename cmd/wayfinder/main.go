@@ -26,6 +26,7 @@ import (
 	"github.com/manuelringwald/wayfinder/pkg/auth"
 	"github.com/manuelringwald/wayfinder/pkg/broadcast"
 	"github.com/manuelringwald/wayfinder/pkg/cat062"
+	"github.com/manuelringwald/wayfinder/pkg/cat063"
 	"github.com/manuelringwald/wayfinder/pkg/cat065"
 	"github.com/manuelringwald/wayfinder/pkg/coverage"
 	"github.com/manuelringwald/wayfinder/pkg/feature"
@@ -76,7 +77,6 @@ func main() {
 	var trackCount atomic.Int64
 	var tracksCurrent atomic.Int64
 	var heartbeatCount atomic.Int64
-	var lastServiceID atomic.Uint32
 	var lastError atomic.Pointer[string]
 
 	// Feed-health registry: per-feed heartbeat staleness + track presence (AP4,
@@ -97,19 +97,16 @@ func main() {
 		logger,
 	)
 
-	// broadcastFeedStatus pushes the current feed-health state to the browser.
-	broadcastFeedStatus := func(status health.Status) {
-		state := "unknown"
-		if status.EverSeen {
-			state = "ok"
-			if status.Stale {
-				state = "stale"
-			}
-		}
+	// broadcastFeedSnapshot pushes the per-feed health snapshot to clients
+	// subscribed to that feed (Option B, WF-3). Color is derived from the
+	// FeedSnapshot and carries CAT065 liveness + CAT063 sensor counts.
+	broadcastFeedSnapshot := func(feedID int64, snap health.FeedSnapshot) {
 		_ = broadcaster.Send(broadcast.Message{
 			FeedStatus: &broadcast.FeedStatusMessage{
-				State:     state,
-				ServiceID: uint8(lastServiceID.Load()),
+				FeedID:        feedID,
+				Color:         snap.Color(),
+				SensorsActive: snap.SensorsActive,
+				SensorsTotal:  snap.SensorsTotal,
 			},
 		})
 	}
@@ -129,18 +126,26 @@ func main() {
 		}
 		return nil
 	}
-	// Status handler: CAT065 heartbeats update both the per-feed registry (AP4)
-	// and the aggregate (for the browser feed-status banner). buildReceivers wraps
+	// statusHandler: CAT065 heartbeats update the per-feed registry (AP4) and
+	// broadcast the per-feed snapshot to subscribed clients. buildReceivers wraps
 	// this with a per-feed closure so feedID is the catalogue ID of the receiver.
 	statusHandler := func(feedID int64, status cat065.ServiceStatus) error {
 		heartbeatCount.Add(1)
-		lastServiceID.Store(uint32(status.ServiceID))
 		feedRegistry.RecordHeartbeat(feedID, time.Now())
-		// Notify the browser only on a state transition (e.g. first heartbeat,
-		// or recovery from stale).
-		if s, changed := feedRegistry.Observe(time.Now()); changed {
-			broadcastFeedStatus(s)
+		broadcastFeedSnapshot(feedID, feedRegistry.Snapshot(feedID, time.Now()))
+		return nil
+	}
+	// sensorStatusHandler: CAT063 per-sensor status updates the feed registry
+	// with the current sensor active/total counts and broadcasts the snapshot.
+	sensorStatusHandler := func(feedID int64, statuses []cat063.SensorStatus) error {
+		active := 0
+		for _, s := range statuses {
+			if s.Operational {
+				active++
+			}
 		}
+		feedRegistry.RecordSensors(feedID, active, len(statuses))
+		broadcastFeedSnapshot(feedID, feedRegistry.Snapshot(feedID, time.Now()))
 		return nil
 	}
 
@@ -174,7 +179,7 @@ func main() {
 	logger.Info("feeds resolved", slog.Int("count", len(feeds)))
 
 	// One receiver per feed; each stamps its feed_id onto decoded tracks.
-	recvs, err := buildReceivers(feeds, logger, trackHandler, statusHandler)
+	recvs, err := buildReceivers(feeds, logger, trackHandler, statusHandler, sensorStatusHandler)
 	if err != nil {
 		logger.Error("create receivers", slog.String("error", err.Error()))
 		os.Exit(1)
@@ -238,9 +243,9 @@ func main() {
 		}
 	}()
 
-	// Monitor feed staleness: even with no traffic, periodically re-evaluate
-	// the heartbeat age and notify the browser when the feed flips ok→stale
-	// (or recovers). Webhook-style pushes alone can't detect "nothing arrived".
+	// Monitor feed staleness: periodically re-evaluate each feed's heartbeat age
+	// and broadcast per-feed snapshots when the aggregate state changes (e.g.
+	// ok→stale or recovery). Covers the case where no traffic arrives at all.
 	go func() {
 		interval := cfg.FeedStaleTimeout / 3
 		if interval < 250*time.Millisecond {
@@ -253,8 +258,11 @@ func main() {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if s, changed := feedRegistry.Observe(time.Now()); changed {
-					broadcastFeedStatus(s)
+				if _, changed := feedRegistry.Observe(time.Now()); changed {
+					now := time.Now()
+					for _, f := range feeds {
+						broadcastFeedSnapshot(f.ID, feedRegistry.Snapshot(f.ID, now))
+					}
 				}
 			}
 		}
