@@ -494,7 +494,7 @@ die **Feeds** und die **Zugänge** dieses Kunden verwalten.
 > tragen in Übersicht und Detailseite einen farbigen **Ampel-Chip**:
 > **grün** = Heartbeat kommt an — auch bei leerem Himmel, kein Verkehr ist kein
 > Fehler; **gelb** = Sensor-Teilausfall (mindestens ein Radar abgefallen, aber
-> noch mindestens eines aktiv; ⏳ erst aktiv nach Firefly #32 / CAT063);
+> noch mindestens eines aktiv; CAT063, ADR 0010);
 > **rot** = kein Heartbeat mehr („toter Feed", z. B. Firefly-Sender aus oder
 > Netz-Pfad gestört). So unterscheiden Sie auf einen Blick einen *ruhigen Himmel*
 > von einem *ausgefallenen Feed* oder einem *degradierten Multi-Radar-System*.

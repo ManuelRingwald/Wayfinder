@@ -5,6 +5,7 @@ import (
 	"log/slog"
 
 	"github.com/manuelringwald/wayfinder/pkg/cat062"
+	"github.com/manuelringwald/wayfinder/pkg/cat063"
 	"github.com/manuelringwald/wayfinder/pkg/cat065"
 	"github.com/manuelringwald/wayfinder/pkg/receiver"
 	"github.com/manuelringwald/wayfinder/pkg/store"
@@ -43,11 +44,14 @@ func resolveFeeds(catalogue []store.Feed, cfg Config) []feedConfig {
 // buildReceivers creates one receiver per feed, each stamping its feed_id onto
 // decoded tracks (WF2-20.1). statusHandler receives (feedID, status) so the
 // per-feed health registry (AP4) knows which feed each CAT065 heartbeat belongs
-// to. It does not open sockets — call Listen on each. An invalid feed (e.g. a
-// malformed multicast group) is a hard error naming the offending feed.
+// to. sensorStatusHandler receives (feedID, statuses) for CAT063 per-sensor
+// status updates (ADR 0022). It does not open sockets — call Listen on each.
+// An invalid feed (e.g. a malformed multicast group) is a hard error naming the
+// offending feed.
 func buildReceivers(feeds []feedConfig, logger *slog.Logger,
 	trackHandler func(int64, []cat062.DecodedTrack) error,
-	statusHandler func(int64, cat065.ServiceStatus) error) ([]*receiver.Receiver, error) {
+	statusHandler func(int64, cat065.ServiceStatus) error,
+	sensorStatusHandler func(int64, []cat063.SensorStatus) error) ([]*receiver.Receiver, error) {
 	recvs := make([]*receiver.Receiver, 0, len(feeds))
 	for _, f := range feeds {
 		fid := f.ID // capture for closure
@@ -57,9 +61,12 @@ func buildReceivers(feeds []feedConfig, logger *slog.Logger,
 			Port:    f.Port,
 			Logger:  logger,
 			Handler: trackHandler,
-			// Wrap so the receiver's signature-less handler includes the feedID.
+			// Wrap so the signature-less handlers include the feedID via closure.
 			StatusHandler: func(status cat065.ServiceStatus) error {
 				return statusHandler(fid, status)
+			},
+			SensorStatusHandler: func(statuses []cat063.SensorStatus) error {
+				return sensorStatusHandler(fid, statuses)
 			},
 		})
 		if err != nil {

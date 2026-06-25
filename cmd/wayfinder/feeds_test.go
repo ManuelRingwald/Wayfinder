@@ -54,7 +54,7 @@ func TestBuildReceivers(t *testing.T) {
 	recvs, err := buildReceivers([]feedConfig{
 		{ID: 1, Name: "a", Group: "239.255.0.62", Port: 8600},
 		{ID: 2, Name: "b", Group: "239.255.0.63", Port: 8601},
-	}, logger, nil, nil)
+	}, logger, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("buildReceivers: %v", err)
 	}
@@ -65,7 +65,7 @@ func TestBuildReceivers(t *testing.T) {
 	// An invalid multicast group is a hard error that names the feed.
 	if _, err := buildReceivers([]feedConfig{
 		{ID: 7, Name: "bad", Group: "not-an-ip", Port: 8600},
-	}, logger, nil, nil); err == nil {
+	}, logger, nil, nil, nil); err == nil {
 		t.Fatal("expected error for invalid multicast group, got nil")
 	}
 }

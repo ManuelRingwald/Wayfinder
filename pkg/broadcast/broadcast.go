@@ -10,22 +10,32 @@ import (
 	"github.com/manuelringwald/wayfinder/pkg/cat062"
 )
 
-// Message is sent to all WebSocket clients. It carries either a track update
-// (Tracks) or a feed-health update (FeedStatus, from the CAT065 heartbeat,
-// Firefly ADR 0018) — the two are routed separately by the frontend.
+// Message is sent to WebSocket clients. It carries either a track update
+// (Tracks) or a per-feed health update (FeedStatus, Firefly ICD 2.5.0).
 type Message struct {
 	Tracks     []TrackMessage     `json:"tracks"`
 	TimeMs     int64              `json:"time_ms"`
 	FeedStatus *FeedStatusMessage `json:"feed_status,omitempty"`
 }
 
-// FeedStatusMessage carries the CAT065 feed-health state to the browser.
+// FeedStatusMessage carries the per-feed health state to the browser (AP4,
+// Firefly ICD 2.5.0, ADR 0022). Derived from the FeedSnapshot in the health
+// registry — combining CAT065 heartbeat liveness and CAT063 sensor counts.
+// Routed only to clients subscribed to FeedID (WF2-21 isolation).
 type FeedStatusMessage struct {
-	// State is "ok" (heartbeat fresh), "stale" (heartbeat lost) or "unknown"
-	// (no heartbeat seen yet).
-	State string `json:"state"`
-	// ServiceID is the CAT065 I065/015 service identification, when known.
-	ServiceID uint8 `json:"service_id,omitempty"`
+	// FeedID identifies which feed this status belongs to. 0 = single-tenant /
+	// unscoped fallback (routed to all clients).
+	FeedID int64 `json:"feed_id"`
+	// Color is the health indicator: "green" (operational), "yellow" (degraded:
+	// heartbeat fresh but 0 < sensors_active < sensors_total), "red" (stale or
+	// never seen).
+	Color string `json:"color"`
+	// SensorsActive is the number of operational sensors from the last CAT063
+	// block. 0 when no CAT063 data has arrived yet (unknown).
+	SensorsActive int `json:"sensors_active"`
+	// SensorsTotal is the total number of sensors from the last CAT063 block.
+	// 0 when no CAT063 data has arrived yet (unknown).
+	SensorsTotal int `json:"sensors_total"`
 }
 
 // TrackBatch is a set of decoded tracks attributed to the feed they arrived on.
@@ -551,13 +561,18 @@ func (b *Broadcaster) TenantMetrics() []TenantMetric {
 	return out
 }
 
-// broadcast sends a message to all connected clients (used for global, non-track
-// messages such as the feed-health status, which is not feed-scoped).
+// broadcast sends a message to connected clients. When the message carries a
+// FeedStatusMessage with FeedID != 0, only clients subscribed to that feed
+// receive it (per-feed status scoping, WF2-21 isolation). FeedID == 0 goes to
+// all clients (single-tenant / unscoped fallback).
 func (b *Broadcaster) broadcast(msg Message) {
 	b.logger.Debug("broadcasting", slog.Int("tracks", len(msg.Tracks)), slog.Int("clients", b.clientCount()))
 
 	b.clients.Range(func(key, value any) bool {
 		c := key.(*Client)
+		if msg.FeedStatus != nil && msg.FeedStatus.FeedID != 0 && !c.scope.AllowsFeed(msg.FeedStatus.FeedID) {
+			return true // not subscribed to this feed's status
+		}
 		select {
 		case c.send <- msg:
 		default:

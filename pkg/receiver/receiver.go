@@ -8,19 +8,21 @@ import (
 	"sync/atomic"
 
 	"github.com/manuelringwald/wayfinder/pkg/cat062"
+	"github.com/manuelringwald/wayfinder/pkg/cat063"
 	"github.com/manuelringwald/wayfinder/pkg/cat065"
 )
 
 // Receiver listens on a UDP-Multicast socket for CAT062 data blocks.
 // Each datagram = one complete CAT062 block (CAT + LEN + Records).
 type Receiver struct {
-	feedID        int64
-	group         net.IP
-	port          int
-	conn          *net.UDPConn
-	logger        *slog.Logger
-	handler       func(feedID int64, tracks []cat062.DecodedTrack) error
-	statusHandler func(status cat065.ServiceStatus) error
+	feedID              int64
+	group               net.IP
+	port                int
+	conn                *net.UDPConn
+	logger              *slog.Logger
+	handler             func(feedID int64, tracks []cat062.DecodedTrack) error
+	statusHandler       func(status cat065.ServiceStatus) error
+	sensorStatusHandler func(statuses []cat063.SensorStatus) error
 
 	decodeErrors atomic.Int64
 }
@@ -41,6 +43,10 @@ type Config struct {
 	// Optional; a nil handler means heartbeats are decoded and logged but
 	// otherwise ignored.
 	StatusHandler func(status cat065.ServiceStatus) error
+	// SensorStatusHandler receives decoded CAT063 per-sensor status records
+	// (Firefly ICD 2.5.0, ADR 0022). Optional; nil means sensor status blocks
+	// are decoded and logged but otherwise ignored.
+	SensorStatusHandler func(statuses []cat063.SensorStatus) error
 }
 
 // New creates a new Receiver with the given configuration.
@@ -60,6 +66,9 @@ func New(cfg Config) (*Receiver, error) {
 	if cfg.StatusHandler == nil {
 		cfg.StatusHandler = func(_ cat065.ServiceStatus) error { return nil }
 	}
+	if cfg.SensorStatusHandler == nil {
+		cfg.SensorStatusHandler = func(_ []cat063.SensorStatus) error { return nil }
+	}
 
 	group := net.ParseIP(cfg.Group)
 	if group == nil {
@@ -67,12 +76,13 @@ func New(cfg Config) (*Receiver, error) {
 	}
 
 	return &Receiver{
-		feedID:        cfg.FeedID,
-		group:         group,
-		port:          cfg.Port,
-		logger:        cfg.Logger,
-		handler:       cfg.Handler,
-		statusHandler: cfg.StatusHandler,
+		feedID:              cfg.FeedID,
+		group:               group,
+		port:                cfg.Port,
+		logger:              cfg.Logger,
+		handler:             cfg.Handler,
+		statusHandler:       cfg.StatusHandler,
+		sensorStatusHandler: cfg.SensorStatusHandler,
 	}, nil
 }
 
@@ -126,15 +136,18 @@ func (r *Receiver) Run(ctx context.Context) error {
 }
 
 // dispatch routes one datagram by its leading ASTERIX CAT octet. The multicast
-// stream carries multiple categories on one group (Firefly ADR 0018): 0x3E is a
-// CAT062 track block, 0x41 a CAT065 SDPS-status heartbeat. Unknown categories
-// are counted as decode errors and skipped.
+// stream carries three categories on one group (Firefly ICD 2.5.0): 0x3E is a
+// CAT062 track block, 0x41 a CAT065 SDPS-status heartbeat, 0x3F a CAT063
+// per-sensor status block. Unknown categories are counted as decode errors and
+// skipped (robust decoder, CLAUDE.md §7).
 func (r *Receiver) dispatch(data []byte, remote *net.UDPAddr) {
 	switch data[0] {
 	case 0x3E: // CAT062 — system tracks
 		r.handleTracks(data, remote)
-	case cat065.Category: // CAT065 — SDPS service status (heartbeat)
+	case cat065.Category: // 0x41 CAT065 — SDPS service status (heartbeat)
 		r.handleStatus(data, remote)
+	case cat063.Category: // 0x3F CAT063 — per-sensor status (ADR 0022)
+		r.handleSensorStatus(data, remote)
 	default:
 		r.decodeErrors.Add(1)
 		r.logger.Error("unknown ASTERIX category",
@@ -190,6 +203,38 @@ func (r *Receiver) handleStatus(data []byte, remote *net.UDPAddr) {
 		if err := r.statusHandler(status); err != nil {
 			r.logger.Error("status handler error", slog.String("error", err.Error()))
 		}
+	}
+}
+
+// handleSensorStatus decodes a CAT063 per-sensor status block and forwards
+// the statuses to the sensor status handler.
+func (r *Receiver) handleSensorStatus(data []byte, remote *net.UDPAddr) {
+	statuses, err := cat063.DecodeSensorBlock(data)
+	if err != nil {
+		r.decodeErrors.Add(1)
+		r.logger.Error("decode CAT063 block",
+			slog.String("remote", remote.String()),
+			slog.Int("bytes", len(data)),
+			slog.String("error", err.Error()))
+		return
+	}
+	if len(statuses) == 0 {
+		r.logger.Debug("empty CAT063 block", slog.String("remote", remote.String()))
+		return
+	}
+	active := 0
+	for _, s := range statuses {
+		if s.Operational {
+			active++
+		}
+	}
+	r.logger.Debug("decoded CAT063 block",
+		slog.String("remote", remote.String()),
+		slog.Int64("feed_id", r.feedID),
+		slog.Int("sensors_total", len(statuses)),
+		slog.Int("sensors_active", active))
+	if err := r.sensorStatusHandler(statuses); err != nil {
+		r.logger.Error("sensor status handler error", slog.String("error", err.Error()))
 	}
 }
 

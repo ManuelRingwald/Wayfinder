@@ -43,11 +43,13 @@ func (s FeedSnapshot) Color() string {
 }
 
 // feedEntry holds per-feed heartbeat tracking and the most-recently-received
-// block size (used as the "recent track count" proxy).
+// block size (used as the "recent track count" proxy) and sensor counts.
 type feedEntry struct {
-	fh    *FeedHealth
-	mu    sync.Mutex
-	block int64 // size of last received CAT062 block
+	fh            *FeedHealth
+	mu            sync.Mutex
+	block         int64 // size of last received CAT062 block
+	sensorsActive int   // active sensors from last CAT063 block
+	sensorsTotal  int   // total sensors from last CAT063 block
 }
 
 // Registry tracks health and recent track activity per feed ID. Feeds are
@@ -98,6 +100,17 @@ func (r *Registry) RecordTracks(feedID int64, count int) {
 	e.mu.Unlock()
 }
 
+// RecordSensors records the sensor counts from the most recent CAT063 block
+// for feedID. active is the number of operational sensors; total is the total
+// number of sensors in the block (Firefly ICD 2.5.0, ADR 0022).
+func (r *Registry) RecordSensors(feedID int64, active, total int) {
+	e := r.getOrCreate(feedID)
+	e.mu.Lock()
+	e.sensorsActive = active
+	e.sensorsTotal = total
+	e.mu.Unlock()
+}
+
 // Snapshot returns the health snapshot for feedID as of now. If feedID has
 // never been registered, it returns the zero value (EverSeen=false, Color "red").
 func (r *Registry) Snapshot(feedID int64, now time.Time) FeedSnapshot {
@@ -115,12 +128,16 @@ func (r *Registry) Snapshot(feedID int64, now time.Time) FeedSnapshot {
 	}
 	e.mu.Lock()
 	block := e.block
+	sensorsActive := e.sensorsActive
+	sensorsTotal := e.sensorsTotal
 	e.mu.Unlock()
 	return FeedSnapshot{
 		EverSeen:          st.EverSeen,
 		Stale:             st.Stale,
 		LastHeartbeatAgoS: agoS,
 		TrackCountRecent:  block,
+		SensorsActive:     sensorsActive,
+		SensorsTotal:      sensorsTotal,
 	}
 }
 

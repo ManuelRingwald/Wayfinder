@@ -76,7 +76,7 @@ Browser (WebSocket JSON)
 
 ## 2. Datenfluss
 
-### 2.1 Eingang: CAT062/CAT065 über UDP-Multicast
+### 2.1 Eingang: CAT062/CAT065/CAT063 über UDP-Multicast
 
 ```
 Firefly
@@ -84,8 +84,10 @@ Firefly
           └─► pkg/receiver.Receiver.Run()
                   ├─► CAT-Oktet 0x3E → pkg/cat062.DecodeBlock()
                   │       └─► []DecodedTrack  →  pkg/broadcast.Broadcaster.Broadcast()
-                  └─► CAT-Oktet 0x41 → pkg/cat065.DecodeStatusBlock()
-                          └─► pkg/health.FeedHealth.RecordHeartbeat()
+                  ├─► CAT-Oktet 0x41 → pkg/cat065.DecodeStatusBlock()
+                  │       └─► pkg/health.Registry.RecordHeartbeat()
+                  └─► CAT-Oktet 0x3F → pkg/cat063.DecodeSensorBlock()
+                          └─► pkg/health.Registry.RecordSensors()
 ```
 
 **Dispatch-Logik:** Der Receiver liest ein komplettes UDP-Datagramm (max.
@@ -93,6 +95,7 @@ Firefly
 
 - `0x3E` (62 dezimal) → CAT062-Decoder → Track-Update
 - `0x41` (65 dezimal) → CAT065-Decoder → Heartbeat
+- `0x3F` (63 dezimal) → CAT063-Decoder → Sensor-Status-Update
 - anderes → Decode-Fehler, Zähler `wayfinder_cat062_decode_errors_total`
   erhöht, Datagramm verworfen
 
@@ -199,7 +202,7 @@ Durch `authMiddleware` geschützt (wenn `WAYFINDER_AUTH_TOKEN` gesetzt).
 | `/api/waypoints` | GET | Wegpunkte (GeoJSON, best-effort) |
 | `/api/admin/whoami` | GET | Rollen-Probe + **effektive Feature-Flags** (`features`) als JSON; rollen-gegated (WF2-32/50) |
 | `/api/admin/overview` | GET | **AP3:** Mandanten-Dashboard als Aggregat — je Mandant `{id, slug, name, status, features[], feeds[], user_count}` in einem Call; **admin** |
-| `/api/admin/feeds/health` | GET | **AP4:** Gesundheitszustand aller Feeds — je Feed `{feed_id, color, stale, ever_seen, last_heartbeat_ago_s, track_count_recent, sensors_active, sensors_total}` aus der In-Memory-Health-Registry; `color` ist **grün** (Heartbeat frisch, unabhängig vom Verkehr — leerer Himmel ist kein Fehler) / **gelb** (Sensor-Teilausfall: `sensors_active < sensors_total > 0`; aktiviert erst nach Eingang von CAT063-Sensor-Status-Meldungen aus Firefly #32 ⏳) / **rot** (kein Heartbeat = toter Feed oder nie gesehen); **admin** |
+| `/api/admin/feeds/health` | GET | **AP4:** Gesundheitszustand aller Feeds — je Feed `{feed_id, color, stale, ever_seen, last_heartbeat_ago_s, track_count_recent, sensors_active, sensors_total}` aus der In-Memory-Health-Registry; `color` ist **grün** (Heartbeat frisch, unabhängig vom Verkehr — leerer Himmel ist kein Fehler) / **gelb** (Sensor-Teilausfall: `sensors_active < sensors_total > 0`; CAT063, ADR 0010) / **rot** (kein Heartbeat = toter Feed oder nie gesehen); **admin** |
 | `/api/admin/tenants/{id}/view` | GET/PUT | **AP3:** Standard-Sicht **eines beliebigen** Mandanten lesen/schreiben (cross-tenant Editor; gleiche `validateView` wie `/api/admin/view`); **admin** |
 | `/api/admin/tenants/{id}/entitlements[/{key}]` | GET/PUT | Feature-Entitlements pro Mandant; **admin** (WF2-50) |
 | `/api/admin/tenants/{id}/users` | GET/POST | Zugänge eines Mandanten auflisten / anlegen (AP6); **admin**. POST `{subject, email?, password?}` → 201; Rolle immer `user`; Passwort min. 8 Zeichen; doppelter Subject → 409 |
@@ -577,7 +580,7 @@ Banner angezeigt werden:
 |---------|--------|--------------|
 | Unbekannt | grau ⬜ | Noch kein CAT065-Heartbeat seit Start |
 | OK | grün ✅ | Heartbeat frisch — auch bei leerem Himmel; kein Verkehr ist kein Fehler |
-| Degraded | gelb ⚠️ | Heartbeat frisch, aber Sensor-Teilausfall (`sensors_active < sensors_total`); ⏳ erst aktiv wenn CAT063 aus Firefly #32 eintrifft |
+| Degraded | gelb ⚠️ | Heartbeat frisch, aber Sensor-Teilausfall (`sensors_active < sensors_total`): mindestens ein Radar abgefallen, aber noch mindestens eines aktiv (CAT063, ADR 0010) |
 | Stale | rot 🔴 | Letzter Heartbeat liegt länger als `WAYFINDER_FEED_STALE_TIMEOUT` Sekunden zurück, oder Firefly hat aufgehört zu senden |
 
 **Implementierung:** `pkg/health.FeedHealth` verfolgt den Zeitpunkt des

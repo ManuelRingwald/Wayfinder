@@ -58,9 +58,11 @@ Dies ist das Herzstück und der einzige Berührungspunkt mit Firefly. Wayfinder
   ist standardmäßig 1 (subnetz-lokal). Ein Datagramm = ein vollständiger
   ASTERIX-Datenblock **einer Kategorie**; **keine** zusätzliche Anwendungs-Rahmung
   (keine Sequenznummern, keine Extra-Header). Seit ICD 2.3.0 (Fireflys ADR 0018)
-  trägt derselbe Strom **zwei Kategorien**: **CAT062** (Tracks, `0x3E`) und
-  **CAT065** (SDPS-Service-Status / Heartbeat, `0x41`). Wayfinder **dispatcht am
-  führenden CAT-Oktett** und überspringt unbekannte Kategorien (robuster Decoder).
+  trägt derselbe Strom **drei Kategorien**: **CAT062** (Tracks, `0x3E`),
+  **CAT065** (SDPS-Service-Status / Heartbeat, `0x41`) und seit ICD 2.5.0
+  (Fireflys ADR 0022) **CAT063** (Per-Sensor-Status, `0x3F`). Wayfinder
+  **dispatcht am führenden CAT-Oktett** und überspringt unbekannte Kategorien
+  (robuster Decoder).
 - **Update-Rate:** Keine feste, globale Periode — jeder Sensor hat seine eigene
   `scan_period` (typisch 4–12 s, ADR 0013 in Firefly). Datenblöcke treffen also
   in unregelmäßigem Takt ein, nicht in festen Intervallen.
