@@ -492,12 +492,14 @@ die **Feeds** und die **Zugänge** dieses Kunden verwalten.
 
 > **Feed-Gesundheit (AP4, ADR 0009):** Die einem Mandanten zugewiesenen Feeds
 > tragen in Übersicht und Detailseite einen farbigen **Ampel-Chip**:
-> **grün** = Feed lebt und liefert Tracks, **gelb** = Feed lebt (CAT065-Heartbeat
-> kommt an), liefert aber gerade keine Tracks („leerer Himmel"), **rot** = kein
-> Heartbeat („toter Feed", z. B. Firefly-Sender aus oder Netz-Pfad gestört).
-> So unterscheiden Sie auf einen Blick einen *ruhigen Himmel* von einem
-> *ausgefallenen Feed*. Die Werte stammen aus derselben Quelle wie die
-> `/metrics`-Felder `wayfinder_feed_stale` / `wayfinder_cat065_heartbeats_received_total`.
+> **grün** = Heartbeat kommt an — auch bei leerem Himmel, kein Verkehr ist kein
+> Fehler; **gelb** = Sensor-Teilausfall (mindestens ein Radar abgefallen, aber
+> noch mindestens eines aktiv; ⏳ erst aktiv nach Firefly #32 / CAT063);
+> **rot** = kein Heartbeat mehr („toter Feed", z. B. Firefly-Sender aus oder
+> Netz-Pfad gestört). So unterscheiden Sie auf einen Blick einen *ruhigen Himmel*
+> von einem *ausgefallenen Feed* oder einem *degradierten Multi-Radar-System*.
+> Die Werte stammen aus derselben Quelle wie die `/metrics`-Felder
+> `wayfinder_feed_stale` / `wayfinder_cat065_heartbeats_received_total`.
 
 > **Rollen (ADR 0009):** Es gibt genau zwei Rollen — **`admin`** (Plattform-
 > Betreiber, sieht den ganzen Admin-Bereich) und **`user`** (Endnutzer/Lotse

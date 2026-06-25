@@ -199,7 +199,7 @@ Durch `authMiddleware` geschützt (wenn `WAYFINDER_AUTH_TOKEN` gesetzt).
 | `/api/waypoints` | GET | Wegpunkte (GeoJSON, best-effort) |
 | `/api/admin/whoami` | GET | Rollen-Probe + **effektive Feature-Flags** (`features`) als JSON; rollen-gegated (WF2-32/50) |
 | `/api/admin/overview` | GET | **AP3:** Mandanten-Dashboard als Aggregat — je Mandant `{id, slug, name, status, features[], feeds[], user_count}` in einem Call; **admin** |
-| `/api/admin/feeds/health` | GET | **AP4:** Gesundheitszustand aller Feeds — je Feed `{feed_id, color, stale, ever_seen, last_heartbeat_ago_s, track_count_recent}` aus der In-Memory-Health-Registry; `color` ist grün (Heartbeat + Tracks) / gelb (Heartbeat, kein Verkehr = leerer Himmel) / rot (kein Heartbeat = toter Feed); **admin** |
+| `/api/admin/feeds/health` | GET | **AP4:** Gesundheitszustand aller Feeds — je Feed `{feed_id, color, stale, ever_seen, last_heartbeat_ago_s, track_count_recent, sensors_active, sensors_total}` aus der In-Memory-Health-Registry; `color` ist **grün** (Heartbeat frisch, unabhängig vom Verkehr — leerer Himmel ist kein Fehler) / **gelb** (Sensor-Teilausfall: `sensors_active < sensors_total > 0`; aktiviert erst nach Eingang von CAT063-Sensor-Status-Meldungen aus Firefly #32 ⏳) / **rot** (kein Heartbeat = toter Feed oder nie gesehen); **admin** |
 | `/api/admin/tenants/{id}/view` | GET/PUT | **AP3:** Standard-Sicht **eines beliebigen** Mandanten lesen/schreiben (cross-tenant Editor; gleiche `validateView` wie `/api/admin/view`); **admin** |
 | `/api/admin/tenants/{id}/entitlements[/{key}]` | GET/PUT | Feature-Entitlements pro Mandant; **admin** (WF2-50) |
 | `/api/admin/tenants/{id}/users` | GET/POST | Zugänge eines Mandanten auflisten / anlegen (AP6); **admin**. POST `{subject, email?, password?}` → 201; Rolle immer `user`; Passwort min. 8 Zeichen; doppelter Subject → 409 |
@@ -570,14 +570,15 @@ für Metriken folgt WF2-23.2).
 
 ## 7. Feed-Staleness-Erkennung
 
-Wayfinder unterscheidet drei Feed-Zustände, die im Browser als farbiges
+Wayfinder unterscheidet vier Feed-Zustände, die im Browser als farbiges
 Banner angezeigt werden:
 
 | Zustand | Banner | Beschreibung |
 |---------|--------|--------------|
 | Unbekannt | grau ⬜ | Noch kein CAT065-Heartbeat seit Start |
-| OK | grün ✅ | Letzter Heartbeat liegt weniger als `WAYFINDER_FEED_STALE_TIMEOUT` Sekunden zurück |
-| Stale | rot 🔴 | Letzter Heartbeat liegt länger als Timeout zurück, oder Firefly hat aufgehört zu senden |
+| OK | grün ✅ | Heartbeat frisch — auch bei leerem Himmel; kein Verkehr ist kein Fehler |
+| Degraded | gelb ⚠️ | Heartbeat frisch, aber Sensor-Teilausfall (`sensors_active < sensors_total`); ⏳ erst aktiv wenn CAT063 aus Firefly #32 eintrifft |
+| Stale | rot 🔴 | Letzter Heartbeat liegt länger als `WAYFINDER_FEED_STALE_TIMEOUT` Sekunden zurück, oder Firefly hat aufgehört zu senden |
 
 **Implementierung:** `pkg/health.FeedHealth` verfolgt den Zeitpunkt des
 zuletzt empfangenen CAT065-Heartbeats. Eine Monitor-Goroutine in `main.go`

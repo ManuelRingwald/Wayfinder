@@ -85,8 +85,10 @@ curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8080/ready
 
 ### 🟢 Prüfung 3 — Sieht der Nutzer etwas? (Browser)
 **<http://localhost:8081>** öffnen. Erwartung: dunkle Karte, Flugzeuge, oben
-rechts der **grüne Banner „FEED OK"**. Steht dort **„FEED STALE"** (rot/orange),
-ist die Datenquelle stumm → Firefly bzw. Multicast prüfen (Runbook).
+rechts der **grüne Banner „FEED OK"**. Steht dort:
+- **„SENSOR AUSFALL"** (gelb) → Heartbeat kommt noch an, aber mind. ein Radar ist abgefallen;
+  Betrieb eingeschränkt (⏳ erst nach Firefly #32 / CAT063 aktivierbar).
+- **„FEED STALE"** (rot) → Datenquelle stumm → Firefly bzw. Multicast prüfen (Runbook).
 
 > ✅ **Alle drei grün?** Das System ist gesund. Diese Kontrolle gehört in die
 > tägliche Routine (Abschnitt 12) und lässt sich leicht automatisieren
