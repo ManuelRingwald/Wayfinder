@@ -2,8 +2,7 @@
   <!-- WF2-32 admin dashboard. This is a standalone view at '/admin' — the ASD map
        is unmounted while it is shown. The role probe (whoami) runs on mount; until
        it resolves we show a spinner, then either the access notice or the panels.
-       The Provisioning tab is gated to super_admin (cosmetic — the server enforces
-       it independently with a 403). -->
+       All tabs are available to the single admin role (ADR 0009). -->
   <v-app-bar density="comfortable" flat color="surface">
     <v-app-bar-title>Wayfinder — Administration</v-app-bar-title>
     <v-spacer />
@@ -104,7 +103,8 @@
         <v-tabs v-model="tab" color="primary" class="mb-4">
           <v-tab value="view">Ansicht</v-tab>
           <v-tab value="subs">Abos &amp; Feeds</v-tab>
-          <v-tab v-if="admin.isSuperAdmin" value="provisioning">Provisioning</v-tab>
+          <v-tab v-if="admin.isAdmin" value="provisioning">Provisioning</v-tab>
+          <v-tab v-if="admin.isAdmin" value="users">Zugänge</v-tab>
         </v-tabs>
 
         <v-window v-model="tab">
@@ -114,8 +114,11 @@
           <v-window-item value="subs">
             <AdminSubscriptions />
           </v-window-item>
-          <v-window-item v-if="admin.isSuperAdmin" value="provisioning">
+          <v-window-item v-if="admin.isAdmin" value="provisioning">
             <AdminProvisioning />
+          </v-window-item>
+          <v-window-item v-if="admin.isAdmin" value="users">
+            <AdminUsers />
           </v-window-item>
         </v-window>
       </template>
@@ -129,6 +132,7 @@ import { useAdminStore } from '@/stores/admin.js'
 import AdminViewConfig from '@/components/admin/AdminViewConfig.vue'
 import AdminSubscriptions from '@/components/admin/AdminSubscriptions.vue'
 import AdminProvisioning from '@/components/admin/AdminProvisioning.vue'
+import AdminUsers from '@/components/admin/AdminUsers.vue'
 
 const admin = useAdminStore()
 const tab = ref('view')

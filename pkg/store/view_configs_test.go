@@ -76,7 +76,7 @@ func TestIntegrationViewConfigRepo(t *testing.T) {
 	}
 
 	email := "l@ffm.example"
-	u, _ := users.Create(ctx, ten.ID, "oidc|1", &email, RoleOperator)
+	u, _ := users.Create(ctx, ten.ID, "oidc|1", &email, RoleUser)
 
 	// Without an override, the effective view is the tenant default.
 	eff, err := views.GetEffective(ctx, ten.ID, u.ID)

@@ -483,13 +483,20 @@ docker compose up -d --build
 - **Benutzername:** `admin`
 - **Passwort:** das in Schritt 5.4 gewählte (`MeinAdminPasswort123`)
 
-Sie sehen die Admin-Oberfläche. Als `super_admin` haben Sie zusätzlich den
-**Provisioning-Bereich**, um Feeds an Mandanten zu vergeben.
+Sie sehen die Admin-Oberfläche. Als `admin` haben Sie zusätzlich den
+**Provisioning-Bereich** (Feeds an Mandanten vergeben) und den Bereich
+**Zugänge** (Login-Konten je Mandanten verwalten).
+
+> **Rollen (ADR 0009):** Es gibt genau zwei Rollen — **`admin`** (Plattform-
+> Betreiber, sieht den ganzen Admin-Bereich) und **`user`** (Endnutzer/Lotse
+> eines Kunden, meldet sich an und sieht nur das zugewiesene Lagebild). Ein
+> Kunde bekommt also `user`-Zugänge; den Admin-Bereich erreicht nur `admin`.
 
 ### Schritt 5.8 — Einen Kunden-Mandanten anlegen
 
-Für jeden Kunden legen Sie einen eigenen Mandanten mit eigenem Login an — wieder
-mit `bootstrap`, diesmal Rolle `tenant_admin`:
+Für jeden Kunden legen Sie einen eigenen Mandanten mit einem ersten `user`-Zugang
+an — mit `bootstrap` (das Anlegen *neuer* Mandanten läuft weiterhin über
+`bootstrap`; weitere Zugänge danach bequem über die Oberfläche, Schritt 5.8b):
 
 ```bash
 WAYFINDER_BOOTSTRAP_PASSWORD='KundePasswort456' \
@@ -499,13 +506,31 @@ docker compose run --rm \
     -tenant kunde-nord \
     -tenant-name "Kunde Nord GmbH" \
     -subject anna \
-    -role tenant_admin
+    -role user
 ```
+
+### Schritt 5.8b — Weitere Zugänge verwalten (Oberfläche, AP6)
+
+Im Admin-Bereich unter **`/admin` → Reiter „Zugänge"** wählen Sie einen Mandanten
+und verwalten dessen Login-Konten direkt im Browser — **ohne** `bootstrap`/SQL:
+
+- **Zugang anlegen** (Benutzername, optional E-Mail und Passwort; Rolle ist
+  immer `user`; ein Passwort muss mindestens 8 Zeichen haben). Ohne Passwort
+  entsteht ein Konto für den Proxy-/OIDC-Betrieb (kein lokales Passwort).
+- **Pausieren / Reaktivieren** eines Zugangs: Ein pausierter Zugang **kann sich
+  nicht mehr anmelden** (fail-closed), seine Konfiguration bleibt aber erhalten.
+- **Passwort setzen/zurücksetzen** und **Löschen** eines Zugangs.
+- **Mandant pausieren:** sperrt **alle** Zugänge dieses Kunden für die Anmeldung
+  auf einmal (z. B. bei Zahlungsstopp), ohne Daten zu verlieren.
+
+> **Hinweis:** Pausieren/Löschen wirkt auf **neue** Anmeldungen sofort. Eine
+> bereits laufende Sitzung läuft noch bis zum Ablauf des Session-Cookies weiter —
+> das sofortige Beenden laufender Sitzungen kommt mit der Session-Registry (AP7).
 
 ### Schritt 5.9 — Dem Kunden einen Feed zuweisen
 
 Damit der neue Kunde Flugzeuge sieht, muss ihm ein Feed **zugewiesen** werden.
-Das darf nur ein `super_admin`. Zwei Wege:
+Das darf nur ein `admin`. Zwei Wege:
 
 **Weg A — über die Admin-Oberfläche (empfohlen):** In `/admin` als `admin`
 angemeldet, im Provisioning-Bereich den Mandanten **„Kunde Nord GmbH"** wählen
@@ -606,8 +631,8 @@ curl -s http://localhost:8080/metrics | grep wayfinder_feed_stale
 | **`docker compose up` bricht mit Build-Fehler ab** | Erstes Bauen braucht Internet (lädt Abhängigkeiten). Verbindung prüfen, dann `docker compose build --no-cache` erneut versuchen. |
 | **`port is already allocated` (8081/8080 belegt)** | Ein anderer Dienst nutzt den Port. Anderen Port abbilden, z. B. `"9091:8081"`, dann `http://localhost:9091` öffnen. |
 | **Mac: Docker-Befehle hängen / „Cannot connect to the Docker daemon"** | Docker Desktop ist nicht gestartet. Docker aus dem Launchpad öffnen, warten bis das Wal-Symbol ruhig steht. |
-| **Multi-Tenant: Login schlägt fehl (401)** | Passwort falsch, **oder** `WAYFINDER_SESSION_KEY` fehlt/ist zu kurz. Schlüssel setzen (`openssl rand -hex 32`), Container neu starten, `bootstrap` ggf. erneut ausführen. |
-| **Multi-Tenant: Kunde sieht keine Flugzeuge** | Dem Mandanten wurde **kein Feed zugewiesen** (Schritt 5.9) — fail-closed ist Absicht. Zuweisung als `super_admin` nachholen. |
+| **Multi-Tenant: Login schlägt fehl (401)** | Passwort falsch; **oder** der Zugang bzw. sein Mandant ist **pausiert** (Schritt 5.8b — fail-closed ist Absicht, im Reiter „Zugänge" reaktivieren); **oder** `WAYFINDER_SESSION_KEY` fehlt/ist zu kurz (Schlüssel setzen mit `openssl rand -hex 32`, Container neu starten, `bootstrap` ggf. erneut ausführen). |
+| **Multi-Tenant: Kunde sieht keine Flugzeuge** | Dem Mandanten wurde **kein Feed zugewiesen** (Schritt 5.9) — fail-closed ist Absicht. Zuweisung als `admin` nachholen. |
 | **Logs ansehen** | `docker compose logs -f wayfinder` (live mitlaufen, `Strg+C` beendet die Anzeige, **nicht** den Dienst). |
 | **Alles sauber neu aufsetzen** | `docker compose down -v` löscht Container **und** die Datenbank-Daten (`-v`!). Danach bei Teil 4/5 neu beginnen. |
 

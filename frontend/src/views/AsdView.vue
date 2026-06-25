@@ -74,8 +74,8 @@ function onTrackClick(track) {
 
 .feed-status-overlay {
   position: absolute;
-  top: 10px;
-  right: 10px;
+  top: 12px;
+  right: 60px;
   z-index: 500;
   pointer-events: none;
 }

@@ -84,7 +84,7 @@ func TestSetupTenancyEnabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create tenant: %v", err)
 	}
-	if _, err := store.NewUserRepo(pool).Create(ctx, ten.ID, "default", nil, store.RoleOperator); err != nil {
+	if _, err := store.NewUserRepo(pool).Create(ctx, ten.ID, "default", nil, store.RoleUser); err != nil {
 		t.Fatalf("create user: %v", err)
 	}
 

@@ -27,7 +27,7 @@ func (f fakeTenants) Exists(_ context.Context, id int64) (bool, error) {
 }
 
 func superAdmin() tenant.Identity {
-	return tenant.Identity{TenantID: 1, UserID: 1, Subject: "root", Role: store.RoleSuperAdmin}
+	return tenant.Identity{TenantID: 1, UserID: 1, Subject: "root", Role: store.RoleAdmin}
 }
 
 // --- grant crypto -----------------------------------------------------------
@@ -83,7 +83,7 @@ func TestResolveNoGrantIsDefaultPath(t *testing.T) {
 	}
 }
 
-func TestResolveValidGrantSuperAdminActivates(t *testing.T) {
+func TestResolveValidGrantAdminActivates(t *testing.T) {
 	token := MintGrant(42, time.Hour, testKey)
 	tenants := fakeTenants{existing: map[int64]bool{42: true}}
 	d, err := Resolve(context.Background(), token, superAdmin(), testKey, tenants)
@@ -95,18 +95,16 @@ func TestResolveValidGrantSuperAdminActivates(t *testing.T) {
 	}
 }
 
-func TestResolveValidGrantNonSuperAdminDenied(t *testing.T) {
+func TestResolveValidGrantNonAdminDenied(t *testing.T) {
 	token := MintGrant(42, time.Hour, testKey)
 	tenants := fakeTenants{existing: map[int64]bool{42: true}}
-	for _, role := range []store.Role{store.RoleOperator, store.RoleTenantAdmin} {
-		id := tenant.Identity{TenantID: 5, UserID: 9, Subject: "mallory", Role: role}
-		d, err := Resolve(context.Background(), token, id, testKey, tenants)
-		if !errors.Is(err, ErrDenied) {
-			t.Fatalf("role=%s: err = %v, want ErrDenied", role, err)
-		}
-		if d.Active {
-			t.Fatalf("role=%s: must not activate on denial", role)
-		}
+	id := tenant.Identity{TenantID: 5, UserID: 9, Subject: "mallory", Role: store.RoleUser}
+	d, err := Resolve(context.Background(), token, id, testKey, tenants)
+	if !errors.Is(err, ErrDenied) {
+		t.Fatalf("role=%s: err = %v, want ErrDenied", store.RoleUser, err)
+	}
+	if d.Active {
+		t.Fatalf("role=%s: must not activate on denial", store.RoleUser)
 	}
 }
 

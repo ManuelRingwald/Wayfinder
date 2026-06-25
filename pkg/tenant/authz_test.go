@@ -9,15 +9,14 @@ import (
 )
 
 func TestRequireRole(t *testing.T) {
-	gate := RequireRole(store.RoleTenantAdmin, store.RoleSuperAdmin)
+	gate := RequireRole(store.RoleAdmin)
 
 	cases := map[string]struct {
 		identity *Identity // nil = no identity in context (gate used without Middleware)
 		want     int
 	}{
-		"tenant_admin allowed":  {&Identity{Role: store.RoleTenantAdmin}, http.StatusOK},
-		"super_admin allowed":   {&Identity{Role: store.RoleSuperAdmin}, http.StatusOK},
-		"operator forbidden":    {&Identity{Role: store.RoleOperator}, http.StatusForbidden},
+		"admin allowed":         {&Identity{Role: store.RoleAdmin}, http.StatusOK},
+		"user forbidden":        {&Identity{Role: store.RoleUser}, http.StatusForbidden},
 		"empty role forbidden":  {&Identity{}, http.StatusForbidden},
 		"no identity forbidden": {nil, http.StatusForbidden},
 	}

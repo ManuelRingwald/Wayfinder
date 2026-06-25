@@ -38,7 +38,7 @@ func TestContextRoundTrip(t *testing.T) {
 	if _, ok := FromContext(context.Background()); ok {
 		t.Fatal("empty context should carry no identity")
 	}
-	id := Identity{TenantID: 7, UserID: 3, Subject: "s", Role: store.RoleOperator}
+	id := Identity{TenantID: 7, UserID: 3, Subject: "s", Role: store.RoleUser}
 	got, ok := FromContext(WithIdentity(context.Background(), id))
 	if !ok || got != id {
 		t.Fatalf("round-trip = %+v, %v", got, ok)
@@ -47,7 +47,7 @@ func TestContextRoundTrip(t *testing.T) {
 
 func TestMiddlewareSuccess(t *testing.T) {
 	users := fakeUsers{bySubject: map[string]store.User{
-		"oidc|alice": {ID: 3, TenantID: 7, Subject: "oidc|alice", Role: store.RoleTenantAdmin},
+		"oidc|alice": {ID: 3, TenantID: 7, Subject: "oidc|alice", Role: store.RoleAdmin},
 	}}
 	var seen Identity
 	called := false
@@ -64,14 +64,14 @@ func TestMiddlewareSuccess(t *testing.T) {
 	if !called || rec.Code != http.StatusOK {
 		t.Fatalf("called=%v status=%d", called, rec.Code)
 	}
-	if seen.TenantID != 7 || seen.UserID != 3 || seen.Role != store.RoleTenantAdmin || seen.Subject != "oidc|alice" {
+	if seen.TenantID != 7 || seen.UserID != 3 || seen.Role != store.RoleAdmin || seen.Subject != "oidc|alice" {
 		t.Fatalf("identity in context = %+v", seen)
 	}
 }
 
 func TestMiddlewareFailClosed(t *testing.T) {
 	users := fakeUsers{bySubject: map[string]store.User{
-		"known": {ID: 1, TenantID: 1, Subject: "known", Role: store.RoleOperator},
+		"known": {ID: 1, TenantID: 1, Subject: "known", Role: store.RoleUser},
 	}}
 
 	cases := map[string]struct {

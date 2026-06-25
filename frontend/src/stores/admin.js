@@ -27,8 +27,8 @@ async function apiFetch(path, options = {}) {
 }
 
 // useAdminStore backs the WF2-32 admin dashboard. It consumes the WF2-31 admin
-// REST API; the role gating it exposes (isSuperAdmin) is cosmetic — the server
-// independently enforces every boundary (requireSuper → 403).
+// REST API; the role gating it exposes (isAdmin) is cosmetic — the server
+// independently enforces every boundary (RequireRole(admin) → 403).
 export const useAdminStore = defineStore('admin', () => {
   const identity = ref(null)     // whoami: { subject, tenant_id, user_id, role }
   const accessError = ref(null)  // set when whoami is refused (401/403)
@@ -36,15 +36,14 @@ export const useAdminStore = defineStore('admin', () => {
   const view = ref(null)         // the tenant's effective view config (or null)
   const feeds = ref([])          // full feed catalogue
   const subscriptions = ref([])  // feeds the current tenant is subscribed to
-  const tenants = ref([])        // super_admin: all tenants
+  const tenants = ref([])        // admin: all tenants (cross-tenant provisioning)
   const error = ref(null)        // last action error (banner)
   const notice = ref(null)       // last success message (banner)
 
   const role = computed(() => identity.value?.role ?? null)
-  const isSuperAdmin = computed(() => role.value === 'super_admin')
-  // Admin-rail visibility (Req 1): only tenant_admin or super_admin may reach
-  // /admin. Cosmetic gating — the server enforces /api/admin/* via RequireRole.
-  const isAdmin = computed(() => role.value === 'tenant_admin' || role.value === 'super_admin')
+  // Admin-rail visibility (Req 1, ADR 0009): only admin may reach /admin.
+  // Cosmetic gating — the server enforces /api/admin/* via RequireRole(admin).
+  const isAdmin = computed(() => role.value === 'admin')
   const isAuthorized = computed(() => identity.value !== null)
   // WF2-50: per-tenant feature entitlements, delivered by whoami. UI gating off
   // these is cosmetic — the server enforces every feature server-side.
@@ -115,7 +114,7 @@ export const useAdminStore = defineStore('admin', () => {
     return r
   }
 
-  // --- super_admin cross-tenant provisioning -------------------------------
+  // --- cross-tenant provisioning (admin) -----------------------------------
 
   async function loadTenants() {
     const r = await apiFetch('/api/admin/tenants')
@@ -153,6 +152,73 @@ export const useAdminStore = defineStore('admin', () => {
     return r
   }
 
+  // --- access management (AP6) ----------------------------------------------
+  // Per-tenant access accounts (role user). The server enforces every boundary
+  // (requireAdmin → 403); the UI gating is convenience only.
+
+  // loadTenantUsers returns a tenant's access accounts without storing them
+  // globally (the caller owns that transient list, like loadTenantSubscriptions).
+  async function loadTenantUsers(tenantId) {
+    return apiFetch(`/api/admin/tenants/${tenantId}/users`)
+  }
+
+  async function createUser(tenantId, payload) {
+    error.value = null
+    notice.value = null
+    const r = await apiFetch(`/api/admin/tenants/${tenantId}/users`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+    if (r.ok) notice.value = 'Zugang angelegt.'
+    else error.value = r.error
+    return r
+  }
+
+  async function setUserStatus(tenantId, userId, status) {
+    error.value = null
+    notice.value = null
+    const r = await apiFetch(`/api/admin/tenants/${tenantId}/users/${userId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    })
+    if (r.ok) notice.value = status === 'paused' ? 'Zugang pausiert.' : 'Zugang reaktiviert.'
+    else error.value = r.error
+    return r
+  }
+
+  async function deleteUser(tenantId, userId) {
+    error.value = null
+    notice.value = null
+    const r = await apiFetch(`/api/admin/tenants/${tenantId}/users/${userId}`, { method: 'DELETE' })
+    if (r.ok) notice.value = 'Zugang gelöscht.'
+    else error.value = r.error
+    return r
+  }
+
+  async function setUserPassword(tenantId, userId, password) {
+    error.value = null
+    notice.value = null
+    const r = await apiFetch(`/api/admin/tenants/${tenantId}/users/${userId}/password`, {
+      method: 'PUT',
+      body: JSON.stringify({ password }),
+    })
+    if (r.ok) notice.value = 'Passwort gesetzt.'
+    else error.value = r.error
+    return r
+  }
+
+  async function setTenantStatus(tenantId, status) {
+    error.value = null
+    notice.value = null
+    const r = await apiFetch(`/api/admin/tenants/${tenantId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    })
+    if (r.ok) notice.value = status === 'paused' ? 'Mandant pausiert.' : 'Mandant reaktiviert.'
+    else error.value = r.error
+    return r
+  }
+
   function clearBanners() {
     error.value = null
     notice.value = null
@@ -160,8 +226,10 @@ export const useAdminStore = defineStore('admin', () => {
 
   return {
     identity, accessError, accessStatus, view, feeds, subscriptions, tenants, error, notice,
-    role, isSuperAdmin, isAdmin, isAuthorized, features, hasFeature,
+    role, isAdmin, isAuthorized, features, hasFeature,
     loadIdentity, login, loadView, saveView, loadFeeds, loadSubscriptions,
-    loadTenants, loadTenantSubscriptions, grant, revoke, clearBanners,
+    loadTenants, loadTenantSubscriptions, grant, revoke,
+    loadTenantUsers, createUser, setUserStatus, deleteUser, setUserPassword, setTenantStatus,
+    clearBanners,
   }
 })

@@ -1,9 +1,9 @@
 <template>
   <!-- Cross-tenant read-only impersonation control (ADR 0008, WF2-34).
-       super_admin only. When inactive it is an unobtrusive entry ("Als Mandant
-       ansehen"); when active it becomes a prominent read-only banner with a
-       tenant switcher and an exit. The server enforces the actual scope. -->
-  <div v-if="admin.isSuperAdmin" class="imp-bar" :class="{ 'imp-bar--active': imp.active }">
+       Admin only (ADR 0009). When inactive it is an unobtrusive entry ("Als
+       Mandant ansehen"); when active it becomes a prominent read-only banner
+       with a tenant switcher and an exit. The server enforces the actual scope. -->
+  <div v-if="admin.isAdmin" class="imp-bar" :class="{ 'imp-bar--active': imp.active }">
     <template v-if="imp.active">
       <v-icon size="18">mdi-eye-outline</v-icon>
       <span class="imp-bar__text">
@@ -67,10 +67,10 @@ const admin = useAdminStore()
 const imp = useImpersonationStore()
 
 onMounted(async () => {
-  // Probe identity once (fail-closed: a non-super_admin renders nothing). Only a
-  // super_admin loads the tenant list and the current impersonation status.
+  // Probe identity once (fail-closed: a non-admin renders nothing). Only an admin
+  // loads the tenant list and the current impersonation status.
   if (!admin.isAuthorized) await admin.loadIdentity()
-  if (admin.isSuperAdmin) {
+  if (admin.isAdmin) {
     await admin.loadTenants()
     await imp.loadStatus()
   }

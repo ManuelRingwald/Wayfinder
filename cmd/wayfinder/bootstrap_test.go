@@ -11,9 +11,9 @@ func TestBootstrapParamsValidate(t *testing.T) {
 		p       bootstrapParams
 		wantErr bool
 	}{
-		"ok":              {bootstrapParams{TenantSlug: "demo", Subject: "admin", Role: store.RoleTenantAdmin}, false},
-		"missing tenant":  {bootstrapParams{Subject: "admin", Role: store.RoleTenantAdmin}, true},
-		"missing subject": {bootstrapParams{TenantSlug: "demo", Role: store.RoleTenantAdmin}, true},
+		"ok":              {bootstrapParams{TenantSlug: "demo", Subject: "admin", Role: store.RoleAdmin}, false},
+		"missing tenant":  {bootstrapParams{Subject: "admin", Role: store.RoleAdmin}, true},
+		"missing subject": {bootstrapParams{TenantSlug: "demo", Role: store.RoleAdmin}, true},
 		"invalid role":    {bootstrapParams{TenantSlug: "demo", Subject: "admin", Role: store.Role("root")}, true},
 		"empty role":      {bootstrapParams{TenantSlug: "demo", Subject: "admin"}, true},
 	}

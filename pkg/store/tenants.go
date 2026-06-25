@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -47,6 +48,24 @@ func (r *TenantRepo) GetBySlug(ctx context.Context, slug string) (Tenant, error)
 		return Tenant{}, wrap("get tenant by slug", err)
 	}
 	return t, nil
+}
+
+// SetStatus updates a tenant's lifecycle status (AP6). A paused tenant cascades
+// to login for all of its accounts (enforced at the login edge). The status is
+// validated before the query (fail-closed). A missing tenant yields ErrNotFound.
+func (r *TenantRepo) SetStatus(ctx context.Context, id int64, status Status) error {
+	if !status.Valid() {
+		return fmt.Errorf("store: set tenant status: invalid status %q", status)
+	}
+	const q = `UPDATE tenants SET status = $2 WHERE id = $1`
+	tag, err := r.db.Exec(ctx, q, id, string(status))
+	if err != nil {
+		return wrap("set tenant status", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // List returns all tenants ordered by id.

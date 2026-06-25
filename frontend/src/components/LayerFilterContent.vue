@@ -8,7 +8,11 @@
     <!-- ── Kartenlayer ── -->
     <div class="filter-section-header">Kartenlayer</div>
 
-    <div class="filter-row">
+    <!-- AP2: cosmetic feature gates. !admin.isAuthorized = identity not yet loaded
+         or user role (403 on whoami) → show all controls. isAuthorized + feature
+         disabled → hide the control. Server does not enforce aeronautical data
+         access; this is a pure UX gate. -->
+    <div v-if="!admin.isAuthorized || admin.hasFeature('airspaces')" class="filter-row">
       <v-switch
         v-model="store.layerVisibility.airspace"
         label="Lufträume"
@@ -21,7 +25,7 @@
     </div>
 
     <!-- ASD-011: airspace sub-group toggles, indented, coloured per group -->
-    <template v-if="store.layerVisibility.airspace">
+    <template v-if="(!admin.isAuthorized || admin.hasFeature('airspaces')) && store.layerVisibility.airspace">
       <div
         v-for="group in AIRSPACE_GROUPS"
         :key="group.id"
@@ -40,7 +44,7 @@
       </div>
     </template>
 
-    <div class="filter-row">
+    <div v-if="!admin.isAuthorized || admin.hasFeature('vor_ndb')" class="filter-row">
       <v-switch
         v-model="store.layerVisibility.navaids"
         label="VOR / NDB"
@@ -52,7 +56,7 @@
       />
     </div>
 
-    <div class="filter-row">
+    <div v-if="!admin.isAuthorized || admin.hasFeature('waypoints')" class="filter-row">
       <v-switch
         v-model="store.layerVisibility.waypoints"
         label="Waypoints"
@@ -76,7 +80,19 @@
       />
     </div>
 
-    <div class="filter-row">
+    <div v-if="!admin.isAuthorized || admin.hasFeature('history_dots')" class="filter-row">
+      <v-switch
+        v-model="store.layerVisibility.historyDots"
+        label="History Dots"
+        color="primary"
+        density="compact"
+        hide-details
+        inset
+        @update:model-value="onLayerToggle('historyDots', $event)"
+      />
+    </div>
+
+    <div v-if="!admin.isAuthorized || admin.hasFeature('range_rings')" class="filter-row">
       <v-switch
         v-model="store.layerVisibility.rangeRings"
         label="Range-Rings"
@@ -89,7 +105,7 @@
     </div>
 
     <!-- ASD-012: range-ring spacing + count, shown only while the layer is active -->
-    <template v-if="store.layerVisibility.rangeRings">
+    <template v-if="(!admin.isAuthorized || admin.hasFeature('range_rings')) && store.layerVisibility.rangeRings">
       <div class="filter-row filter-row--sub">
         <v-select
           v-model.number="ringSpacing"
@@ -181,10 +197,12 @@
 <script setup>
 import { ref } from 'vue'
 import { useAsdStore } from '@/stores/asd.js'
+import { useAdminStore } from '@/stores/admin.js'
 import { AIRSPACE_GROUPS, RANGE_RING_SPACING_OPTIONS_NM, MAX_RANGE_RING_COUNT } from '@/map/constants.js'
 
 const emit = defineEmits(['layer-toggle', 'fl-filter-change'])
 const store = useAsdStore()
+const admin = useAdminStore()
 
 const minFL = ref(store.flFilter.minFL)
 const maxFL = ref(store.flFilter.maxFL)

@@ -1,10 +1,10 @@
-// Package adminapi serves the tenant-scoped admin REST API (WF2-31): a tenant
-// administrator reads and edits *their own* tenant's configuration. Every handler
-// derives the tenant from the request Identity (set by the tenant middleware) —
-// never from the path or body — so a tenant admin can only ever touch their own
-// tenant (isolation by construction, NFR-SEC-003). The routes are mounted behind
-// RequireRole(tenant_admin, super_admin); this package assumes the caller is
-// already authorised.
+// Package adminapi serves the tenant-scoped admin REST API (WF2-31): an admin
+// reads and edits configuration for their own tenant (and, via the cross-tenant
+// provisioning routes, any other tenant). Every handler derives the tenant from
+// the request Identity (set by the tenant middleware) — never from the path or
+// body — so self-service routes are isolated by construction (NFR-SEC-003).
+// The routes are mounted behind RequireRole(admin); this package assumes the
+// caller is already authorised.
 package adminapi
 
 import (
@@ -43,6 +43,7 @@ type FeedStore interface {
 type TenantStore interface {
 	List(ctx context.Context) ([]store.Tenant, error)
 	GetByID(ctx context.Context, id int64) (store.Tenant, error)
+	SetStatus(ctx context.Context, id int64, status store.Status) error
 }
 
 // EntitlementService is the per-tenant feature surface the admin API needs
@@ -72,6 +73,8 @@ type Handler struct {
 	subs    SubscriptionStore
 	feeds   FeedStore
 	tenants TenantStore
+	users   UserStore
+	creds   CredentialStore
 	feats   EntitlementService
 	rescope RescopeFunc
 	logger  *slog.Logger
@@ -80,31 +83,38 @@ type Handler struct {
 
 // New builds the admin API handler. Method+path patterns give automatic 405s for
 // the wrong method. The cross-tenant provisioning routes (/api/admin/tenants/…)
-// are additionally restricted to super_admin (requireSuper). rescope (may be nil)
-// re-scopes a tenant's live streams after a mutation (WF2-33).
-func New(views ViewStore, subs SubscriptionStore, feeds FeedStore, tenants TenantStore, feats EntitlementService, logger *slog.Logger, rescope RescopeFunc) *Handler {
-	h := &Handler{views: views, subs: subs, feeds: feeds, tenants: tenants, feats: feats, rescope: rescope, logger: logger}
+// are additionally guarded by requireAdmin (defence-in-depth). rescope (may be
+// nil) re-scopes a tenant's live streams after a mutation (WF2-33).
+func New(views ViewStore, subs SubscriptionStore, feeds FeedStore, tenants TenantStore, users UserStore, creds CredentialStore, feats EntitlementService, logger *slog.Logger, rescope RescopeFunc) *Handler {
+	h := &Handler{views: views, subs: subs, feeds: feeds, tenants: tenants, users: users, creds: creds, feats: feats, rescope: rescope, logger: logger}
 	mux := http.NewServeMux()
 	// whoami: the SPA's role probe (WF2-32). It sits behind the same admin gate, so
 	// a 200 here both confirms access and tells the client which panels to render.
 	mux.HandleFunc("GET /api/admin/whoami", h.whoami)
-	// tenant_admin self-service (tenant from the Identity).
+	// Admin self-service (tenant from the Identity).
 	mux.HandleFunc("GET /api/admin/view", h.getView)
 	mux.HandleFunc("PUT /api/admin/view", h.putView)
 	mux.HandleFunc("GET /api/admin/subscriptions", h.getSubscriptions)
 	mux.HandleFunc("GET /api/admin/feeds", h.getFeeds)
-	// Read-only reference: the sensor-class catalogue (WF2-41), for the SPA to
-	// render class pickers/legends. Any admin role may read it.
+	// Read-only reference: the sensor-class catalogue (WF2-41).
 	mux.HandleFunc("GET /api/admin/sensor-classes", h.getSensorClasses)
-	// super_admin provisioning (target tenant from the path, cross-tenant).
-	mux.HandleFunc("GET /api/admin/tenants", h.requireSuper(h.listTenants))
-	mux.HandleFunc("GET /api/admin/tenants/{tenantID}/subscriptions", h.requireSuper(h.listTenantSubscriptions))
-	mux.HandleFunc("POST /api/admin/tenants/{tenantID}/subscriptions", h.requireSuper(h.grantSubscription))
-	mux.HandleFunc("DELETE /api/admin/tenants/{tenantID}/subscriptions/{feedID}", h.requireSuper(h.revokeSubscription))
-	// super_admin feature entitlements (WF2-50): list the full catalogue with the
-	// target tenant's state, and set one flag. The billing/provisioning boundary.
-	mux.HandleFunc("GET /api/admin/tenants/{tenantID}/entitlements", h.requireSuper(h.listTenantEntitlements))
-	mux.HandleFunc("PUT /api/admin/tenants/{tenantID}/entitlements/{key}", h.requireSuper(h.setTenantEntitlement))
+	// Cross-tenant provisioning (target tenant from the path).
+	mux.HandleFunc("GET /api/admin/tenants", h.requireAdmin(h.listTenants))
+	mux.HandleFunc("GET /api/admin/tenants/{tenantID}/subscriptions", h.requireAdmin(h.listTenantSubscriptions))
+	mux.HandleFunc("POST /api/admin/tenants/{tenantID}/subscriptions", h.requireAdmin(h.grantSubscription))
+	mux.HandleFunc("DELETE /api/admin/tenants/{tenantID}/subscriptions/{feedID}", h.requireAdmin(h.revokeSubscription))
+	// Feature entitlements (WF2-50): list the full catalogue with the target
+	// tenant's state, and set one flag. The billing/provisioning boundary.
+	mux.HandleFunc("GET /api/admin/tenants/{tenantID}/entitlements", h.requireAdmin(h.listTenantEntitlements))
+	mux.HandleFunc("PUT /api/admin/tenants/{tenantID}/entitlements/{key}", h.requireAdmin(h.setTenantEntitlement))
+	// Access management (AP6): an admin provisions and suspends access accounts
+	// per tenant, and pauses a whole tenant. Cross-tenant → requireAdmin.
+	mux.HandleFunc("PATCH /api/admin/tenants/{tenantID}", h.requireAdmin(h.setTenantStatus))
+	mux.HandleFunc("GET /api/admin/tenants/{tenantID}/users", h.requireAdmin(h.listUsers))
+	mux.HandleFunc("POST /api/admin/tenants/{tenantID}/users", h.requireAdmin(h.createUser))
+	mux.HandleFunc("PATCH /api/admin/tenants/{tenantID}/users/{userID}", h.requireAdmin(h.setUserStatus))
+	mux.HandleFunc("DELETE /api/admin/tenants/{tenantID}/users/{userID}", h.requireAdmin(h.deleteUser))
+	mux.HandleFunc("PUT /api/admin/tenants/{tenantID}/users/{userID}/password", h.requireAdmin(h.setUserPassword))
 	h.mux = mux
 	return h
 }
@@ -112,11 +122,10 @@ func New(views ViewStore, subs SubscriptionStore, feeds FeedStore, tenants Tenan
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) { h.mux.ServeHTTP(w, r) }
 
 // whoamiDTO is the identity the SPA reads on entering /admin: it confirms access
-// (the route is behind the admin gate), reports the role so the client knows
-// whether to render the super_admin provisioning panel, and carries the tenant's
-// effective feature flags (WF2-50) so the SPA can hide entitlement-gated UI. Both
-// the role and the feature gating in the UI are cosmetic — the server enforces
-// them independently (requireSuper → 403; feature gates checked server-side).
+// (the route is behind the admin gate), reports the role so the client can render
+// the correct panels, and carries the tenant's effective feature flags (WF2-50)
+// so the SPA can hide entitlement-gated UI. Both the role and the feature gating
+// in the UI are cosmetic — the server enforces them independently.
 type whoamiDTO struct {
 	Subject  string          `json:"subject"`
 	TenantID int64           `json:"tenant_id"`
@@ -262,19 +271,19 @@ func (h *Handler) getSensorClasses(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-// requireSuper restricts a handler to super_admin. The outer gate already lets
-// only tenant_admin/super_admin through; this is the extra step that gates the
-// **cross-tenant** provisioning routes — super_admin is the only role allowed to
-// grant/revoke another tenant's feed access (the billing/entitlement boundary).
-func (h *Handler) requireSuper(next http.HandlerFunc) http.HandlerFunc {
+// requireAdmin is a defence-in-depth guard for cross-tenant provisioning routes.
+// The outer gate already ensures only an admin reaches this handler; this inner
+// check ensures no future refactoring accidentally exposes these routes to
+// non-admin identities.
+func (h *Handler) requireAdmin(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, ok := tenant.FromContext(r.Context())
 		if !ok {
 			writeError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
-		if id.Role != store.RoleSuperAdmin {
-			writeError(w, http.StatusForbidden, "super_admin required")
+		if id.Role != store.RoleAdmin {
+			writeError(w, http.StatusForbidden, "admin required")
 			return
 		}
 		next(w, r)
@@ -523,7 +532,7 @@ func toFeedDTOs(feeds []store.Feed) []feedDTO {
 	return out
 }
 
-// tenantDTO is the admin-facing shape of a tenant (super_admin provisioning view).
+// tenantDTO is the admin-facing shape of a tenant (cross-tenant provisioning).
 type tenantDTO struct {
 	ID     int64  `json:"id"`
 	Slug   string `json:"slug"`
@@ -534,7 +543,7 @@ type tenantDTO struct {
 func toTenantDTOs(tenants []store.Tenant) []tenantDTO {
 	out := make([]tenantDTO, len(tenants))
 	for i, t := range tenants {
-		out[i] = tenantDTO{ID: t.ID, Slug: t.Slug, Name: t.Name, Status: t.Status}
+		out[i] = tenantDTO{ID: t.ID, Slug: t.Slug, Name: t.Name, Status: string(t.Status)}
 	}
 	return out
 }

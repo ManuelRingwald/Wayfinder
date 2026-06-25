@@ -29,21 +29,20 @@ beforeEach(() => {
 describe('admin store — identity & role gating', () => {
   it('loadIdentity stores the identity and exposes the role', async () => {
     installFetch({
-      'GET /api/admin/whoami': { status: 200, body: { subject: 'alice', tenant_id: 7, user_id: 1, role: 'tenant_admin' } },
+      'GET /api/admin/whoami': { status: 200, body: { subject: 'alice', tenant_id: 7, user_id: 1, role: 'admin' } },
     })
     const s = useAdminStore()
     const ok = await s.loadIdentity()
     expect(ok).toBe(true)
     expect(s.isAuthorized).toBe(true)
-    expect(s.role).toBe('tenant_admin')
-    expect(s.isSuperAdmin).toBe(false)
+    expect(s.role).toBe('admin')
+    expect(s.isAdmin).toBe(true)
   })
 
-  it('isAdmin gates the rail Admin entry to tenant_admin / super_admin', async () => {
+  it('isAdmin gates the rail Admin entry to the admin role', async () => {
     const cases = [
-      { role: 'tenant_admin', status: 200, want: true },
-      { role: 'super_admin', status: 200, want: true },
-      { role: null, status: 403, want: false }, // operator/non-admin → whoami 403
+      { role: 'admin', status: 200, want: true },
+      { role: null, status: 403, want: false }, // user/non-admin → whoami 403
     ]
     for (const c of cases) {
       setActivePinia(createPinia())
@@ -63,7 +62,7 @@ describe('admin store — identity & role gating', () => {
     installFetch({
       'GET /api/admin/whoami': {
         status: 200,
-        body: { subject: 'alice', tenant_id: 7, user_id: 1, role: 'tenant_admin',
+        body: { subject: 'alice', tenant_id: 7, user_id: 1, role: 'admin',
           features: { stca: true, multi_feed: false, premium_layers: true } },
       },
     })
@@ -77,20 +76,20 @@ describe('admin store — identity & role gating', () => {
 
   it('hasFeature is false when whoami omits features (fail-safe default)', async () => {
     installFetch({
-      'GET /api/admin/whoami': { status: 200, body: { subject: 'alice', tenant_id: 7, user_id: 1, role: 'tenant_admin' } },
+      'GET /api/admin/whoami': { status: 200, body: { subject: 'alice', tenant_id: 7, user_id: 1, role: 'admin' } },
     })
     const s = useAdminStore()
     await s.loadIdentity()
     expect(s.hasFeature('stca')).toBe(false)
   })
 
-  it('marks super_admin so the provisioning panel is shown', async () => {
+  it('marks admin so the provisioning panel is shown', async () => {
     installFetch({
-      'GET /api/admin/whoami': { status: 200, body: { subject: 'root', tenant_id: 1, user_id: 1, role: 'super_admin' } },
+      'GET /api/admin/whoami': { status: 200, body: { subject: 'root', tenant_id: 1, user_id: 1, role: 'admin' } },
     })
     const s = useAdminStore()
     await s.loadIdentity()
-    expect(s.isSuperAdmin).toBe(true)
+    expect(s.isAdmin).toBe(true)
   })
 
   it('records an access error and stays unauthorized on 403', async () => {
@@ -117,7 +116,7 @@ describe('admin store — identity & role gating', () => {
 
   it('clears accessStatus and accessError after successful login probe', async () => {
     installFetch({
-      'GET /api/admin/whoami': { status: 200, body: { subject: 'alice', tenant_id: 7, user_id: 1, role: 'tenant_admin' } },
+      'GET /api/admin/whoami': { status: 200, body: { subject: 'alice', tenant_id: 7, user_id: 1, role: 'admin' } },
     })
     const s = useAdminStore()
     await s.loadIdentity()
@@ -180,7 +179,7 @@ describe('admin store — view config', () => {
   })
 })
 
-describe('admin store — super_admin provisioning', () => {
+describe('admin store — provisioning', () => {
   it('grant POSTs feed_id to the tenant subscriptions endpoint', async () => {
     const calls = installFetch({ 'POST /api/admin/tenants/42/subscriptions': { status: 204 } })
     const s = useAdminStore()
@@ -201,11 +200,152 @@ describe('admin store — super_admin provisioning', () => {
     expect(del.url).toBe('/api/admin/tenants/42/subscriptions/9')
   })
 
-  it('reports a 403 from grant (tenant_admin attempting cross-tenant write)', async () => {
-    installFetch({ 'POST /api/admin/tenants/42/subscriptions': { status: 403, body: { error: 'super_admin required' } } })
+  it('reports a 403 from grant (user attempting cross-tenant write)', async () => {
+    installFetch({ 'POST /api/admin/tenants/42/subscriptions': { status: 403, body: { error: 'admin required' } } })
     const s = useAdminStore()
     const r = await s.grant(42, 9)
     expect(r.ok).toBe(false)
-    expect(s.error).toBe('super_admin required')
+    expect(s.error).toBe('admin required')
+  })
+})
+
+describe('admin store — access management (AP6)', () => {
+  it('loadTenantUsers GETs the tenant users endpoint without storing globally', async () => {
+    const calls = installFetch({
+      'GET /api/admin/tenants/42/users': {
+        status: 200,
+        body: [{ id: 1, subject: 'alice', role: 'user', status: 'active' }],
+      },
+    })
+    const s = useAdminStore()
+    const r = await s.loadTenantUsers(42)
+    expect(r.ok).toBe(true)
+    expect(r.data[0].subject).toBe('alice')
+    expect(calls[0].url).toBe('/api/admin/tenants/42/users')
+  })
+
+  it('createUser POSTs the payload and sets a success notice', async () => {
+    const calls = installFetch({
+      'POST /api/admin/tenants/42/users': { status: 201, body: { id: 7, subject: 'bob', role: 'user', status: 'active' } },
+    })
+    const s = useAdminStore()
+    const r = await s.createUser(42, { subject: 'bob', password: 'hunter2!!' })
+    expect(r.ok).toBe(true)
+    const post = calls.find((c) => c.method === 'POST')
+    expect(post.url).toBe('/api/admin/tenants/42/users')
+    expect(JSON.parse(post.body)).toEqual({ subject: 'bob', password: 'hunter2!!' })
+    expect(s.notice).toMatch(/angelegt/)
+  })
+
+  it('createUser surfaces a 409 duplicate error', async () => {
+    installFetch({ 'POST /api/admin/tenants/42/users': { status: 409, body: { error: 'subject already exists' } } })
+    const s = useAdminStore()
+    const r = await s.createUser(42, { subject: 'taken' })
+    expect(r.ok).toBe(false)
+    expect(s.error).toBe('subject already exists')
+  })
+
+  it('setUserStatus PATCHes the user with the new status', async () => {
+    const calls = installFetch({ 'PATCH /api/admin/tenants/42/users/7': { status: 204 } })
+    const s = useAdminStore()
+    const r = await s.setUserStatus(42, 7, 'paused')
+    expect(r.ok).toBe(true)
+    const patch = calls.find((c) => c.method === 'PATCH')
+    expect(patch.url).toBe('/api/admin/tenants/42/users/7')
+    expect(JSON.parse(patch.body)).toEqual({ status: 'paused' })
+    expect(s.notice).toMatch(/pausiert/)
+  })
+
+  it('deleteUser DELETEs the user', async () => {
+    const calls = installFetch({ 'DELETE /api/admin/tenants/42/users/7': { status: 204 } })
+    const s = useAdminStore()
+    const r = await s.deleteUser(42, 7)
+    expect(r.ok).toBe(true)
+    expect(calls[0].url).toBe('/api/admin/tenants/42/users/7')
+    expect(calls[0].method).toBe('DELETE')
+  })
+
+  it('setUserPassword PUTs the new password', async () => {
+    const calls = installFetch({ 'PUT /api/admin/tenants/42/users/7/password': { status: 204 } })
+    const s = useAdminStore()
+    const r = await s.setUserPassword(42, 7, 'newsecret1')
+    expect(r.ok).toBe(true)
+    const put = calls.find((c) => c.method === 'PUT')
+    expect(put.url).toBe('/api/admin/tenants/42/users/7/password')
+    expect(JSON.parse(put.body)).toEqual({ password: 'newsecret1' })
+  })
+
+  it('setTenantStatus PATCHes the tenant and notes the mode', async () => {
+    const calls = installFetch({ 'PATCH /api/admin/tenants/42': { status: 204 } })
+    const s = useAdminStore()
+    const r = await s.setTenantStatus(42, 'paused')
+    expect(r.ok).toBe(true)
+    const patch = calls.find((c) => c.method === 'PATCH')
+    expect(patch.url).toBe('/api/admin/tenants/42')
+    expect(JSON.parse(patch.body)).toEqual({ status: 'paused' })
+    expect(s.notice).toMatch(/Mandant pausiert/)
+  })
+})
+
+describe('admin store — feature catalog (AP2)', () => {
+  it('exposes airspace overlay keys from whoami features', async () => {
+    installFetch({
+      'GET /api/admin/whoami': {
+        status: 200,
+        body: {
+          subject: 'alice', tenant_id: 7, user_id: 1, role: 'admin',
+          features: { airspaces: true, vor_ndb: false, waypoints: true },
+        },
+      },
+    })
+    const s = useAdminStore()
+    await s.loadIdentity()
+    expect(s.hasFeature('airspaces')).toBe(true)
+    expect(s.hasFeature('vor_ndb')).toBe(false)
+    expect(s.hasFeature('waypoints')).toBe(true)
+  })
+
+  it('exposes display-layer keys (range_rings, history_dots) from whoami features', async () => {
+    installFetch({
+      'GET /api/admin/whoami': {
+        status: 200,
+        body: {
+          subject: 'alice', tenant_id: 7, user_id: 1, role: 'admin',
+          features: { range_rings: true, history_dots: false },
+        },
+      },
+    })
+    const s = useAdminStore()
+    await s.loadIdentity()
+    expect(s.hasFeature('range_rings')).toBe(true)
+    expect(s.hasFeature('history_dots')).toBe(false)
+  })
+
+  it('all AP2 keys default to false when whoami omits them (fail-closed)', async () => {
+    installFetch({
+      'GET /api/admin/whoami': {
+        status: 200,
+        body: { subject: 'alice', tenant_id: 7, user_id: 1, role: 'admin', features: {} },
+      },
+    })
+    const s = useAdminStore()
+    await s.loadIdentity()
+    for (const key of ['airspaces', 'range_rings', 'history_dots', 'vor_ndb', 'waypoints']) {
+      expect(s.hasFeature(key), `key=${key}`).toBe(false)
+    }
+  })
+
+  it('isAuthorized is false on 403 — non-admin users see all layer controls (cosmetic gate)', async () => {
+    installFetch({
+      'GET /api/admin/whoami': { status: 403, body: { error: 'forbidden' } },
+    })
+    const s = useAdminStore()
+    await s.loadIdentity()
+    expect(s.isAuthorized).toBe(false)
+    // When isAuthorized is false the UI formula (!isAuthorized || hasFeature(k))
+    // evaluates to true for every key — all layer controls are shown.
+    for (const key of ['airspaces', 'range_rings', 'history_dots', 'vor_ndb', 'waypoints']) {
+      expect(!s.isAuthorized || s.hasFeature(key), `key=${key}`).toBe(true)
+    }
   })
 })

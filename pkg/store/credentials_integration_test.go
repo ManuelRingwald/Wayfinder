@@ -14,7 +14,7 @@ func TestIntegrationCredentialRepo(t *testing.T) {
 	creds := NewCredentialRepo(pool)
 
 	ten, _ := tenants.Create(ctx, "demo", "Demo")
-	u, _ := users.Create(ctx, ten.ID, "bob", nil, RoleOperator)
+	u, _ := users.Create(ctx, ten.ID, "bob", nil, RoleUser)
 
 	// A user without a local credential -> ErrNotFound (e.g. an OIDC user).
 	if _, err := creds.GetHash(ctx, u.ID); !errors.Is(err, ErrNotFound) {

@@ -24,7 +24,7 @@ func superRequest(method, body string) *http.Request {
 		r = httptest.NewRequest(method, "/api/admin/impersonation", nil)
 	}
 	return r.WithContext(tenant.WithIdentity(r.Context(),
-		tenant.Identity{TenantID: 1, UserID: 1, Subject: "root", Role: store.RoleSuperAdmin}))
+		tenant.Identity{TenantID: 1, UserID: 1, Subject: "root", Role: store.RoleAdmin}))
 }
 
 func grantCookie(rec *httptest.ResponseRecorder) *http.Cookie {
@@ -57,9 +57,9 @@ func TestStartImpersonationSetsGrantCookie(t *testing.T) {
 	if c.SameSite != http.SameSiteStrictMode {
 		t.Error("impersonation cookie must be SameSite=Strict")
 	}
-	// The minted grant must resolve to tenant 5 for a super_admin.
+	// The minted grant must resolve to tenant 5 for an admin.
 	d, err := impersonation.Resolve(context.Background(), c.Value,
-		tenant.Identity{Role: store.RoleSuperAdmin}, endpointKey, checker)
+		tenant.Identity{Role: store.RoleAdmin}, endpointKey, checker)
 	if err != nil || !d.Active || d.TargetTenantID != 5 {
 		t.Fatalf("minted grant did not resolve to tenant 5: active=%v target=%d err=%v", d.Active, d.TargetTenantID, err)
 	}

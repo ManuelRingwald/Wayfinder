@@ -38,7 +38,7 @@ func TestIntegrationBootstrap(t *testing.T) {
 		TenantSlug: "acme",
 		TenantName: "ACME Air",
 		Subject:    "admin",
-		Role:       store.RoleTenantAdmin,
+		Role:       store.RoleAdmin,
 		Password:   "hunter2pw",
 	}
 
@@ -55,8 +55,8 @@ func TestIntegrationBootstrap(t *testing.T) {
 	if err != nil {
 		t.Fatalf("user not created: %v", err)
 	}
-	if u.Role != store.RoleTenantAdmin {
-		t.Fatalf("role = %q, want tenant_admin", u.Role)
+	if u.Role != store.RoleAdmin {
+		t.Fatalf("role = %q, want admin", u.Role)
 	}
 	hash, err := creds.GetHash(ctx, u.ID)
 	if err != nil {
@@ -89,7 +89,7 @@ func TestIntegrationBootstrap(t *testing.T) {
 	}
 
 	// A subject already homed in a different tenant is a conflict, not a re-home.
-	conflict := bootstrapParams{TenantSlug: "other", Subject: "admin", Role: store.RoleOperator}
+	conflict := bootstrapParams{TenantSlug: "other", Subject: "admin", Role: store.RoleUser}
 	out.Reset()
 	if err := runBootstrap(ctx, pool, conflict, &out); err == nil {
 		t.Fatal("expected conflict for subject under a different tenant, got nil")

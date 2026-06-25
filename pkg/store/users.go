@@ -8,7 +8,7 @@ import (
 )
 
 // userColumns is the column list shared by every user query.
-const userColumns = `id, tenant_id, subject, email, role, created_at`
+const userColumns = `id, tenant_id, subject, email, role, status, created_at`
 
 // UserRepo provides access to the users table.
 type UserRepo struct {
@@ -78,16 +78,50 @@ func (r *UserRepo) ListByTenant(ctx context.Context, tenantID int64) ([]User, er
 	return users, nil
 }
 
-// scanUser reads a user row. role is scanned through a string so the named Role
-// type does not depend on pgx's type map.
+// SetStatus updates a user's lifecycle status (AP6). The status is validated
+// before the query (fail-closed: an unknown status never reaches the database).
+// A missing user yields ErrNotFound so callers can return 404.
+func (r *UserRepo) SetStatus(ctx context.Context, id int64, status Status) error {
+	if !status.Valid() {
+		return fmt.Errorf("store: set user status: invalid status %q", status)
+	}
+	const q = `UPDATE users SET status = $2 WHERE id = $1`
+	tag, err := r.db.Exec(ctx, q, id, string(status))
+	if err != nil {
+		return wrap("set user status", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// Delete removes a user. Dependent rows (credentials, per-user view overrides)
+// are cleared by ON DELETE CASCADE. A missing user yields ErrNotFound.
+func (r *UserRepo) Delete(ctx context.Context, id int64) error {
+	const q = `DELETE FROM users WHERE id = $1`
+	tag, err := r.db.Exec(ctx, q, id)
+	if err != nil {
+		return wrap("delete user", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// scanUser reads a user row. role and status are scanned through strings so the
+// named types do not depend on pgx's type map.
 func scanUser(row rowScanner) (User, error) {
 	var (
-		u    User
-		role string
+		u      User
+		role   string
+		status string
 	)
-	if err := row.Scan(&u.ID, &u.TenantID, &u.Subject, &u.Email, &role, &u.CreatedAt); err != nil {
+	if err := row.Scan(&u.ID, &u.TenantID, &u.Subject, &u.Email, &role, &status, &u.CreatedAt); err != nil {
 		return User{}, err
 	}
 	u.Role = Role(role)
+	u.Status = Status(status)
 	return u, nil
 }

@@ -14,7 +14,7 @@ import (
 	"github.com/manuelringwald/wayfinder/pkg/tenant"
 )
 
-// Cross-tenant read-only impersonation wiring (ADR 0008, WF2-34). A super_admin
+// Cross-tenant read-only impersonation wiring (ADR 0008, WF2-34). An admin
 // "View as Tenant X" mints a signed, time-boxed grant cookie; the /ws read path
 // (newScopeResolver) honours it, resolving feed scope AND view against the target
 // tenant. The authenticated Identity is never touched and no write path uses the
@@ -61,8 +61,8 @@ func impersonationGrantCookie(r *http.Request) string {
 }
 
 // startImpersonationHandler mints a grant naming the target tenant and sets it as
-// the HttpOnly wf_impersonation cookie. It is super_admin-only (enforced by the
-// route's RequireRole gate); the target tenant must exist (404 otherwise).
+// the HttpOnly wf_impersonation cookie. It is admin-only (enforced by the route's
+// RequireRole gate); the target tenant must exist (404 otherwise).
 func startImpersonationHandler(tenants impersonation.TenantChecker, cfg impersonationCookieConfig, audit *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, ok := tenant.FromContext(r.Context())
@@ -156,7 +156,7 @@ func impersonationStatusHandler(tenants impersonation.TenantChecker, cfg imperso
 }
 
 // logImpersonationDenied records a refused impersonation attempt — a valid grant
-// presented by a non-super_admin, or one naming a missing tenant (ADR 0008 §3,
+// presented by a non-admin, or one naming a missing tenant (ADR 0008 §3,
 // decision 4: spoofing/misuse attempts must be loud and auditable, never silent).
 func logImpersonationDenied(audit *slog.Logger, r *http.Request, id tenant.Identity, reason error) {
 	audit.Warn("impersonation denied",
