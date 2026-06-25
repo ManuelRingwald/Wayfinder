@@ -349,3 +349,85 @@ describe('admin store — feature catalog (AP2)', () => {
     }
   })
 })
+
+describe('admin store — tenant dashboard (AP3)', () => {
+  it('loadOverview stores the aggregated rows', async () => {
+    const rows = [
+      { id: 5, slug: 'acme', name: 'ACME', status: 'active', features: ['stca'], feeds: [{ id: 3, name: 'FRA' }], user_count: 2 },
+    ]
+    const calls = installFetch({ 'GET /api/admin/overview': { status: 200, body: rows } })
+    const s = useAdminStore()
+    const r = await s.loadOverview()
+    expect(r.ok).toBe(true)
+    expect(s.overview).toEqual(rows)
+    expect(calls[0].url).toBe('/api/admin/overview')
+  })
+
+  it('loadOverview surfaces the error and leaves overview untouched on failure', async () => {
+    installFetch({ 'GET /api/admin/overview': { status: 500, body: { error: 'boom' } } })
+    const s = useAdminStore()
+    await s.loadOverview()
+    expect(s.error).toMatch(/boom/)
+    expect(s.overview).toEqual([])
+  })
+
+  it('loadTenantView GETs the per-tenant view without storing globally', async () => {
+    const view = { center_lat: 50, center_lon: 9, zoom: 8 }
+    const calls = installFetch({ 'GET /api/admin/tenants/5/view': { status: 200, body: view } })
+    const s = useAdminStore()
+    const r = await s.loadTenantView(5)
+    expect(r.ok).toBe(true)
+    expect(r.data).toEqual(view)
+    expect(s.view).toBeNull() // not stored globally — caller owns the transient view
+    expect(calls[0].url).toBe('/api/admin/tenants/5/view')
+  })
+
+  it('loadTenantView reports a 404 (no view yet) to the caller', async () => {
+    installFetch({ 'GET /api/admin/tenants/5/view': { status: 404, body: { error: 'no view configured' } } })
+    const s = useAdminStore()
+    const r = await s.loadTenantView(5)
+    expect(r.ok).toBe(false)
+    expect(r.status).toBe(404)
+  })
+
+  it('saveTenantView PUTs the DTO to the per-tenant route', async () => {
+    const dto = { center_lat: 48, center_lon: 11, zoom: 7, aoi: { min_lat: 47, min_lon: 10, max_lat: 49, max_lon: 12 } }
+    const calls = installFetch({ 'PUT /api/admin/tenants/5/view': { status: 200, body: dto } })
+    const s = useAdminStore()
+    const r = await s.saveTenantView(5, dto)
+    expect(r.ok).toBe(true)
+    expect(s.notice).toMatch(/gespeichert/)
+    const put = calls.find((c) => c.method === 'PUT')
+    expect(put.url).toBe('/api/admin/tenants/5/view')
+    expect(JSON.parse(put.body)).toEqual(dto)
+  })
+
+  it('saveTenantView surfaces a server validation error', async () => {
+    installFetch({ 'PUT /api/admin/tenants/5/view': { status: 400, body: { error: 'zoom out of range [0,24]' } } })
+    const s = useAdminStore()
+    const r = await s.saveTenantView(5, { center_lat: 0, center_lon: 0, zoom: 99 })
+    expect(r.ok).toBe(false)
+    expect(s.error).toMatch(/zoom out of range/)
+  })
+
+  it('loadTenantEntitlements GETs the catalogue for a tenant', async () => {
+    const ents = [{ key: 'stca', enabled: true, description: 'x' }, { key: 'airspaces', enabled: false, description: 'y' }]
+    const calls = installFetch({ 'GET /api/admin/tenants/5/entitlements': { status: 200, body: ents } })
+    const s = useAdminStore()
+    const r = await s.loadTenantEntitlements(5)
+    expect(r.ok).toBe(true)
+    expect(r.data).toEqual(ents)
+    expect(calls[0].url).toBe('/api/admin/tenants/5/entitlements')
+  })
+
+  it('setTenantEntitlement PUTs the flag and notes the change', async () => {
+    const calls = installFetch({ 'PUT /api/admin/tenants/5/entitlements/stca': { status: 204 } })
+    const s = useAdminStore()
+    const r = await s.setTenantEntitlement(5, 'stca', true)
+    expect(r.ok).toBe(true)
+    expect(s.notice).toMatch(/aktiviert/)
+    const put = calls.find((c) => c.method === 'PUT')
+    expect(put.url).toBe('/api/admin/tenants/5/entitlements/stca')
+    expect(JSON.parse(put.body)).toEqual({ enabled: true })
+  })
+})

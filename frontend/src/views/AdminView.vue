@@ -100,27 +100,16 @@
           {{ admin.notice }}
         </v-alert>
 
-        <v-tabs v-model="tab" color="primary" class="mb-4">
-          <v-tab value="view">Ansicht</v-tab>
-          <v-tab value="subs">Abos &amp; Feeds</v-tab>
-          <v-tab v-if="admin.isAdmin" value="provisioning">Provisioning</v-tab>
-          <v-tab v-if="admin.isAdmin" value="users">Zugänge</v-tab>
-        </v-tabs>
-
-        <v-window v-model="tab">
-          <v-window-item value="view">
-            <AdminViewConfig />
-          </v-window-item>
-          <v-window-item value="subs">
-            <AdminSubscriptions />
-          </v-window-item>
-          <v-window-item v-if="admin.isAdmin" value="provisioning">
-            <AdminProvisioning />
-          </v-window-item>
-          <v-window-item v-if="admin.isAdmin" value="users">
-            <AdminUsers />
-          </v-window-item>
-        </v-window>
+        <!-- AP3 (ADR 0009): tenant-centric admin. The overview lists all tenants;
+             selecting one opens its central configuration page. The old per-tab
+             layout (own view / subscriptions / provisioning / users) is replaced
+             by this master/detail flow. -->
+        <AdminTenantDetail
+          v-if="selectedTenant !== null"
+          :tenant-id="selectedTenant"
+          @back="selectedTenant = null"
+        />
+        <AdminTenants v-else @select="selectedTenant = $event" />
       </template>
     </v-container>
   </v-main>
@@ -129,13 +118,11 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useAdminStore } from '@/stores/admin.js'
-import AdminViewConfig from '@/components/admin/AdminViewConfig.vue'
-import AdminSubscriptions from '@/components/admin/AdminSubscriptions.vue'
-import AdminProvisioning from '@/components/admin/AdminProvisioning.vue'
-import AdminUsers from '@/components/admin/AdminUsers.vue'
+import AdminTenants from '@/components/admin/AdminTenants.vue'
+import AdminTenantDetail from '@/components/admin/AdminTenantDetail.vue'
 
 const admin = useAdminStore()
-const tab = ref('view')
+const selectedTenant = ref(null) // null = overview; a tenant id = detail page
 const loaded = ref(false)
 
 const loginSubject = ref('')

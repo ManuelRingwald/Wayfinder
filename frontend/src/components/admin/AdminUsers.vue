@@ -4,7 +4,9 @@
        server enforces every boundary (requireAdmin → 403), so the gating here
        is convenience, not security. Immediate session termination is AP7 — a
        paused account is blocked at the next login, not mid-session. -->
-  <v-card variant="tonal" class="mb-4">
+  <!-- Standalone tenant picker: shown only when not embedded (the AP3 detail page
+       passes a tenantId prop and owns the tenant context + status toggle). -->
+  <v-card v-if="!tenantId" variant="tonal" class="mb-4">
     <v-card-text class="d-flex align-center ga-4">
       <v-select
         v-model="selectedTenant"
@@ -37,7 +39,7 @@
     </v-card-text>
   </v-card>
 
-  <v-card v-if="selectedTenant" variant="tonal">
+  <v-card v-if="effectiveTenant" variant="tonal">
     <v-card-title class="d-flex align-center text-subtitle-1">
       Zugänge
       <v-spacer />
@@ -163,13 +165,24 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useAdminStore } from '@/stores/admin.js'
+
+// tenantId: when set (AP3 detail page), the component drops its own tenant
+// picker and operates on that tenant. When null (standalone tab), the user
+// picks a tenant from the dropdown.
+const props = defineProps({
+  tenantId: { type: Number, default: null },
+})
 
 const admin = useAdminStore()
 const selectedTenant = ref(null)
 const users = ref([])
 const busy = ref(false)
+
+// effectiveTenant is the tenant the actions target: the prop if embedded, else
+// the picker selection.
+const effectiveTenant = computed(() => props.tenantId ?? selectedTenant.value)
 
 const createDialog = ref(false)
 const passwordDialog = ref(false)
@@ -182,11 +195,11 @@ const form = ref({ subject: '', email: '', password: '' })
 const tenant = computed(() => admin.tenants.find((t) => t.id === selectedTenant.value) || null)
 
 async function refresh() {
-  if (!selectedTenant.value) {
+  if (!effectiveTenant.value) {
     users.value = []
     return
   }
-  const r = await admin.loadTenantUsers(selectedTenant.value)
+  const r = await admin.loadTenantUsers(effectiveTenant.value)
   users.value = r.ok ? r.data : []
 }
 
@@ -208,7 +221,7 @@ async function toggleTenant() {
 async function toggleUser(u) {
   busy.value = true
   const next = u.status === 'paused' ? 'active' : 'paused'
-  const r = await admin.setUserStatus(selectedTenant.value, u.id, next)
+  const r = await admin.setUserStatus(effectiveTenant.value, u.id, next)
   if (r.ok) await refresh()
   busy.value = false
 }
@@ -224,7 +237,7 @@ async function submitCreate() {
   const payload = { subject: form.value.subject.trim() }
   if (form.value.email.trim()) payload.email = form.value.email.trim()
   if (form.value.password) payload.password = form.value.password
-  const r = await admin.createUser(selectedTenant.value, payload)
+  const r = await admin.createUser(effectiveTenant.value, payload)
   busy.value = false
   if (r.ok) {
     createDialog.value = false
@@ -241,7 +254,7 @@ function openPassword(u) {
 
 async function submitPassword() {
   busy.value = true
-  const r = await admin.setUserPassword(selectedTenant.value, target.value.id, newPassword.value)
+  const r = await admin.setUserPassword(effectiveTenant.value, target.value.id, newPassword.value)
   busy.value = false
   if (r.ok) passwordDialog.value = false
 }
@@ -253,7 +266,7 @@ function openDelete(u) {
 
 async function submitDelete() {
   busy.value = true
-  const r = await admin.deleteUser(selectedTenant.value, target.value.id)
+  const r = await admin.deleteUser(effectiveTenant.value, target.value.id)
   busy.value = false
   if (r.ok) {
     deleteDialog.value = false
@@ -261,7 +274,14 @@ async function submitDelete() {
   }
 }
 
+// When embedded, reload the account list whenever the target tenant changes.
+watch(() => props.tenantId, refresh)
+
 onMounted(async () => {
-  await admin.loadTenants()
+  if (props.tenantId) {
+    await refresh() // embedded: tenant context comes from the detail page
+  } else {
+    await admin.loadTenants() // standalone: populate the picker
+  }
 })
 </script>

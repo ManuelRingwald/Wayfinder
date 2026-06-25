@@ -193,4 +193,47 @@ func TestIntegrationAdminAPI(t *testing.T) {
 	if len(subs2) != 2 {
 		t.Errorf("after entitled grant, subscriptions = %d, want 2", len(subs2))
 	}
+
+	// --- AP3: tenant-centric dashboard (real-PG) ---
+	// Create one access account so the overview's user_count is meaningful.
+	if _, err := store.NewUserRepo(pool).Create(ctx, ten.ID, "operator-1", nil, store.RoleUser); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	var overview []map[string]any
+	_ = json.Unmarshal(req(http.MethodGet, "/api/admin/overview", "", store.RoleAdmin).Body.Bytes(), &overview)
+	if len(overview) != 1 {
+		t.Fatalf("overview rows = %d, want 1", len(overview))
+	}
+	row := overview[0]
+	if row["slug"] != "acme" || row["status"] != "active" {
+		t.Errorf("overview row identity = %v", row)
+	}
+	if uc, _ := row["user_count"].(float64); uc != 1 {
+		t.Errorf("overview user_count = %v, want 1", row["user_count"])
+	}
+	if feeds, _ := row["feeds"].([]any); len(feeds) != 2 {
+		t.Errorf("overview feeds = %v, want 2", row["feeds"])
+	}
+	rowFeatures := map[string]bool{}
+	if fs, ok := row["features"].([]any); ok {
+		for _, f := range fs {
+			rowFeatures[f.(string)] = true
+		}
+	}
+	if !rowFeatures[string(feature.STCA)] || !rowFeatures[string(feature.MultiFeed)] {
+		t.Errorf("overview features = %v, want stca+multi_feed enabled", row["features"])
+	}
+
+	// Cross-tenant view editor: PUT then GET the tenant's default view round-trips.
+	viewPath := fmt.Sprintf("/api/admin/tenants/%d/view", ten.ID)
+	if rec := req(http.MethodPut, viewPath,
+		`{"center_lat":52.5,"center_lon":13.4,"zoom":6,"aoi":{"min_lat":51,"min_lon":12,"max_lat":54,"max_lon":15}}`,
+		store.RoleAdmin); rec.Code != http.StatusOK {
+		t.Fatalf("PUT tenant view = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	var tv map[string]any
+	_ = json.Unmarshal(req(http.MethodGet, viewPath, "", store.RoleAdmin).Body.Bytes(), &tv)
+	if tv["center_lat"] != 52.5 || tv["zoom"] != 6.0 {
+		t.Errorf("round-tripped tenant view = %v", tv)
+	}
 }

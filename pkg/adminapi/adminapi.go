@@ -26,6 +26,10 @@ import (
 // fakes).
 type ViewStore interface {
 	GetEffective(ctx context.Context, tenantID, userID int64) (store.ViewConfig, error)
+	// GetTenantDefault reads the tenant's default view (no user override), used by
+	// the cross-tenant admin view editor (AP3) where there is no acting user whose
+	// override should apply.
+	GetTenantDefault(ctx context.Context, tenantID int64) (store.ViewConfig, error)
 	UpsertTenantDefault(ctx context.Context, tenantID int64, vc store.ViewConfig) (store.ViewConfig, error)
 }
 
@@ -100,6 +104,14 @@ func New(views ViewStore, subs SubscriptionStore, feeds FeedStore, tenants Tenan
 	mux.HandleFunc("GET /api/admin/sensor-classes", h.getSensorClasses)
 	// Cross-tenant provisioning (target tenant from the path).
 	mux.HandleFunc("GET /api/admin/tenants", h.requireAdmin(h.listTenants))
+	// AP3: tenant-centric admin dashboard. The overview aggregates each tenant's
+	// status, enabled features, subscribed feeds and account count in one call
+	// (avoids N+1 fetches when rendering the tenant table). Per-tenant view
+	// get/put let an admin edit *any* tenant's default view (the self-service
+	// /api/admin/view routes only touch the caller's own tenant).
+	mux.HandleFunc("GET /api/admin/overview", h.requireAdmin(h.getOverview))
+	mux.HandleFunc("GET /api/admin/tenants/{tenantID}/view", h.requireAdmin(h.getTenantView))
+	mux.HandleFunc("PUT /api/admin/tenants/{tenantID}/view", h.requireAdmin(h.putTenantView))
 	mux.HandleFunc("GET /api/admin/tenants/{tenantID}/subscriptions", h.requireAdmin(h.listTenantSubscriptions))
 	mux.HandleFunc("POST /api/admin/tenants/{tenantID}/subscriptions", h.requireAdmin(h.grantSubscription))
 	mux.HandleFunc("DELETE /api/admin/tenants/{tenantID}/subscriptions/{feedID}", h.requireAdmin(h.revokeSubscription))
@@ -306,6 +318,127 @@ func (h *Handler) listTenants(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, toTenantDTOs(ts))
+}
+
+// tenantOverviewDTO is one row of the AP3 admin dashboard: a tenant plus the
+// aggregated configuration an admin wants at a glance — its enabled feature keys,
+// the feeds it is subscribed to, and how many access accounts it has.
+type tenantOverviewDTO struct {
+	ID        int64     `json:"id"`
+	Slug      string    `json:"slug"`
+	Name      string    `json:"name"`
+	Status    string    `json:"status"`
+	Features  []string  `json:"features"`
+	Feeds     []feedDTO `json:"feeds"`
+	UserCount int       `json:"user_count"`
+}
+
+// getOverview aggregates every tenant's status, enabled features, feeds and
+// account count into a single response (AP3). It fans out per tenant; the tenant
+// count is small (operator-scale), so a sequential gather is fine and keeps the
+// failure mode simple — any backend error fails the whole call rather than
+// returning a partially-populated dashboard.
+func (h *Handler) getOverview(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	ts, err := h.tenants.List(ctx)
+	if err != nil {
+		h.internalError(w, "overview: list tenants", err)
+		return
+	}
+	out := make([]tenantOverviewDTO, 0, len(ts))
+	for _, t := range ts {
+		feeds, err := h.subs.ListFeedsByTenant(ctx, t.ID)
+		if err != nil {
+			h.internalError(w, "overview: list feeds", err)
+			return
+		}
+		us, err := h.users.ListByTenant(ctx, t.ID)
+		if err != nil {
+			h.internalError(w, "overview: list users", err)
+			return
+		}
+		out = append(out, tenantOverviewDTO{
+			ID:        t.ID,
+			Slug:      t.Slug,
+			Name:      t.Name,
+			Status:    string(t.Status),
+			Features:  h.enabledFeatures(ctx, t.ID),
+			Feeds:     toFeedDTOs(feeds),
+			UserCount: len(us),
+		})
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// enabledFeatures returns the tenant's enabled feature keys in stable catalogue
+// order. Fail-closed: on a backend error the service yields an all-deny map
+// (already logged), so the dashboard shows no features rather than wrong ones.
+func (h *Handler) enabledFeatures(ctx context.Context, tenantID int64) []string {
+	out := []string{}
+	if h.feats == nil {
+		return out
+	}
+	eff, _ := h.feats.Effective(ctx, tenantID)
+	for _, k := range feature.All() {
+		if eff[k] {
+			out = append(out, string(k))
+		}
+	}
+	return out
+}
+
+// getTenantView reads any tenant's default view (AP3 cross-tenant editor). Unlike
+// getView (caller's own tenant, honouring a user override), this always reads the
+// tenant default — there is no acting user whose override should apply.
+func (h *Handler) getTenantView(w http.ResponseWriter, r *http.Request) {
+	tid, err := pathInt(r, "tenantID")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid tenant id")
+		return
+	}
+	if !h.tenantExists(w, r, tid) {
+		return
+	}
+	vc, err := h.views.GetTenantDefault(r.Context(), tid)
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "no view configured")
+		return
+	}
+	if err != nil {
+		h.internalError(w, "get tenant view", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toViewDTO(vc))
+}
+
+// putTenantView writes any tenant's default view (AP3). Same server-side
+// validation as putView; the target tenant comes from the path. A successful
+// write re-scopes that tenant's live streams (WF2-33).
+func (h *Handler) putTenantView(w http.ResponseWriter, r *http.Request) {
+	tid, err := pathInt(r, "tenantID")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid tenant id")
+		return
+	}
+	var d viewDTO
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&d); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if err := validateView(d); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if !h.tenantExists(w, r, tid) {
+		return
+	}
+	out, err := h.views.UpsertTenantDefault(r.Context(), tid, toViewConfig(d))
+	if err != nil {
+		h.internalError(w, "upsert tenant view", err)
+		return
+	}
+	h.triggerRescope(r.Context(), tid) // live-apply the new view (WF2-33)
+	writeJSON(w, http.StatusOK, toViewDTO(out))
 }
 
 func (h *Handler) listTenantSubscriptions(w http.ResponseWriter, r *http.Request) {
