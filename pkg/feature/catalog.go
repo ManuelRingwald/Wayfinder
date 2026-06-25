@@ -17,6 +17,16 @@ const (
 	MultiFeed Key = "multi_feed"
 	// PremiumLayers — premium ASD map overlays (e.g. extended aeronautical data).
 	PremiumLayers Key = "premium_layers"
+	// Airspaces — airspace overlay display (CTR, TMA, restricted, info; ASD-011).
+	Airspaces Key = "airspaces"
+	// RangeRings — range-ring overlay display (ASD-012).
+	RangeRings Key = "range_rings"
+	// HistoryDots — track history dots display (ASD-004a).
+	HistoryDots Key = "history_dots"
+	// VorNdb — VOR/NDB navaid overlay display (ASD-003).
+	VorNdb Key = "vor_ndb"
+	// Waypoints — waypoint overlay display (ASD-003).
+	Waypoints Key = "waypoints"
 )
 
 // catalog is the closed set of known feature keys with human-readable
@@ -27,6 +37,11 @@ var catalog = map[Key]string{
 	STCA:          "Short-Term Conflict Alert display (ASD-006)",
 	MultiFeed:     "Subscribe to multiple sensor feeds (WF2-41)",
 	PremiumLayers: "Premium ASD map overlays",
+	Airspaces:     "Airspace overlays (CTR, TMA, restricted, info) display (ASD-011)",
+	RangeRings:    "Range-ring overlay display (ASD-012)",
+	HistoryDots:   "Track history dots display (ASD-004a)",
+	VorNdb:        "VOR/NDB navaid overlay display (ASD-003)",
+	Waypoints:     "Waypoint overlay display (ASD-003)",
 }
 
 // IsKnown reports whether key is part of the feature catalog.

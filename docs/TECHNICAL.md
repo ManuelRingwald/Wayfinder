@@ -309,6 +309,28 @@ externe Prometheus-Bibliothek — der Exporter ist handgerollt in
 Nur im Multi-Mandanten-Betrieb (Feature-Gating existiert nur dort). Default-Deny:
 Ein fehlendes Flag ist kein Fehler und erzeugt **keinen** Zähler-Anstieg.
 
+#### Feature-Katalog (`pkg/feature`, AP2)
+
+Der Katalog ist **geschlossen** — nur hier geführte Keys sind gültig. Unbekannte
+Keys werden fail-closed verweigert und über den `unknown_key`-Zähler sichtbar.
+`whoami` liefert automatisch alle Katalog-Keys mit ihrem effektiven Wert.
+
+| Key | Beschreibung | Default |
+|-----|--------------|---------|
+| `stca` | Short-Term Conflict Alert (ASD-006) | deny |
+| `multi_feed` | Mehrere Sensor-Feeds abonnieren (WF2-41) | deny |
+| `premium_layers` | Premium-ASD-Kartenoverlay | deny |
+| `airspaces` | Luftraum-Overlays (CTR, TMA, restricted, info) — ASD-011 | deny |
+| `range_rings` | Range-Ring-Overlay — ASD-012 | deny |
+| `history_dots` | Track-History-Punkte — ASD-004a | deny |
+| `vor_ndb` | VOR/NDB-Navaid-Overlay — ASD-003 | deny |
+| `waypoints` | Wegpunkt-Overlay — ASD-003 | deny |
+
+**UI-Gate-Formel (rein kosmetisch, keine Serverenforcement auf Aero-Daten):**
+`!isAuthorized || hasFeature(key)` — Nicht-Admin-Nutzer (403 auf `whoami`,
+`isAuthorized = false`) sehen alle Layer-Steuerelemente; Admin-Nutzer sehen nur,
+was ihr Mandant freigeschaltet hat.
+
 ### 5.6 Beispiel-Ausgabe
 
 ```

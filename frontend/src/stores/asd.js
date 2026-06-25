@@ -17,6 +17,7 @@ export const useAsdStore = defineStore('asd', () => {
     waypoints: true,
     coverageRings: true,
     rangeRings: false, // ASD-012: off by default (declutter); operator opts in
+    historyDots: true, // AP2: on by default; hidden by feature gate when tenant lacks history_dots
   })
 
   // ASD-012: operator-tunable range-ring configuration, applied live. The engine

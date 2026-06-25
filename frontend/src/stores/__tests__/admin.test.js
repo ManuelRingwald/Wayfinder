@@ -286,3 +286,66 @@ describe('admin store — access management (AP6)', () => {
     expect(s.notice).toMatch(/Mandant pausiert/)
   })
 })
+
+describe('admin store — feature catalog (AP2)', () => {
+  it('exposes airspace overlay keys from whoami features', async () => {
+    installFetch({
+      'GET /api/admin/whoami': {
+        status: 200,
+        body: {
+          subject: 'alice', tenant_id: 7, user_id: 1, role: 'admin',
+          features: { airspaces: true, vor_ndb: false, waypoints: true },
+        },
+      },
+    })
+    const s = useAdminStore()
+    await s.loadIdentity()
+    expect(s.hasFeature('airspaces')).toBe(true)
+    expect(s.hasFeature('vor_ndb')).toBe(false)
+    expect(s.hasFeature('waypoints')).toBe(true)
+  })
+
+  it('exposes display-layer keys (range_rings, history_dots) from whoami features', async () => {
+    installFetch({
+      'GET /api/admin/whoami': {
+        status: 200,
+        body: {
+          subject: 'alice', tenant_id: 7, user_id: 1, role: 'admin',
+          features: { range_rings: true, history_dots: false },
+        },
+      },
+    })
+    const s = useAdminStore()
+    await s.loadIdentity()
+    expect(s.hasFeature('range_rings')).toBe(true)
+    expect(s.hasFeature('history_dots')).toBe(false)
+  })
+
+  it('all AP2 keys default to false when whoami omits them (fail-closed)', async () => {
+    installFetch({
+      'GET /api/admin/whoami': {
+        status: 200,
+        body: { subject: 'alice', tenant_id: 7, user_id: 1, role: 'admin', features: {} },
+      },
+    })
+    const s = useAdminStore()
+    await s.loadIdentity()
+    for (const key of ['airspaces', 'range_rings', 'history_dots', 'vor_ndb', 'waypoints']) {
+      expect(s.hasFeature(key), `key=${key}`).toBe(false)
+    }
+  })
+
+  it('isAuthorized is false on 403 — non-admin users see all layer controls (cosmetic gate)', async () => {
+    installFetch({
+      'GET /api/admin/whoami': { status: 403, body: { error: 'forbidden' } },
+    })
+    const s = useAdminStore()
+    await s.loadIdentity()
+    expect(s.isAuthorized).toBe(false)
+    // When isAuthorized is false the UI formula (!isAuthorized || hasFeature(k))
+    // evaluates to true for every key — all layer controls are shown.
+    for (const key of ['airspaces', 'range_rings', 'history_dots', 'vor_ndb', 'waypoints']) {
+      expect(!s.isAuthorized || s.hasFeature(key), `key=${key}`).toBe(true)
+    }
+  })
+})

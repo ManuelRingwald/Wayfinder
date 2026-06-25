@@ -38,6 +38,7 @@ import {
   RANGE_RINGS_SOURCE_ID,
   RANGE_RINGS_LAYER_ID,
   RANGE_RINGS_LABEL_LAYER_ID,
+  HISTORY_DOTS_LAYER_ID,
 } from './constants.js'
 
 // initMap creates a MapLibre instance on the given container element, wires
@@ -286,6 +287,7 @@ export async function initMap(container, store, onTrackClick) {
       waypoints: [WAYPOINTS_LAYER_ID],
       coverageRings: [COVERAGE_RINGS_LAYER_ID, COVERAGE_RINGS_LAYER_ID + '-inner', COVERAGE_CENTER_LAYER_ID],
       rangeRings: [RANGE_RINGS_LAYER_ID, RANGE_RINGS_LABEL_LAYER_ID],
+      historyDots: [HISTORY_DOTS_LAYER_ID],
     }
     for (const [key, layerIds] of Object.entries(groups)) {
       if (key in vis) {
