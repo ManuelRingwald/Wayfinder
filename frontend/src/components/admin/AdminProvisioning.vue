@@ -3,7 +3,9 @@
        grant/revoke catalogue feeds for it. This tab is only rendered for
        super_admin; the server independently enforces the boundary (requireSuper →
        403), so the gating here is convenience, not security. -->
-  <v-card variant="tonal" class="mb-4">
+  <!-- Standalone tenant picker: hidden when embedded (AP3 detail page passes a
+       tenantId prop and owns the tenant context). -->
+  <v-card v-if="!tenantId" variant="tonal" class="mb-4">
     <v-card-text>
       <v-select
         v-model="selectedTenant"
@@ -18,7 +20,7 @@
     </v-card-text>
   </v-card>
 
-  <v-card v-if="selectedTenant" variant="tonal">
+  <v-card v-if="effectiveTenant" variant="tonal">
     <v-card-title class="text-subtitle-1">Feed-Zuweisungen</v-card-title>
     <v-card-text>
       <v-table density="comfortable">
@@ -63,40 +65,55 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useAdminStore } from '@/stores/admin.js'
+
+// tenantId: when set (AP3 detail page), the component drops its own tenant picker
+// and provisions feeds for that tenant. When null (standalone tab), the user
+// picks a tenant from the dropdown.
+const props = defineProps({
+  tenantId: { type: Number, default: null },
+})
 
 const admin = useAdminStore()
 const selectedTenant = ref(null)
 const tenantSubs = ref([])
 const busy = ref(false)
 
+const effectiveTenant = computed(() => props.tenantId ?? selectedTenant.value)
 const subscribedIds = computed(() => new Set(tenantSubs.value.map((f) => f.id)))
 
 async function refreshTenantSubs() {
-  if (!selectedTenant.value) {
+  if (!effectiveTenant.value) {
     tenantSubs.value = []
     return
   }
-  const r = await admin.loadTenantSubscriptions(selectedTenant.value)
+  const r = await admin.loadTenantSubscriptions(effectiveTenant.value)
   tenantSubs.value = r.ok ? r.data : []
 }
 
 async function grant(feed) {
   busy.value = true
-  const r = await admin.grant(selectedTenant.value, feed.id)
+  const r = await admin.grant(effectiveTenant.value, feed.id)
   if (r.ok) await refreshTenantSubs()
   busy.value = false
 }
 
 async function revoke(feed) {
   busy.value = true
-  const r = await admin.revoke(selectedTenant.value, feed.id)
+  const r = await admin.revoke(effectiveTenant.value, feed.id)
   if (r.ok) await refreshTenantSubs()
   busy.value = false
 }
 
+// When embedded, re-fetch the tenant's grants whenever the target changes.
+watch(() => props.tenantId, refreshTenantSubs)
+
 onMounted(async () => {
-  await Promise.all([admin.loadTenants(), admin.loadFeeds()])
+  if (props.tenantId) {
+    await Promise.all([admin.loadFeeds(), refreshTenantSubs()])
+  } else {
+    await Promise.all([admin.loadTenants(), admin.loadFeeds()])
+  }
 })
 </script>

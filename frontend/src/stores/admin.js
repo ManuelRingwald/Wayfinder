@@ -37,6 +37,7 @@ export const useAdminStore = defineStore('admin', () => {
   const feeds = ref([])          // full feed catalogue
   const subscriptions = ref([])  // feeds the current tenant is subscribed to
   const tenants = ref([])        // admin: all tenants (cross-tenant provisioning)
+  const overview = ref([])       // AP3: aggregated per-tenant dashboard rows
   const error = ref(null)        // last action error (banner)
   const notice = ref(null)       // last success message (banner)
 
@@ -127,6 +128,55 @@ export const useAdminStore = defineStore('admin', () => {
   // without storing it globally (the caller owns that transient list).
   async function loadTenantSubscriptions(tenantId) {
     return apiFetch(`/api/admin/tenants/${tenantId}/subscriptions`)
+  }
+
+  // --- AP3: tenant-centric dashboard ----------------------------------------
+
+  // loadOverview fetches the aggregated per-tenant dashboard (status, features,
+  // feeds, account count) in one call and stores it for the overview table.
+  async function loadOverview() {
+    const r = await apiFetch('/api/admin/overview')
+    if (r.ok) overview.value = r.data
+    else error.value = r.error
+    return r
+  }
+
+  // loadTenantView reads a target tenant's default view (cross-tenant editor).
+  // Returns the raw result; the caller owns the transient view (it edits a copy).
+  // A 404 (no view configured yet) is surfaced to the caller as r.status === 404.
+  async function loadTenantView(tenantId) {
+    return apiFetch(`/api/admin/tenants/${tenantId}/view`)
+  }
+
+  // saveTenantView writes a target tenant's default view (cross-tenant editor).
+  async function saveTenantView(tenantId, dto) {
+    error.value = null
+    notice.value = null
+    const r = await apiFetch(`/api/admin/tenants/${tenantId}/view`, {
+      method: 'PUT',
+      body: JSON.stringify(dto),
+    })
+    if (r.ok) notice.value = 'Ansicht gespeichert.'
+    else error.value = r.error
+    return r
+  }
+
+  // loadTenantEntitlements returns the full feature catalogue with the target
+  // tenant's state (the caller owns the transient list).
+  async function loadTenantEntitlements(tenantId) {
+    return apiFetch(`/api/admin/tenants/${tenantId}/entitlements`)
+  }
+
+  async function setTenantEntitlement(tenantId, key, enabled) {
+    error.value = null
+    notice.value = null
+    const r = await apiFetch(`/api/admin/tenants/${tenantId}/entitlements/${key}`, {
+      method: 'PUT',
+      body: JSON.stringify({ enabled }),
+    })
+    if (r.ok) notice.value = enabled ? 'Feature aktiviert.' : 'Feature deaktiviert.'
+    else error.value = r.error
+    return r
   }
 
   async function grant(tenantId, feedId) {
@@ -225,10 +275,11 @@ export const useAdminStore = defineStore('admin', () => {
   }
 
   return {
-    identity, accessError, accessStatus, view, feeds, subscriptions, tenants, error, notice,
+    identity, accessError, accessStatus, view, feeds, subscriptions, tenants, overview, error, notice,
     role, isAdmin, isAuthorized, features, hasFeature,
     loadIdentity, login, loadView, saveView, loadFeeds, loadSubscriptions,
     loadTenants, loadTenantSubscriptions, grant, revoke,
+    loadOverview, loadTenantView, saveTenantView, loadTenantEntitlements, setTenantEntitlement,
     loadTenantUsers, createUser, setUserStatus, deleteUser, setUserPassword, setTenantStatus,
     clearBanners,
   }

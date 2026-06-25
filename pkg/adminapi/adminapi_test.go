@@ -34,6 +34,10 @@ func (f *fakeVS) GetEffective(_ context.Context, _, _ int64) (store.ViewConfig, 
 	return f.vc, f.getErr
 }
 
+func (f *fakeVS) GetTenantDefault(_ context.Context, _ int64) (store.ViewConfig, error) {
+	return f.vc, f.getErr
+}
+
 func (f *fakeVS) UpsertTenantDefault(_ context.Context, tenantID int64, vc store.ViewConfig) (store.ViewConfig, error) {
 	f.upsertTenant = tenantID
 	f.upserted = vc
@@ -544,6 +548,9 @@ func TestCrossTenantRoutesForbidUser(t *testing.T) {
 		{http.MethodDelete, "/api/admin/tenants/5/subscriptions/3", ""},
 		{http.MethodGet, "/api/admin/tenants/5/entitlements", ""},
 		{http.MethodPut, "/api/admin/tenants/5/entitlements/stca", `{"enabled":true}`},
+		{http.MethodGet, "/api/admin/overview", ""},
+		{http.MethodGet, "/api/admin/tenants/5/view", ""},
+		{http.MethodPut, "/api/admin/tenants/5/view", `{"center_lat":50,"center_lon":9,"zoom":8}`},
 	}
 	for _, rt := range routes {
 		t.Run(rt.method+" "+rt.path, func(t *testing.T) {
@@ -711,5 +718,111 @@ func TestGetSensorClasses(t *testing.T) {
 		if e["class"] == "" || e["description"] == "" {
 			t.Errorf("incomplete catalogue entry: %v", e)
 		}
+	}
+}
+
+// --- AP3: tenant-centric admin dashboard ------------------------------------
+
+// handlerForOverview wires the fakes the AP3 overview needs (custom user store
+// for the account count). fakeVS serves both views and subscriptions.
+func handlerForOverview(vs *fakeVS, ff fakeFeeds, ft fakeTenants, us UserStore, fe EntitlementService) *Handler {
+	return New(vs, vs, ff, ft, us, &fakeCredStore{}, fe, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+}
+
+func TestGetOverviewAggregates(t *testing.T) {
+	vs := &fakeVS{subsFeeds: []store.Feed{{ID: 3, Name: "Frankfurt"}}}
+	ff := fakeFeeds{}
+	ft := fakeTenants{list: []store.Tenant{{ID: 5, Slug: "acme", Name: "ACME", Status: "active"}}}
+	us := &fakeUserStore{listByTen: map[int64][]store.User{5: {{ID: 1}, {ID: 2}}}}
+	fe := &fakeEntitlements{eff: map[feature.Key]bool{feature.STCA: true, feature.MultiFeed: false, feature.Airspaces: true}}
+
+	rec := httptest.NewRecorder()
+	handlerForOverview(vs, ff, ft, us, fe).
+		ServeHTTP(rec, adminReq(http.MethodGet, "/api/admin/overview", "", 99, store.RoleAdmin))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var got []tenantOverviewDTO
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("got %d overview rows, want 1", len(got))
+	}
+	row := got[0]
+	if row.ID != 5 || row.Slug != "acme" || row.Status != "active" {
+		t.Errorf("row identity = %+v, want id=5 slug=acme status=active", row)
+	}
+	if row.UserCount != 2 {
+		t.Errorf("user_count = %d, want 2", row.UserCount)
+	}
+	if len(row.Feeds) != 1 || row.Feeds[0].ID != 3 {
+		t.Errorf("feeds = %+v, want [feed 3]", row.Feeds)
+	}
+	// Only enabled keys, in stable catalogue order (airspaces < stca).
+	if len(row.Features) != 2 || row.Features[0] != "airspaces" || row.Features[1] != "stca" {
+		t.Errorf("features = %v, want [airspaces stca]", row.Features)
+	}
+}
+
+func TestGetTenantViewReadsDefault(t *testing.T) {
+	vs := &fakeVS{vc: store.ViewConfig{CenterLat: 50, CenterLon: 9, Zoom: 8}}
+	ft := fakeTenants{byID: map[int64]store.Tenant{5: {ID: 5}}}
+	rec := httptest.NewRecorder()
+	handlerWith(vs, fakeFeeds{}, ft).
+		ServeHTTP(rec, adminReq(http.MethodGet, "/api/admin/tenants/5/view", "", 99, store.RoleAdmin))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var got viewDTO
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.CenterLat != 50 || got.CenterLon != 9 || got.Zoom != 8 {
+		t.Errorf("view = %+v, want center 50/9 zoom 8", got)
+	}
+}
+
+func TestGetTenantViewUnknownTenantIs404(t *testing.T) {
+	rec := httptest.NewRecorder()
+	handlerWith(&fakeVS{}, fakeFeeds{}, fakeTenants{}).
+		ServeHTTP(rec, adminReq(http.MethodGet, "/api/admin/tenants/5/view", "", 99, store.RoleAdmin))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rec.Code)
+	}
+}
+
+func TestPutTenantViewUpsertsAndRescopes(t *testing.T) {
+	vs := &fakeVS{}
+	ft := fakeTenants{byID: map[int64]store.Tenant{5: {ID: 5}}}
+	rr := &rescopeRecorder{}
+	h := New(vs, vs, fakeFeeds{}, ft, &fakeUserStore{}, &fakeCredStore{}, &fakeEntitlements{}, slog.New(slog.NewTextHandler(io.Discard, nil)), rr.fn)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, adminReq(http.MethodPut, "/api/admin/tenants/5/view", `{"center_lat":48,"center_lon":11,"zoom":7}`, 99, store.RoleAdmin))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if vs.upsertTenant != 5 {
+		t.Errorf("UpsertTenantDefault tenant = %d, want 5", vs.upsertTenant)
+	}
+	if vs.upserted.CenterLat != 48 || vs.upserted.Zoom != 7 {
+		t.Errorf("upserted view = %+v, want center_lat 48 zoom 7", vs.upserted)
+	}
+	if len(rr.calls) != 1 || rr.calls[0] != 5 {
+		t.Errorf("rescope calls = %v, want [5]", rr.calls)
+	}
+}
+
+func TestPutTenantViewRejectsInvalid(t *testing.T) {
+	vs := &fakeVS{}
+	ft := fakeTenants{byID: map[int64]store.Tenant{5: {ID: 5}}}
+	rec := httptest.NewRecorder()
+	handlerWith(vs, fakeFeeds{}, ft).
+		ServeHTTP(rec, adminReq(http.MethodPut, "/api/admin/tenants/5/view", `{"center_lat":50,"center_lon":9,"zoom":99}`, 99, store.RoleAdmin))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+	if vs.upsertTenant != 0 {
+		t.Error("invalid view must not reach the store")
 	}
 }

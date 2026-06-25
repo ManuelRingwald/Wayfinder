@@ -198,6 +198,8 @@ Durch `authMiddleware` geschützt (wenn `WAYFINDER_AUTH_TOKEN` gesetzt).
 | `/api/navaids` | GET | VOR/NDB-Beacons (GeoJSON, best-effort) |
 | `/api/waypoints` | GET | Wegpunkte (GeoJSON, best-effort) |
 | `/api/admin/whoami` | GET | Rollen-Probe + **effektive Feature-Flags** (`features`) als JSON; rollen-gegated (WF2-32/50) |
+| `/api/admin/overview` | GET | **AP3:** Mandanten-Dashboard als Aggregat — je Mandant `{id, slug, name, status, features[], feeds[], user_count}` in einem Call; **admin** |
+| `/api/admin/tenants/{id}/view` | GET/PUT | **AP3:** Standard-Sicht **eines beliebigen** Mandanten lesen/schreiben (cross-tenant Editor; gleiche `validateView` wie `/api/admin/view`); **admin** |
 | `/api/admin/tenants/{id}/entitlements[/{key}]` | GET/PUT | Feature-Entitlements pro Mandant; **admin** (WF2-50) |
 | `/api/admin/tenants/{id}/users` | GET/POST | Zugänge eines Mandanten auflisten / anlegen (AP6); **admin**. POST `{subject, email?, password?}` → 201; Rolle immer `user`; Passwort min. 8 Zeichen; doppelter Subject → 409 |
 | `/api/admin/tenants/{id}/users/{uid}` | PATCH/DELETE | Zugang pausieren/reaktivieren (`{status:"active"\|"paused"}`) bzw. löschen (AP6); **admin**. User-ID aus fremdem Mandanten → 404 |

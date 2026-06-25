@@ -483,9 +483,12 @@ docker compose up -d --build
 - **Benutzername:** `admin`
 - **Passwort:** das in Schritt 5.4 gewählte (`MeinAdminPasswort123`)
 
-Sie sehen die Admin-Oberfläche. Als `admin` haben Sie zusätzlich den
-**Provisioning-Bereich** (Feeds an Mandanten vergeben) und den Bereich
-**Zugänge** (Login-Konten je Mandanten verwalten).
+Sie sehen die Admin-Oberfläche. Seit AP3 (ADR 0009) ist sie
+**mandantenzentriert**: zuerst eine **Übersicht aller Mandanten** (mit Status,
+aktiven Features, zugewiesenen Feeds und Anzahl der Zugänge); ein Klick auf
+**„Konfigurieren"** öffnet die **Detailseite** des Mandanten, auf der Sie an
+einem Ort die **Standard-Ansicht** (Zentrum + Radius, FL-Band), die **Features**,
+die **Feeds** und die **Zugänge** dieses Kunden verwalten.
 
 > **Rollen (ADR 0009):** Es gibt genau zwei Rollen — **`admin`** (Plattform-
 > Betreiber, sieht den ganzen Admin-Bereich) und **`user`** (Endnutzer/Lotse
@@ -511,8 +514,9 @@ docker compose run --rm \
 
 ### Schritt 5.8b — Weitere Zugänge verwalten (Oberfläche, AP6)
 
-Im Admin-Bereich unter **`/admin` → Reiter „Zugänge"** wählen Sie einen Mandanten
-und verwalten dessen Login-Konten direkt im Browser — **ohne** `bootstrap`/SQL:
+Im Admin-Bereich öffnen Sie in der **Mandanten-Übersicht** den gewünschten
+Mandanten („Konfigurieren") und verwalten im Abschnitt **„Zugänge"** dessen
+Login-Konten direkt im Browser — **ohne** `bootstrap`/SQL:
 
 - **Zugang anlegen** (Benutzername, optional E-Mail und Passwort; Rolle ist
   immer `user`; ein Passwort muss mindestens 8 Zeichen haben). Ohne Passwort
@@ -533,8 +537,8 @@ Damit der neue Kunde Flugzeuge sieht, muss ihm ein Feed **zugewiesen** werden.
 Das darf nur ein `admin`. Zwei Wege:
 
 **Weg A — über die Admin-Oberfläche (empfohlen):** In `/admin` als `admin`
-angemeldet, im Provisioning-Bereich den Mandanten **„Kunde Nord GmbH"** wählen
-und ihm den Feed **„Frankfurt"** zuweisen.
+angemeldet, in der Mandanten-Übersicht **„Kunde Nord GmbH"** öffnen
+(„Konfigurieren") und im Abschnitt **„Feeds"** den Feed **„Frankfurt"** zuweisen.
 
 **Weg B — über die Befehlszeile (mit `curl`):** Zuerst Mandanten- und Feed-IDs
 herausfinden, dann zuweisen. (`{tenant-id}` / `feed_id` aus `feed list` bzw. der
@@ -731,13 +735,15 @@ Mandanten zugeordneten Nutzer → `401`).
 
 #### Admin-Oberfläche & Admin-API
 
-- **`/admin`** (Browser): Verwaltungsoberfläche (eigene View, ersetzt die Karte).
-  Geschützt durch das Rollen-Gate; die Rollen-Probe liegt auf
-  `GET /api/admin/whoami` (`tenant_admin`/`super_admin`, sonst `403`). Der
-  Provisioning-Bereich ist nur für `super_admin` sichtbar.
-- **`/api/admin/*`** (REST): tenant-skopiert — ein `tenant_admin` verwaltet **nur**
-  die **eigene** Konfiguration. Die Mandanten-ID kommt **immer aus der angemeldeten
-  Identität**.
+- **`/admin`** (Browser): mandantenzentrierte Verwaltungsoberfläche (ersetzt die
+  Karte). Geschützt durch das Rollen-Gate; die Rollen-Probe liegt auf
+  `GET /api/admin/whoami` (Rolle `admin`, sonst `403`). Seit AP3 (ADR 0009):
+  Mandanten-Übersicht → Detailseite je Mandant (Ansicht, Features, Feeds, Zugänge).
+- **`/api/admin/*`** (REST): die Selbstbedienungs-Routen (`/api/admin/view` etc.)
+  leiten die Mandanten-ID **immer aus der angemeldeten Identität** ab; die
+  cross-tenant Admin-Routen (`/api/admin/tenants/{id}/…`, `/api/admin/overview`)
+  nehmen die Ziel-Mandanten-ID aus dem Pfad und sind `admin`-gegated
+  (`requireAdmin → 403`).
 
 | Methode + Pfad | Wirkung | Rolle |
 |---|---|---|
