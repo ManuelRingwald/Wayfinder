@@ -124,3 +124,43 @@ Alter kommt als dokumentiertes Vendor-Subfeld (I062/SP).
 `track.provenance ?? <Heuristik-Fallback>` (vorwärts-/rückwärtskompatibel);
 Frische aus `source_ages.adsb` statt `adsb_age_s`-Proxy. Decoder zieht
 byte-genau gegen Fireflys Referenz-Dump nach (Charter §2/§6).
+
+---
+
+## Feed-Gesundheit: Sensor-Teilausfall → Gelb (FF-1 + CAT063) ⏳
+
+**GitHub Issue:** [Firefly #32](https://github.com/manuelringwald/firefly/issues/32)
+`from-wayfinder` (angelegt 2026-06-25) — **offen**.
+
+**Auslöser:** Wayfinder AP4 (Feed-Gesundheit pro Feed, PR #71) zeigt eine Ampel
+pro Feed, gespeist nur aus dem CAT065-Heartbeat. Die **Gelb-Semantik wird
+umgewidmet**: „leerer Himmel" ist kein Warnzustand. Gelb soll künftig
+**degradierte Fusion** bedeuten — von N konfigurierten Radaren liefern nur noch
+M < N. Künftige Ampel: grün = alle Sensoren liefern · gelb = 1…N−1 still ·
+rot = kein Heartbeat oder alle still.
+
+**Befund:** Firefly hat das Sensor-Modell strukturell (`SensorId`, drei Radare
+in der Multi-Radar-Scene, `contributing_sensors` pro Track), aber **keinen
+Laufzeit-Begriff von „Sensor ausgefallen"** (Sensoren statisch via
+`with_sensor`; kein „Sensor 2 liefert seit X s keine Plots"). CAT065 kann das
+nicht sauber tragen (I065/040 NOGO ist binär; I065/020 ist Batch Number, kein
+Sensor-Count).
+
+**Mit dem Projektverantwortlichen abgestimmt (2026-06-25):**
+
+| AP (Firefly) | Inhalt | Hinweis |
+|--------------|--------|---------|
+| **FF-1** | Laufzeit-Sensor-Health: per `SensorId` „last plot at", Silent-Timeout aus `scan_period`, globaler Aktiv/Silent-Snapshot, Metrik `firefly_sensor_active{sensor_id}` | **zuerst Umfang/Semantik abstimmen** (Voraussetzung) |
+| **FF-2/3** | **CAT063 Sensor Status Messages** (Kategorie `0x3F`, ein Record/Sensor) auf derselben Gruppe/Port; periodische Aussendung (`FIREFLY_CAT063_*`) | Format **entschieden: CAT063** (standard-treu, „M von N"-fähig) |
+| **ICD/ADR** | Neue Kategorie in `docs/ICD-CAT062.md` (Changelog v2.4.0) + ADR „CAT063 Sensor Status" + byte-genaue Referenz-Vektoren | — |
+
+**Abgrenzung zu #30:** verwandt (beide brauchen Sensor-Awareness), aber #30 ist
+Per-**Track**-Provenienz in CAT062 (welcher Sensortyp erzeugte *diesen* Track),
+dieses Issue ist System-/Feed-Gesundheit in CAT063 (welche Sensoren leben
+gerade). Nicht vermischen.
+
+**Wayfinder-Folge (nach Lieferung):** WF-1 robuster CAT063-Decoder
+(`pkg/cat063`) + Referenz-Vektor-Test · WF-2 Health-Registry um Sensor-Soll/-Ist
+erweitern (`Color()`: gelb = `0 < aktiv < gesamt`, „leerer Himmel" raus aus
+gelb) · WF-3 UI „2 / 3 Radare aktiv (Sensor 2 still)" in `FeedStatusChip` +
+Admin-Ampel.
