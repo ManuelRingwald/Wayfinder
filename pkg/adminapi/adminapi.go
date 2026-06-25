@@ -14,8 +14,10 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/manuelringwald/wayfinder/pkg/feature"
+	"github.com/manuelringwald/wayfinder/pkg/health"
 	"github.com/manuelringwald/wayfinder/pkg/sensorclass"
 	"github.com/manuelringwald/wayfinder/pkg/store"
 	"github.com/manuelringwald/wayfinder/pkg/tenant"
@@ -63,6 +65,15 @@ type EntitlementService interface {
 	HasFeature(ctx context.Context, tenantID int64, key feature.Key) bool
 }
 
+// FeedHealthSource provides per-feed health snapshots for the admin dashboard
+// (AP4). Satisfied by *health.Registry in production; a nil source returns an
+// empty list for the /api/admin/feeds/health endpoint (graceful degradation when
+// the health registry is unavailable, e.g. in integration tests that only test
+// the DB paths).
+type FeedHealthSource interface {
+	Snapshot(feedID int64, now time.Time) health.FeedSnapshot
+}
+
 // RescopeFunc is invoked after a mutation that changes what a tenant's connected
 // clients may see (a view edit, or a feed grant/revoke), so their live /ws streams
 // are re-scoped in place without a reconnect (WF2-33). It is wired in main.go to
@@ -73,24 +84,25 @@ type RescopeFunc func(ctx context.Context, tenantID int64)
 
 // Handler routes the /api/admin/* endpoints.
 type Handler struct {
-	views   ViewStore
-	subs    SubscriptionStore
-	feeds   FeedStore
-	tenants TenantStore
-	users   UserStore
-	creds   CredentialStore
-	feats   EntitlementService
-	rescope RescopeFunc
-	logger  *slog.Logger
-	mux     *http.ServeMux
+	views      ViewStore
+	subs       SubscriptionStore
+	feeds      FeedStore
+	tenants    TenantStore
+	users      UserStore
+	creds      CredentialStore
+	feats      EntitlementService
+	feedHealth FeedHealthSource // may be nil; AP4 health endpoint returns empty list
+	rescope    RescopeFunc
+	logger     *slog.Logger
+	mux        *http.ServeMux
 }
 
 // New builds the admin API handler. Method+path patterns give automatic 405s for
 // the wrong method. The cross-tenant provisioning routes (/api/admin/tenants/…)
 // are additionally guarded by requireAdmin (defence-in-depth). rescope (may be
 // nil) re-scopes a tenant's live streams after a mutation (WF2-33).
-func New(views ViewStore, subs SubscriptionStore, feeds FeedStore, tenants TenantStore, users UserStore, creds CredentialStore, feats EntitlementService, logger *slog.Logger, rescope RescopeFunc) *Handler {
-	h := &Handler{views: views, subs: subs, feeds: feeds, tenants: tenants, users: users, creds: creds, feats: feats, rescope: rescope, logger: logger}
+func New(views ViewStore, subs SubscriptionStore, feeds FeedStore, tenants TenantStore, users UserStore, creds CredentialStore, feats EntitlementService, feedHealth FeedHealthSource, logger *slog.Logger, rescope RescopeFunc) *Handler {
+	h := &Handler{views: views, subs: subs, feeds: feeds, tenants: tenants, users: users, creds: creds, feats: feats, feedHealth: feedHealth, rescope: rescope, logger: logger}
 	mux := http.NewServeMux()
 	// whoami: the SPA's role probe (WF2-32). It sits behind the same admin gate, so
 	// a 200 here both confirms access and tells the client which panels to render.
@@ -110,6 +122,9 @@ func New(views ViewStore, subs SubscriptionStore, feeds FeedStore, tenants Tenan
 	// get/put let an admin edit *any* tenant's default view (the self-service
 	// /api/admin/view routes only touch the caller's own tenant).
 	mux.HandleFunc("GET /api/admin/overview", h.requireAdmin(h.getOverview))
+	// AP4: per-feed health state (heartbeat staleness + track presence) for the
+	// admin dashboard's feed-health colour chips.
+	mux.HandleFunc("GET /api/admin/feeds/health", h.requireAdmin(h.getFeedsHealth))
 	mux.HandleFunc("GET /api/admin/tenants/{tenantID}/view", h.requireAdmin(h.getTenantView))
 	mux.HandleFunc("PUT /api/admin/tenants/{tenantID}/view", h.requireAdmin(h.putTenantView))
 	mux.HandleFunc("GET /api/admin/tenants/{tenantID}/subscriptions", h.requireAdmin(h.listTenantSubscriptions))
@@ -679,6 +694,46 @@ func toTenantDTOs(tenants []store.Tenant) []tenantDTO {
 		out[i] = tenantDTO{ID: t.ID, Slug: t.Slug, Name: t.Name, Status: string(t.Status)}
 	}
 	return out
+}
+
+// feedHealthDTO is the admin-visible health state for one feed (AP4).
+type feedHealthDTO struct {
+	FeedID            int64   `json:"feed_id"`
+	Color             string  `json:"color"` // "green" | "yellow" | "red"
+	Stale             bool    `json:"stale"`
+	EverSeen          bool    `json:"ever_seen"`
+	LastHeartbeatAgoS float64 `json:"last_heartbeat_ago_s"` // negative if never seen
+	TrackCountRecent  int64   `json:"track_count_recent"`
+}
+
+// getFeedsHealth returns the current health state for every known feed.
+// It calls the FeedHealthSource for each feed in the global catalogue. If the
+// health source is nil (e.g. in tests that do not wire up the registry), it
+// returns an empty list.
+func (h *Handler) getFeedsHealth(w http.ResponseWriter, r *http.Request) {
+	if h.feedHealth == nil {
+		writeJSON(w, http.StatusOK, []feedHealthDTO{})
+		return
+	}
+	feedList, err := h.feeds.List(r.Context())
+	if err != nil {
+		h.internalError(w, "getFeedsHealth list", err)
+		return
+	}
+	now := time.Now()
+	out := make([]feedHealthDTO, len(feedList))
+	for i, f := range feedList {
+		s := h.feedHealth.Snapshot(f.ID, now)
+		out[i] = feedHealthDTO{
+			FeedID:            f.ID,
+			Color:             s.Color(),
+			Stale:             s.Stale,
+			EverSeen:          s.EverSeen,
+			LastHeartbeatAgoS: s.LastHeartbeatAgoS,
+			TrackCountRecent:  s.TrackCountRecent,
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (h *Handler) internalError(w http.ResponseWriter, op string, err error) {

@@ -121,7 +121,22 @@
 
   <!-- Feeds (cross-tenant provisioning, embedded) -->
   <v-card variant="tonal" class="mb-4">
-    <v-card-title class="text-subtitle-1">Feeds</v-card-title>
+    <v-card-title class="d-flex align-center text-subtitle-1">
+      Feeds
+      <!-- AP4: health chips for feeds the tenant currently subscribes to -->
+      <span v-if="tenant?.feeds?.length" class="ml-2 d-flex ga-1 flex-wrap align-center">
+        <v-chip
+          v-for="f in tenant.feeds"
+          :key="f.id"
+          size="x-small"
+          variant="flat"
+          :color="feedColor(f.id)"
+          :title="feedTitle(f.id)"
+        >
+          {{ f.name }}
+        </v-chip>
+      </span>
+    </v-card-title>
     <v-card-text>
       <AdminProvisioning :tenant-id="tenantId" />
     </v-card-text>
@@ -224,7 +239,21 @@ function round(n) {
   return Math.round(n * 10) / 10
 }
 
+const HEALTH_COLORS = { green: 'success', yellow: 'warning', red: 'error' }
+
+function feedColor(feedId) {
+  return HEALTH_COLORS[admin.feedsHealth[feedId]?.color] ?? 'default'
+}
+
+function feedTitle(feedId) {
+  const h = admin.feedsHealth[feedId]
+  if (!h) return 'Gesundheit unbekannt'
+  if (h.color === 'green') return `OK · ${h.track_count_recent} Tracks`
+  if (h.color === 'yellow') return 'Leerer Himmel (kein Traffic)'
+  return 'Feed inaktiv (kein Heartbeat)'
+}
+
 onMounted(async () => {
-  await Promise.all([loadView(), loadEntitlements()])
+  await Promise.all([loadView(), loadEntitlements(), admin.loadFeedsHealth()])
 })
 </script>

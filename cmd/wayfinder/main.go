@@ -79,8 +79,10 @@ func main() {
 	var lastServiceID atomic.Uint32
 	var lastError atomic.Pointer[string]
 
-	// Feed-health tracker (CAT065 heartbeat staleness, Firefly ADR 0018).
-	feedHealth := health.New(cfg.FeedStaleTimeout)
+	// Feed-health registry: per-feed heartbeat staleness + track presence (AP4,
+	// Firefly ADR 0018). Replaces the former single-instance FeedHealth; the
+	// Registry exposes aggregate Status/Observe methods as drop-in replacements.
+	feedRegistry := health.NewRegistry(cfg.FeedStaleTimeout)
 
 	// Aeronautical layers (ASD-003, ADR 0004): best-effort OpenAIP overlays.
 	// Enabled only when an API key is configured; never affects the track path
@@ -118,6 +120,7 @@ func main() {
 		blockCount.Add(1)
 		trackCount.Add(int64(len(tracks)))
 		tracksCurrent.Store(int64(len(tracks)))
+		feedRegistry.RecordTracks(feedID, len(tracks))
 		// Feed tracks to broadcaster (non-blocking), tagged with their feed.
 		select {
 		case broadcaster.TracksChan() <- broadcast.TrackBatch{FeedID: feedID, Tracks: tracks}:
@@ -126,14 +129,16 @@ func main() {
 		}
 		return nil
 	}
-	// Status handler: CAT065 heartbeats feed the (global) feed-health tracker.
-	statusHandler := func(status cat065.ServiceStatus) error {
+	// Status handler: CAT065 heartbeats update both the per-feed registry (AP4)
+	// and the aggregate (for the browser feed-status banner). buildReceivers wraps
+	// this with a per-feed closure so feedID is the catalogue ID of the receiver.
+	statusHandler := func(feedID int64, status cat065.ServiceStatus) error {
 		heartbeatCount.Add(1)
 		lastServiceID.Store(uint32(status.ServiceID))
-		feedHealth.RecordHeartbeat(time.Now())
+		feedRegistry.RecordHeartbeat(feedID, time.Now())
 		// Notify the browser only on a state transition (e.g. first heartbeat,
 		// or recovery from stale).
-		if s, changed := feedHealth.Observe(time.Now()); changed {
+		if s, changed := feedRegistry.Observe(time.Now()); changed {
 			broadcastFeedStatus(s)
 		}
 		return nil
@@ -248,7 +253,7 @@ func main() {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if s, changed := feedHealth.Observe(time.Now()); changed {
+				if s, changed := feedRegistry.Observe(time.Now()); changed {
 					broadcastFeedStatus(s)
 				}
 			}
@@ -274,7 +279,7 @@ func main() {
 		}
 		return n
 	}
-	go startProbeServer(logger, &blockCount, &trackCount, &tracksCurrent, &heartbeatCount, broadcaster, decodeErrors, feedHealth, aeroService, &lastError, featSvc)
+	go startProbeServer(logger, &blockCount, &trackCount, &tracksCurrent, &heartbeatCount, broadcaster, decodeErrors, feedRegistry, aeroService, &lastError, featSvc)
 
 	// Start WebSocket server.
 	if tenantMW == nil && cfg.AuthToken == "" {
@@ -360,7 +365,7 @@ func main() {
 			rescopeTenant(ctx, broadcaster, subRepo, viewRepo, logger, tenantID)
 		}
 		adminAPI := adminapi.New(viewRepo, subRepo, store.NewFeedRepo(dbPool), store.NewTenantRepo(dbPool),
-			store.NewUserRepo(dbPool), store.NewCredentialRepo(dbPool), featSvc, logger, rescope)
+			store.NewUserRepo(dbPool), store.NewCredentialRepo(dbPool), featSvc, feedRegistry, logger, rescope)
 		mux.Handle("/api/admin/", tenantMW(requireAdmin(adminAPI)))
 
 		// Cross-tenant read-only impersonation (ADR 0008, WF2-34): mint and clear
@@ -1050,7 +1055,7 @@ func coverageRingsHandler(cfg Config) http.HandlerFunc {
 }
 
 // startProbeServer starts an HTTP server for health, readiness and metrics.
-func startProbeServer(logger *slog.Logger, blockCount, trackCount, tracksCurrent, heartbeatCount *atomic.Int64, broadcaster *broadcast.Broadcaster, decodeErrors func() int64, feedHealth *health.FeedHealth, aeroService *aeronautical.Service, lastError *atomic.Pointer[string], featSvc *feature.Service) {
+func startProbeServer(logger *slog.Logger, blockCount, trackCount, tracksCurrent, heartbeatCount *atomic.Int64, broadcaster *broadcast.Broadcaster, decodeErrors func() int64, feedRegistry *health.Registry, aeroService *aeronautical.Service, lastError *atomic.Pointer[string], featSvc *feature.Service) {
 	mux := http.NewServeMux()
 
 	// /health — liveness check (always ready unless startup failed).
@@ -1068,7 +1073,7 @@ func startProbeServer(logger *slog.Logger, blockCount, trackCount, tracksCurrent
 		w.Header().Set("Content-Type", "application/json")
 		count := blockCount.Load()
 		clients := broadcaster.ClientCount()
-		status := feedHealth.Status(time.Now())
+		status := feedRegistry.Status(time.Now())
 		healthy := !status.EverSeen || !status.Stale
 		if (count > 0 || clients > 0) && healthy {
 			w.WriteHeader(http.StatusOK)
@@ -1083,7 +1088,7 @@ func startProbeServer(logger *slog.Logger, blockCount, trackCount, tracksCurrent
 	// throughput, decode errors, WebSocket client counts/drops, and feed health.
 	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
 		feedStale := int64(0)
-		if feedHealth.Status(time.Now()).Stale {
+		if feedRegistry.Status(time.Now()).Stale {
 			feedStale = 1
 		}
 		mset := []metrics.Metric{

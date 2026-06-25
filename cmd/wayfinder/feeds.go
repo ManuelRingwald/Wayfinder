@@ -41,21 +41,26 @@ func resolveFeeds(catalogue []store.Feed, cfg Config) []feedConfig {
 }
 
 // buildReceivers creates one receiver per feed, each stamping its feed_id onto
-// decoded tracks (WF2-20.1) and sharing the given track/status handlers. It does
-// not open sockets — call Listen on each. An invalid feed (e.g. a malformed
-// multicast group) is a hard error naming the offending feed.
+// decoded tracks (WF2-20.1). statusHandler receives (feedID, status) so the
+// per-feed health registry (AP4) knows which feed each CAT065 heartbeat belongs
+// to. It does not open sockets — call Listen on each. An invalid feed (e.g. a
+// malformed multicast group) is a hard error naming the offending feed.
 func buildReceivers(feeds []feedConfig, logger *slog.Logger,
 	trackHandler func(int64, []cat062.DecodedTrack) error,
-	statusHandler func(cat065.ServiceStatus) error) ([]*receiver.Receiver, error) {
+	statusHandler func(int64, cat065.ServiceStatus) error) ([]*receiver.Receiver, error) {
 	recvs := make([]*receiver.Receiver, 0, len(feeds))
 	for _, f := range feeds {
+		fid := f.ID // capture for closure
 		r, err := receiver.New(receiver.Config{
-			FeedID:        f.ID,
-			Group:         f.Group,
-			Port:          f.Port,
-			Logger:        logger,
-			Handler:       trackHandler,
-			StatusHandler: statusHandler,
+			FeedID:  fid,
+			Group:   f.Group,
+			Port:    f.Port,
+			Logger:  logger,
+			Handler: trackHandler,
+			// Wrap so the receiver's signature-less handler includes the feedID.
+			StatusHandler: func(status cat065.ServiceStatus) error {
+				return statusHandler(fid, status)
+			},
 		})
 		if err != nil {
 			return nil, fmt.Errorf("feed %q (id=%d): %w", f.Name, f.ID, err)

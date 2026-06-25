@@ -53,15 +53,16 @@
             </td>
             <td>
               <span v-if="!t.feeds.length" class="text-medium-emphasis">—</span>
-              <v-chip
-                v-for="f in t.feeds"
-                :key="f.id"
-                size="x-small"
-                variant="tonal"
-                class="mr-1 mb-1"
-              >
-                {{ f.name }}
-              </v-chip>
+              <span v-for="f in t.feeds" :key="f.id" class="d-inline-flex align-center mr-1 mb-1">
+                <v-chip
+                  size="x-small"
+                  variant="tonal"
+                  :color="feedColor(f.id)"
+                  :title="feedTitle(f.id)"
+                >
+                  {{ f.name }}
+                </v-chip>
+              </span>
             </td>
             <td class="text-right">{{ t.user_count }}</td>
             <td class="text-right">
@@ -85,9 +86,23 @@ defineEmits(['select'])
 const admin = useAdminStore()
 const loading = ref(false)
 
+const HEALTH_COLORS = { green: 'success', yellow: 'warning', red: 'error' }
+
+function feedColor(feedId) {
+  return HEALTH_COLORS[admin.feedsHealth[feedId]?.color] ?? 'default'
+}
+
+function feedTitle(feedId) {
+  const h = admin.feedsHealth[feedId]
+  if (!h) return 'Gesundheit unbekannt'
+  if (h.color === 'green') return `OK · ${h.track_count_recent} Tracks`
+  if (h.color === 'yellow') return 'Leerer Himmel (kein Traffic)'
+  return 'Feed inaktiv (kein Heartbeat)'
+}
+
 async function refresh() {
   loading.value = true
-  await admin.loadOverview()
+  await Promise.all([admin.loadOverview(), admin.loadFeedsHealth()])
   loading.value = false
 }
 

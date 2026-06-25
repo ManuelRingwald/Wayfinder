@@ -63,6 +63,15 @@ func (h *FeedHealth) statusLocked(now time.Time) Status {
 	}
 }
 
+// LastHeartbeat returns the wall-clock time of the most recent heartbeat and
+// whether any heartbeat has been seen. Used by the per-feed health registry
+// to compute last_heartbeat_ago for the admin dashboard (AP4).
+func (h *FeedHealth) LastHeartbeat() (t time.Time, ok bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.lastHeartbeat, h.everSeen
+}
+
 // Observe returns the current status and whether it changed since the last call
 // to Observe — used to broadcast a feed-status update only on a transition
 // (first heartbeat, ok→stale, stale→ok) instead of on every tick.

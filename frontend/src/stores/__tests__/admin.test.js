@@ -431,3 +431,49 @@ describe('admin store — tenant dashboard (AP3)', () => {
     expect(JSON.parse(put.body)).toEqual({ enabled: true })
   })
 })
+
+// --- AP4: feed health ---------------------------------------------------------
+
+describe('admin store — feed health (AP4)', () => {
+  it('loadFeedsHealth stores health by feed_id key', async () => {
+    const payload = [
+      { feed_id: 1, color: 'green', stale: false, ever_seen: true, last_heartbeat_ago_s: 0.5, track_count_recent: 3 },
+      { feed_id: 2, color: 'yellow', stale: false, ever_seen: true, last_heartbeat_ago_s: 1.2, track_count_recent: 0 },
+    ]
+    installFetch({ 'GET /api/admin/feeds/health': { status: 200, body: payload } })
+    const s = useAdminStore()
+    const r = await s.loadFeedsHealth()
+    expect(r.ok).toBe(true)
+    expect(s.feedsHealth[1].color).toBe('green')
+    expect(s.feedsHealth[2].color).toBe('yellow')
+    expect(s.feedsHealth[1].track_count_recent).toBe(3)
+  })
+
+  it('loadFeedsHealth with stale feed stores red', async () => {
+    const payload = [{ feed_id: 7, color: 'red', stale: true, ever_seen: true, last_heartbeat_ago_s: 10, track_count_recent: 0 }]
+    installFetch({ 'GET /api/admin/feeds/health': { status: 200, body: payload } })
+    const s = useAdminStore()
+    await s.loadFeedsHealth()
+    expect(s.feedsHealth[7].color).toBe('red')
+    expect(s.feedsHealth[7].stale).toBe(true)
+  })
+
+  it('loadFeedsHealth with empty list clears map', async () => {
+    installFetch({ 'GET /api/admin/feeds/health': { status: 200, body: [] } })
+    const s = useAdminStore()
+    // pre-seed stale data
+    s.feedsHealth[1] = { color: 'green' }
+    await s.loadFeedsHealth()
+    expect(Object.keys(s.feedsHealth).length).toBe(0)
+  })
+
+  it('loadFeedsHealth on error does not clear existing data', async () => {
+    installFetch({ 'GET /api/admin/feeds/health': { status: 503 } })
+    const s = useAdminStore()
+    s.feedsHealth[1] = { color: 'green' }
+    const r = await s.loadFeedsHealth()
+    expect(r.ok).toBe(false)
+    // existing data untouched on error
+    expect(s.feedsHealth[1]).toBeDefined()
+  })
+})
