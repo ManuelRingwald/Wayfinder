@@ -704,6 +704,11 @@ type feedHealthDTO struct {
 	EverSeen          bool    `json:"ever_seen"`
 	LastHeartbeatAgoS float64 `json:"last_heartbeat_ago_s"` // negative if never seen
 	TrackCountRecent  int64   `json:"track_count_recent"`
+	// SensorsActive and SensorsTotal are 0 until CAT063 sensor-status messages
+	// arrive (Firefly issue #32). A non-zero SensorsTotal with SensorsActive <
+	// SensorsTotal drives Color "yellow" (degraded fusion).
+	SensorsActive int `json:"sensors_active"`
+	SensorsTotal  int `json:"sensors_total"`
 }
 
 // getFeedsHealth returns the current health state for every known feed.
@@ -731,6 +736,8 @@ func (h *Handler) getFeedsHealth(w http.ResponseWriter, r *http.Request) {
 			EverSeen:          s.EverSeen,
 			LastHeartbeatAgoS: s.LastHeartbeatAgoS,
 			TrackCountRecent:  s.TrackCountRecent,
+			SensorsActive:     s.SensorsActive,
+			SensorsTotal:      s.SensorsTotal,
 		}
 	}
 	writeJSON(w, http.StatusOK, out)

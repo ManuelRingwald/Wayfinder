@@ -95,8 +95,16 @@ function feedColor(feedId) {
 function feedTitle(feedId) {
   const h = admin.feedsHealth[feedId]
   if (!h) return 'Gesundheit unbekannt'
-  if (h.color === 'green') return `OK · ${h.track_count_recent} Tracks`
-  if (h.color === 'yellow') return 'Leerer Himmel (kein Traffic)'
+  if (h.color === 'green') {
+    return h.track_count_recent > 0
+      ? `OK · ${h.track_count_recent} Tracks`
+      : 'OK · leerer Himmel'
+  }
+  if (h.color === 'yellow') {
+    return h.sensors_total > 0
+      ? `Sensor-Teilausfall: ${h.sensors_active} von ${h.sensors_total} Radaren aktiv`
+      : 'Sensor-Teilausfall'
+  }
   return 'Feed inaktiv (kein Heartbeat)'
 }
 

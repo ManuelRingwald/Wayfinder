@@ -866,10 +866,13 @@ func TestGetFeedsHealthNilSourceReturnsEmpty(t *testing.T) {
 }
 
 func TestGetFeedsHealthReturnsColorAndFields(t *testing.T) {
-	ff := fakeFeeds{list: []store.Feed{{ID: 1, Name: "Berlin"}, {ID: 2, Name: "Vienna"}}}
+	ff := fakeFeeds{list: []store.Feed{{ID: 1, Name: "Berlin"}, {ID: 2, Name: "Vienna"}, {ID: 3, Name: "Paris"}}}
 	fh := &fakeFeedHealth{snaps: map[int64]health.FeedSnapshot{
 		1: {EverSeen: true, Stale: false, LastHeartbeatAgoS: 0.5, TrackCountRecent: 3},
+		// Feed 2: empty sky (no tracks) — green, not yellow (leerer Himmel is not a warning).
 		2: {EverSeen: true, Stale: false, LastHeartbeatAgoS: 1.0, TrackCountRecent: 0},
+		// Feed 3: sensor fusion degraded (2 of 3 radars active) — yellow.
+		3: {EverSeen: true, Stale: false, LastHeartbeatAgoS: 0.8, TrackCountRecent: 4, SensorsActive: 2, SensorsTotal: 3},
 	}}
 	h := handlerForHealth(ff, fh)
 	rec := httptest.NewRecorder()
@@ -881,16 +884,23 @@ func TestGetFeedsHealthReturnsColorAndFields(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if len(got) != 2 {
-		t.Fatalf("got %d items, want 2", len(got))
+	if len(got) != 3 {
+		t.Fatalf("got %d items, want 3", len(got))
 	}
 	// Feed 1: has tracks → green.
 	if got[0].FeedID != 1 || got[0].Color != "green" {
 		t.Errorf("feed 1: got id=%d color=%q, want id=1 color=green", got[0].FeedID, got[0].Color)
 	}
-	// Feed 2: heartbeat but no tracks → yellow.
-	if got[1].FeedID != 2 || got[1].Color != "yellow" {
-		t.Errorf("feed 2: got id=%d color=%q, want id=2 color=yellow", got[1].FeedID, got[1].Color)
+	// Feed 2: empty sky (heartbeat healthy, 0 tracks) → green (not yellow).
+	if got[1].FeedID != 2 || got[1].Color != "green" {
+		t.Errorf("feed 2: got id=%d color=%q, want id=2 color=green (empty sky)", got[1].FeedID, got[1].Color)
+	}
+	// Feed 3: degraded sensor fusion (2/3 radars) → yellow.
+	if got[2].FeedID != 3 || got[2].Color != "yellow" {
+		t.Errorf("feed 3: got id=%d color=%q, want id=3 color=yellow (degraded)", got[2].FeedID, got[2].Color)
+	}
+	if got[2].SensorsActive != 2 || got[2].SensorsTotal != 3 {
+		t.Errorf("feed 3 sensors: got active=%d total=%d, want active=2 total=3", got[2].SensorsActive, got[2].SensorsTotal)
 	}
 }
 

@@ -19,17 +19,24 @@ type FeedSnapshot struct {
 	Stale             bool
 	LastHeartbeatAgoS float64 // seconds since last heartbeat; negative if never seen
 	TrackCountRecent  int64   // size of the most recently received CAT062 block
+
+	// SensorsTotal and SensorsActive are populated once CAT063 sensor-status
+	// messages are decoded (Firefly issue #32 / WF-1). Until then both are zero
+	// ("unknown") and Color() never returns "yellow".
+	SensorsTotal  int
+	SensorsActive int
 }
 
 // Color returns the display colour for this feed:
 //   - "red":    no heartbeat (stale or never seen)
-//   - "yellow": operational but no recent tracks (empty sky)
-//   - "green":  operational with tracks arriving
+//   - "yellow": heartbeat healthy but degraded fusion — at least one configured
+//     sensor is silent (0 < SensorsActive < SensorsTotal, requires CAT063)
+//   - "green":  heartbeat healthy (empty sky counts as green, not yellow)
 func (s FeedSnapshot) Color() string {
 	if !s.EverSeen || s.Stale {
 		return "red"
 	}
-	if s.TrackCountRecent == 0 {
+	if s.SensorsTotal > 0 && s.SensorsActive < s.SensorsTotal {
 		return "yellow"
 	}
 	return "green"

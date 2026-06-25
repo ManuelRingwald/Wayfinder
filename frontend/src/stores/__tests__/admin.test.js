@@ -436,17 +436,29 @@ describe('admin store — tenant dashboard (AP3)', () => {
 
 describe('admin store — feed health (AP4)', () => {
   it('loadFeedsHealth stores health by feed_id key', async () => {
+    // Feed 2 is green with 0 tracks (empty sky) — no longer yellow.
     const payload = [
-      { feed_id: 1, color: 'green', stale: false, ever_seen: true, last_heartbeat_ago_s: 0.5, track_count_recent: 3 },
-      { feed_id: 2, color: 'yellow', stale: false, ever_seen: true, last_heartbeat_ago_s: 1.2, track_count_recent: 0 },
+      { feed_id: 1, color: 'green', stale: false, ever_seen: true, last_heartbeat_ago_s: 0.5, track_count_recent: 3, sensors_active: 0, sensors_total: 0 },
+      { feed_id: 2, color: 'green', stale: false, ever_seen: true, last_heartbeat_ago_s: 1.2, track_count_recent: 0, sensors_active: 0, sensors_total: 0 },
     ]
     installFetch({ 'GET /api/admin/feeds/health': { status: 200, body: payload } })
     const s = useAdminStore()
     const r = await s.loadFeedsHealth()
     expect(r.ok).toBe(true)
     expect(s.feedsHealth[1].color).toBe('green')
-    expect(s.feedsHealth[2].color).toBe('yellow')
+    expect(s.feedsHealth[2].color).toBe('green')
     expect(s.feedsHealth[1].track_count_recent).toBe(3)
+  })
+
+  it('loadFeedsHealth with degraded sensors stores yellow', async () => {
+    // Yellow = sensor fusion degraded (CAT063 data, Firefly issue #32).
+    const payload = [{ feed_id: 5, color: 'yellow', stale: false, ever_seen: true, last_heartbeat_ago_s: 0.8, track_count_recent: 2, sensors_active: 2, sensors_total: 3 }]
+    installFetch({ 'GET /api/admin/feeds/health': { status: 200, body: payload } })
+    const s = useAdminStore()
+    await s.loadFeedsHealth()
+    expect(s.feedsHealth[5].color).toBe('yellow')
+    expect(s.feedsHealth[5].sensors_active).toBe(2)
+    expect(s.feedsHealth[5].sensors_total).toBe(3)
   })
 
   it('loadFeedsHealth with stale feed stores red', async () => {
