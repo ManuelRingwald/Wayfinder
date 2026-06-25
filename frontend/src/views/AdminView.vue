@@ -104,6 +104,7 @@
           <v-tab value="view">Ansicht</v-tab>
           <v-tab value="subs">Abos &amp; Feeds</v-tab>
           <v-tab v-if="admin.isAdmin" value="provisioning">Provisioning</v-tab>
+          <v-tab v-if="admin.isAdmin" value="users">Zugänge</v-tab>
         </v-tabs>
 
         <v-window v-model="tab">
@@ -115,6 +116,9 @@
           </v-window-item>
           <v-window-item v-if="admin.isAdmin" value="provisioning">
             <AdminProvisioning />
+          </v-window-item>
+          <v-window-item v-if="admin.isAdmin" value="users">
+            <AdminUsers />
           </v-window-item>
         </v-window>
       </template>
@@ -128,6 +132,7 @@ import { useAdminStore } from '@/stores/admin.js'
 import AdminViewConfig from '@/components/admin/AdminViewConfig.vue'
 import AdminSubscriptions from '@/components/admin/AdminSubscriptions.vue'
 import AdminProvisioning from '@/components/admin/AdminProvisioning.vue'
+import AdminUsers from '@/components/admin/AdminUsers.vue'
 
 const admin = useAdminStore()
 const tab = ref('view')

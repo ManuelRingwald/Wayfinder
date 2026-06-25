@@ -198,7 +198,11 @@ Durch `authMiddleware` geschützt (wenn `WAYFINDER_AUTH_TOKEN` gesetzt).
 | `/api/navaids` | GET | VOR/NDB-Beacons (GeoJSON, best-effort) |
 | `/api/waypoints` | GET | Wegpunkte (GeoJSON, best-effort) |
 | `/api/admin/whoami` | GET | Rollen-Probe + **effektive Feature-Flags** (`features`) als JSON; rollen-gegated (WF2-32/50) |
-| `/api/admin/tenants/{id}/entitlements[/{key}]` | GET/PUT | Feature-Entitlements pro Mandant; **super_admin** (WF2-50) |
+| `/api/admin/tenants/{id}/entitlements[/{key}]` | GET/PUT | Feature-Entitlements pro Mandant; **admin** (WF2-50) |
+| `/api/admin/tenants/{id}/users` | GET/POST | Zugänge eines Mandanten auflisten / anlegen (AP6); **admin**. POST `{subject, email?, password?}` → 201; Rolle immer `user`; Passwort min. 8 Zeichen; doppelter Subject → 409 |
+| `/api/admin/tenants/{id}/users/{uid}` | PATCH/DELETE | Zugang pausieren/reaktivieren (`{status:"active"\|"paused"}`) bzw. löschen (AP6); **admin**. User-ID aus fremdem Mandanten → 404 |
+| `/api/admin/tenants/{id}/users/{uid}/password` | PUT | Passwort setzen/zurücksetzen (`{password}`, min. 8) (AP6); **admin** |
+| `/api/admin/tenants/{id}` | PATCH | Mandant pausieren/reaktivieren (`{status}`); kaskadiert via Login-Enforcement auf alle Zugänge (AP6); **admin** |
 | `/api/admin/sensor-classes` | GET | Sensorklassen-Katalog (read-only Referenz, WF2-41) |
 | `/api/admin/impersonation` | GET/POST/DELETE | Cross-Tenant Read-Only-Impersonation (ADR 0008): **GET** liefert den aktuellen Status (`{active, tenant_id}`) für den Banner (Reload-fest, da der Cookie HttpOnly ist); **POST** `{"tenant_id":…}` mintet den signierten Grant-Cookie (`super_admin` only, Ziel-Mandant muss existieren → sonst 404); **DELETE** beendet sie (Cookie löschen). Nur aktiv, wenn ein Signing-Key (`WAYFINDER_SESSION_KEY`) konfiguriert ist. |
 | `/api/admin/*` | div. | Tenant-skopiertes Admin-API (WF2-31/31b); rollen-gegated |
@@ -450,6 +454,24 @@ in-handler `requireSuper` (`Identity.Role == super_admin`, sonst `403`) — die
 einzige cross-tenant-schreibende Rolle (Billing-/Entitlement-Grenze). Validierung:
 Ziel-Tenant/Feed müssen existieren (`404`), Body/Pfad-IDs wohlgeformt (`400`);
 Grant/Revoke idempotent (`204`). Der Config-Cache (WF2-30) folgt später.
+
+**Zugangs-Verwaltung (AP6, ADR 0009):** Der `admin` provisioniert und sperrt
+**Zugänge** (Login-Konten, Rolle `user`) pro Mandant und pausiert ganze Mandanten
+— alles cross-tenant hinter `requireAdmin` (`pkg/adminapi/adminapi_users.go`):
+`GET/POST /api/admin/tenants/{id}/users`, `PATCH/DELETE …/users/{uid}`,
+`PUT …/users/{uid}/password`, `PATCH /api/admin/tenants/{id}` (Mandant-Status).
+Neue Konten sind **immer** Rolle `user` (Plattform-Admins kommen über
+`bootstrap`); Passwort min. 8 Zeichen; doppelter Subject → `409`; eine User-ID
+aus einem fremden Mandanten → `404` (die Ressourcen-Hierarchie bleibt ehrlich).
+**Login-Enforcement (`pkg/tenant/login.go`, fail-closed):** ein **pausierter
+Zugang** (`users.status='paused'`) — oder ein Zugang unter einem **pausierten
+Mandanten** (`tenants.status='paused'`) — wird beim Login mit demselben
+generischen `401` abgewiesen wie ein falsches Passwort (keine paused/active-
+Enumeration, Timing-uniform; ein Tenant-Lookup-Fehler gilt als suspendiert). Die
+**Sofort-Wirkung auf bereits laufende Sessions** ist bewusst **AP7**
+(Session-Registry) — AP6 sperrt nur **neue** Anmeldungen. Schema:
+`00005_user_status.sql` (`users.status`, CHECK `active|paused`, Default `active`,
+nicht-breaking); Mandanten-Pause nutzt das vorhandene `tenants.status`.
 
 **Multi-Feed-Empfang (WF2-20.2):** der `feeds`-Katalog (DB) treibt **N Receiver**
 (einer je Feed, je `feed_id` aus 20.1). `cmd/wayfinder/feeds.go`: `resolveFeeds`

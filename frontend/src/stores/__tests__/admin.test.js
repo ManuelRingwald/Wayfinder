@@ -208,3 +208,81 @@ describe('admin store — provisioning', () => {
     expect(s.error).toBe('admin required')
   })
 })
+
+describe('admin store — access management (AP6)', () => {
+  it('loadTenantUsers GETs the tenant users endpoint without storing globally', async () => {
+    const calls = installFetch({
+      'GET /api/admin/tenants/42/users': {
+        status: 200,
+        body: [{ id: 1, subject: 'alice', role: 'user', status: 'active' }],
+      },
+    })
+    const s = useAdminStore()
+    const r = await s.loadTenantUsers(42)
+    expect(r.ok).toBe(true)
+    expect(r.data[0].subject).toBe('alice')
+    expect(calls[0].url).toBe('/api/admin/tenants/42/users')
+  })
+
+  it('createUser POSTs the payload and sets a success notice', async () => {
+    const calls = installFetch({
+      'POST /api/admin/tenants/42/users': { status: 201, body: { id: 7, subject: 'bob', role: 'user', status: 'active' } },
+    })
+    const s = useAdminStore()
+    const r = await s.createUser(42, { subject: 'bob', password: 'hunter2!!' })
+    expect(r.ok).toBe(true)
+    const post = calls.find((c) => c.method === 'POST')
+    expect(post.url).toBe('/api/admin/tenants/42/users')
+    expect(JSON.parse(post.body)).toEqual({ subject: 'bob', password: 'hunter2!!' })
+    expect(s.notice).toMatch(/angelegt/)
+  })
+
+  it('createUser surfaces a 409 duplicate error', async () => {
+    installFetch({ 'POST /api/admin/tenants/42/users': { status: 409, body: { error: 'subject already exists' } } })
+    const s = useAdminStore()
+    const r = await s.createUser(42, { subject: 'taken' })
+    expect(r.ok).toBe(false)
+    expect(s.error).toBe('subject already exists')
+  })
+
+  it('setUserStatus PATCHes the user with the new status', async () => {
+    const calls = installFetch({ 'PATCH /api/admin/tenants/42/users/7': { status: 204 } })
+    const s = useAdminStore()
+    const r = await s.setUserStatus(42, 7, 'paused')
+    expect(r.ok).toBe(true)
+    const patch = calls.find((c) => c.method === 'PATCH')
+    expect(patch.url).toBe('/api/admin/tenants/42/users/7')
+    expect(JSON.parse(patch.body)).toEqual({ status: 'paused' })
+    expect(s.notice).toMatch(/pausiert/)
+  })
+
+  it('deleteUser DELETEs the user', async () => {
+    const calls = installFetch({ 'DELETE /api/admin/tenants/42/users/7': { status: 204 } })
+    const s = useAdminStore()
+    const r = await s.deleteUser(42, 7)
+    expect(r.ok).toBe(true)
+    expect(calls[0].url).toBe('/api/admin/tenants/42/users/7')
+    expect(calls[0].method).toBe('DELETE')
+  })
+
+  it('setUserPassword PUTs the new password', async () => {
+    const calls = installFetch({ 'PUT /api/admin/tenants/42/users/7/password': { status: 204 } })
+    const s = useAdminStore()
+    const r = await s.setUserPassword(42, 7, 'newsecret1')
+    expect(r.ok).toBe(true)
+    const put = calls.find((c) => c.method === 'PUT')
+    expect(put.url).toBe('/api/admin/tenants/42/users/7/password')
+    expect(JSON.parse(put.body)).toEqual({ password: 'newsecret1' })
+  })
+
+  it('setTenantStatus PATCHes the tenant and notes the mode', async () => {
+    const calls = installFetch({ 'PATCH /api/admin/tenants/42': { status: 204 } })
+    const s = useAdminStore()
+    const r = await s.setTenantStatus(42, 'paused')
+    expect(r.ok).toBe(true)
+    const patch = calls.find((c) => c.method === 'PATCH')
+    expect(patch.url).toBe('/api/admin/tenants/42')
+    expect(JSON.parse(patch.body)).toEqual({ status: 'paused' })
+    expect(s.notice).toMatch(/Mandant pausiert/)
+  })
+})
