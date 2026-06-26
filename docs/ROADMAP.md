@@ -234,6 +234,94 @@ Details & Begründung: Konzept §7/§8.
 | **WF2-41** | Feed-Sensorklassen-Katalog & Entitlements (Feed-Metadaten; Abos binden an Feeds) | **S3 · Sonnet 4.6** | WF2-20, WF2-50 | ✅ **erledigt** (`pkg/sensorclass`: kontrolliertes Vokabular + Legacy-Kanonisierung, am `FeedRepo.Create`-Chokepoint erzwungen; `multi_feed`-Grant-Gate → 409 fail-early, harte Invariante; `GET /api/admin/sensor-classes`; real-PG-Tests) |
 | **WF2-42** | Cross-Project-Issue an Firefly: echte Per-Track-Provenienz (FLARM-Diskriminator) = ICD-Änderung | **S2 · Sonnet 4.6** | WF2-40 | ✅ **erledigt** (Issue [Firefly #30](https://github.com/manuelringwald/firefly/issues/30) `from-wayfinder` angelegt: ICD-v2.5.0-Vorschlag `provenance`-Enum + `source_ages`; Ball bei Firefly — siehe §3) |
 
+### Stufe 6 — Mandanten-eigene Tracker-Instanzen & Auto-Orchestrierung (Epic ORCH)
+
+> **Betreiber-Entscheidung (2026-06-26):** Sensor-Trennung pro Mandant wird
+> **nicht** in Wayfinder per Track-Heuristik gelöst, sondern über **eine
+> dedizierte Firefly-Instanz pro Mandant** (vormals „Option A"). Leitprinzip:
+> **Firefly/SDPS bleibt ein autonomer, generischer Tracker** (wie ein echter
+> EUROCONTROL-ARTAS) — **keine** Wayfinder-Spezialfälle, keine Mandanten-Kenntnis.
+> Jede mandanten-/anwendungs-spezifische Logik bleibt in Wayfinder. Wayfinder
+> wird damit zusätzlich zum **Orchestrator**: das Zuordnen eines Feeds zu einem
+> Mandanten startet automatisch die passende Firefly-Instanz.
+>
+> **Was bereits steht (unverändert gültig):**
+>
+> | Dimension | Ist-Stand |
+> |-----------|-----------|
+> | AOI + Radius (NM) + FL-Band pro Mandant | ✅ `view_configs`, serverseitige Filterung WF2-21.2 |
+> | OpenAIP-Airspaces AOI-scoped pro Mandant | ✅ ONB-6 (eigener API-Key + AOI-Cache) |
+> | Feature-Toggles (`airspaces`, `history_dots` …) | ✅ AP2/WF2-50 |
+> | Beliebig viele isolierte Mandanten (Feed-Scope + AOI + FL) | ✅ fail-closed, property-getestet |
+> | Feed-Katalog (Multicast-Gruppe/Port, Sensor-Mix) + Zuweisung | ✅ ONB-5 |
+> | Live-Join/-Leave Receiver beim Feed-Anlegen/-Löschen | ✅ ONB-5 (`pkg/feedmanager`) |
+>
+> Mit **Option A** löst sich die Sensor-Trennung **an der Quelle** auf: bekommt
+> Speyers Firefly nur ADS-B, produziert sie nur ADS-B-abgeleitete Tracks. Es
+> braucht **keinen** Wayfinder-seitigen Per-Track-Sensorfilter mehr (frühere
+> „Option B/C" damit **verworfen** — siehe unten).
+>
+> **Einwand/Empfehlung zur AOI-Frage (Firefly vs. Wayfinder) — bewusst getrennt:**
+> Es gibt **zwei verschiedene** geografische Begriffe, die nicht verwechselt
+> werden dürfen:
+> 1. **Coverage-/Quell-Eingrenzung in Firefly** (z. B. die OpenSky-BBox-Abfrage):
+>    Diese gehört **legitim nach Firefly** — man kann/soll nicht „ganz Europa" für
+>    einen Speyer-Mandanten von OpenSky ziehen; jede begrenzte ADS-B-Quelle hat
+>    eine BBox, ARTAS hat ein definiertes Coverage-Volumen. **Das ist generische
+>    Tracker-Konfiguration, kein Wayfinder-Spezialfall** — jeder ASD-Betreiber
+>    würde Firefly so konfigurieren. → erlaubt.
+> 2. **Maßgebliche Anzeige-/Isolations-AOI in Wayfinder** (Kreis + Radius + FL,
+>    live verstellbar, Billing-/Sicherheits-Grenze): bleibt **autoritativ in
+>    Wayfinder** (WF2-21.2). → unverändert.
+>
+> **Fazit:** Firefly bekommt eine **grobe äußere** Coverage-BBox (als generische
+> Quell-Konfig, von Wayfinder beim Provisionieren aus der Mandanten-AOI + Marge
+> abgeleitet); Wayfinder behält den **präzisen inneren** AOI/FL-Filter. Coarse-
+> outer-bound vs. precise-inner-filter — komplementär, defense-in-depth, **keine**
+> doppelte Logik und **keine** Tenant-Kenntnis in Firefly.
+>
+> **ADS-B-Quelle (Vorschlag, anwenderfreundlich + erweiterbar):** Firefly bekommt
+> generische **Input-Adapter** (Ports & Adapters, passend zu Fireflys eigener
+> Architektur). Erster Adapter `adsb_opensky`: pollt die **OpenSky-REST-API**
+> `/states/all?lamin&lomin&lamax&lomax` (~5–10 s, Auth via Client-Credentials),
+> wandelt jeden State-Vector (icao24/callsign/lat/lon/alt/velocity/track) in einen
+> Firefly-Plot → Tracker → CAT062. Weitere Adapter später ohne Architektur-Bruch:
+> `adsb_beast` (dump1090), `flarm_aprs` (OGN), `radar_asterix_cat048/cat001`
+> (echtes Radar, = Fireflys SDPS-001 #19). **Die Adapter sind generisch** und
+> nützen jedem ASD — daher Firefly-Arbeit, kein Wayfinder-Import.
+>
+> **Orchestrierungs-Architektur (Wayfinder):** Der **Feed** ist die natürliche
+> Lebenszyklus-Einheit (1 Feed = 1 Multicast-Gruppe = 1 Firefly-Instanz; im
+> Regelfall ist ein Feed einem Mandanten gewidmet → „1 Firefly pro Mandant").
+> Ein **Reconciler** (Operator-Muster) hält Soll = Ist: Feed hat ≥ 1 aktives Abo
+> → genau eine Firefly-Instanz läuft mit dessen Quell-/Coverage-Konfig; Feed
+> wird idle/gelöscht → Instanz wird abgebaut. Ziel über eine **`InstanceBackend`-
+> Abstraktion**: Docker (lokal/Dev) zuerst, **Kubernetes** (Prod, skaliert) später.
+>
+> **🔒 Sicherheits-Leitplanke (kritisch):** Prozesse/Container starten = neue
+> Privilegien (Docker-Socket / K8s-API). Dieser **Control-Plane-Teil läuft
+> getrennt** vom browser-/WS-zugewandten Prozess und mit **Least-Privilege** —
+> der Internet-Rand darf **nie** direkt Container starten. Eigener ADR, eigene
+> Vertrauensgrenze (vgl. CLAUDE.md §7).
+
+| AP | Inhalt | Stufe · Modell | Abh. | Status |
+|----|--------|----------------|------|--------|
+| **ORCH-0** 🔒 | **ADR 0012** „Mandanten-eigene Tracker-Instanzen & Auto-Orchestrierung" — ratifiziert Option A, Firefly-Autonomie (Ports & Adapters, keine Tenant-Kenntnis), Coverage-BBox-in-Firefly vs. autoritative-AOI-in-Wayfinder, `InstanceBackend` (Docker→K8s), Reconciler-Lebenszyklus am Feed, Sicherheits-/Control-Plane-Grenze | **S4 · Opus 4.8** | — | ⏳ offen — **nächster Schritt (Entwurf zur Freigabe)** |
+| **ORCH-1** | **Feed-Quell-Datenmodell (Wayfinder):** Feed bekommt `source_config` (erweiterbare Quell-Liste: `adsb_opensky` mit BBox + Cred-Ref, `flarm_aprs`, `radar_asterix` mit SIC/SAC + Endpoint) + abgeleitete `coverage_bbox`; Migration, Admin-API, UI-Quell-Builder (BBox-Vorschlag aus Mandanten-AOI + Marge) | **S3–S4 · Sonnet 4.6 / Opus 4.8** | ORCH-0 | ⏳ offen |
+| **ORCH-2** 🔒 | **`InstanceBackend`-Abstraktion (Wayfinder):** Interface `Start/Stop/Status` (idempotent), **Docker-Adapter** (lokal/Dev) zuerst; läuft als **separater Control-Plane-Prozess** mit Least-Privilege, **nicht** im browser-zugewandten Server; Multicast-Gruppen-/Port-Allokation kollisionsfrei | **S4–S5 · Opus 4.8 / Fable 5** | ORCH-0 | ⏳ offen |
+| **ORCH-3** 🔒 | **Reconciler (Wayfinder):** Soll-aus-Feed-Aktivität (≥ 1 Abo → 1 Instanz mit Quell-/Coverage-Konfig; idle → Abbau); idempotente Reconcile-Schleife, Crash-Recovery, Orphan-Cleanup; Instanz-Identität ↔ `feed_id` | **S4–S5 · Opus 4.8 / Fable 5** | ORCH-1, ORCH-2 | ⏳ offen |
+| **ORCH-4** | **Orchestrierungs-UX (Wayfinder):** „Feed zuweisen → Instanz startet" sichtbar gemacht — Instanz-Status-Chip (provisioning/running/failed) je Mandant/Feed, Start/Stop-Steuerung, Anbindung an die bestehende Feed-Health (AP4) | **S3 · Sonnet 4.6** | ORCH-3 | ⏳ offen |
+| **ORCH-5** | **Cross-Project (Firefly): generische Live-Quell-Ingestion** — `SourceAdapter`-Input-Ports (`adsb_opensky` REST/Stream, `flarm_aprs`, echtes Radar CAT048/CAT001 = SDPS-001 #19), Coverage-BBox-Konfig, alles via Env/Config, **null Wayfinder-Kopplung**. Überwiegend Firefly-Arbeit; `from-wayfinder`-Issue + Abstimmung | **S5 · Fable 5 / Opus 4.8** | ORCH-0 | ⏳ offen (Firefly-Ball) |
+| **ORCH-6** 🔒 | **Skalierung & HA:** K8s-`InstanceBackend`, Resource-Requests/Limits, Autoscaling, Secret-Management (OpenSky-/Quell-Credentials je Feed); koppelt an WF2-52/53 | **S4–S5 · Opus 4.8 / Fable 5** | ORCH-3, WF2-52 | ⏳ offen |
+
+> **Verworfen mit dieser Entscheidung:** der frühere Wayfinder-seitige
+> Per-Track-Sensorfilter („Option B", `sensor_filter` auf dem Abo + Go-Port von
+> `trackProvenance()`) und die ICD-`source_type`-Erweiterung („Option C") — beide
+> sind durch Option A (Sensor-Trennung an der Quelle) gegenstandslos und würden
+> Heuristik bzw. Schnittstellen-Last ohne Mehrwert einführen. Die reine
+> **Feed-UX-Verbesserung** (Sensor-Mix als Checkboxen statt Freitext, Default-
+> Template-Button) bleibt sinnvoll und wandert als kleines Paket in ORCH-1.
+
 ### Stufe 5 — Monetarisierung & HA-Betrieb (optional / zuletzt)
 | AP | Inhalt | Stufe · Modell | Abh. | Status |
 |----|--------|----------------|------|--------|
