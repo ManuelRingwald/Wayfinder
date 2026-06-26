@@ -65,6 +65,35 @@ func (r *FeedRepo) GetByID(ctx context.Context, id int64) (Feed, error) {
 	return f, nil
 }
 
+// GetByName returns the feed with the given name, or ErrNotFound. Feed names are
+// unique (migration 00008); the admin API uses this for a clean duplicate-name
+// pre-check (409) before Create, the DB constraint remaining the race backstop.
+func (r *FeedRepo) GetByName(ctx context.Context, name string) (Feed, error) {
+	const q = `SELECT ` + feedColumns + ` FROM feeds WHERE name = $1`
+	f, err := scanFeed(r.db.QueryRow(ctx, q, name))
+	if err != nil {
+		return Feed{}, wrap("get feed by name", err)
+	}
+	return f, nil
+}
+
+// Delete removes a feed from the catalogue. Subscriptions referencing it are
+// removed by the ON DELETE CASCADE on subscriptions.feed_id (migration 00001),
+// so the delete is atomic without an explicit transaction. A missing row yields
+// ErrNotFound. The live receiver for this feed is stopped separately by the feed
+// manager (ONB-5); this repo only owns the catalogue row.
+func (r *FeedRepo) Delete(ctx context.Context, id int64) error {
+	const q = `DELETE FROM feeds WHERE id = $1`
+	tag, err := r.db.Exec(ctx, q, id)
+	if err != nil {
+		return wrap("delete feed", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // List returns all feeds ordered by id.
 func (r *FeedRepo) List(ctx context.Context) ([]Feed, error) {
 	const q = `SELECT ` + feedColumns + ` FROM feeds ORDER BY id`

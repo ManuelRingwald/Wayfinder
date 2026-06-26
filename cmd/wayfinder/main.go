@@ -31,10 +31,10 @@ import (
 	"github.com/manuelringwald/wayfinder/pkg/cat065"
 	"github.com/manuelringwald/wayfinder/pkg/coverage"
 	"github.com/manuelringwald/wayfinder/pkg/feature"
+	"github.com/manuelringwald/wayfinder/pkg/feedmanager"
 	"github.com/manuelringwald/wayfinder/pkg/health"
 	"github.com/manuelringwald/wayfinder/pkg/impersonation"
 	"github.com/manuelringwald/wayfinder/pkg/metrics"
-	"github.com/manuelringwald/wayfinder/pkg/receiver"
 	"github.com/manuelringwald/wayfinder/pkg/store"
 	"github.com/manuelringwald/wayfinder/pkg/tenant"
 	"github.com/manuelringwald/wayfinder/pkg/ws"
@@ -196,58 +196,46 @@ func main() {
 	feeds := resolveFeeds(catalogue, cfg)
 	logger.Info("feeds resolved", slog.Int("count", len(feeds)))
 
-	// One receiver per feed; each stamps its feed_id onto decoded tracks.
-	recvs, err := buildReceivers(feeds, logger, trackHandler, statusHandler, sensorStatusHandler)
-	if err != nil {
-		logger.Error("create receivers", slog.String("error", err.Error()))
-		os.Exit(1)
-	}
-
-	// Join each feed. A feed that fails to listen is logged and skipped so one
-	// misconfigured feed doesn't take down the others; if none can join, fatal.
-	var listening []*receiver.Receiver
-	for i, r := range recvs {
-		if err := r.Listen(); err != nil {
-			logger.Error("feed listen failed",
-				slog.Int64("feed_id", feeds[i].ID),
-				slog.String("group", feeds[i].Group),
-				slog.Int("port", feeds[i].Port),
-				slog.String("error", err.Error()))
-			continue
-		}
-		listening = append(listening, r)
-	}
-	if len(listening) == 0 {
-		logger.Error("no feeds could be joined")
-		os.Exit(1)
-	}
-	for _, r := range listening {
-		defer r.Close()
-	}
-
-	// Graceful shutdown on SIGTERM/SIGINT.
+	// Graceful shutdown on SIGTERM/SIGINT. Created before the feed manager so every
+	// receiver is a child of this context (cancel → all feeds leave their groups).
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	// Run receivers and broadcaster in parallel.
-	var wg sync.WaitGroup
+	// Process-wide, churn-stable decode-error counter (ONB-5): receivers come and go
+	// as feeds are added/removed at runtime, so the /metrics counter is accumulated
+	// here rather than summed over the live receiver set (which would make the
+	// monotonic counter drop when a feed is deleted).
+	var decodeErrorCount atomic.Int64
 
-	// Receiver goroutines (one per joined feed).
-	for _, r := range listening {
-		wg.Add(1)
-		go func(r *receiver.Receiver) {
-			defer wg.Done()
-			if err := r.Run(ctx); err != nil && err != context.Canceled {
-				msg := err.Error()
-				lastError.Store(&msg)
-				logger.Error("receiver error", slog.String("error", err.Error()))
-				cancel()
-			}
-		}(r)
+	// Live feed manager (ONB-5, ADR 0011): supervises one receiver per feed and lets
+	// the admin API join/leave multicast groups at runtime without a restart. The
+	// factory wires the shared handlers and stamps each feed's id onto its tracks.
+	factory := newReceiverFactory(logger, trackHandler, statusHandler, sensorStatusHandler, func() { decodeErrorCount.Add(1) })
+	feedManager := feedmanager.New(ctx, factory, logger)
+
+	// Start the resolved feeds (DB catalogue or the ENV fallback). A feed that fails
+	// to join is logged and skipped so one misconfigured feed doesn't sink the
+	// others; if none can join, fatal. The manager owns the receiver goroutines and
+	// their clean teardown (StopAll on shutdown).
+	for _, f := range feeds {
+		if err := feedManager.Start(feedmanager.Feed{ID: f.ID, Name: f.Name, Group: f.Group, Port: f.Port}); err != nil {
+			logger.Error("feed start failed",
+				slog.Int64("feed_id", f.ID), slog.String("group", f.Group),
+				slog.Int("port", f.Port), slog.String("error", err.Error()))
+			continue
+		}
 	}
+	if len(feedManager.Running()) == 0 {
+		logger.Error("no feeds could be joined")
+		os.Exit(1)
+	}
+	defer feedManager.StopAll()
+
+	// Run the broadcaster in parallel with the manager-owned receivers.
+	var wg sync.WaitGroup
 
 	// Broadcaster goroutine.
 	wg.Add(1)
@@ -264,6 +252,8 @@ func main() {
 	// Monitor feed staleness: periodically re-evaluate each feed's heartbeat age
 	// and broadcast per-feed snapshots when the aggregate state changes (e.g.
 	// ok→stale or recovery). Covers the case where no traffic arrives at all.
+	// Iterates the *live* feed set (feedManager.Running) so feeds added or removed
+	// at runtime (ONB-5) are tracked without a restart.
 	go func() {
 		interval := cfg.FeedStaleTimeout / 3
 		if interval < 250*time.Millisecond {
@@ -278,8 +268,8 @@ func main() {
 			case <-ticker.C:
 				if _, changed := feedRegistry.Observe(time.Now()); changed {
 					now := time.Now()
-					for _, f := range feeds {
-						broadcastFeedSnapshot(f.ID, feedRegistry.Snapshot(f.ID, now))
+					for _, fid := range feedManager.Running() {
+						broadcastFeedSnapshot(fid, feedRegistry.Snapshot(fid, now))
 					}
 				}
 			}
@@ -297,14 +287,9 @@ func main() {
 		featSvc = feature.New(store.NewEntitlementRepo(dbPool), logger)
 	}
 
-	// Start health/readiness/metrics probe server.
-	decodeErrors := func() int64 {
-		var n int64
-		for _, r := range listening {
-			n += r.DecodeErrorCount()
-		}
-		return n
-	}
+	// Start health/readiness/metrics probe server. Decode errors are read from the
+	// process-wide counter (monotonic across feed churn, ONB-5).
+	decodeErrors := func() int64 { return decodeErrorCount.Load() }
 	go startProbeServer(logger, &blockCount, &trackCount, &tracksCurrent, &heartbeatCount, broadcaster, decodeErrors, feedRegistry, aeroService, &lastError, featSvc)
 
 	// Start WebSocket server.
@@ -390,8 +375,11 @@ func main() {
 		rescope := func(ctx context.Context, tenantID int64) {
 			rescopeTenant(ctx, broadcaster, subRepo, viewRepo, logger, tenantID)
 		}
+		// Feed lifecycle (ONB-5): the admin API joins/leaves multicast groups live
+		// via the feed manager, and forgets a deleted feed's health (adapter below).
+		feedLife := feedLifecycle{mgr: feedManager, registry: feedRegistry}
 		adminAPI := adminapi.New(viewRepo, subRepo, store.NewFeedRepo(dbPool), store.NewTenantRepo(dbPool),
-			store.NewUserRepo(dbPool), store.NewCredentialRepo(dbPool), featSvc, feedRegistry, logger, rescope)
+			store.NewUserRepo(dbPool), store.NewCredentialRepo(dbPool), featSvc, feedRegistry, feedLife, logger, rescope)
 		mux.Handle("/api/admin/", tenantMW(requireAdmin(adminAPI)))
 
 		// Cross-tenant read-only impersonation (ADR 0008, WF2-34): mint and clear

@@ -44,6 +44,29 @@ type SubscriptionStore interface {
 type FeedStore interface {
 	List(ctx context.Context) ([]store.Feed, error)
 	GetByID(ctx context.Context, id int64) (store.Feed, error)
+	// GetByName backs the duplicate-name pre-check on create (ONB-5); ErrNotFound
+	// means the name is free.
+	GetByName(ctx context.Context, name string) (store.Feed, error)
+	Create(ctx context.Context, name, multicastGroup string, port int, region *string, sensorMix []string) (store.Feed, error)
+	Delete(ctx context.Context, id int64) error
+}
+
+// FeedLifecycle starts and stops the live multicast receiver for a feed so a
+// catalogue change takes effect without a process restart (ONB-5, ADR 0011).
+// Satisfied in production by an adapter over the feed manager + health registry
+// (main.go). It is intentionally decoupled from the concrete receiver/manager
+// types (primitive params) so the admin API never imports the transport layer.
+// A nil lifecycle disables live-apply: the catalogue still changes, but the
+// running receiver set only follows on the next restart (single-tenant mode and
+// unit tests that do not exercise the live path).
+type FeedLifecycle interface {
+	// Start joins the multicast group for a newly catalogued feed. An error means
+	// the group could not be joined; the create handler then rolls the catalogue
+	// row back so a feed is never left half-created (catalogued but not receiving).
+	Start(id int64, name, group string, port int) error
+	// Stop leaves the multicast group for a deleted feed and releases its derived
+	// per-feed state (e.g. health). Returns whether a receiver was running.
+	Stop(id int64) bool
 }
 
 type TenantStore interface {
@@ -95,6 +118,7 @@ type Handler struct {
 	creds      CredentialStore
 	feats      EntitlementService
 	feedHealth FeedHealthSource // may be nil; AP4 health endpoint returns empty list
+	feedLife   FeedLifecycle    // may be nil; disables live receiver join/leave (ONB-5)
 	rescope    RescopeFunc
 	logger     *slog.Logger
 	mux        *http.ServeMux
@@ -104,8 +128,8 @@ type Handler struct {
 // the wrong method. The cross-tenant provisioning routes (/api/admin/tenants/…)
 // are additionally guarded by requireAdmin (defence-in-depth). rescope (may be
 // nil) re-scopes a tenant's live streams after a mutation (WF2-33).
-func New(views ViewStore, subs SubscriptionStore, feeds FeedStore, tenants TenantStore, users UserStore, creds CredentialStore, feats EntitlementService, feedHealth FeedHealthSource, logger *slog.Logger, rescope RescopeFunc) *Handler {
-	h := &Handler{views: views, subs: subs, feeds: feeds, tenants: tenants, users: users, creds: creds, feats: feats, feedHealth: feedHealth, rescope: rescope, logger: logger}
+func New(views ViewStore, subs SubscriptionStore, feeds FeedStore, tenants TenantStore, users UserStore, creds CredentialStore, feats EntitlementService, feedHealth FeedHealthSource, feedLife FeedLifecycle, logger *slog.Logger, rescope RescopeFunc) *Handler {
+	h := &Handler{views: views, subs: subs, feeds: feeds, tenants: tenants, users: users, creds: creds, feats: feats, feedHealth: feedHealth, feedLife: feedLife, rescope: rescope, logger: logger}
 	mux := http.NewServeMux()
 	// whoami: the SPA's role probe (WF2-32). It sits behind the same admin gate, so
 	// a 200 here both confirms access and tells the client which panels to render.
@@ -122,6 +146,12 @@ func New(views ViewStore, subs SubscriptionStore, feeds FeedStore, tenants Tenan
 	mux.HandleFunc("PUT /api/admin/view", h.putView)
 	mux.HandleFunc("GET /api/admin/subscriptions", h.getSubscriptions)
 	mux.HandleFunc("GET /api/admin/feeds", h.getFeeds)
+	// Feed lifecycle (ONB-5, ADR 0011): create and delete catalogue feeds from the
+	// UI; the live multicast receiver joins/leaves at once (no restart). Both are
+	// platform operations → requireAdmin. The more specific {feedID} delete pattern
+	// is distinct from the GET /api/admin/feeds/health route registered below.
+	mux.HandleFunc("POST /api/admin/feeds", h.requireAdmin(h.createFeed))
+	mux.HandleFunc("DELETE /api/admin/feeds/{feedID}", h.requireAdmin(h.deleteFeed))
 	// Read-only reference: the sensor-class catalogue (WF2-41).
 	mux.HandleFunc("GET /api/admin/sensor-classes", h.getSensorClasses)
 	// Cross-tenant provisioning (target tenant from the path).
@@ -252,13 +282,17 @@ type viewDTO struct {
 	Layers    map[string]bool `json:"layers,omitempty"`
 }
 
-// feedDTO is the catalogue-facing shape of a feed (infra fields like the
-// multicast group/port are intentionally omitted from the admin surface).
+// feedDTO is the catalogue-facing shape of a feed. The multicast group/port are
+// the feed's wire coordinates; they are surfaced (ONB-5) because the feed-lifecycle
+// UI manages exactly those, and every /api/admin route is platform-admin only —
+// the coordinates are operational, not secret.
 type feedDTO struct {
-	ID        int64    `json:"id"`
-	Name      string   `json:"name"`
-	Region    *string  `json:"region,omitempty"`
-	SensorMix []string `json:"sensor_mix"`
+	ID             int64    `json:"id"`
+	Name           string   `json:"name"`
+	MulticastGroup string   `json:"multicast_group"`
+	Port           int      `json:"port"`
+	Region         *string  `json:"region,omitempty"`
+	SensorMix      []string `json:"sensor_mix"`
 }
 
 func (h *Handler) getView(w http.ResponseWriter, r *http.Request) {
@@ -722,10 +756,21 @@ func toViewDTO(vc store.ViewConfig) viewDTO {
 	}
 }
 
+func toFeedDTO(f store.Feed) feedDTO {
+	return feedDTO{
+		ID:             f.ID,
+		Name:           f.Name,
+		MulticastGroup: f.MulticastGroup,
+		Port:           f.Port,
+		Region:         f.Region,
+		SensorMix:      f.SensorMix,
+	}
+}
+
 func toFeedDTOs(feeds []store.Feed) []feedDTO {
 	out := make([]feedDTO, len(feeds))
 	for i, f := range feeds {
-		out[i] = feedDTO{ID: f.ID, Name: f.Name, Region: f.Region, SensorMix: f.SensorMix}
+		out[i] = toFeedDTO(f)
 	}
 	return out
 }

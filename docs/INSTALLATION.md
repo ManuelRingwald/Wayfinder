@@ -496,6 +496,12 @@ docker compose run --rm wayfinder feed list
 > `PSR, SSR, MODE_S, ADS-B, MLAT, FLARM`. Gängige Schreibweisen werden automatisch
 > korrigiert (`ads-b` → `ADS-B`); **unbekannte** Klassen werden abgelehnt.
 
+> **Seit ONB-5 (ADR 0011) geht das auch ohne Terminal:** Feeds lassen sich im
+> Admin-Bereich unter **„Feeds"** anlegen und löschen. Der Server tritt der
+> Multicast-Gruppe eines neuen Feeds **sofort** bei bzw. verlässt die Gruppe eines
+> gelöschten Feeds **sofort** — **ohne Neustart**. Die CLI (`feed add`/`feed
+> list`) bleibt für Skripting/CI erhalten; beide Wege schreiben denselben Katalog.
+
 ### Schritt 5.6 — Alles starten
 
 ```bash

@@ -199,6 +199,75 @@ func TestIntegrationTenantDeleteCascades(t *testing.T) {
 	}
 }
 
+// TestIntegrationFeedDeleteCascades verifies ONB-5 (ADR 0011): deleting a feed
+// removes its rows from the catalogue and cascades to the subscriptions that
+// referenced it (ON DELETE CASCADE on subscriptions.feed_id), while the
+// subscribing tenant itself survives. A second delete yields ErrNotFound, and the
+// unique name freed by the delete can be reused.
+func TestIntegrationFeedDeleteCascades(t *testing.T) {
+	pool := testPool(t)
+	ctx := context.Background()
+	tenants := NewTenantRepo(pool)
+	feeds := NewFeedRepo(pool)
+	subs := NewSubscriptionRepo(pool)
+
+	ten, err := tenants.Create(ctx, "acme", "ACME")
+	if err != nil {
+		t.Fatalf("create tenant: %v", err)
+	}
+	feed, err := feeds.Create(ctx, "north", "239.255.0.70", 8600, nil, []string{"PSR"})
+	if err != nil {
+		t.Fatalf("create feed: %v", err)
+	}
+	if err := subs.Subscribe(ctx, ten.ID, feed.ID); err != nil {
+		t.Fatalf("subscribe: %v", err)
+	}
+
+	// GetByName resolves the feed; an unknown name is ErrNotFound.
+	if got, err := feeds.GetByName(ctx, "north"); err != nil || got.ID != feed.ID {
+		t.Fatalf("GetByName(north) = (%+v, %v), want feed %d", got, err, feed.ID)
+	}
+	if _, err := feeds.GetByName(ctx, "nope"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("GetByName(nope) = %v, want ErrNotFound", err)
+	}
+
+	// Delete the feed: the subscription cascades away, the tenant survives.
+	if err := feeds.Delete(ctx, feed.ID); err != nil {
+		t.Fatalf("delete feed: %v", err)
+	}
+	if _, err := feeds.GetByID(ctx, feed.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("feed survived delete = %v, want ErrNotFound", err)
+	}
+	if subscribed, err := subs.IsSubscribed(ctx, ten.ID, feed.ID); err != nil || subscribed {
+		t.Fatalf("subscription survived feed delete (subscribed=%v, err=%v)", subscribed, err)
+	}
+	if _, err := tenants.GetByID(ctx, ten.ID); err != nil {
+		t.Fatalf("tenant must survive feed delete: %v", err)
+	}
+	// A second delete is a clean ErrNotFound.
+	if err := feeds.Delete(ctx, feed.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("Delete(missing) = %v, want ErrNotFound", err)
+	}
+	// The freed unique name can be reused (migration 00008 constraint released).
+	if _, err := feeds.Create(ctx, "north", "239.255.0.71", 8601, nil, nil); err != nil {
+		t.Fatalf("reuse freed feed name: %v", err)
+	}
+}
+
+// TestIntegrationFeedNameUnique verifies the migration 00008 UNIQUE(name)
+// constraint: a second feed with the same name is rejected by the database.
+func TestIntegrationFeedNameUnique(t *testing.T) {
+	pool := testPool(t)
+	ctx := context.Background()
+	feeds := NewFeedRepo(pool)
+	if _, err := feeds.Create(ctx, "dup", "239.255.0.70", 8600, nil, nil); err != nil {
+		t.Fatalf("create first feed: %v", err)
+	}
+	if _, err := feeds.Create(ctx, "dup", "239.255.0.71", 8601, nil, nil); err == nil {
+		t.Fatal("second feed with duplicate name should be rejected by the unique constraint")
+	}
+}
+
 func TestIntegrationUserRepo(t *testing.T) {
 	pool := testPool(t)
 	ctx := context.Background()
