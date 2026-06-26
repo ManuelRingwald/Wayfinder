@@ -25,6 +25,7 @@
 3. [Wayfinder & Firefly herunterladen](#teil-3--wayfinder--firefly-herunterladen)
 4. [**Einzelplatz (Single-Tenant)** — Schritt für Schritt](#teil-4--einzelplatz-single-tenant-schritt-für-schritt)
 5. [**Mehrere Kunden (Multi-Tenant)** — Schritt für Schritt](#teil-5--mehrere-kunden-multi-tenant-schritt-für-schritt)
+   - [5.A — Master-Compose für Plattform + Firefly (Option B)](#schritt-5a--master-compose-für-plattform--firefly-option-b)
 6. [Läuft es? — Verifikation](#teil-6--läuft-es--verifikation)
 7. [Wenn etwas nicht geht — Fehlersuche](#teil-7--wenn-etwas-nicht-geht--fehlersuche)
 8. [Konfigurationsreferenz (alle Schalter)](#teil-8--konfigurationsreferenz)
@@ -310,31 +311,139 @@ Feeds, die ihm zugewiesen wurden. Dazu kommen drei neue Bausteine hinzu:
 > Zugänge und Feeds). Ein Admin wird beim ersten Start **automatisch angelegt**
 > (siehe Kasten unten) — Sie müssen ihn nicht mehr von Hand erzeugen.
 
-> ⚡ **Schnellster Weg (Zero-Touch-Onboarding, ADR 0011):** Das Repo enthält eine
-> fertige Compose-Datei `docker-compose.onboarding.yml` (PostgreSQL + Wayfinder im
-> `builtin`-Modus). Aus dem `wayfinder`-Ordner:
+> ⚡ **Schnellster Weg (Zero-Touch-Onboarding, ADR 0011) — zwei Optionen:**
 >
+> **Option A — nur Plattform, ohne Firefly** (Funktioniert auf macOS, Windows, Linux):
+> Zum Testen von Login, Admin-UI und Passwortwechsel — kein Feed, Karte bleibt leer.
 > ```bash
 > cd ~/asd/wayfinder
 > docker compose -f docker-compose.onboarding.yml up --build
 > ```
 >
-> Beim ersten Start legt Wayfinder einen **Standard-Mandanten** und einen
+> **Option B — Plattform + Firefly-Feed (empfohlen — mit echten Tracks):**
+> Einmalig eine `docker-compose.yml` im **Überordner** (`~/asd/`) anlegen
+> (Inhalt → [Schritt 5.A](#schritt-5a--master-compose-für-plattform--firefly-option-b)),
+> dann:
+> ```bash
+> cd ~/asd
+> docker compose up --build
+> ```
+> Alle drei Services (Firefly + Datenbank + Wayfinder) starten gemeinsam in
+> einem Bridge-Netz. Funktioniert auf **macOS, Windows und Linux** gleich.
+>
+> **In beiden Fällen:** Beim ersten Start legt Wayfinder automatisch einen
 > **Standard-Admin** an — Benutzername **`admin`**, Passwort **`admin`**. Öffnen
-> Sie `http://localhost:8081/admin`, melden Sie sich an, und Sie werden
-> **sofort zum Passwortwechsel gezwungen** (bevor irgendeine andere Aktion
-> möglich ist). **Kein `bootstrap`, kein Terminal-Schritt** nötig, um einen
-> nutzbaren Login zu bekommen.
+> Sie **`http://localhost:8081/admin`** und melden Sie sich an. Sie werden **sofort
+> zum Passwortwechsel gezwungen** — bevor irgendeine andere Aktion möglich ist.
+> Kein `bootstrap`, kein Terminal-Schritt nötig.
 >
-> **Funktioniert auf macOS, Windows und Linux** — kein host networking, kein
-> Portkonflikt mit einem lokal laufenden PostgreSQL.
->
-> **Karte startet leer:** Die Datei enthält kein Firefly. Ohne laufende
-> CAT062-Quelle sehen Sie nur die Karte (kein Flugzeug, kein FEED-OK-Banner) —
-> das ist kein Fehler. Für echte Tracks → Firefly separat starten (DOCKER.md).
->
-> Wer diesen Schnellstart nutzt, **überspringt die Schritte 5.1–5.4 komplett**
-> (die beschreiben denselben Aufbau von Hand). Weiter ab **Schritt 5.5** (Feeds).
+> Wer eine dieser Optionen nutzt, **überspringt die Schritte 5.1–5.4 komplett**.
+> Weiter ab [Schritt 5.5](#schritt-55--feeds-in-den-katalog-aufnehmen).
+
+### Schritt 5.A — Master-Compose für Plattform + Firefly (Option B)
+
+> ℹ️ **Nur nötig für Option B** (Plattform + Firefly-Feed). Für Option A (ohne
+> Firefly) direkt zu [Schritt 5.5](#schritt-55--feeds-in-den-katalog-aufnehmen)
+> springen.
+
+Legen Sie eine Datei `docker-compose.yml` im **gemeinsamen Überordner** beider
+Repos an. Die Struktur sieht dann so aus:
+
+```
+~/asd/
+├── firefly/            ← Firefly-Repo (geklont, Teil 3)
+├── wayfinder/          ← Wayfinder-Repo (geklont, Teil 3)
+└── docker-compose.yml  ← diese Datei (jetzt anlegen)
+```
+
+```bash
+nano ~/asd/docker-compose.yml
+```
+
+Vollständiger Inhalt:
+
+```yaml
+# ~/asd/docker-compose.yml
+# Zero-Touch Multi-Tenant + Firefly — alle Plattformen (macOS, Windows, Linux).
+# Startet: Firefly (Testdaten), PostgreSQL (Datenbank) und Wayfinder (ASD).
+# Alle drei Services laufen im selben Bridge-Netz; Multicast funktioniert
+# innerhalb des Netzes problemlos.
+name: asd-plattform
+
+networks:
+  asd:
+    driver: bridge
+
+volumes:
+  wayfinder-db:
+
+services:
+  # 1) Test-Datenquelle: sendet Testflugzeuge als CAT062-Multicast.
+  firefly:
+    build: ./firefly
+    networks: [asd]
+    environment:
+      FIREFLY_SCENE: "frankfurt"
+      FIREFLY_CAT062_ENABLED: "true"
+      FIREFLY_CAT062_GROUP: "239.255.0.62"
+      FIREFLY_CAT062_PORT: "8600"
+    restart: unless-stopped
+
+  # 2) Datenbank für den Multi-Tenant-Betrieb.
+  db:
+    image: postgres:16-alpine
+    networks: [asd]
+    environment:
+      POSTGRES_USER: "wayfinder"
+      POSTGRES_PASSWORD: "wayfinder"
+      POSTGRES_DB: "wayfinder"
+    volumes:
+      - wayfinder-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wayfinder"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  # 3) Wayfinder — ASD-Frontend + Multi-Tenant-Plattform.
+  wayfinder:
+    build: ./wayfinder
+    networks: [asd]
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8081:8081"     # Browser-Lagebild + Admin-UI
+      - "8080:8080"     # Technik-Checks (/health, /ready, /metrics)
+    environment:
+      FIREFLY_CAT062_GROUP: "239.255.0.62"
+      FIREFLY_CAT062_PORT: "8600"
+      WAYFINDER_DB_URL: "postgres://wayfinder:wayfinder@db:5432/wayfinder?sslmode=disable"
+      WAYFINDER_AUTH_MODE: "builtin"
+      # Session-Schlüssel: leer = flüchtiger Zufalls-Schlüssel (Warn-Log).
+      # Für Produktion: export WAYFINDER_SESSION_KEY=$(openssl rand -hex 32)
+      WAYFINDER_SESSION_KEY: ${WAYFINDER_SESSION_KEY:-}
+      WAYFINDER_MAP_CENTER_LAT: "50.0379"   # Frankfurt
+      WAYFINDER_MAP_CENTER_LON: "8.5622"
+      WAYFINDER_MAP_ZOOM: "8"
+    restart: unless-stopped
+```
+
+Starten:
+
+```bash
+cd ~/asd
+docker compose up --build
+```
+
+Beim ersten Start dauert der Build einige Minuten (Go-Compiler + Rust-Compiler für
+Firefly). Danach erscheinen Zeilen wie `feed joined` und `listening on :8081`.
+Öffnen Sie **<http://localhost:8081/admin>** — nach Login und Passwortwechsel sind
+Sie fertig. **Weiter mit Schritt 5.5**, um den Firefly-Feed dem Admin zuzuordnen
+und ihn einem Mandanten zuzuweisen.
+
+---
 
 ### Schritt 5.1 — Steuerungsordner anlegen
 
