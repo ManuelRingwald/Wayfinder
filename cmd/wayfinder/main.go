@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
@@ -147,6 +148,23 @@ func main() {
 		feedRegistry.RecordSensors(feedID, active, len(statuses))
 		broadcastFeedSnapshot(feedID, feedRegistry.Snapshot(feedID, time.Now()))
 		return nil
+	}
+
+	// Zero-touch onboarding (ONB-1, ADR 0011): builtin mode needs a session-signing
+	// key, but requiring the operator to set one re-introduces a manual setup step.
+	// When none is configured, generate an ephemeral random key and warn. The cost
+	// is explicit: sessions do not survive a restart and are not shared across
+	// replicas — a fixed WAYFINDER_SESSION_KEY remains the production recommendation.
+	if cfg.AuthMode == auth.ModeBuiltin && len(cfg.SessionKey) == 0 {
+		key := make([]byte, 32)
+		if _, err := rand.Read(key); err != nil {
+			logger.Error("generate ephemeral session key", slog.String("error", err.Error()))
+			os.Exit(1)
+		}
+		cfg.SessionKey = key
+		logger.Warn("WAYFINDER_SESSION_KEY not set — generated an ephemeral key; " +
+			"sessions reset on restart and are not multi-replica safe. Set a fixed " +
+			"key (e.g. openssl rand -hex 32) for production (ADR 0011)")
 	}
 
 	// Multi-tenancy (WF2-12): when WAYFINDER_DB_URL is set, open the DB, migrate
@@ -777,6 +795,21 @@ func setupTenancy(ctx context.Context, cfg Config, logger *slog.Logger) (func(ht
 		logger.Warn("WAYFINDER_AUTH_MODE=none — every request is the same fixed " +
 			"subject; relies on network isolation (ADR 0003)")
 	}
+
+	// Zero-touch onboarding (ONB-1, ADR 0011): in builtin mode, provision a default
+	// tenant + admin on first boot so the deployment is usable from the browser
+	// without any terminal step. Idempotent — a no-op once an admin exists.
+	if cfg.AuthMode == auth.ModeBuiltin {
+		var seedLog strings.Builder
+		if err := autoSeedDefaultAdmin(ctx, pool, &seedLog); err != nil {
+			pool.Close()
+			return nil, nil, fmt.Errorf("auto-seed default admin: %w", err)
+		}
+		if s := strings.TrimSpace(seedLog.String()); s != "" {
+			logger.Info("auto-seed", slog.String("detail", s))
+		}
+	}
+
 	logger.Info("multi-tenancy enabled", slog.String("auth_mode", string(cfg.AuthMode)))
 	return tenant.Middleware(authenticator, store.NewUserRepo(pool), logger), pool, nil
 }

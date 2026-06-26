@@ -303,9 +303,27 @@ Feeds, die ihm zugewiesen wurden. Dazu kommen drei neue Bausteine hinzu:
 | **Login (`builtin`)** | Benutzername + Passwort, Session über ein Cookie |
 | **Admin-Oberfläche** (`/admin`) | Mandanten verwalten, Feeds zuweisen |
 
-> **Rollen, die es gibt:** `operator` (sieht nur das Lagebild), `tenant_admin`
-> (verwaltet den **eigenen** Mandanten), `super_admin` (verwaltet **alle**
-> Mandanten und weist Feeds zu). Sie legen zuerst **einen `super_admin`** an.
+> **Rollen, die es gibt (ADR 0009):** `user` (sieht nur das Lagebild des eigenen
+> Mandanten) und `admin` (Plattform-Betreiber: verwaltet **alle** Mandanten,
+> Zugänge und Feeds). Ein Admin wird beim ersten Start **automatisch angelegt**
+> (siehe Kasten unten) — Sie müssen ihn nicht mehr von Hand erzeugen.
+
+> ⚡ **Schnellster Weg (Zero-Touch-Onboarding, ADR 0011):** Das Repo enthält eine
+> fertige Compose-Datei `docker-compose.onboarding.yml` (PostgreSQL + Wayfinder im
+> `builtin`-Modus). Ein einziger Befehl genügt:
+>
+> ```bash
+> docker compose -f docker-compose.onboarding.yml up --build
+> ```
+>
+> Beim ersten Start legt Wayfinder einen **Standard-Mandanten** und einen
+> **Standard-Admin** an — Benutzername **`admin`**, Passwort **`admin`**. Öffnen
+> Sie `http://localhost:8081/admin`, melden Sie sich an, und Sie werden
+> **sofort zum Passwortwechsel gezwungen** (bevor irgendeine andere Aktion
+> möglich ist). **Kein `bootstrap`, kein Terminal-Schritt** nötig, um einen
+> nutzbaren Login zu bekommen. Die Schritte 5.1–5.4 unten beschreiben denselben
+> Aufbau „von Hand" — wer die fertige Datei nutzt, kann **Schritt 5.4
+> (`bootstrap`) überspringen**.
 
 ### Schritt 5.1 — Steuerungsordner anlegen
 
@@ -389,8 +407,10 @@ services:
 
 > 🔑 **Den Session-Schlüssel jetzt erzeugen:** Tippen Sie `openssl rand -hex 32`
 > ins Terminal, kopieren Sie die ausgegebene Zeichenkette und ersetzen Sie damit
-> den Platzhalter bei `WAYFINDER_SESSION_KEY`. Ohne gültigen Schlüssel startet der
-> `builtin`-Login nicht.
+> den Platzhalter bei `WAYFINDER_SESSION_KEY`. **Für Produktion dringend
+> empfohlen.** Lassen Sie ihn weg, erzeugt Wayfinder beim Start einen flüchtigen
+> Zufalls-Schlüssel und warnt — dann gehen Sessions bei jedem Neustart verloren
+> und sind nicht multi-Replica-fähig (ADR 0011).
 
 ### Schritt 5.3 — Den Kartenausschnitt anlegen (`wayfinder.yaml`)
 
@@ -410,10 +430,16 @@ openaip:
   radius_km: 185
 ```
 
-### Schritt 5.4 — Den ersten Administrator anlegen (`bootstrap`)
+### Schritt 5.4 — Den ersten Administrator anlegen (`bootstrap`) — *optional*
 
-Eine frische Datenbank hat **noch keinen** Nutzer. Der eingebaute Befehl
-`bootstrap` legt den **ersten Mandanten + `super_admin`** an. Er startet die
+> ✅ **In den meisten Fällen übersprungen:** Im `builtin`-Modus legt Wayfinder
+> beim ersten Start automatisch einen Standard-Admin `admin`/`admin` an (ONB-1,
+> ADR 0011) und erzwingt den Passwortwechsel beim ersten Login. Sie brauchen
+> `bootstrap` nur, wenn Sie den ersten Admin **mit eigenem Namen/Passwort** statt
+> des Standard-Kontos anlegen wollen.
+
+Eine frische Datenbank hat (ohne Auto-Seed) **noch keinen** Nutzer. Der eingebaute
+Befehl `bootstrap` legt den **ersten Mandanten + Admin** an. Er startet die
 Datenbank automatisch mit und richtet das Schema ein.
 
 Geben Sie das **als einen Block** ein (das Passwort wird über eine Variable

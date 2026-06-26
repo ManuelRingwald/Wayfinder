@@ -200,7 +200,10 @@ Durch `authMiddleware` geschützt (wenn `WAYFINDER_AUTH_TOKEN` gesetzt).
 | `/api/airspace` | GET | Luftraumstrukturen (GeoJSON, best-effort) |
 | `/api/navaids` | GET | VOR/NDB-Beacons (GeoJSON, best-effort) |
 | `/api/waypoints` | GET | Wegpunkte (GeoJSON, best-effort) |
-| `/api/admin/whoami` | GET | Rollen-Probe + **effektive Feature-Flags** (`features`) als JSON; rollen-gegated (WF2-32/50) |
+| `/api/admin/whoami` | GET | Rollen-Probe + **effektive Feature-Flags** (`features`) als JSON; enthält seit ONB-1 `must_change_password`; rollen-gegated (WF2-32/50) |
+| `/api/admin/me` | GET | **ONB-1 (ADR 0011):** eigenes Konto (`{user_id, tenant_id, subject, role, must_change_password}`); **rollen-unabhängig** (kein `requireAdmin`) |
+| `/api/admin/me/password` | PUT | **ONB-1:** eigenes Passwort ändern (`{current_password, new_password}`, neu min. 8); aktuelles Passwort falsch → 401; setzt `must_change_password=false`; **auch im Pflichtwechsel-Zustand erreichbar** |
+| `/api/admin/me` | DELETE | **ONB-1:** eigenes Konto löschen; **„letzter aktiver Admin"-Guard** (letzter Admin → 409, keine Selbst-Aussperrung) |
 | `/api/admin/overview` | GET | **AP3:** Mandanten-Dashboard als Aggregat — je Mandant `{id, slug, name, status, features[], feeds[], user_count}` in einem Call; **admin** |
 | `/api/admin/feeds/health` | GET | **AP4:** Gesundheitszustand aller Feeds — je Feed `{feed_id, color, stale, ever_seen, last_heartbeat_ago_s, track_count_recent, sensors_active, sensors_total}` aus der In-Memory-Health-Registry; `color` ist **grün** (Heartbeat frisch, unabhängig vom Verkehr — leerer Himmel ist kein Fehler) / **gelb** (Sensor-Teilausfall: `sensors_active < sensors_total > 0`; CAT063, ADR 0010) / **rot** (kein Heartbeat = toter Feed oder nie gesehen); **admin** |
 | `/api/admin/tenants/{id}/view` | GET/PUT | **AP3:** Standard-Sicht **eines beliebigen** Mandanten lesen/schreiben (cross-tenant Editor; gleiche `validateView` wie `/api/admin/view`); **admin** |
@@ -212,6 +215,15 @@ Durch `authMiddleware` geschützt (wenn `WAYFINDER_AUTH_TOKEN` gesetzt).
 | `/api/admin/sensor-classes` | GET | Sensorklassen-Katalog (read-only Referenz, WF2-41) |
 | `/api/admin/impersonation` | GET/POST/DELETE | Cross-Tenant Read-Only-Impersonation (ADR 0008): **GET** liefert den aktuellen Status (`{active, tenant_id}`) für den Banner (Reload-fest, da der Cookie HttpOnly ist); **POST** `{"tenant_id":…}` mintet den signierten Grant-Cookie (`super_admin` only, Ziel-Mandant muss existieren → sonst 404); **DELETE** beendet sie (Cookie löschen). Nur aktiv, wenn ein Signing-Key (`WAYFINDER_SESSION_KEY`) konfiguriert ist. |
 | `/api/admin/*` | div. | Tenant-skopiertes Admin-API (WF2-31/31b); rollen-gegated |
+
+> **Pflicht-Passwortwechsel-Gate (ONB-1, ADR 0011):** Trägt das eingeloggte Konto
+> `must_change_password=true` (so wird der beim ersten Boot auto-seedete
+> Standard-Admin angelegt), weist das Admin-API **jede** Route außer `GET
+> /api/admin/whoami`, `GET /api/admin/me` und `PUT /api/admin/me/password`
+> **fail-closed mit 403 `password_change_required`** ab. Das Flag wird vom
+> `tenant.Identity` getragen (kein zusätzlicher DB-Lookup); das SPA erkennt den
+> Marker und zeigt die Pflichtwechsel-Maske. Erst der erfolgreiche Passwortwechsel
+> setzt das Flag zurück und gibt das übrige Admin-Surface frei.
 
 > **Feed-Sensorklassen & Abo-Entitlement (WF2-41):** Ein Feed trägt eine
 > **Sensorklassen-Zusammensetzung** als Metadatum (`sensor_mix`) aus dem
@@ -447,7 +459,7 @@ Identitäts-Modell siehe ADR 0006 §5.
 | `WAYFINDER_AUTH_MODE` | `none` | enum | `proxy` / `builtin` / `none`. Ungültig → `none`. |
 | `WAYFINDER_OIDC_ISSUER` | *(leer)* | URL | proxy: OIDC-Issuer (Discovery/JWKS), Pflicht. |
 | `WAYFINDER_OIDC_AUDIENCE` | *(leer)* | string | proxy: erwartete Audience, Pflicht. |
-| `WAYFINDER_SESSION_KEY` | *(leer)* | string | builtin: HMAC-Schlüssel für Session-Cookies, Pflicht. |
+| `WAYFINDER_SESSION_KEY` | *(leer)* | string | builtin: HMAC-Schlüssel für Session-Cookies. Leer in builtin → Wayfinder erzeugt einen **flüchtigen** Zufalls-Schlüssel und warnt (Sessions überleben keinen Neustart, nicht multi-Replica-fähig; ONB-1, ADR 0011). Für Produktion festen Schlüssel setzen (`openssl rand -hex 32`). |
 | `WAYFINDER_SESSION_COOKIE` | `wf_session` | string | builtin: Cookie-Name. |
 | `WAYFINDER_SESSION_TTL` | `12h` | duration | builtin: Session-Lebensdauer. |
 | `WAYFINDER_NONE_SUBJECT` | `default` | string | none: festes Subject je Anfrage. |
@@ -462,6 +474,17 @@ registriert.
 bootstrap.go`) legt **idempotent** ersten Mandanten + Admin-Nutzer (+ builtin-
 Passwort via `WAYFINDER_BOOTSTRAP_PASSWORD`) an; liest `WAYFINDER_DB_URL`,
 migriert, verweigert das Re-Homing eines Subjects in einen anderen Mandanten.
+
+**Boot-Auto-Seed (ONB-1, ADR 0011):** In `builtin`-Modus mit gesetzter
+`WAYFINDER_DB_URL` provisioniert Wayfinder beim Start **automatisch** einen
+Standard-Mandanten (`default`) + Standard-Admin (Subject `admin`, Passwort
+`admin`) — aber **nur, wenn noch kein aktiver Admin existiert**
+(`UserRepo.CountActiveAdmins == 0`). Der seedete Admin trägt
+`must_change_password=true`; das bekannte Default-Passwort ist also nur bis zum
+erzwungenen Wechsel beim ersten Login gültig. Der Seed (`cmd/wayfinder/seed.go`)
+ist idempotent und wiederverwendet `runBootstrap`; ein Neustart oder ein bereits
+rotiertes Passwort wird nie überschrieben. So ist eine frische Instanz ohne
+Terminal-Schritt benutzbar (`docker-compose.onboarding.yml`).
 **`/admin`-Gate:** `tenant.RequireRole(tenant_admin, super_admin)` hinter der
 Tenant-Middleware (fail-closed `403` ohne passende Rolle/Identität); liefert eine
 minimale whoami-JSON-Antwort, Admin-UI folgt WF2-32.

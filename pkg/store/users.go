@@ -8,7 +8,7 @@ import (
 )
 
 // userColumns is the column list shared by every user query.
-const userColumns = `id, tenant_id, subject, email, role, status, created_at`
+const userColumns = `id, tenant_id, subject, email, role, status, must_change_password, created_at`
 
 // UserRepo provides access to the users table.
 type UserRepo struct {
@@ -96,6 +96,34 @@ func (r *UserRepo) SetStatus(ctx context.Context, id int64, status Status) error
 	return nil
 }
 
+// SetMustChangePassword sets or clears a user's forced-password-change flag
+// (ONB-1, ADR 0011). It is set on the auto-seeded default admin and cleared the
+// moment that admin changes its own password. A missing user yields ErrNotFound.
+func (r *UserRepo) SetMustChangePassword(ctx context.Context, id int64, must bool) error {
+	const q = `UPDATE users SET must_change_password = $2 WHERE id = $1`
+	tag, err := r.db.Exec(ctx, q, id, must)
+	if err != nil {
+		return wrap("set must_change_password", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// CountActiveAdmins returns the number of users with role 'admin' and status
+// 'active'. It backs two invariants (ONB-1, ADR 0011): the boot auto-seed only
+// provisions the default admin when this is zero, and the "last active admin"
+// guard refuses to delete/pause the final admin (no self-lockout).
+func (r *UserRepo) CountActiveAdmins(ctx context.Context) (int, error) {
+	const q = `SELECT count(*) FROM users WHERE role = 'admin' AND status = 'active'`
+	var n int
+	if err := r.db.QueryRow(ctx, q).Scan(&n); err != nil {
+		return 0, wrap("count active admins", err)
+	}
+	return n, nil
+}
+
 // Delete removes a user. Dependent rows (credentials, per-user view overrides)
 // are cleared by ON DELETE CASCADE. A missing user yields ErrNotFound.
 func (r *UserRepo) Delete(ctx context.Context, id int64) error {
@@ -118,7 +146,7 @@ func scanUser(row rowScanner) (User, error) {
 		role   string
 		status string
 	)
-	if err := row.Scan(&u.ID, &u.TenantID, &u.Subject, &u.Email, &role, &status, &u.CreatedAt); err != nil {
+	if err := row.Scan(&u.ID, &u.TenantID, &u.Subject, &u.Email, &role, &status, &u.MustChangePassword, &u.CreatedAt); err != nil {
 		return User{}, err
 	}
 	u.Role = Role(role)

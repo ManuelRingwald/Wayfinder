@@ -19,13 +19,18 @@ type UserStore interface {
 	GetBySubject(ctx context.Context, subject string) (store.User, error)
 	Create(ctx context.Context, tenantID int64, subject string, email *string, role store.Role) (store.User, error)
 	SetStatus(ctx context.Context, id int64, status store.Status) error
+	SetMustChangePassword(ctx context.Context, id int64, must bool) error
+	CountActiveAdmins(ctx context.Context) (int, error)
 	Delete(ctx context.Context, id int64) error
 }
 
-// CredentialStore persists a builtin-mode password hash for a user (AP6 password
-// set/reset). *store.CredentialRepo satisfies it.
+// CredentialStore persists and retrieves a builtin-mode password hash for a user
+// (AP6 password set/reset; ONB-1 self-service password change). *store.CredentialRepo
+// satisfies it. GetHash returns store.ErrNotFound for a user without a local
+// credential (e.g. an OIDC-only user).
 type CredentialStore interface {
 	Set(ctx context.Context, userID int64, passwordHash string) error
+	GetHash(ctx context.Context, userID int64) (string, error)
 }
 
 // minPasswordLen is the server-side minimum for a builtin password set through

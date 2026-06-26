@@ -107,6 +107,13 @@ func New(views ViewStore, subs SubscriptionStore, feeds FeedStore, tenants Tenan
 	// whoami: the SPA's role probe (WF2-32). It sits behind the same admin gate, so
 	// a 200 here both confirms access and tells the client which panels to render.
 	mux.HandleFunc("GET /api/admin/whoami", h.whoami)
+	// Account self-service (ONB-1, ADR 0011): the logged-in principal manages its
+	// own account — independent of role (no requireAdmin). These three routes are
+	// the only ones reachable while must_change_password is set (see the gate in
+	// ServeHTTP); changing the password is what clears the flag and unlocks the rest.
+	mux.HandleFunc("GET /api/admin/me", h.getMe)
+	mux.HandleFunc("PUT /api/admin/me/password", h.putMePassword)
+	mux.HandleFunc("DELETE /api/admin/me", h.deleteMe)
 	// Admin self-service (tenant from the Identity).
 	mux.HandleFunc("GET /api/admin/view", h.getView)
 	mux.HandleFunc("PUT /api/admin/view", h.putView)
@@ -146,7 +153,30 @@ func New(views ViewStore, subs SubscriptionStore, feeds FeedStore, tenants Tenan
 	return h
 }
 
-func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) { h.mux.ServeHTTP(w, r) }
+// passwordChangeAllowlist is the exact set of (method, path) pairs reachable while
+// a principal's must_change_password flag is set (ONB-1, ADR 0011). Everything
+// else is refused fail-closed so the known default credential cannot be used for
+// anything but its own replacement: the role probe (so the SPA can render the
+// forced-change mask), reading one's own account, and the password change itself.
+var passwordChangeAllowlist = map[string]string{
+	"/api/admin/whoami":      http.MethodGet,
+	"/api/admin/me":          http.MethodGet,
+	"/api/admin/me/password": http.MethodPut,
+}
+
+// ServeHTTP applies the must_change_password gate before dispatching. The flag is
+// carried on the Identity (resolved by the tenant middleware), so the gate needs
+// no database lookup. A gated request gets 403 with a stable marker the SPA keys
+// on to show the forced-change mask.
+func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if id, ok := tenant.FromContext(r.Context()); ok && id.MustChangePassword {
+		if m, allowed := passwordChangeAllowlist[r.URL.Path]; !allowed || m != r.Method {
+			writeError(w, http.StatusForbidden, "password_change_required")
+			return
+		}
+	}
+	h.mux.ServeHTTP(w, r)
+}
 
 // whoamiDTO is the identity the SPA reads on entering /admin: it confirms access
 // (the route is behind the admin gate), reports the role so the client can render
@@ -154,11 +184,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) { h.mux.Serv
 // so the SPA can hide entitlement-gated UI. Both the role and the feature gating
 // in the UI are cosmetic — the server enforces them independently.
 type whoamiDTO struct {
-	Subject  string          `json:"subject"`
-	TenantID int64           `json:"tenant_id"`
-	UserID   int64           `json:"user_id"`
-	Role     store.Role      `json:"role"`
-	Features map[string]bool `json:"features"`
+	Subject            string          `json:"subject"`
+	TenantID           int64           `json:"tenant_id"`
+	UserID             int64           `json:"user_id"`
+	Role               store.Role      `json:"role"`
+	MustChangePassword bool            `json:"must_change_password"`
+	Features           map[string]bool `json:"features"`
 }
 
 func (h *Handler) whoami(w http.ResponseWriter, r *http.Request) {
@@ -168,11 +199,12 @@ func (h *Handler) whoami(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, whoamiDTO{
-		Subject:  id.Subject,
-		TenantID: id.TenantID,
-		UserID:   id.UserID,
-		Role:     id.Role,
-		Features: h.effectiveFeatures(r.Context(), id.TenantID),
+		Subject:            id.Subject,
+		TenantID:           id.TenantID,
+		UserID:             id.UserID,
+		Role:               id.Role,
+		MustChangePassword: id.MustChangePassword,
+		Features:           h.effectiveFeatures(r.Context(), id.TenantID),
 	})
 }
 

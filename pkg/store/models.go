@@ -57,13 +57,17 @@ type Tenant struct {
 // or the username (builtin mode), ADR 0006 §5; it is the key by which an
 // authenticated request is resolved to a tenant (WF2-11/12). Email is optional.
 // Status is the account lifecycle (AP6): a paused account cannot log in, but its
-// row and configuration are retained.
+// row and configuration are retained. MustChangePassword (ONB-1, ADR 0011) marks
+// an account whose password must be replaced before any other admin action is
+// allowed — set on the auto-seeded default admin so the known default credential
+// is valid for exactly one step: the one that replaces it.
 type User struct {
-	ID        int64
-	TenantID  int64
-	Subject   string
-	Email     *string
-	Role      Role
-	Status    Status
-	CreatedAt time.Time
+	ID                 int64
+	TenantID           int64
+	Subject            string
+	Email              *string
+	Role               Role
+	Status             Status
+	MustChangePassword bool
+	CreatedAt          time.Time
 }

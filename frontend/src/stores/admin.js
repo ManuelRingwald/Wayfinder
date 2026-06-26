@@ -46,6 +46,11 @@ export const useAdminStore = defineStore('admin', () => {
   // Cosmetic gating — the server enforces /api/admin/* via RequireRole(admin).
   const isAdmin = computed(() => role.value === 'admin')
   const isAuthorized = computed(() => identity.value !== null)
+  // ONB-1 (ADR 0011): a freshly seeded admin must replace its known default
+  // password before anything else. While true, the server refuses every admin
+  // route except the password change (403 password_change_required); the UI
+  // mirrors that by routing the user to the forced-change mask.
+  const mustChangePassword = computed(() => identity.value?.must_change_password === true)
   // WF2-50: per-tenant feature entitlements, delivered by whoami. UI gating off
   // these is cosmetic — the server enforces every feature server-side.
   const features = computed(() => identity.value?.features ?? {})
@@ -282,6 +287,26 @@ export const useAdminStore = defineStore('admin', () => {
     return r
   }
 
+  // changeOwnPassword changes the logged-in principal's own password (ONB-1,
+  // ADR 0011). On success it reloads the identity so must_change_password flips to
+  // false and the dashboard unlocks. The current password is required so a stolen
+  // live session cannot silently rotate the credential.
+  async function changeOwnPassword(currentPassword, newPassword) {
+    error.value = null
+    notice.value = null
+    const r = await apiFetch('/api/admin/me/password', {
+      method: 'PUT',
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    })
+    if (r.ok) {
+      await loadIdentity()
+      notice.value = 'Passwort geändert.'
+    } else {
+      error.value = r.error
+    }
+    return r
+  }
+
   function clearBanners() {
     error.value = null
     notice.value = null
@@ -289,11 +314,11 @@ export const useAdminStore = defineStore('admin', () => {
 
   return {
     identity, accessError, accessStatus, view, feeds, subscriptions, tenants, overview, feedsHealth, error, notice,
-    role, isAdmin, isAuthorized, features, hasFeature,
+    role, isAdmin, isAuthorized, mustChangePassword, features, hasFeature,
     loadIdentity, login, loadView, saveView, loadFeeds, loadSubscriptions,
     loadTenants, loadTenantSubscriptions, grant, revoke,
     loadOverview, loadFeedsHealth, loadTenantView, saveTenantView, loadTenantEntitlements, setTenantEntitlement,
     loadTenantUsers, createUser, setUserStatus, deleteUser, setUserPassword, setTenantStatus,
-    clearBanners,
+    changeOwnPassword, clearBanners,
   }
 })

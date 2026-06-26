@@ -126,6 +126,53 @@ describe('admin store — identity & role gating', () => {
   })
 })
 
+describe('admin store — forced password change (ONB-1)', () => {
+  it('exposes mustChangePassword from whoami', async () => {
+    installFetch({
+      'GET /api/admin/whoami': { status: 200, body: { subject: 'admin', tenant_id: 1, user_id: 1, role: 'admin', must_change_password: true } },
+    })
+    const s = useAdminStore()
+    await s.loadIdentity()
+    expect(s.isAuthorized).toBe(true)
+    expect(s.mustChangePassword).toBe(true)
+  })
+
+  it('mustChangePassword is false when the flag is absent or false', async () => {
+    installFetch({
+      'GET /api/admin/whoami': { status: 200, body: { subject: 'admin', tenant_id: 1, user_id: 1, role: 'admin', must_change_password: false } },
+    })
+    const s = useAdminStore()
+    await s.loadIdentity()
+    expect(s.mustChangePassword).toBe(false)
+  })
+
+  it('changeOwnPassword PUTs current+new password and reloads identity on success', async () => {
+    const calls = installFetch({
+      'PUT /api/admin/me/password': { status: 204 },
+      // after the change the flag is cleared
+      'GET /api/admin/whoami': { status: 200, body: { subject: 'admin', tenant_id: 1, user_id: 1, role: 'admin', must_change_password: false } },
+    })
+    const s = useAdminStore()
+    const r = await s.changeOwnPassword('admin', 'newsecret123')
+    expect(r.ok).toBe(true)
+    const put = calls.find((c) => c.method === 'PUT')
+    expect(JSON.parse(put.body)).toEqual({ current_password: 'admin', new_password: 'newsecret123' })
+    // identity reloaded → flag flipped off
+    expect(s.mustChangePassword).toBe(false)
+  })
+
+  it('changeOwnPassword surfaces a 401 (wrong current password)', async () => {
+    installFetch({
+      'PUT /api/admin/me/password': { status: 401, body: { error: 'current password is incorrect' } },
+    })
+    const s = useAdminStore()
+    const r = await s.changeOwnPassword('wrong', 'newsecret123')
+    expect(r.ok).toBe(false)
+    expect(r.status).toBe(401)
+    expect(s.error).toBeTruthy()
+  })
+})
+
 describe('admin store — login', () => {
   it('login POSTs subject and password to /api/login', async () => {
     const calls = installFetch({ 'POST /api/login': { status: 204 } })

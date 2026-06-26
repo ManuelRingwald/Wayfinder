@@ -100,14 +100,16 @@ func (f fakeTenants) SetStatus(_ context.Context, id int64, status store.Status)
 
 // fakeUserStore satisfies UserStore and records mutations (AP6 access mgmt).
 type fakeUserStore struct {
-	byID      map[int64]store.User
-	bySubject map[string]store.User
-	listByTen map[int64][]store.User
-	created   store.User
-	createErr error
-	statusSet map[int64]store.Status
-	deleted   map[int64]bool
-	nextID    int64
+	byID         map[int64]store.User
+	bySubject    map[string]store.User
+	listByTen    map[int64][]store.User
+	created      store.User
+	createErr    error
+	statusSet    map[int64]store.Status
+	mustChgSet   map[int64]bool
+	activeAdmins int
+	deleted      map[int64]bool
+	nextID       int64
 }
 
 func (f *fakeUserStore) ListByTenant(_ context.Context, tenantID int64) ([]store.User, error) {
@@ -148,6 +150,18 @@ func (f *fakeUserStore) SetStatus(_ context.Context, id int64, status store.Stat
 	return nil
 }
 
+func (f *fakeUserStore) SetMustChangePassword(_ context.Context, id int64, must bool) error {
+	if f.mustChgSet == nil {
+		f.mustChgSet = map[int64]bool{}
+	}
+	f.mustChgSet[id] = must
+	return nil
+}
+
+func (f *fakeUserStore) CountActiveAdmins(_ context.Context) (int, error) {
+	return f.activeAdmins, nil
+}
+
 func (f *fakeUserStore) Delete(_ context.Context, id int64) error {
 	if f.deleted == nil {
 		f.deleted = map[int64]bool{}
@@ -156,9 +170,11 @@ func (f *fakeUserStore) Delete(_ context.Context, id int64) error {
 	return nil
 }
 
-// fakeCredStore satisfies CredentialStore and records the last hash set.
+// fakeCredStore satisfies CredentialStore and records the last hash set. getHash
+// (keyed by user id) backs the self-service password-change verification path.
 type fakeCredStore struct {
-	set map[int64]string
+	set     map[int64]string
+	getHash map[int64]string
 }
 
 func (f *fakeCredStore) Set(_ context.Context, userID int64, passwordHash string) error {
@@ -167,6 +183,13 @@ func (f *fakeCredStore) Set(_ context.Context, userID int64, passwordHash string
 	}
 	f.set[userID] = passwordHash
 	return nil
+}
+
+func (f *fakeCredStore) GetHash(_ context.Context, userID int64) (string, error) {
+	if h, ok := f.getHash[userID]; ok {
+		return h, nil
+	}
+	return "", store.ErrNotFound
 }
 
 // fakeEntitlements satisfies EntitlementService and records the last Set call
