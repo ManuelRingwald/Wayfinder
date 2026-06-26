@@ -307,6 +307,24 @@ export const useAdminStore = defineStore('admin', () => {
     return r
   }
 
+  // deleteOwnAccount deletes the logged-in principal's own account (ONB-2,
+  // ADR 0011). The server refuses with 409 if this is the last active admin.
+  // On success the session is effectively terminated — identity is cleared so
+  // the next render returns to the login form.
+  async function deleteOwnAccount() {
+    error.value = null
+    notice.value = null
+    const r = await apiFetch('/api/admin/me', { method: 'DELETE' })
+    if (r.ok) {
+      identity.value = null
+      accessStatus.value = 401
+      accessError.value = null
+    } else {
+      error.value = r.error
+    }
+    return r
+  }
+
   function clearBanners() {
     error.value = null
     notice.value = null
@@ -319,6 +337,6 @@ export const useAdminStore = defineStore('admin', () => {
     loadTenants, loadTenantSubscriptions, grant, revoke,
     loadOverview, loadFeedsHealth, loadTenantView, saveTenantView, loadTenantEntitlements, setTenantEntitlement,
     loadTenantUsers, createUser, setUserStatus, deleteUser, setUserPassword, setTenantStatus,
-    changeOwnPassword, clearBanners,
+    changeOwnPassword, deleteOwnAccount, clearBanners,
   }
 })

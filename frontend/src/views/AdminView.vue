@@ -6,17 +6,24 @@
   <v-app-bar density="comfortable" flat color="surface">
     <v-app-bar-title>Wayfinder — Administration</v-app-bar-title>
     <v-spacer />
+    <!-- ONB-2 (ADR 0011): chip opens the self-management panel (password change
+         + account deletion) for the currently logged-in principal. -->
     <v-chip
       v-if="admin.isAuthorized"
       size="small"
       color="primary"
       variant="tonal"
       class="mr-3"
+      style="cursor: pointer"
+      append-icon="mdi-account-cog"
+      @click="myAccountOpen = true"
     >
       {{ admin.identity.subject || 'admin' }} · {{ admin.role }}
     </v-chip>
     <v-btn prepend-icon="mdi-radar" :to="{ name: 'asd' }">Zur Lage</v-btn>
   </v-app-bar>
+
+  <MyAccountPanel v-model="myAccountOpen" />
 
   <v-main>
     <v-container class="py-6" style="max-width: 1100px">
@@ -176,10 +183,12 @@ import { ref, onMounted } from 'vue'
 import { useAdminStore } from '@/stores/admin.js'
 import AdminTenants from '@/components/admin/AdminTenants.vue'
 import AdminTenantDetail from '@/components/admin/AdminTenantDetail.vue'
+import MyAccountPanel from '@/components/admin/MyAccountPanel.vue'
 
 const admin = useAdminStore()
 const selectedTenant = ref(null) // null = overview; a tenant id = detail page
 const loaded = ref(false)
+const myAccountOpen = ref(false) // ONB-2: "Mein Konto" dialog open state
 
 const loginSubject = ref('')
 const loginPassword = ref('')

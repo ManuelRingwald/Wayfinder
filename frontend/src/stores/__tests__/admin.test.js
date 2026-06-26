@@ -173,6 +173,49 @@ describe('admin store — forced password change (ONB-1)', () => {
   })
 })
 
+describe('admin store — self-management (ONB-2)', () => {
+  it('deleteOwnAccount DELETEs /api/admin/me and clears identity on success', async () => {
+    const calls = installFetch({
+      'DELETE /api/admin/me': { status: 204 },
+    })
+    const s = useAdminStore()
+    // pre-seed identity so there is something to clear
+    s.identity = { subject: 'admin', tenant_id: 1, user_id: 1, role: 'admin' }
+    const r = await s.deleteOwnAccount()
+    expect(r.ok).toBe(true)
+    expect(s.identity).toBeNull()
+    expect(s.accessStatus).toBe(401)
+    expect(s.isAuthorized).toBe(false)
+    expect(calls[0].url).toBe('/api/admin/me')
+    expect(calls[0].method).toBe('DELETE')
+  })
+
+  it('deleteOwnAccount surfaces 409 when last active admin tries to delete', async () => {
+    installFetch({
+      'DELETE /api/admin/me': { status: 409, body: { error: 'last active admin' } },
+    })
+    const s = useAdminStore()
+    s.identity = { subject: 'admin', tenant_id: 1, user_id: 1, role: 'admin' }
+    const r = await s.deleteOwnAccount()
+    expect(r.ok).toBe(false)
+    expect(r.status).toBe(409)
+    expect(s.error).toMatch(/last active admin/)
+    // identity remains — the account was NOT deleted
+    expect(s.identity).not.toBeNull()
+  })
+
+  it('deleteOwnAccount leaves identity intact on generic server error', async () => {
+    installFetch({
+      'DELETE /api/admin/me': { status: 500, body: { error: 'internal error' } },
+    })
+    const s = useAdminStore()
+    s.identity = { subject: 'admin', tenant_id: 1, user_id: 1, role: 'admin' }
+    const r = await s.deleteOwnAccount()
+    expect(r.ok).toBe(false)
+    expect(s.identity).not.toBeNull()
+  })
+})
+
 describe('admin store — login', () => {
   it('login POSTs subject and password to /api/login', async () => {
     const calls = installFetch({ 'POST /api/login': { status: 204 } })
