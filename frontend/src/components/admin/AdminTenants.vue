@@ -11,6 +11,10 @@
       <v-btn size="small" variant="text" prepend-icon="mdi-refresh" :loading="loading" @click="refresh">
         Aktualisieren
       </v-btn>
+      <!-- ONB-4 (ADR 0011): create a tenant from the UI. -->
+      <v-btn size="small" color="primary" variant="tonal" prepend-icon="mdi-domain-plus" class="ml-2" @click="openCreate">
+        Mandant anlegen
+      </v-btn>
     </v-card-title>
     <v-card-text>
       <v-table density="comfortable">
@@ -75,6 +79,34 @@
       </v-table>
     </v-card-text>
   </v-card>
+
+  <!-- Create tenant dialog (ONB-4) -->
+  <v-dialog v-model="createDialog" max-width="460">
+    <v-card>
+      <v-card-title class="text-subtitle-1">Mandant anlegen</v-card-title>
+      <v-card-text>
+        <v-text-field
+          v-model="form.slug"
+          label="Slug (Kennung)"
+          hint="Kleinbuchstaben, Ziffern und Bindestriche; eindeutig und URL-sicher (z. B. kunde-nord)."
+          persistent-hint
+          autofocus
+          class="mb-3"
+        />
+        <v-text-field
+          v-model="form.name"
+          label="Anzeigename (optional)"
+          hint="Leer lassen, um den Slug als Namen zu verwenden."
+          persistent-hint
+        />
+      </v-card-text>
+      <v-card-actions>
+        <v-spacer />
+        <v-btn variant="text" @click="createDialog = false">Abbrechen</v-btn>
+        <v-btn color="primary" :loading="loading" :disabled="!form.slug.trim()" @click="submitCreate">Anlegen</v-btn>
+      </v-card-actions>
+    </v-card>
+  </v-dialog>
 </template>
 
 <script setup>
@@ -85,6 +117,27 @@ defineEmits(['select'])
 
 const admin = useAdminStore()
 const loading = ref(false)
+
+// ONB-4: create-tenant dialog state.
+const createDialog = ref(false)
+const form = ref({ slug: '', name: '' })
+
+function openCreate() {
+  form.value = { slug: '', name: '' }
+  createDialog.value = true
+}
+
+async function submitCreate() {
+  loading.value = true
+  const payload = { slug: form.value.slug.trim() }
+  if (form.value.name.trim()) payload.name = form.value.name.trim()
+  const r = await admin.createTenant(payload)
+  loading.value = false
+  if (r.ok) {
+    createDialog.value = false
+    await refresh()
+  }
+}
 
 const HEALTH_COLORS = { green: 'success', yellow: 'warning', red: 'error' }
 

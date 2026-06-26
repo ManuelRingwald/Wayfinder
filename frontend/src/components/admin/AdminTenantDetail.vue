@@ -20,7 +20,53 @@
     >
       {{ tenant.status === 'paused' ? 'Mandant reaktivieren' : 'Mandant pausieren' }}
     </v-btn>
+    <!-- ONB-4 (ADR 0011): delete the tenant. The server refuses (409) while it
+         still has accounts; the dialog explains that up front. -->
+    <v-btn
+      size="small"
+      color="error"
+      variant="tonal"
+      prepend-icon="mdi-delete"
+      :loading="busy"
+      @click="deleteDialog = true"
+    >
+      Mandant löschen
+    </v-btn>
   </div>
+
+  <!-- Delete tenant confirmation (ONB-4) -->
+  <v-dialog v-model="deleteDialog" max-width="480">
+    <v-card>
+      <v-card-title class="text-subtitle-1">Mandant löschen</v-card-title>
+      <v-card-text>
+        <p class="mb-2">
+          Mandant <strong>{{ tenant?.name || ('#' + tenantId) }}</strong> endgültig löschen?
+          Mit dem Mandanten werden auch seine Abos, Features und die Standard-Ansicht entfernt.
+          Diese Aktion kann nicht rückgängig gemacht werden.
+        </p>
+        <v-alert
+          v-if="tenant && tenant.user_count > 0"
+          type="warning"
+          variant="tonal"
+          density="compact"
+        >
+          Dieser Mandant hat noch {{ tenant.user_count }} Zugang/Zugänge. Aus
+          Sicherheitsgründen muss er leer sein — entfernen Sie zuerst alle Zugänge
+          im Abschnitt „Zugänge“.
+        </v-alert>
+      </v-card-text>
+      <v-card-actions>
+        <v-spacer />
+        <v-btn variant="text" @click="deleteDialog = false">Abbrechen</v-btn>
+        <v-btn
+          color="error"
+          :loading="busy"
+          :disabled="tenant && tenant.user_count > 0"
+          @click="submitDelete"
+        >Löschen</v-btn>
+      </v-card-actions>
+    </v-card>
+  </v-dialog>
 
   <!-- Sicht (Center + Radius + FL-Band) -->
   <v-card variant="tonal" class="mb-4">
@@ -161,11 +207,12 @@ import AdminUsers from '@/components/admin/AdminUsers.vue'
 const props = defineProps({
   tenantId: { type: Number, required: true },
 })
-defineEmits(['back'])
+const emit = defineEmits(['back'])
 
 const admin = useAdminStore()
 const busy = ref(false)
 const entitlements = ref([])
+const deleteDialog = ref(false) // ONB-4: delete-tenant confirmation
 
 // The tenant header (name/status) comes from the overview the parent loaded.
 const tenant = computed(() => admin.overview.find((t) => t.id === props.tenantId) || null)
@@ -233,6 +280,20 @@ async function toggleStatus() {
   await admin.setTenantStatus(props.tenantId, next)
   await admin.loadOverview() // refresh the status chip
   busy.value = false
+}
+
+// submitDelete removes the tenant (ONB-4). On success the parent returns to the
+// overview, which reloads on mount; the server's guard B (409 while accounts
+// remain) is surfaced as a banner by the store.
+async function submitDelete() {
+  busy.value = true
+  const r = await admin.deleteTenant(props.tenantId)
+  busy.value = false
+  if (r.ok) {
+    deleteDialog.value = false
+    await admin.loadOverview()
+    emit('back')
+  }
 }
 
 function round(n) {

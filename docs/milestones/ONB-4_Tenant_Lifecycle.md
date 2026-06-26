@@ -5,7 +5,7 @@
 > letzte rein-CLI-Provisionierungsschritt entfällt.
 >
 > **Lieferung in zwei Commits:** (1) Backend, (2) Frontend (Anlegen-Dialog +
-> Lösch-Bestätigung + Store-Actions).
+> Lösch-Bestätigung + Store-Actions). Beide sind umgesetzt.
 
 ## Fachlicher Hintergrund
 
@@ -49,6 +49,19 @@ Die destruktive Kaskade ist ein bewusster Zweischritt.
 > Verlust) in die neue Welt. Der Komfort-Mandant `default` wird **nicht**
 > gesondert geschützt — sein Schutzgrund war der Admin-Bezug, der entfallen ist.
 
+## Was umgesetzt wurde (Frontend)
+
+- **Store-Actions** (`admin.js`): `createTenant(payload)` (POST, Erfolgs-Banner),
+  `deleteTenant(id)` (DELETE; der 409-Guard wird in eine verständliche deutsche
+  Banner-Meldung übersetzt).
+- **`AdminTenants.vue`** (Übersicht): „Mandant anlegen"-Button + Dialog (Slug +
+  optionaler Anzeigename, mit Erklärungs-Hinweisen); lädt nach Erfolg die
+  Übersicht neu.
+- **`AdminTenantDetail.vue`**: „Mandant löschen"-Button im Kopf + Bestätigungs-
+  Dialog. Hat der Mandant noch Zugänge, ist der Bestätigen-Button deaktiviert und
+  ein Warnhinweis verweist auf den Abschnitt „Zugänge" (der Server erzwingt Guard B
+  ohnehin). Nach Erfolg kehrt die Ansicht zur Übersicht zurück.
+
 ## Byte-/Verhaltens-Vertrag
 
 - `POST /api/admin/tenants`: 201 + `{id, slug, name, status}`; 400 bei ungültigem
@@ -56,8 +69,9 @@ Die destruktive Kaskade ist ein bewusster Zweischritt.
 - `DELETE /api/admin/tenants/{id}`: 204 bei leerem Mandanten; **409** solange
   Zugänge existieren; 404 bei unbekanntem Mandanten.
 
-## Qualitäts-Gates (Backend-Commit)
+## Qualitäts-Gates
 
+**Backend-Commit:**
 - `go test -p 1 ./...` gegen real-PG (`scripts/pg-test.sh`) ✅, `go vet`/`gofmt` ✅.
 - Tests:
   - `pkg/store/store_integration_test.go::TestIntegrationTenantDeleteCascades`
@@ -67,6 +81,11 @@ Die destruktive Kaskade ist ein bewusster Zweischritt.
     `…DefaultsNameToSlug`, `…Validation`, `…DuplicateSlug`,
     `TestDeleteTenantEmptySucceeds`, `…WithAccountsRefused`, `…UnknownIs404`,
     `TestTenantLifecycleRoutesForbidNonAdmin`.
+
+**Frontend-Commit:**
+- `npm run test` (153 Tests) ✅, `npm run build` aktualisiert `dist/` ✅.
+- Tests: `frontend/src/stores/__tests__/admin.test.js` (ONB-4-Block:
+  `createTenant` 201/409/400, `deleteTenant` 204 + 409-Guard-Übersetzung).
 
 ## Rückverfolgbarkeit
 

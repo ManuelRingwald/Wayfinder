@@ -220,6 +220,35 @@ export const useAdminStore = defineStore('admin', () => {
     return r
   }
 
+  // --- tenant lifecycle (ONB-4, ADR 0011) -----------------------------------
+  // Create and delete tenants. The server enforces requireAdmin and guard B
+  // (deleting a tenant that still has accounts → 409); the UI gating is
+  // convenience only.
+
+  async function createTenant(payload) {
+    error.value = null
+    notice.value = null
+    const r = await apiFetch('/api/admin/tenants', { method: 'POST', body: JSON.stringify(payload) })
+    if (r.ok) notice.value = 'Mandant angelegt.'
+    else error.value = r.error
+    return r
+  }
+
+  async function deleteTenant(tenantId) {
+    error.value = null
+    notice.value = null
+    const r = await apiFetch(`/api/admin/tenants/${tenantId}`, { method: 'DELETE' })
+    if (r.ok) {
+      notice.value = 'Mandant gelöscht.'
+    } else if (r.status === 409) {
+      // Guard B: a tenant with accounts cannot be deleted until they are removed.
+      error.value = 'Löschen nicht möglich: Der Mandant hat noch Zugänge. Bitte zuerst alle Zugänge entfernen.'
+    } else {
+      error.value = r.error
+    }
+    return r
+  }
+
   // --- access management (AP6) ----------------------------------------------
   // Per-tenant access accounts (role user). The server enforces every boundary
   // (requireAdmin → 403); the UI gating is convenience only.
@@ -394,6 +423,7 @@ export const useAdminStore = defineStore('admin', () => {
     loadTenants, loadTenantSubscriptions, grant, revoke,
     loadOverview, loadFeedsHealth, loadTenantView, saveTenantView, loadTenantEntitlements, setTenantEntitlement,
     loadTenantUsers, createUser, setUserStatus, deleteUser, setUserPassword, setTenantStatus,
+    createTenant, deleteTenant,
     changeOwnPassword, deleteOwnAccount,
     loadAdmins, createAdmin, setAdminStatus, deleteAdmin, setAdminPassword,
     clearBanners,

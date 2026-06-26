@@ -216,6 +216,56 @@ describe('admin store — self-management (ONB-2)', () => {
   })
 })
 
+describe('admin store — tenant lifecycle (ONB-4)', () => {
+  it('createTenant POSTs the payload and sets a success notice', async () => {
+    const calls = installFetch({
+      'POST /api/admin/tenants': { status: 201, body: { id: 5, slug: 'acme', name: 'ACME', status: 'active' } },
+    })
+    const s = useAdminStore()
+    const r = await s.createTenant({ slug: 'acme', name: 'ACME' })
+    expect(r.ok).toBe(true)
+    const post = calls.find((c) => c.method === 'POST')
+    expect(post.url).toBe('/api/admin/tenants')
+    expect(JSON.parse(post.body)).toEqual({ slug: 'acme', name: 'ACME' })
+    expect(s.notice).toMatch(/angelegt/)
+  })
+
+  it('createTenant surfaces a 409 duplicate slug', async () => {
+    installFetch({ 'POST /api/admin/tenants': { status: 409, body: { error: 'slug already exists' } } })
+    const s = useAdminStore()
+    const r = await s.createTenant({ slug: 'acme' })
+    expect(r.ok).toBe(false)
+    expect(s.error).toBe('slug already exists')
+  })
+
+  it('createTenant surfaces a 400 invalid slug', async () => {
+    installFetch({ 'POST /api/admin/tenants': { status: 400, body: { error: 'invalid slug' } } })
+    const s = useAdminStore()
+    const r = await s.createTenant({ slug: 'BAD SLUG' })
+    expect(r.ok).toBe(false)
+    expect(s.error).toMatch(/invalid slug/)
+  })
+
+  it('deleteTenant DELETEs the tenant and sets a success notice', async () => {
+    const calls = installFetch({ 'DELETE /api/admin/tenants/5': { status: 204 } })
+    const s = useAdminStore()
+    const r = await s.deleteTenant(5)
+    expect(r.ok).toBe(true)
+    expect(calls[0].url).toBe('/api/admin/tenants/5')
+    expect(calls[0].method).toBe('DELETE')
+    expect(s.notice).toMatch(/gelöscht/)
+  })
+
+  it('deleteTenant shows a friendly message on the 409 not-empty guard', async () => {
+    installFetch({ 'DELETE /api/admin/tenants/5': { status: 409, body: { error: 'tenant still has accounts' } } })
+    const s = useAdminStore()
+    const r = await s.deleteTenant(5)
+    expect(r.ok).toBe(false)
+    expect(r.status).toBe(409)
+    expect(s.error).toMatch(/noch Zugänge/)
+  })
+})
+
 describe('admin store — platform-admin management (ONB-3)', () => {
   it('loadAdmins GETs /api/admin/admins without storing globally', async () => {
     const calls = installFetch({
