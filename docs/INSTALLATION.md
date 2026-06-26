@@ -728,10 +728,22 @@ Ohne `WAYFINDER_OPENAIP_API_KEY` ist das Feature aus (Warn-Log, kein Fehler).
 
 | Variable | Default | Beschreibung |
 |----------|---------|--------------|
-| `WAYFINDER_OPENAIP_API_KEY` | *(leer)* | OpenAIP-API-Schlüssel; leer = Feature aus |
-| `WAYFINDER_OPENAIP_RADIUS_KM` | `250` | Umkreis um das Kartenzentrum für Luftraum-/Navaid-Abfragen (auch via `wayfinder.yaml` → `openaip.radius_km`) |
+| `WAYFINDER_OPENAIP_API_KEY` | *(leer)* | **Globaler** OpenAIP-API-Schlüssel; leer = Feature global aus |
+| `WAYFINDER_OPENAIP_RADIUS_KM` | `250` | Umkreis um das Zentrum für Luftraum-/Navaid-Abfragen (auch via `wayfinder.yaml` → `openaip.radius_km`) |
 | `WAYFINDER_OPENAIP_REFRESH` | `24h` | Aktualisierungsintervall (`1h`, `30m`, `24h`) |
 | `WAYFINDER_OPENAIP_BASE_URL` | *(intern)* | Override der OpenAIP-Basis-URL (Tests/Proxies) |
+
+> **OpenAIP pro Mandant (ONB-6, ADR 0011).** Im Multi-Mandanten-Betrieb kann
+> jeder Mandant einen **eigenen** OpenAIP-Schlüssel bekommen — im Admin-Dashboard
+> auf der Mandanten-**Detailseite** unter „OpenAIP-Konfiguration" (Schlüssel
+> setzen/löschen; der gesetzte Schlüssel wird aus Sicherheitsgründen **nie wieder
+> angezeigt**, nur sein Status). Jeder Mandant ruft die Luftraumdaten dann mit
+> seinem eigenen Konto und gegen **seine eigene Sicht-AOI** ab (Zentrum + Radius
+> bzw. die gesetzte AOI-Box). Mandanten **ohne** eigenen Schlüssel nutzen den
+> globalen `WAYFINDER_OPENAIP_API_KEY` als Rückfall. Ändert ein Admin den
+> Schlüssel oder die Sicht eines Mandanten, greift das **sofort** (kein Neustart).
+> Die Endpunkte `/api/airspace`, `/api/navaids`, `/api/waypoints` liefern damit im
+> Multi-Mandanten-Betrieb je Anmeldung die Daten des **eigenen** Mandanten.
 
 ### 8.4 Sicherheit (Browser-Rand)
 

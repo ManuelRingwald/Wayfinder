@@ -276,8 +276,42 @@ func main() {
 		}
 	}()
 
-	// Start the aeronautical refresh loop (best-effort, ADR 0004).
+	// Start the aeronautical refresh loop (best-effort, ADR 0004). In multi-tenant
+	// mode this Service is the global fallback cache behind the per-tenant registry.
 	go aeroService.Run(ctx)
+
+	// OpenAIP per tenant (ONB-6, ADR 0011): in multi-tenant mode each tenant fetches
+	// OpenAIP with its own key (or the global fallback) against its own area of
+	// interest. The registry supervises one Service per tenant alongside the global
+	// fallback; a tenant without its own running Service falls back to the global
+	// cache. Built only with a DB (the per-tenant key/AOI live there).
+	var aeroRegistry *aeronautical.Registry
+	var aeroLife adminapi.TenantAeroLifecycle
+	if dbPool != nil {
+		aeroRegistry = aeronautical.NewRegistry(ctx, aeroService, newAeroClientFactory(cfg.OpenAIPBaseURL), cfg.OpenAIPRefresh, logger)
+		defer aeroRegistry.StopAll()
+		life := tenantAeroLifecycle{
+			reg:       aeroRegistry,
+			tenants:   store.NewTenantRepo(dbPool),
+			views:     store.NewViewConfigRepo(dbPool),
+			globalKey: cfg.OpenAIPAPIKey,
+			radiusKM:  cfg.OpenAIPRadiusKM,
+			fallback:  aeronautical.BoundingBoxFromCenter(cfg.MapCenterLat, cfg.MapCenterLon, cfg.OpenAIPRadiusKM),
+			logger:    logger,
+		}
+		aeroLife = life
+		// Boot: bring up each tenant's per-tenant refresh from the catalogue, so the
+		// per-tenant caches are warm without waiting for an admin edit.
+		bootCtx, cancelBoot := context.WithTimeout(ctx, 30*time.Second)
+		if tenants, terr := store.NewTenantRepo(dbPool).List(bootCtx); terr != nil {
+			logger.Warn("openaip: list tenants for per-tenant refresh failed", slog.String("error", terr.Error()))
+		} else {
+			for _, t := range tenants {
+				life.Apply(bootCtx, t.ID)
+			}
+		}
+		cancelBoot()
+	}
 
 	// Feature entitlements (WF2-50): per-tenant feature flags as data, fail-closed.
 	// Built once here so the admin API and /metrics share one instance. Multi-tenant
@@ -290,7 +324,14 @@ func main() {
 	// Start health/readiness/metrics probe server. Decode errors are read from the
 	// process-wide counter (monotonic across feed churn, ONB-5).
 	decodeErrors := func() int64 { return decodeErrorCount.Load() }
-	go startProbeServer(logger, &blockCount, &trackCount, &tracksCurrent, &heartbeatCount, broadcaster, decodeErrors, feedRegistry, aeroService, &lastError, featSvc)
+	// OpenAIP fetch counters (ONB-6): in multi-tenant mode sum across every
+	// per-tenant Service plus the global one so the process-wide counter stays
+	// meaningful as tenants come and go; single-tenant → the global Service alone.
+	aeroCounts := func() (int64, int64) { return aeroService.FetchSuccessCount(), aeroService.FetchFailureCount() }
+	if aeroRegistry != nil {
+		aeroCounts = func() (int64, int64) { return aeroRegistry.FetchSuccessCount(), aeroRegistry.FetchFailureCount() }
+	}
+	go startProbeServer(logger, &blockCount, &trackCount, &tracksCurrent, &heartbeatCount, broadcaster, decodeErrors, feedRegistry, aeroService, aeroCounts, &lastError, featSvc)
 
 	// Start WebSocket server.
 	if tenantMW == nil && cfg.AuthToken == "" {
@@ -333,8 +374,18 @@ func main() {
 	mux.HandleFunc("/api/map-config", mapConfigHandler(cfg))
 
 	// Aeronautical GeoJSON endpoints (/api/airspace, /api/navaids,
-	// /api/waypoints), served from the OpenAIP cache (ADR 0004).
-	aeroService.Register(mux)
+	// /api/waypoints), served from the OpenAIP cache (ADR 0004). In multi-tenant
+	// mode they are tenant-aware (ONB-6): behind the tenant middleware, each serves
+	// the requesting tenant's own per-tenant cache (with global fallback). In
+	// single-tenant mode they serve the global cache unauthenticated, as before.
+	if aeroRegistry != nil && tenantMW != nil {
+		aeroRegistry.Register(mux, tenantMW, func(r *http.Request) (int64, bool) {
+			id, ok := tenant.FromContext(r.Context())
+			return id.TenantID, ok
+		})
+	} else {
+		aeroService.Register(mux)
+	}
 
 	// Coverage rings: static GeoJSON computed once from config, served to the
 	// browser on demand. An empty FeatureCollection is returned when no sensors
@@ -379,7 +430,7 @@ func main() {
 		// via the feed manager, and forgets a deleted feed's health (adapter below).
 		feedLife := feedLifecycle{mgr: feedManager, registry: feedRegistry}
 		adminAPI := adminapi.New(viewRepo, subRepo, store.NewFeedRepo(dbPool), store.NewTenantRepo(dbPool),
-			store.NewUserRepo(dbPool), store.NewCredentialRepo(dbPool), featSvc, feedRegistry, feedLife, logger, rescope)
+			store.NewUserRepo(dbPool), store.NewCredentialRepo(dbPool), featSvc, feedRegistry, feedLife, aeroLife, logger, rescope)
 		mux.Handle("/api/admin/", tenantMW(requireAdmin(adminAPI)))
 
 		// Cross-tenant read-only impersonation (ADR 0008, WF2-34): mint and clear
@@ -1084,7 +1135,7 @@ func coverageRingsHandler(cfg Config) http.HandlerFunc {
 }
 
 // startProbeServer starts an HTTP server for health, readiness and metrics.
-func startProbeServer(logger *slog.Logger, blockCount, trackCount, tracksCurrent, heartbeatCount *atomic.Int64, broadcaster *broadcast.Broadcaster, decodeErrors func() int64, feedRegistry *health.Registry, aeroService *aeronautical.Service, lastError *atomic.Pointer[string], featSvc *feature.Service) {
+func startProbeServer(logger *slog.Logger, blockCount, trackCount, tracksCurrent, heartbeatCount *atomic.Int64, broadcaster *broadcast.Broadcaster, decodeErrors func() int64, feedRegistry *health.Registry, aeroService *aeronautical.Service, aeroCounts func() (success, failure int64), lastError *atomic.Pointer[string], featSvc *feature.Service) {
 	mux := http.NewServeMux()
 
 	// /health — liveness check (always ready unless startup failed).
@@ -1120,6 +1171,7 @@ func startProbeServer(logger *slog.Logger, blockCount, trackCount, tracksCurrent
 		if feedRegistry.Status(time.Now()).Stale {
 			feedStale = 1
 		}
+		aeroSuccess, aeroFailure := aeroCounts()
 		mset := []metrics.Metric{
 			metrics.Counter("wayfinder_cat062_blocks_received_total", "Total number of CAT062 data blocks received via multicast.", blockCount.Load()),
 			metrics.Counter("wayfinder_cat062_tracks_received_total", "Total number of track records received across all CAT062 blocks.", trackCount.Load()),
@@ -1130,9 +1182,9 @@ func startProbeServer(logger *slog.Logger, blockCount, trackCount, tracksCurrent
 			metrics.Counter("wayfinder_impersonation_sessions_total", "Total admin read-only impersonation /ws sessions started (ADR 0008). Excluded from the per-tenant series.", impersonationSessions.Load()),
 			metrics.Counter("wayfinder_cat065_heartbeats_received_total", "Total number of CAT065 SDPS-status heartbeats received.", heartbeatCount.Load()),
 			metrics.Gauge("wayfinder_feed_stale", "1 if the CAT065 heartbeat feed is currently stale, else 0.", feedStale),
-			metrics.Counter("wayfinder_openaip_fetch_success_total", "Total number of successful OpenAIP aeronautical fetches (per kind).", aeroService.FetchSuccessCount()),
-			metrics.Counter("wayfinder_openaip_fetch_failures_total", "Total number of failed OpenAIP aeronautical fetches (per kind).", aeroService.FetchFailureCount()),
-			metrics.Gauge("wayfinder_openaip_cache_age_seconds", "Seconds since the last successful OpenAIP fetch, or -1 if never.", aeroService.CacheAgeSeconds(time.Now())),
+			metrics.Counter("wayfinder_openaip_fetch_success_total", "Total successful OpenAIP fetches (per kind), summed across the global and all per-tenant caches.", aeroSuccess),
+			metrics.Counter("wayfinder_openaip_fetch_failures_total", "Total failed OpenAIP fetches (per kind), summed across the global and all per-tenant caches.", aeroFailure),
+			metrics.Gauge("wayfinder_openaip_cache_age_seconds", "Seconds since the last successful OpenAIP fetch of the global fallback cache, or -1 if never.", aeroService.CacheAgeSeconds(time.Now())),
 		}
 		// Per-tenant series (WF2-23.2). Labelled only by the stable tenant_id —
 		// never by high-cardinality identity (user/session), which stays in the

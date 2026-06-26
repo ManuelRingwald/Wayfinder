@@ -136,6 +136,50 @@ func TestIntegrationTenantRepo(t *testing.T) {
 	}
 }
 
+// TestIntegrationTenantOpenAIPKey verifies ONB-6 (ADR 0011): the per-tenant
+// OpenAIP key round-trips through Get/SetOpenAIPKey, defaults to nil (global-key
+// fallback), and can be cleared back to nil. A missing tenant yields ErrNotFound.
+func TestIntegrationTenantOpenAIPKey(t *testing.T) {
+	pool := testPool(t)
+	ctx := context.Background()
+	repo := NewTenantRepo(pool)
+
+	ten, err := repo.Create(ctx, "frankfurt", "FFM")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	// A freshly created tenant has no key (global fallback applies).
+	if k, err := repo.GetOpenAIPKey(ctx, ten.ID); err != nil || k != nil {
+		t.Fatalf("initial key = %v, %v; want nil, nil", k, err)
+	}
+
+	key := "openaip-key-123"
+	if err := repo.SetOpenAIPKey(ctx, ten.ID, &key); err != nil {
+		t.Fatalf("set key: %v", err)
+	}
+	got, err := repo.GetOpenAIPKey(ctx, ten.ID)
+	if err != nil || got == nil || *got != key {
+		t.Fatalf("after set, key = %v, %v; want %q", got, err, key)
+	}
+
+	// Clearing restores the global fallback (nil).
+	if err := repo.SetOpenAIPKey(ctx, ten.ID, nil); err != nil {
+		t.Fatalf("clear key: %v", err)
+	}
+	if k, err := repo.GetOpenAIPKey(ctx, ten.ID); err != nil || k != nil {
+		t.Fatalf("after clear, key = %v, %v; want nil, nil", k, err)
+	}
+
+	// Missing tenant.
+	if _, err := repo.GetOpenAIPKey(ctx, 999999); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("GetOpenAIPKey(missing) err = %v, want ErrNotFound", err)
+	}
+	if err := repo.SetOpenAIPKey(ctx, 999999, &key); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("SetOpenAIPKey(missing) err = %v, want ErrNotFound", err)
+	}
+}
+
 // TestIntegrationTenantDeleteCascades verifies ONB-4 (ADR 0011): deleting a
 // tenant removes every row that references it — its users (and their
 // credentials), feed subscriptions and entitlements — via ON DELETE CASCADE in a

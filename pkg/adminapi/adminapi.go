@@ -76,6 +76,23 @@ type TenantStore interface {
 	Create(ctx context.Context, slug, name string) (store.Tenant, error)
 	SetStatus(ctx context.Context, id int64, status store.Status) error
 	Delete(ctx context.Context, id int64) error
+	// GetOpenAIPKey/SetOpenAIPKey back the per-tenant OpenAIP key (ONB-6). The key
+	// is read in isolation and never returned to the browser (only its presence is).
+	GetOpenAIPKey(ctx context.Context, id int64) (*string, error)
+	SetOpenAIPKey(ctx context.Context, id int64, key *string) error
+}
+
+// TenantAeroLifecycle applies a tenant's per-tenant OpenAIP aeronautical refresh
+// when its key — or, via its view, its area of interest — changes, and tears it
+// down when the tenant is deleted (ONB-6, ADR 0011). Satisfied in production by an
+// adapter over the aeronautical Registry (main.go). Apply re-reads the tenant's
+// effective key and AOI and (re)starts/stops its Service; it is decoupled from the
+// concrete registry (the admin API never imports the OpenAIP transport). A nil
+// lifecycle disables live-apply: the stored key still changes, but the running
+// per-tenant fetch only follows on the next restart (single-tenant mode / tests).
+type TenantAeroLifecycle interface {
+	Apply(ctx context.Context, tenantID int64)
+	Stop(tenantID int64)
 }
 
 // EntitlementService is the per-tenant feature surface the admin API needs
@@ -117,8 +134,9 @@ type Handler struct {
 	users      UserStore
 	creds      CredentialStore
 	feats      EntitlementService
-	feedHealth FeedHealthSource // may be nil; AP4 health endpoint returns empty list
-	feedLife   FeedLifecycle    // may be nil; disables live receiver join/leave (ONB-5)
+	feedHealth FeedHealthSource    // may be nil; AP4 health endpoint returns empty list
+	feedLife   FeedLifecycle       // may be nil; disables live receiver join/leave (ONB-5)
+	aeroLife   TenantAeroLifecycle // may be nil; disables live per-tenant OpenAIP apply (ONB-6)
 	rescope    RescopeFunc
 	logger     *slog.Logger
 	mux        *http.ServeMux
@@ -128,8 +146,8 @@ type Handler struct {
 // the wrong method. The cross-tenant provisioning routes (/api/admin/tenants/…)
 // are additionally guarded by requireAdmin (defence-in-depth). rescope (may be
 // nil) re-scopes a tenant's live streams after a mutation (WF2-33).
-func New(views ViewStore, subs SubscriptionStore, feeds FeedStore, tenants TenantStore, users UserStore, creds CredentialStore, feats EntitlementService, feedHealth FeedHealthSource, feedLife FeedLifecycle, logger *slog.Logger, rescope RescopeFunc) *Handler {
-	h := &Handler{views: views, subs: subs, feeds: feeds, tenants: tenants, users: users, creds: creds, feats: feats, feedHealth: feedHealth, feedLife: feedLife, rescope: rescope, logger: logger}
+func New(views ViewStore, subs SubscriptionStore, feeds FeedStore, tenants TenantStore, users UserStore, creds CredentialStore, feats EntitlementService, feedHealth FeedHealthSource, feedLife FeedLifecycle, aeroLife TenantAeroLifecycle, logger *slog.Logger, rescope RescopeFunc) *Handler {
+	h := &Handler{views: views, subs: subs, feeds: feeds, tenants: tenants, users: users, creds: creds, feats: feats, feedHealth: feedHealth, feedLife: feedLife, aeroLife: aeroLife, rescope: rescope, logger: logger}
 	mux := http.NewServeMux()
 	// whoami: the SPA's role probe (WF2-32). It sits behind the same admin gate, so
 	// a 200 here both confirms access and tells the client which panels to render.
@@ -180,6 +198,11 @@ func New(views ViewStore, subs SubscriptionStore, feeds FeedStore, tenants Tenan
 	// tenant's state, and set one flag. The billing/provisioning boundary.
 	mux.HandleFunc("GET /api/admin/tenants/{tenantID}/entitlements", h.requireAdmin(h.listTenantEntitlements))
 	mux.HandleFunc("PUT /api/admin/tenants/{tenantID}/entitlements/{key}", h.requireAdmin(h.setTenantEntitlement))
+	// OpenAIP per tenant (ONB-6, ADR 0011): read whether a per-tenant key is set
+	// (never the key itself) and set/clear it. Setting the key (re)starts the
+	// tenant's per-tenant OpenAIP refresh live (no restart).
+	mux.HandleFunc("GET /api/admin/tenants/{tenantID}/openaip", h.requireAdmin(h.getTenantOpenAIP))
+	mux.HandleFunc("PUT /api/admin/tenants/{tenantID}/openaip", h.requireAdmin(h.setTenantOpenAIP))
 	// Platform-admin management (ONB-3, ADR 0011): admins are global (no tenant)
 	// and managed through a dedicated surface, strictly separated from the
 	// per-tenant user routes below. The "last active admin" guard (409) lives in
@@ -333,7 +356,8 @@ func (h *Handler) putView(w http.ResponseWriter, r *http.Request) {
 		h.internalError(w, "upsert view", err)
 		return
 	}
-	h.triggerRescope(r.Context(), id.TenantID) // live-apply the new view (WF2-33)
+	h.triggerRescope(r.Context(), id.TenantID)   // live-apply the new view (WF2-33)
+	h.triggerAeroApply(r.Context(), id.TenantID) // re-fetch OpenAIP for the new AOI (ONB-6)
 	writeJSON(w, http.StatusOK, toViewDTO(out))
 }
 
@@ -407,6 +431,23 @@ func (h *Handler) requireAdmin(next http.HandlerFunc) http.HandlerFunc {
 func (h *Handler) triggerRescope(ctx context.Context, tenantID int64) {
 	if h.rescope != nil {
 		h.rescope(ctx, tenantID)
+	}
+}
+
+// triggerAeroApply re-applies the tenant's per-tenant OpenAIP refresh after a
+// change to its key or its view AOI (ONB-6). No-op when not wired (single-tenant
+// mode / tests). Idempotent on unchanged inputs (the registry compares key+AOI),
+// so calling it after every view edit is cheap.
+func (h *Handler) triggerAeroApply(ctx context.Context, tenantID int64) {
+	if h.aeroLife != nil {
+		h.aeroLife.Apply(ctx, tenantID)
+	}
+}
+
+// triggerAeroStop tears down a deleted tenant's per-tenant OpenAIP refresh (ONB-6).
+func (h *Handler) triggerAeroStop(tenantID int64) {
+	if h.aeroLife != nil {
+		h.aeroLife.Stop(tenantID)
 	}
 }
 
@@ -536,7 +577,8 @@ func (h *Handler) putTenantView(w http.ResponseWriter, r *http.Request) {
 		h.internalError(w, "upsert tenant view", err)
 		return
 	}
-	h.triggerRescope(r.Context(), tid) // live-apply the new view (WF2-33)
+	h.triggerRescope(r.Context(), tid)   // live-apply the new view (WF2-33)
+	h.triggerAeroApply(r.Context(), tid) // re-fetch OpenAIP for the new AOI (ONB-6)
 	writeJSON(w, http.StatusOK, toViewDTO(out))
 }
 

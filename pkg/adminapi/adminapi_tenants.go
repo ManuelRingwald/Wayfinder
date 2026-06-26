@@ -97,5 +97,6 @@ func (h *Handler) deleteTenant(w http.ResponseWriter, r *http.Request) {
 		h.internalError(w, "delete tenant", err)
 		return
 	}
+	h.triggerAeroStop(tid) // drop the tenant's per-tenant OpenAIP refresh (ONB-6)
 	w.WriteHeader(http.StatusNoContent)
 }
