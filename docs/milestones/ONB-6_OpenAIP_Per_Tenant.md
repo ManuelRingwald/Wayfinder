@@ -153,6 +153,26 @@ das View-Zentrum, sonst globale Karten-Box) auf und treibt die Registry. Eine
     `Set …Applies`/`…NullClears`/`…UnknownIs404`/`…InvalidBodyIs400`,
     `OpenAIPRoutesForbidNonAdmin`, `DeleteTenantStopsAero`.
 
+## Was umgesetzt wurde (Frontend)
+
+- **Store-Actions** (`admin.js`): `loadTenantOpenAIP(id)` (GET — liefert nur
+  `{configured}`, **nie** den Schlüssel), `setTenantOpenAIPKey(id, apiKey)` (PUT;
+  `apiKey` als String = setzen, `null` = löschen; eigenes Erfolgs-Banner
+  „gespeichert"/„entfernt", Fehler ins Banner).
+- **`AdminTenantDetail.vue`** (neuer Abschnitt „OpenAIP-Konfiguration"): ein
+  Status-Chip (gesetzt / nicht gesetzt → globaler Schlüssel), ein
+  Passwort-maskiertes Eingabefeld (mit Sichtbar-Umschalter) für einen **neuen**
+  Schlüssel, „Schlüssel speichern" und — wenn einer gesetzt ist — „Schlüssel
+  entfernen". Der Schlüssel selbst wird **nie** vorbefüllt/angezeigt; nach jeder
+  Mutation wird der Status neu geladen. Lädt beim Mount mit (`loadOpenAIP`).
+
+## Qualitäts-Gates (Frontend-Commit)
+
+- `npm run test` ✅ (161 Tests, +4 ONB-6), `npm run build` aktualisiert `dist/` ✅.
+- Tests: `frontend/src/stores/__tests__/admin.test.js` (ONB-6-Block:
+  `loadTenantOpenAIP` Status, `setTenantOpenAIPKey` PUT-Body/Notice für
+  Setzen/Löschen, Fehlerpfad).
+
 ## Bekannte Grenze
 
 Wie ONB-5 wirkt der Live-Apply im **lokalen** Prozess. In einem Mehr-Replica-

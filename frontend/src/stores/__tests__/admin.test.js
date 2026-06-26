@@ -311,6 +311,44 @@ describe('admin store — feed lifecycle (ONB-5)', () => {
   })
 })
 
+describe('admin store — OpenAIP per tenant (ONB-6)', () => {
+  it('loadTenantOpenAIP reports the configured status', async () => {
+    installFetch({ 'GET /api/admin/tenants/5/openaip': { status: 200, body: { configured: true } } })
+    const s = useAdminStore()
+    const r = await s.loadTenantOpenAIP(5)
+    expect(r.ok).toBe(true)
+    expect(r.data.configured).toBe(true)
+  })
+
+  it('setTenantOpenAIPKey PUTs the key and sets a success notice', async () => {
+    const calls = installFetch({ 'PUT /api/admin/tenants/5/openaip': { status: 204 } })
+    const s = useAdminStore()
+    const r = await s.setTenantOpenAIPKey(5, 'my-key')
+    expect(r.ok).toBe(true)
+    const put = calls.find((c) => c.method === 'PUT')
+    expect(put.url).toBe('/api/admin/tenants/5/openaip')
+    expect(JSON.parse(put.body)).toEqual({ api_key: 'my-key' })
+    expect(s.notice).toMatch(/gespeichert/)
+  })
+
+  it('setTenantOpenAIPKey with null clears the key (sends api_key:null)', async () => {
+    const calls = installFetch({ 'PUT /api/admin/tenants/5/openaip': { status: 204 } })
+    const s = useAdminStore()
+    const r = await s.setTenantOpenAIPKey(5, null)
+    expect(r.ok).toBe(true)
+    expect(JSON.parse(calls[0].body)).toEqual({ api_key: null })
+    expect(s.notice).toMatch(/entfernt/)
+  })
+
+  it('setTenantOpenAIPKey surfaces a backend error', async () => {
+    installFetch({ 'PUT /api/admin/tenants/5/openaip': { status: 400, body: { error: 'api_key too long' } } })
+    const s = useAdminStore()
+    const r = await s.setTenantOpenAIPKey(5, 'x'.repeat(9999))
+    expect(r.ok).toBe(false)
+    expect(s.error).toMatch(/too long/)
+  })
+})
+
 describe('admin store — platform-admin management (ONB-3)', () => {
   it('loadAdmins GETs /api/admin/admins without storing globally', async () => {
     const calls = installFetch({

@@ -165,6 +165,59 @@
     </v-card-text>
   </v-card>
 
+  <!-- OpenAIP per tenant (ONB-6, ADR 0011). The key is a secret: the server
+       reports only whether one is set and never returns it, so the field starts
+       empty and shows the configured status separately. Saving an empty field
+       clears the key (falls back to the global key). -->
+  <v-card variant="tonal" class="mb-4">
+    <v-card-title class="text-subtitle-1">OpenAIP-Konfiguration</v-card-title>
+    <v-card-text>
+      <div class="d-flex align-center ga-2 mb-3">
+        <span>Eigener Schlüssel:</span>
+        <v-chip
+          :color="openaipConfigured ? 'success' : 'default'"
+          size="small"
+          variant="tonal"
+        >
+          {{ openaipConfigured ? 'gesetzt' : 'nicht gesetzt (globaler Schlüssel)' }}
+        </v-chip>
+      </div>
+      <div class="d-flex flex-wrap ga-3 align-center">
+        <v-text-field
+          v-model="openaipKey"
+          label="OpenAIP-API-Schlüssel"
+          placeholder="Neuen Schlüssel eingeben…"
+          variant="outlined"
+          density="compact"
+          hide-details
+          autocomplete="off"
+          :type="showKey ? 'text' : 'password'"
+          :append-inner-icon="showKey ? 'mdi-eye-off' : 'mdi-eye'"
+          style="max-width: 420px"
+          @click:append-inner="showKey = !showKey"
+        />
+        <v-btn color="primary" :loading="busy" :disabled="!openaipKey" @click="saveOpenAIPKey">
+          Schlüssel speichern
+        </v-btn>
+        <v-btn
+          v-if="openaipConfigured"
+          color="error"
+          variant="tonal"
+          :loading="busy"
+          @click="clearOpenAIPKey"
+        >
+          Schlüssel entfernen
+        </v-btn>
+      </div>
+      <p class="text-caption text-medium-emphasis mt-2">
+        Der gesetzte Schlüssel wird aus Sicherheitsgründen nie wieder angezeigt.
+        Mandanten ohne eigenen Schlüssel nutzen den globalen Schlüssel. Eine
+        Änderung greift sofort (kein Neustart); die Luftraumdaten werden gegen die
+        Standard-Ansicht (Zentrum/Radius) dieses Mandanten abgerufen.
+      </p>
+    </v-card-text>
+  </v-card>
+
   <!-- Feeds (cross-tenant provisioning, embedded) -->
   <v-card variant="tonal" class="mb-4">
     <v-card-title class="d-flex align-center text-subtitle-1">
@@ -213,6 +266,12 @@ const admin = useAdminStore()
 const busy = ref(false)
 const entitlements = ref([])
 const deleteDialog = ref(false) // ONB-4: delete-tenant confirmation
+
+// ONB-6: per-tenant OpenAIP key. The server never returns the key, only whether
+// one is configured; the input is for entering a *new* key (or clearing it).
+const openaipConfigured = ref(false)
+const openaipKey = ref('')
+const showKey = ref(false)
 
 // The tenant header (name/status) comes from the overview the parent loaded.
 const tenant = computed(() => admin.overview.find((t) => t.id === props.tenantId) || null)
@@ -273,6 +332,34 @@ async function toggleFeature(e, enabled) {
   busy.value = false
 }
 
+// ONB-6: load whether this tenant has its own OpenAIP key (status only).
+async function loadOpenAIP() {
+  const r = await admin.loadTenantOpenAIP(props.tenantId)
+  openaipConfigured.value = r.ok ? !!r.data.configured : false
+}
+
+async function saveOpenAIPKey() {
+  if (!openaipKey.value) return
+  busy.value = true
+  const r = await admin.setTenantOpenAIPKey(props.tenantId, openaipKey.value)
+  busy.value = false
+  if (r.ok) {
+    openaipKey.value = ''
+    showKey.value = false
+    await loadOpenAIP()
+  }
+}
+
+async function clearOpenAIPKey() {
+  busy.value = true
+  const r = await admin.setTenantOpenAIPKey(props.tenantId, null)
+  busy.value = false
+  if (r.ok) {
+    openaipKey.value = ''
+    await loadOpenAIP()
+  }
+}
+
 async function toggleStatus() {
   if (!tenant.value) return
   busy.value = true
@@ -323,6 +410,6 @@ function feedTitle(feedId) {
 }
 
 onMounted(async () => {
-  await Promise.all([loadView(), loadEntitlements(), admin.loadFeedsHealth()])
+  await Promise.all([loadView(), loadEntitlements(), loadOpenAIP(), admin.loadFeedsHealth()])
 })
 </script>

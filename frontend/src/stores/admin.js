@@ -278,6 +278,28 @@ export const useAdminStore = defineStore('admin', () => {
     return r
   }
 
+  // --- OpenAIP per tenant (ONB-6, ADR 0011) ---------------------------------
+  // Each tenant may carry its own OpenAIP key. loadTenantOpenAIP reports only
+  // whether a key is set (the server never returns the key itself); the caller
+  // owns the transient {configured} state. setTenantOpenAIPKey sets (string) or
+  // clears (null) the key — the server (re)applies the per-tenant refresh live.
+
+  async function loadTenantOpenAIP(tenantId) {
+    return apiFetch(`/api/admin/tenants/${tenantId}/openaip`)
+  }
+
+  async function setTenantOpenAIPKey(tenantId, apiKey) {
+    error.value = null
+    notice.value = null
+    const r = await apiFetch(`/api/admin/tenants/${tenantId}/openaip`, {
+      method: 'PUT',
+      body: JSON.stringify({ api_key: apiKey }),
+    })
+    if (r.ok) notice.value = apiKey ? 'OpenAIP-Schlüssel gespeichert.' : 'OpenAIP-Schlüssel entfernt.'
+    else error.value = r.error
+    return r
+  }
+
   // --- access management (AP6) ----------------------------------------------
   // Per-tenant access accounts (role user). The server enforces every boundary
   // (requireAdmin → 403); the UI gating is convenience only.
@@ -454,6 +476,7 @@ export const useAdminStore = defineStore('admin', () => {
     loadTenantUsers, createUser, setUserStatus, deleteUser, setUserPassword, setTenantStatus,
     createTenant, deleteTenant,
     createFeed, deleteFeed,
+    loadTenantOpenAIP, setTenantOpenAIPKey,
     changeOwnPassword, deleteOwnAccount,
     loadAdmins, createAdmin, setAdminStatus, deleteAdmin, setAdminPassword,
     clearBanners,
