@@ -96,14 +96,14 @@ Programmcode herunter).
    ```
    Jede Zeile sollte eine Versionsnummer ausgeben (keine Fehlermeldung).
 
-> ⚠️ **Mac-Besonderheit (wichtig!):** Docker läuft auf dem Mac in einer kleinen
-> internen Linux-Maschine. Der direkte „Host-Netzwerk"-Modus funktioniert hier
-> **nicht** — das betrifft das Repo-eigene `docker-compose.yml` (Single-Tenant)
-> und `docker-compose.onboarding.yml` (Multi-Tenant-Schnellstart), die beide
-> `network_mode: host` nutzen. **Teil 4** (Einzelplatz) umgeht das Problem, indem
-> Firefly und Wayfinder **gemeinsam** in einem eigenen Bridge-Netz laufen — das
-> klappt auf dem Mac **genauso wie auf Linux**. Für den Multi-Tenant-Schnellstart
-> (Teil 5) → DOCKER.md beschreibt das Mac-kompatible Master-Compose.
+> ⚠️ **Mac-Besonderheit (wichtig):** Docker läuft auf dem Mac in einer kleinen
+> internen Linux-Maschine. Der direkte „Host-Netzwerk"-Modus (`network_mode: host`)
+> funktioniert hier **nicht** — das betrifft das Repo-eigene `docker-compose.yml`
+> (Single-Tenant). **Teil 4** (Einzelplatz) und der **Multi-Tenant-Schnellstart
+> `docker-compose.onboarding.yml`** (Teil 5) nutzen dagegen ein Bridge-Netz und
+> laufen auf dem Mac **genauso wie auf Linux**. Sie müssen nichts extra tun,
+> einfach den Schritten folgen. (Für echte Tracks mit Firefly auf dem Mac →
+> DOCKER.md, „macOS/Windows"-Abschnitt.)
 
 ### 🪟 Windows
 
@@ -326,13 +326,12 @@ Feeds, die ihm zugewiesen wurden. Dazu kommen drei neue Bausteine hinzu:
 > möglich ist). **Kein `bootstrap`, kein Terminal-Schritt** nötig, um einen
 > nutzbaren Login zu bekommen.
 >
-> **Wichtig — Karte startet leer:** Die Datei enthält kein Firefly. Ohne laufende
-> CAT062-Quelle sehen Sie nur die Karte (kein Flugzeug, kein FEED-OK-Banner) —
-> das ist kein Fehler. Für echte Tracks → Firefly separat starten (DOCKER.md)
-> oder die manuellen Schritte 5.1–5.5 unten nutzen (Firefly mit dabei).
+> **Funktioniert auf macOS, Windows und Linux** — kein host networking, kein
+> Portkonflikt mit einem lokal laufenden PostgreSQL.
 >
-> **macOS/Windows:** `network_mode: host` funktioniert unter Docker Desktop nicht.
-> → DOCKER.md beschreibt das Mac-kompatible Master-Compose für den E2E-Fall.
+> **Karte startet leer:** Die Datei enthält kein Firefly. Ohne laufende
+> CAT062-Quelle sehen Sie nur die Karte (kein Flugzeug, kein FEED-OK-Banner) —
+> das ist kein Fehler. Für echte Tracks → Firefly separat starten (DOCKER.md).
 >
 > Wer diesen Schnellstart nutzt, **überspringt die Schritte 5.1–5.4 komplett**
 > (die beschreiben denselben Aufbau von Hand). Weiter ab **Schritt 5.5** (Feeds).
