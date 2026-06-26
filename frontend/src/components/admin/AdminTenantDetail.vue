@@ -20,7 +20,53 @@
     >
       {{ tenant.status === 'paused' ? 'Mandant reaktivieren' : 'Mandant pausieren' }}
     </v-btn>
+    <!-- ONB-4 (ADR 0011): delete the tenant. The server refuses (409) while it
+         still has accounts; the dialog explains that up front. -->
+    <v-btn
+      size="small"
+      color="error"
+      variant="tonal"
+      prepend-icon="mdi-delete"
+      :loading="busy"
+      @click="deleteDialog = true"
+    >
+      Mandant löschen
+    </v-btn>
   </div>
+
+  <!-- Delete tenant confirmation (ONB-4) -->
+  <v-dialog v-model="deleteDialog" max-width="480">
+    <v-card>
+      <v-card-title class="text-subtitle-1">Mandant löschen</v-card-title>
+      <v-card-text>
+        <p class="mb-2">
+          Mandant <strong>{{ tenant?.name || ('#' + tenantId) }}</strong> endgültig löschen?
+          Mit dem Mandanten werden auch seine Abos, Features und die Standard-Ansicht entfernt.
+          Diese Aktion kann nicht rückgängig gemacht werden.
+        </p>
+        <v-alert
+          v-if="tenant && tenant.user_count > 0"
+          type="warning"
+          variant="tonal"
+          density="compact"
+        >
+          Dieser Mandant hat noch {{ tenant.user_count }} Zugang/Zugänge. Aus
+          Sicherheitsgründen muss er leer sein — entfernen Sie zuerst alle Zugänge
+          im Abschnitt „Zugänge“.
+        </v-alert>
+      </v-card-text>
+      <v-card-actions>
+        <v-spacer />
+        <v-btn variant="text" @click="deleteDialog = false">Abbrechen</v-btn>
+        <v-btn
+          color="error"
+          :loading="busy"
+          :disabled="tenant && tenant.user_count > 0"
+          @click="submitDelete"
+        >Löschen</v-btn>
+      </v-card-actions>
+    </v-card>
+  </v-dialog>
 
   <!-- Sicht (Center + Radius + FL-Band) -->
   <v-card variant="tonal" class="mb-4">
@@ -119,6 +165,59 @@
     </v-card-text>
   </v-card>
 
+  <!-- OpenAIP per tenant (ONB-6, ADR 0011). The key is a secret: the server
+       reports only whether one is set and never returns it, so the field starts
+       empty and shows the configured status separately. Saving an empty field
+       clears the key (falls back to the global key). -->
+  <v-card variant="tonal" class="mb-4">
+    <v-card-title class="text-subtitle-1">OpenAIP-Konfiguration</v-card-title>
+    <v-card-text>
+      <div class="d-flex align-center ga-2 mb-3">
+        <span>Eigener Schlüssel:</span>
+        <v-chip
+          :color="openaipConfigured ? 'success' : 'default'"
+          size="small"
+          variant="tonal"
+        >
+          {{ openaipConfigured ? 'gesetzt' : 'nicht gesetzt (globaler Schlüssel)' }}
+        </v-chip>
+      </div>
+      <div class="d-flex flex-wrap ga-3 align-center">
+        <v-text-field
+          v-model="openaipKey"
+          label="OpenAIP-API-Schlüssel"
+          placeholder="Neuen Schlüssel eingeben…"
+          variant="outlined"
+          density="compact"
+          hide-details
+          autocomplete="off"
+          :type="showKey ? 'text' : 'password'"
+          :append-inner-icon="showKey ? 'mdi-eye-off' : 'mdi-eye'"
+          style="max-width: 420px"
+          @click:append-inner="showKey = !showKey"
+        />
+        <v-btn color="primary" :loading="busy" :disabled="!openaipKey" @click="saveOpenAIPKey">
+          Schlüssel speichern
+        </v-btn>
+        <v-btn
+          v-if="openaipConfigured"
+          color="error"
+          variant="tonal"
+          :loading="busy"
+          @click="clearOpenAIPKey"
+        >
+          Schlüssel entfernen
+        </v-btn>
+      </div>
+      <p class="text-caption text-medium-emphasis mt-2">
+        Der gesetzte Schlüssel wird aus Sicherheitsgründen nie wieder angezeigt.
+        Mandanten ohne eigenen Schlüssel nutzen den globalen Schlüssel. Eine
+        Änderung greift sofort (kein Neustart); die Luftraumdaten werden gegen die
+        Standard-Ansicht (Zentrum/Radius) dieses Mandanten abgerufen.
+      </p>
+    </v-card-text>
+  </v-card>
+
   <!-- Feeds (cross-tenant provisioning, embedded) -->
   <v-card variant="tonal" class="mb-4">
     <v-card-title class="d-flex align-center text-subtitle-1">
@@ -161,11 +260,18 @@ import AdminUsers from '@/components/admin/AdminUsers.vue'
 const props = defineProps({
   tenantId: { type: Number, required: true },
 })
-defineEmits(['back'])
+const emit = defineEmits(['back'])
 
 const admin = useAdminStore()
 const busy = ref(false)
 const entitlements = ref([])
+const deleteDialog = ref(false) // ONB-4: delete-tenant confirmation
+
+// ONB-6: per-tenant OpenAIP key. The server never returns the key, only whether
+// one is configured; the input is for entering a *new* key (or clearing it).
+const openaipConfigured = ref(false)
+const openaipKey = ref('')
+const showKey = ref(false)
 
 // The tenant header (name/status) comes from the overview the parent loaded.
 const tenant = computed(() => admin.overview.find((t) => t.id === props.tenantId) || null)
@@ -226,6 +332,34 @@ async function toggleFeature(e, enabled) {
   busy.value = false
 }
 
+// ONB-6: load whether this tenant has its own OpenAIP key (status only).
+async function loadOpenAIP() {
+  const r = await admin.loadTenantOpenAIP(props.tenantId)
+  openaipConfigured.value = r.ok ? !!r.data.configured : false
+}
+
+async function saveOpenAIPKey() {
+  if (!openaipKey.value) return
+  busy.value = true
+  const r = await admin.setTenantOpenAIPKey(props.tenantId, openaipKey.value)
+  busy.value = false
+  if (r.ok) {
+    openaipKey.value = ''
+    showKey.value = false
+    await loadOpenAIP()
+  }
+}
+
+async function clearOpenAIPKey() {
+  busy.value = true
+  const r = await admin.setTenantOpenAIPKey(props.tenantId, null)
+  busy.value = false
+  if (r.ok) {
+    openaipKey.value = ''
+    await loadOpenAIP()
+  }
+}
+
 async function toggleStatus() {
   if (!tenant.value) return
   busy.value = true
@@ -233,6 +367,20 @@ async function toggleStatus() {
   await admin.setTenantStatus(props.tenantId, next)
   await admin.loadOverview() // refresh the status chip
   busy.value = false
+}
+
+// submitDelete removes the tenant (ONB-4). On success the parent returns to the
+// overview, which reloads on mount; the server's guard B (409 while accounts
+// remain) is surfaced as a banner by the store.
+async function submitDelete() {
+  busy.value = true
+  const r = await admin.deleteTenant(props.tenantId)
+  busy.value = false
+  if (r.ok) {
+    deleteDialog.value = false
+    await admin.loadOverview()
+    emit('back')
+  }
 }
 
 function round(n) {
@@ -262,6 +410,6 @@ function feedTitle(feedId) {
 }
 
 onMounted(async () => {
-  await Promise.all([loadView(), loadEntitlements(), admin.loadFeedsHealth()])
+  await Promise.all([loadView(), loadEntitlements(), loadOpenAIP(), admin.loadFeedsHealth()])
 })
 </script>

@@ -126,6 +126,315 @@ describe('admin store — identity & role gating', () => {
   })
 })
 
+describe('admin store — forced password change (ONB-1)', () => {
+  it('exposes mustChangePassword from whoami', async () => {
+    installFetch({
+      'GET /api/admin/whoami': { status: 200, body: { subject: 'admin', tenant_id: 1, user_id: 1, role: 'admin', must_change_password: true } },
+    })
+    const s = useAdminStore()
+    await s.loadIdentity()
+    expect(s.isAuthorized).toBe(true)
+    expect(s.mustChangePassword).toBe(true)
+  })
+
+  it('mustChangePassword is false when the flag is absent or false', async () => {
+    installFetch({
+      'GET /api/admin/whoami': { status: 200, body: { subject: 'admin', tenant_id: 1, user_id: 1, role: 'admin', must_change_password: false } },
+    })
+    const s = useAdminStore()
+    await s.loadIdentity()
+    expect(s.mustChangePassword).toBe(false)
+  })
+
+  it('changeOwnPassword PUTs current+new password and reloads identity on success', async () => {
+    const calls = installFetch({
+      'PUT /api/admin/me/password': { status: 204 },
+      // after the change the flag is cleared
+      'GET /api/admin/whoami': { status: 200, body: { subject: 'admin', tenant_id: 1, user_id: 1, role: 'admin', must_change_password: false } },
+    })
+    const s = useAdminStore()
+    const r = await s.changeOwnPassword('admin', 'newsecret123')
+    expect(r.ok).toBe(true)
+    const put = calls.find((c) => c.method === 'PUT')
+    expect(JSON.parse(put.body)).toEqual({ current_password: 'admin', new_password: 'newsecret123' })
+    // identity reloaded → flag flipped off
+    expect(s.mustChangePassword).toBe(false)
+  })
+
+  it('changeOwnPassword surfaces a 401 (wrong current password)', async () => {
+    installFetch({
+      'PUT /api/admin/me/password': { status: 401, body: { error: 'current password is incorrect' } },
+    })
+    const s = useAdminStore()
+    const r = await s.changeOwnPassword('wrong', 'newsecret123')
+    expect(r.ok).toBe(false)
+    expect(r.status).toBe(401)
+    expect(s.error).toBeTruthy()
+  })
+})
+
+describe('admin store — self-management (ONB-2)', () => {
+  it('deleteOwnAccount DELETEs /api/admin/me and clears identity on success', async () => {
+    const calls = installFetch({
+      'DELETE /api/admin/me': { status: 204 },
+    })
+    const s = useAdminStore()
+    // pre-seed identity so there is something to clear
+    s.identity = { subject: 'admin', tenant_id: 1, user_id: 1, role: 'admin' }
+    const r = await s.deleteOwnAccount()
+    expect(r.ok).toBe(true)
+    expect(s.identity).toBeNull()
+    expect(s.accessStatus).toBe(401)
+    expect(s.isAuthorized).toBe(false)
+    expect(calls[0].url).toBe('/api/admin/me')
+    expect(calls[0].method).toBe('DELETE')
+  })
+
+  it('deleteOwnAccount surfaces 409 when last active admin tries to delete', async () => {
+    installFetch({
+      'DELETE /api/admin/me': { status: 409, body: { error: 'last active admin' } },
+    })
+    const s = useAdminStore()
+    s.identity = { subject: 'admin', tenant_id: 1, user_id: 1, role: 'admin' }
+    const r = await s.deleteOwnAccount()
+    expect(r.ok).toBe(false)
+    expect(r.status).toBe(409)
+    expect(s.error).toMatch(/last active admin/)
+    // identity remains — the account was NOT deleted
+    expect(s.identity).not.toBeNull()
+  })
+
+  it('deleteOwnAccount leaves identity intact on generic server error', async () => {
+    installFetch({
+      'DELETE /api/admin/me': { status: 500, body: { error: 'internal error' } },
+    })
+    const s = useAdminStore()
+    s.identity = { subject: 'admin', tenant_id: 1, user_id: 1, role: 'admin' }
+    const r = await s.deleteOwnAccount()
+    expect(r.ok).toBe(false)
+    expect(s.identity).not.toBeNull()
+  })
+})
+
+describe('admin store — tenant lifecycle (ONB-4)', () => {
+  it('createTenant POSTs the payload and sets a success notice', async () => {
+    const calls = installFetch({
+      'POST /api/admin/tenants': { status: 201, body: { id: 5, slug: 'acme', name: 'ACME', status: 'active' } },
+    })
+    const s = useAdminStore()
+    const r = await s.createTenant({ slug: 'acme', name: 'ACME' })
+    expect(r.ok).toBe(true)
+    const post = calls.find((c) => c.method === 'POST')
+    expect(post.url).toBe('/api/admin/tenants')
+    expect(JSON.parse(post.body)).toEqual({ slug: 'acme', name: 'ACME' })
+    expect(s.notice).toMatch(/angelegt/)
+  })
+
+  it('createTenant surfaces a 409 duplicate slug', async () => {
+    installFetch({ 'POST /api/admin/tenants': { status: 409, body: { error: 'slug already exists' } } })
+    const s = useAdminStore()
+    const r = await s.createTenant({ slug: 'acme' })
+    expect(r.ok).toBe(false)
+    expect(s.error).toBe('slug already exists')
+  })
+
+  it('createTenant surfaces a 400 invalid slug', async () => {
+    installFetch({ 'POST /api/admin/tenants': { status: 400, body: { error: 'invalid slug' } } })
+    const s = useAdminStore()
+    const r = await s.createTenant({ slug: 'BAD SLUG' })
+    expect(r.ok).toBe(false)
+    expect(s.error).toMatch(/invalid slug/)
+  })
+
+  it('deleteTenant DELETEs the tenant and sets a success notice', async () => {
+    const calls = installFetch({ 'DELETE /api/admin/tenants/5': { status: 204 } })
+    const s = useAdminStore()
+    const r = await s.deleteTenant(5)
+    expect(r.ok).toBe(true)
+    expect(calls[0].url).toBe('/api/admin/tenants/5')
+    expect(calls[0].method).toBe('DELETE')
+    expect(s.notice).toMatch(/gelöscht/)
+  })
+
+  it('deleteTenant shows a friendly message on the 409 not-empty guard', async () => {
+    installFetch({ 'DELETE /api/admin/tenants/5': { status: 409, body: { error: 'tenant still has accounts' } } })
+    const s = useAdminStore()
+    const r = await s.deleteTenant(5)
+    expect(r.ok).toBe(false)
+    expect(r.status).toBe(409)
+    expect(s.error).toMatch(/noch Zugänge/)
+  })
+})
+
+describe('admin store — feed lifecycle (ONB-5)', () => {
+  it('createFeed POSTs the payload and sets a success notice', async () => {
+    const calls = installFetch({
+      'POST /api/admin/feeds': {
+        status: 201,
+        body: { id: 5, name: 'north', multicast_group: '239.255.0.70', port: 8600, sensor_mix: ['PSR'] },
+      },
+    })
+    const s = useAdminStore()
+    const r = await s.createFeed({ name: 'north', multicast_group: '239.255.0.70', port: 8600, sensor_mix: ['PSR'] })
+    expect(r.ok).toBe(true)
+    const post = calls.find((c) => c.method === 'POST')
+    expect(post.url).toBe('/api/admin/feeds')
+    expect(JSON.parse(post.body)).toEqual({ name: 'north', multicast_group: '239.255.0.70', port: 8600, sensor_mix: ['PSR'] })
+    expect(s.notice).toMatch(/angelegt/)
+  })
+
+  it('createFeed shows a friendly message on the 409 duplicate name', async () => {
+    installFetch({ 'POST /api/admin/feeds': { status: 409, body: { error: 'a feed with this name already exists' } } })
+    const s = useAdminStore()
+    const r = await s.createFeed({ name: 'north', multicast_group: '239.255.0.70', port: 8600 })
+    expect(r.ok).toBe(false)
+    expect(r.status).toBe(409)
+    expect(s.error).toMatch(/bereits/)
+  })
+
+  it('createFeed surfaces a 400 invalid multicast group', async () => {
+    installFetch({ 'POST /api/admin/feeds': { status: 400, body: { error: 'multicast_group must be an IPv4 address' } } })
+    const s = useAdminStore()
+    const r = await s.createFeed({ name: 'north', multicast_group: 'nope', port: 8600 })
+    expect(r.ok).toBe(false)
+    expect(s.error).toMatch(/IPv4/)
+  })
+
+  it('deleteFeed DELETEs the feed and sets a success notice', async () => {
+    const calls = installFetch({ 'DELETE /api/admin/feeds/3': { status: 204 } })
+    const s = useAdminStore()
+    const r = await s.deleteFeed(3)
+    expect(r.ok).toBe(true)
+    expect(calls[0].url).toBe('/api/admin/feeds/3')
+    expect(calls[0].method).toBe('DELETE')
+    expect(s.notice).toMatch(/gelöscht/)
+  })
+})
+
+describe('admin store — OpenAIP per tenant (ONB-6)', () => {
+  it('loadTenantOpenAIP reports the configured status', async () => {
+    installFetch({ 'GET /api/admin/tenants/5/openaip': { status: 200, body: { configured: true } } })
+    const s = useAdminStore()
+    const r = await s.loadTenantOpenAIP(5)
+    expect(r.ok).toBe(true)
+    expect(r.data.configured).toBe(true)
+  })
+
+  it('setTenantOpenAIPKey PUTs the key and sets a success notice', async () => {
+    const calls = installFetch({ 'PUT /api/admin/tenants/5/openaip': { status: 204 } })
+    const s = useAdminStore()
+    const r = await s.setTenantOpenAIPKey(5, 'my-key')
+    expect(r.ok).toBe(true)
+    const put = calls.find((c) => c.method === 'PUT')
+    expect(put.url).toBe('/api/admin/tenants/5/openaip')
+    expect(JSON.parse(put.body)).toEqual({ api_key: 'my-key' })
+    expect(s.notice).toMatch(/gespeichert/)
+  })
+
+  it('setTenantOpenAIPKey with null clears the key (sends api_key:null)', async () => {
+    const calls = installFetch({ 'PUT /api/admin/tenants/5/openaip': { status: 204 } })
+    const s = useAdminStore()
+    const r = await s.setTenantOpenAIPKey(5, null)
+    expect(r.ok).toBe(true)
+    expect(JSON.parse(calls[0].body)).toEqual({ api_key: null })
+    expect(s.notice).toMatch(/entfernt/)
+  })
+
+  it('setTenantOpenAIPKey surfaces a backend error', async () => {
+    installFetch({ 'PUT /api/admin/tenants/5/openaip': { status: 400, body: { error: 'api_key too long' } } })
+    const s = useAdminStore()
+    const r = await s.setTenantOpenAIPKey(5, 'x'.repeat(9999))
+    expect(r.ok).toBe(false)
+    expect(s.error).toMatch(/too long/)
+  })
+})
+
+describe('admin store — platform-admin management (ONB-3)', () => {
+  it('loadAdmins GETs /api/admin/admins without storing globally', async () => {
+    const calls = installFetch({
+      'GET /api/admin/admins': {
+        status: 200,
+        body: [{ id: 1, subject: 'root', status: 'active', must_change_password: false }],
+      },
+    })
+    const s = useAdminStore()
+    const r = await s.loadAdmins()
+    expect(r.ok).toBe(true)
+    expect(r.data[0].subject).toBe('root')
+    expect(calls[0].url).toBe('/api/admin/admins')
+    expect(calls[0].method).toBe('GET')
+  })
+
+  it('createAdmin POSTs the payload and sets a success notice', async () => {
+    const calls = installFetch({
+      'POST /api/admin/admins': { status: 201, body: { id: 7, subject: 'ops', status: 'active' } },
+    })
+    const s = useAdminStore()
+    const r = await s.createAdmin({ subject: 'ops', password: 'hunter2!!' })
+    expect(r.ok).toBe(true)
+    const post = calls.find((c) => c.method === 'POST')
+    expect(post.url).toBe('/api/admin/admins')
+    expect(JSON.parse(post.body)).toEqual({ subject: 'ops', password: 'hunter2!!' })
+    expect(s.notice).toMatch(/angelegt/)
+  })
+
+  it('createAdmin surfaces a 409 duplicate error', async () => {
+    installFetch({ 'POST /api/admin/admins': { status: 409, body: { error: 'subject already exists' } } })
+    const s = useAdminStore()
+    const r = await s.createAdmin({ subject: 'taken' })
+    expect(r.ok).toBe(false)
+    expect(s.error).toBe('subject already exists')
+  })
+
+  it('setAdminStatus PATCHes the new status', async () => {
+    const calls = installFetch({ 'PATCH /api/admin/admins/7': { status: 204 } })
+    const s = useAdminStore()
+    const r = await s.setAdminStatus(7, 'paused')
+    expect(r.ok).toBe(true)
+    const patch = calls.find((c) => c.method === 'PATCH')
+    expect(patch.url).toBe('/api/admin/admins/7')
+    expect(JSON.parse(patch.body)).toEqual({ status: 'paused' })
+    expect(s.notice).toMatch(/pausiert/)
+  })
+
+  it('setAdminStatus shows a friendly message on the 409 last-admin guard', async () => {
+    installFetch({ 'PATCH /api/admin/admins/7': { status: 409, body: { error: 'cannot pause the last active admin' } } })
+    const s = useAdminStore()
+    const r = await s.setAdminStatus(7, 'paused')
+    expect(r.ok).toBe(false)
+    expect(r.status).toBe(409)
+    expect(s.error).toMatch(/letzte aktive Administrator/)
+  })
+
+  it('deleteAdmin DELETEs the admin', async () => {
+    const calls = installFetch({ 'DELETE /api/admin/admins/7': { status: 204 } })
+    const s = useAdminStore()
+    const r = await s.deleteAdmin(7)
+    expect(r.ok).toBe(true)
+    expect(calls[0].url).toBe('/api/admin/admins/7')
+    expect(calls[0].method).toBe('DELETE')
+    expect(s.notice).toMatch(/gelöscht/)
+  })
+
+  it('deleteAdmin shows a friendly message on the 409 last-admin guard', async () => {
+    installFetch({ 'DELETE /api/admin/admins/7': { status: 409, body: { error: 'cannot delete the last active admin' } } })
+    const s = useAdminStore()
+    const r = await s.deleteAdmin(7)
+    expect(r.ok).toBe(false)
+    expect(s.error).toMatch(/letzte aktive Administrator/)
+  })
+
+  it('setAdminPassword PUTs the new password', async () => {
+    const calls = installFetch({ 'PUT /api/admin/admins/7/password': { status: 204 } })
+    const s = useAdminStore()
+    const r = await s.setAdminPassword(7, 'newsecret1')
+    expect(r.ok).toBe(true)
+    const put = calls.find((c) => c.method === 'PUT')
+    expect(put.url).toBe('/api/admin/admins/7/password')
+    expect(JSON.parse(put.body)).toEqual({ password: 'newsecret1' })
+  })
+})
+
 describe('admin store — login', () => {
   it('login POSTs subject and password to /api/login', async () => {
     const calls = installFetch({ 'POST /api/login': { status: 204 } })

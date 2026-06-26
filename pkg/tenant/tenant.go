@@ -16,12 +16,15 @@ import (
 )
 
 // Identity is the authenticated principal behind a request: which user, which
-// tenant, which role.
+// tenant, which role. MustChangePassword (ONB-1, ADR 0011) is carried here so the
+// admin API can gate every route except the password-change endpoint fail-closed
+// without a second database lookup — the middleware already resolved the user.
 type Identity struct {
-	TenantID int64
-	UserID   int64
-	Subject  string
-	Role     store.Role
+	TenantID           int64
+	UserID             int64
+	Subject            string
+	Role               store.Role
+	MustChangePassword bool
 }
 
 type ctxKey struct{}
@@ -68,7 +71,7 @@ func Middleware(authenticator auth.Authenticator, users UserLookup, logger *slog
 				return
 			}
 
-			id := Identity{TenantID: u.TenantID, UserID: u.ID, Subject: u.Subject, Role: u.Role}
+			id := Identity{TenantID: u.TenantID, UserID: u.ID, Subject: u.Subject, Role: u.Role, MustChangePassword: u.MustChangePassword}
 			next.ServeHTTP(w, r.WithContext(WithIdentity(r.Context(), id)))
 		})
 	}

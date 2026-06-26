@@ -2,10 +2,13 @@ package receiver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
+	"os"
 	"sync/atomic"
+	"time"
 
 	"github.com/manuelringwald/wayfinder/pkg/cat062"
 	"github.com/manuelringwald/wayfinder/pkg/cat063"
@@ -23,6 +26,7 @@ type Receiver struct {
 	handler             func(feedID int64, tracks []cat062.DecodedTrack) error
 	statusHandler       func(status cat065.ServiceStatus) error
 	sensorStatusHandler func(statuses []cat063.SensorStatus) error
+	onDecodeError       func()
 
 	decodeErrors atomic.Int64
 }
@@ -47,6 +51,12 @@ type Config struct {
 	// (Firefly ICD 2.5.0, ADR 0022). Optional; nil means sensor status blocks
 	// are decoded and logged but otherwise ignored.
 	SensorStatusHandler func(statuses []cat063.SensorStatus) error
+	// OnDecodeError, if set, is called once per datagram that fails to decode or
+	// carries an unknown ASTERIX category. It lets the caller keep a process-wide,
+	// churn-stable decode-error counter (ONB-5): receivers come and go as feeds are
+	// added/removed, so summing each receiver's own count would make the metric
+	// non-monotonic. The receiver's DecodeErrorCount() is unaffected.
+	OnDecodeError func()
 }
 
 // New creates a new Receiver with the given configuration.
@@ -83,7 +93,17 @@ func New(cfg Config) (*Receiver, error) {
 		handler:             cfg.Handler,
 		statusHandler:       cfg.StatusHandler,
 		sensorStatusHandler: cfg.SensorStatusHandler,
+		onDecodeError:       cfg.OnDecodeError,
 	}, nil
+}
+
+// countDecodeError increments the receiver's own decode-error counter and, if
+// configured, notifies the process-wide decode-error hook (ONB-5).
+func (r *Receiver) countDecodeError() {
+	r.decodeErrors.Add(1)
+	if r.onDecodeError != nil {
+		r.onDecodeError()
+	}
 }
 
 // Listen opens the UDP-Multicast socket and joins the multicast group.
@@ -108,12 +128,34 @@ func (r *Receiver) Listen() error {
 
 // Run starts the receive loop. It blocks until context is cancelled or an error occurs.
 // Malformed blocks are logged and skipped; errors from the handler propagate.
+//
+// Prompt cancellation (ONB-5, ADR 0011): a blocked ReadFromUDP does not observe a
+// context cancellation on its own, so the live feed manager could not promptly
+// leave the multicast group of a *dead* feed (no datagram to unblock the read).
+// A watchdog goroutine sets a past read deadline the moment ctx is done, which
+// makes the in-flight read return immediately with a deadline error; we then see
+// ctx.Err() and stop cleanly. This is the idiomatic way to interrupt a blocked
+// UDP read and guarantees the socket (and its IGMP group membership) is released
+// at once.
 func (r *Receiver) Run(ctx context.Context) error {
 	if r.conn == nil {
 		return fmt.Errorf("not listening; call Listen() first")
 	}
 
 	defer r.conn.Close()
+
+	// Watchdog: unblock a read in progress as soon as the context is cancelled.
+	stopWatch := make(chan struct{})
+	defer close(stopWatch)
+	go func() {
+		select {
+		case <-ctx.Done():
+			// A deadline in the past makes the current/next ReadFromUDP return at
+			// once with os.ErrDeadlineExceeded; the loop then observes ctx.Done().
+			_ = r.conn.SetReadDeadline(time.Now())
+		case <-stopWatch:
+		}
+	}()
 
 	buffer := make([]byte, 65535) // Max UDP datagram size
 
@@ -126,6 +168,18 @@ func (r *Receiver) Run(ctx context.Context) error {
 
 		n, remoteAddr, err := r.conn.ReadFromUDP(buffer)
 		if err != nil {
+			// A read interrupted by the cancellation watchdog (deadline exceeded)
+			// is a clean stop, not a feed error — report the context cause.
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			if errors.Is(err, os.ErrDeadlineExceeded) {
+				// Defensive: a deadline fired without cancellation (should not
+				// happen, as we only ever set it from the watchdog). Clear it and
+				// continue rather than treating it as a fatal feed error.
+				_ = r.conn.SetReadDeadline(time.Time{})
+				continue
+			}
 			return fmt.Errorf("read multicast: %w", err)
 		}
 		if n == 0 {
@@ -149,7 +203,7 @@ func (r *Receiver) dispatch(data []byte, remote *net.UDPAddr) {
 	case cat063.Category: // 0x3F CAT063 — per-sensor status (ADR 0022)
 		r.handleSensorStatus(data, remote)
 	default:
-		r.decodeErrors.Add(1)
+		r.countDecodeError()
 		r.logger.Error("unknown ASTERIX category",
 			slog.String("remote", remote.String()),
 			slog.Int("cat", int(data[0])),
@@ -161,7 +215,7 @@ func (r *Receiver) dispatch(data []byte, remote *net.UDPAddr) {
 func (r *Receiver) handleTracks(data []byte, remote *net.UDPAddr) {
 	tracks, err := cat062.DecodeDataBlock(data)
 	if err != nil {
-		r.decodeErrors.Add(1)
+		r.countDecodeError()
 		r.logger.Error("decode CAT062 block",
 			slog.String("remote", remote.String()),
 			slog.Int("bytes", len(data)),
@@ -188,7 +242,7 @@ func (r *Receiver) handleTracks(data []byte, remote *net.UDPAddr) {
 func (r *Receiver) handleStatus(data []byte, remote *net.UDPAddr) {
 	reports, err := cat065.DecodeStatusBlock(data)
 	if err != nil {
-		r.decodeErrors.Add(1)
+		r.countDecodeError()
 		r.logger.Error("decode CAT065 block",
 			slog.String("remote", remote.String()),
 			slog.Int("bytes", len(data)),
@@ -211,7 +265,7 @@ func (r *Receiver) handleStatus(data []byte, remote *net.UDPAddr) {
 func (r *Receiver) handleSensorStatus(data []byte, remote *net.UDPAddr) {
 	statuses, err := cat063.DecodeSensorBlock(data)
 	if err != nil {
-		r.decodeErrors.Add(1)
+		r.countDecodeError()
 		r.logger.Error("decode CAT063 block",
 			slog.String("remote", remote.String()),
 			slog.Int("bytes", len(data)),

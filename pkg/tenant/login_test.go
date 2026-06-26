@@ -139,17 +139,24 @@ func TestLoginEnforcesStatus(t *testing.T) {
 			"bob": {ID: 5, TenantID: 1, Subject: "bob", Role: store.RoleUser, Status: status},
 		}}
 	}
+	// A platform admin is tenant-less (TenantID 0, ONB-3): the tenant-pause cascade
+	// is skipped entirely, so a failing tenant lookup must not lock the admin out.
+	adminUser := fakeUsers{bySubject: map[string]store.User{
+		"bob": {ID: 5, TenantID: 0, Subject: "bob", Role: store.RoleAdmin, Status: store.StatusActive},
+	}}
 
 	cases := map[string]struct {
 		users   fakeUsers
 		tenants TenantLookup
 		want    int
 	}{
-		"active account, active tenant": {usersWith(store.StatusActive), activeTenant, http.StatusNoContent},
-		"paused account":                {usersWith(store.StatusPaused), activeTenant, http.StatusUnauthorized},
-		"paused tenant cascades":        {usersWith(store.StatusActive), pausedTenant, http.StatusUnauthorized},
-		"tenant lookup error denies":    {usersWith(store.StatusActive), fakeTenants{err: store.ErrNotFound}, http.StatusUnauthorized},
-		"nil tenants skips cascade":     {usersWith(store.StatusActive), nil, http.StatusNoContent},
+		"active account, active tenant":   {usersWith(store.StatusActive), activeTenant, http.StatusNoContent},
+		"paused account":                  {usersWith(store.StatusPaused), activeTenant, http.StatusUnauthorized},
+		"paused tenant cascades":          {usersWith(store.StatusActive), pausedTenant, http.StatusUnauthorized},
+		"tenant lookup error denies":      {usersWith(store.StatusActive), fakeTenants{err: store.ErrNotFound}, http.StatusUnauthorized},
+		"nil tenants skips cascade":       {usersWith(store.StatusActive), nil, http.StatusNoContent},
+		"tenantless admin not locked out": {adminUser, fakeTenants{err: store.ErrNotFound}, http.StatusNoContent},
+		"paused admin still denied":       {fakeUsers{bySubject: map[string]store.User{"bob": {ID: 5, TenantID: 0, Subject: "bob", Role: store.RoleAdmin, Status: store.StatusPaused}}}, activeTenant, http.StatusUnauthorized},
 	}
 	for name, tc := range cases {
 		h := LoginHandler(tc.users, creds, tc.tenants, LoginConfig{SessionKey: loginKey})

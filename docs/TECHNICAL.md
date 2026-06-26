@@ -197,21 +197,42 @@ Durch `authMiddleware` geschützt (wenn `WAYFINDER_AUTH_TOKEN` gesetzt).
 | `/admin` | GET | Admin-Oberfläche (Vue-SPA-Route, History-Mode; nur sinnvoll bei Multi-Tenancy) — WF2-32 |
 | `/ws` | GET → Upgrade | WebSocket — Track- und Feed-Status-Updates |
 | `/api/map-config` | GET | Kartentheme und Startkonfiguration als JSON |
-| `/api/airspace` | GET | Luftraumstrukturen (GeoJSON, best-effort) |
-| `/api/navaids` | GET | VOR/NDB-Beacons (GeoJSON, best-effort) |
-| `/api/waypoints` | GET | Wegpunkte (GeoJSON, best-effort) |
-| `/api/admin/whoami` | GET | Rollen-Probe + **effektive Feature-Flags** (`features`) als JSON; rollen-gegated (WF2-32/50) |
+| `/api/airspace` | GET | Luftraumstrukturen (GeoJSON, best-effort). **ONB-6 (ADR 0011):** im Multi-Mandanten-Betrieb hinter der Tenant-Middleware und liefert den **Cache des Request-Mandanten** (eigener Schlüssel/AOI, Fallback auf den globalen Cache); Single-Tenant unverändert global/unauthentifiziert |
+| `/api/navaids` | GET | VOR/NDB-Beacons (GeoJSON, best-effort). **ONB-6:** mandanten-aufgelöst wie `/api/airspace` |
+| `/api/waypoints` | GET | Wegpunkte (GeoJSON, best-effort). **ONB-6:** mandanten-aufgelöst wie `/api/airspace` |
+| `/api/admin/whoami` | GET | Rollen-Probe + **effektive Feature-Flags** (`features`) als JSON; enthält seit ONB-1 `must_change_password`; rollen-gegated (WF2-32/50) |
+| `/api/admin/me` | GET | **ONB-1 (ADR 0011):** eigenes Konto (`{user_id, tenant_id, subject, role, must_change_password}`); **rollen-unabhängig** (kein `requireAdmin`) |
+| `/api/admin/me/password` | PUT | **ONB-1:** eigenes Passwort ändern (`{current_password, new_password}`, neu min. 8); aktuelles Passwort falsch → 401; setzt `must_change_password=false`; **auch im Pflichtwechsel-Zustand erreichbar** |
+| `/api/admin/me` | DELETE | **ONB-1:** eigenes Konto löschen; **„letzter aktiver Admin"-Guard** (letzter Admin → 409, keine Selbst-Aussperrung) |
 | `/api/admin/overview` | GET | **AP3:** Mandanten-Dashboard als Aggregat — je Mandant `{id, slug, name, status, features[], feeds[], user_count}` in einem Call; **admin** |
 | `/api/admin/feeds/health` | GET | **AP4:** Gesundheitszustand aller Feeds — je Feed `{feed_id, color, stale, ever_seen, last_heartbeat_ago_s, track_count_recent, sensors_active, sensors_total}` aus der In-Memory-Health-Registry; `color` ist **grün** (Heartbeat frisch, unabhängig vom Verkehr — leerer Himmel ist kein Fehler) / **gelb** (Sensor-Teilausfall: `sensors_active < sensors_total > 0`; CAT063, ADR 0010) / **rot** (kein Heartbeat = toter Feed oder nie gesehen); **admin** |
+| `/api/admin/feeds` | POST | **ONB-5 (ADR 0011):** neuen Feed anlegen (`{name, multicast_group, port, region?, sensor_mix?}`) → 201; `multicast_group` muss IPv4-Multicast sein (224.0.0.0–239.255.255.255), `port` 1..65535, `sensor_mix` gegen das Sensorklassen-Vokabular validiert (unbekannt → 400); doppelter Name → 409; **der Live-Receiver tritt der Multicast-Gruppe sofort bei** (kein Neustart); scheitert der Beitritt, wird die Katalogzeile zurückgerollt; **admin** |
+| `/api/admin/feeds/{id}` | DELETE | **ONB-5:** Feed löschen → 204; **der Live-Receiver verlässt die Multicast-Gruppe sofort**; kaskadiert (ON DELETE CASCADE) auf die Abos, die ihn referenzierten (Guard C: kein Blockieren bei bestehenden Abos — Grants kaskadieren); unbekannter Feed → 404; **admin** |
 | `/api/admin/tenants/{id}/view` | GET/PUT | **AP3:** Standard-Sicht **eines beliebigen** Mandanten lesen/schreiben (cross-tenant Editor; gleiche `validateView` wie `/api/admin/view`); **admin** |
 | `/api/admin/tenants/{id}/entitlements[/{key}]` | GET/PUT | Feature-Entitlements pro Mandant; **admin** (WF2-50) |
-| `/api/admin/tenants/{id}/users` | GET/POST | Zugänge eines Mandanten auflisten / anlegen (AP6); **admin**. POST `{subject, email?, password?}` → 201; Rolle immer `user`; Passwort min. 8 Zeichen; doppelter Subject → 409 |
+| `/api/admin/tenants/{id}/openaip` | GET | **ONB-6 (ADR 0011):** meldet `{configured: bool}` — ob der Mandant einen **eigenen** OpenAIP-Schlüssel hat. **Nie der Schlüssel selbst.** **admin** |
+| `/api/admin/tenants/{id}/openaip` | PUT | **ONB-6:** Schlüssel setzen/löschen (`{api_key: string\|null}`) → 204; leer/Whitespace/`null` = löschen (Rückfall auf den globalen Schlüssel); zu lang → 400; unbekannter Mandant → 404; **Live-Apply** (re)startet den Per-Mandant-Refresh sofort; **admin** |
+| `/api/admin/admins` | GET/POST | **ONB-3 (ADR 0011):** Plattform-Admins (global, **kein Mandant**) auflisten / anlegen; **admin**. POST `{subject, email?, password?}` → 201; doppelter Subject → 409; Passwort min. 8 (optional, für Proxy-Modus) |
+| `/api/admin/admins/{id}` | PATCH/DELETE | **ONB-3:** Admin pausieren/reaktivieren (`{status}`) bzw. löschen; **admin**; **„letzter aktiver Admin"-Guard** (Pausieren/Löschen des letzten aktiven Admins → 409); ID eines Mandanten-Nutzers → 404 (nicht auf dieser Fläche erreichbar) |
+| `/api/admin/admins/{id}/password` | PUT | **ONB-3:** Admin-Passwort setzen/zurücksetzen (`{password}`, min. 8); **admin** |
+| `/api/admin/tenants/{id}/users` | GET/POST | Zugänge eines Mandanten (Rolle `user`) auflisten / anlegen (AP6); **admin**. POST `{subject, email?, password?}` → 201; Rolle **immer `user`** (ein mitgeschicktes `role:"admin"` → 400, Admins laufen über `/api/admin/admins`, ONB-3); Passwort min. 8 Zeichen; doppelter Subject → 409 |
 | `/api/admin/tenants/{id}/users/{uid}` | PATCH/DELETE | Zugang pausieren/reaktivieren (`{status:"active"\|"paused"}`) bzw. löschen (AP6); **admin**. User-ID aus fremdem Mandanten → 404 |
 | `/api/admin/tenants/{id}/users/{uid}/password` | PUT | Passwort setzen/zurücksetzen (`{password}`, min. 8) (AP6); **admin** |
+| `/api/admin/tenants` | POST | **ONB-4 (ADR 0011):** neuen Mandanten anlegen (`{slug, name?}`) → 201; Slug DNS-label-artig (Kleinbuchstaben/Ziffern/Bindestrich, kein führender/abschließender Bindestrich, ≤ 63), `name` Default = `slug`; doppelter Slug → 409; **admin** |
+| `/api/admin/tenants/{id}` | DELETE | **ONB-4:** Mandanten löschen → 204; kaskadiert (ON DELETE CASCADE) auf Zugänge (+ Credentials), Abos, Entitlements, View-Konfig; **Guard B**: solange der Mandant noch **Zugänge** hat → **409** (erst Konten entfernen); **admin** |
 | `/api/admin/tenants/{id}` | PATCH | Mandant pausieren/reaktivieren (`{status}`); kaskadiert via Login-Enforcement auf alle Zugänge (AP6); **admin** |
 | `/api/admin/sensor-classes` | GET | Sensorklassen-Katalog (read-only Referenz, WF2-41) |
 | `/api/admin/impersonation` | GET/POST/DELETE | Cross-Tenant Read-Only-Impersonation (ADR 0008): **GET** liefert den aktuellen Status (`{active, tenant_id}`) für den Banner (Reload-fest, da der Cookie HttpOnly ist); **POST** `{"tenant_id":…}` mintet den signierten Grant-Cookie (`super_admin` only, Ziel-Mandant muss existieren → sonst 404); **DELETE** beendet sie (Cookie löschen). Nur aktiv, wenn ein Signing-Key (`WAYFINDER_SESSION_KEY`) konfiguriert ist. |
 | `/api/admin/*` | div. | Tenant-skopiertes Admin-API (WF2-31/31b); rollen-gegated |
+
+> **Pflicht-Passwortwechsel-Gate (ONB-1, ADR 0011):** Trägt das eingeloggte Konto
+> `must_change_password=true` (so wird der beim ersten Boot auto-seedete
+> Standard-Admin angelegt), weist das Admin-API **jede** Route außer `GET
+> /api/admin/whoami`, `GET /api/admin/me` und `PUT /api/admin/me/password`
+> **fail-closed mit 403 `password_change_required`** ab. Das Flag wird vom
+> `tenant.Identity` getragen (kein zusätzlicher DB-Lookup); das SPA erkennt den
+> Marker und zeigt die Pflichtwechsel-Maske. Erst der erfolgreiche Passwortwechsel
+> setzt das Flag zurück und gibt das übrige Admin-Surface frei.
 
 > **Feed-Sensorklassen & Abo-Entitlement (WF2-41):** Ein Feed trägt eine
 > **Sensorklassen-Zusammensetzung** als Metadatum (`sensor_mix`) aus dem
@@ -301,9 +322,9 @@ externe Prometheus-Bibliothek — der Exporter ist handgerollt in
 
 | Metrik | Typ | Beschreibung |
 |--------|-----|--------------|
-| `wayfinder_openaip_fetch_success_total` | Counter | Anzahl erfolgreicher OpenAIP-Datenabrufe |
-| `wayfinder_openaip_fetch_failures_total` | Counter | Anzahl fehlgeschlagener OpenAIP-Datenabrufe |
-| `wayfinder_openaip_cache_age_seconds` | Gauge | Alter des letzten erfolgreichen Cache-Befüllens in Sekunden; `-1` wenn noch kein erfolgreicher Fetch |
+| `wayfinder_openaip_fetch_success_total` | Counter | Anzahl erfolgreicher OpenAIP-Datenabrufe. **ONB-6:** im Multi-Mandanten-Betrieb **Summe** über den globalen + alle Per-Mandant-Caches (monoton über Mandanten-Churn) |
+| `wayfinder_openaip_fetch_failures_total` | Counter | Anzahl fehlgeschlagener OpenAIP-Datenabrufe. **ONB-6:** wie oben summiert |
+| `wayfinder_openaip_cache_age_seconds` | Gauge | Alter des letzten erfolgreichen Cache-Befüllens in Sekunden; `-1` wenn noch kein erfolgreicher Fetch. **ONB-6:** bezieht sich auf den **globalen Fallback-Cache** |
 
 ### 5.5 Feature-Entitlements (Multi-Mandant, WF2-50)
 
@@ -392,10 +413,10 @@ Auflösung (höchste Priorität zuerst):
 
 | Variable | Default | Typ | Beschreibung |
 |----------|---------|-----|--------------|
-| `WAYFINDER_OPENAIP_API_KEY` | *(leer)* | string | API-Key; leer = Feature deaktiviert |
-| `WAYFINDER_OPENAIP_RADIUS_KM` | `250` | int | Abfrageradius um Kartenzentrum in km |
-| `WAYFINDER_OPENAIP_REFRESH` | `24h` | duration | Refresh-Intervall (Go-Duration, z. B. `1h`, `30m`) |
-| `WAYFINDER_OPENAIP_BASE_URL` | *(intern)* | URL | Override der OpenAIP-API-Basis-URL |
+| `WAYFINDER_OPENAIP_API_KEY` | *(leer)* | string | **Globaler** API-Key; leer = Feature global aus. **ONB-6 (ADR 0011):** dient im Multi-Mandanten-Betrieb als **Fallback** für Mandanten ohne eigenen Schlüssel; pro Mandant wird der Schlüssel in der DB (`tenants.openaip_api_key`) über `PUT /api/admin/tenants/{id}/openaip` gesetzt |
+| `WAYFINDER_OPENAIP_RADIUS_KM` | `250` | int | Abfrageradius um das Zentrum in km. **ONB-6:** je Mandant um das **View-Zentrum** (oder dessen AOI-Box, falls gesetzt); ohne View die globale Karten-Box |
+| `WAYFINDER_OPENAIP_REFRESH` | `24h` | duration | Refresh-Intervall (Go-Duration, z. B. `1h`, `30m`); gilt für den globalen **und** jeden Per-Mandant-Refresh |
+| `WAYFINDER_OPENAIP_BASE_URL` | *(intern)* | URL | Override der OpenAIP-API-Basis-URL (geteilt von globalem und Per-Mandant-Client) |
 
 ### 6.5 Radarabdeckungs-Overlay (Paket 6)
 
@@ -447,7 +468,7 @@ Identitäts-Modell siehe ADR 0006 §5.
 | `WAYFINDER_AUTH_MODE` | `none` | enum | `proxy` / `builtin` / `none`. Ungültig → `none`. |
 | `WAYFINDER_OIDC_ISSUER` | *(leer)* | URL | proxy: OIDC-Issuer (Discovery/JWKS), Pflicht. |
 | `WAYFINDER_OIDC_AUDIENCE` | *(leer)* | string | proxy: erwartete Audience, Pflicht. |
-| `WAYFINDER_SESSION_KEY` | *(leer)* | string | builtin: HMAC-Schlüssel für Session-Cookies, Pflicht. |
+| `WAYFINDER_SESSION_KEY` | *(leer)* | string | builtin: HMAC-Schlüssel für Session-Cookies. Leer in builtin → Wayfinder erzeugt einen **flüchtigen** Zufalls-Schlüssel und warnt (Sessions überleben keinen Neustart, nicht multi-Replica-fähig; ONB-1, ADR 0011). Für Produktion festen Schlüssel setzen (`openssl rand -hex 32`). |
 | `WAYFINDER_SESSION_COOKIE` | `wf_session` | string | builtin: Cookie-Name. |
 | `WAYFINDER_SESSION_TTL` | `12h` | duration | builtin: Session-Lebensdauer. |
 | `WAYFINDER_NONE_SUBJECT` | `default` | string | none: festes Subject je Anfrage. |
@@ -462,6 +483,36 @@ registriert.
 bootstrap.go`) legt **idempotent** ersten Mandanten + Admin-Nutzer (+ builtin-
 Passwort via `WAYFINDER_BOOTSTRAP_PASSWORD`) an; liest `WAYFINDER_DB_URL`,
 migriert, verweigert das Re-Homing eines Subjects in einen anderen Mandanten.
+
+**Boot-Auto-Seed (ONB-1, ADR 0011):** In `builtin`-Modus mit gesetzter
+`WAYFINDER_DB_URL` provisioniert Wayfinder beim Start **automatisch** einen
+Standard-Mandanten (`default`, als bequemes Zuhause für die ersten Lotsen-Zugänge)
++ Standard-Admin (Subject `admin`, Passwort `admin`) — aber **nur, wenn noch kein
+aktiver Admin existiert** (`UserRepo.CountActiveAdmins == 0`). Der seedete Admin
+trägt `must_change_password=true`; das bekannte Default-Passwort ist also nur bis
+zum erzwungenen Wechsel beim ersten Login gültig. Der Seed
+(`cmd/wayfinder/seed.go`) ist idempotent und wiederverwendet `runBootstrap`; ein
+Neustart oder ein bereits rotiertes Passwort wird nie überschrieben. So ist eine
+frische Instanz ohne Terminal-Schritt benutzbar (`docker-compose.onboarding.yml`).
+
+**Strikte Admin/Nutzer-Trennung (ONB-3, ADR 0011):** Plattform-Admins und
+Mandanten-Nutzer (Lotsen) sind sauber getrennt. Ein **Admin ist global** und
+gehört **keinem Mandanten** an; ein **Nutzer gehört genau einem Mandanten**.
+Migration `00007_admin_tenant_nullable.sql` macht `users.tenant_id` nullable,
+löst bestehende Admins von ihrem (bedeutungslosen) Mandanten und erzwingt die
+Invariante per **CHECK-Constraint** (`admin` ⇒ `tenant_id IS NULL`, `user` ⇒
+`tenant_id IS NOT NULL`). In Go bildet `TenantID == 0` „kein Mandant" ab
+(`scanUser` liest NULL → 0). **Folgen:** der `store.UserRepo` hat getrennte
+Konstruktoren `Create` (Nutzer, mit Mandant) und `CreateAdmin` (Admin, ohne);
+`runBootstrap` verzweigt nach Rolle (Admin braucht **kein** `-tenant`); der
+Login-Pfad überspringt die Mandanten-Pause-Kaskade für tenantlose Admins (sonst
+Selbst-Aussperrung); ein Admin hat auf der ASD-Karte ohne „Als Mandant ansehen"
+(WF2-34) kein Feed-Scope (TenantID 0 → leeres Bild — gewollt). Admin-Verwaltung
+läuft über die **dedizierten** Routen `/api/admin/admins` (siehe Endpunkt-Tabelle);
+die per-Mandant-Route `/api/admin/tenants/{id}/users` verwaltet ausschließlich
+Nutzer. Der **„letzter aktiver Admin"-Guard** (`wouldOrphanAdmins` →
+`CountActiveAdmins`) schützt Pausieren/Löschen von Admins (409) — dieselbe
+Invariante wie beim Boot-Seed und `DELETE /api/admin/me`.
 **`/admin`-Gate:** `tenant.RequireRole(tenant_admin, super_admin)` hinter der
 Tenant-Middleware (fail-closed `403` ohne passende Rolle/Identität); liefert eine
 minimale whoami-JSON-Antwort, Admin-UI folgt WF2-32.

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
@@ -30,10 +31,10 @@ import (
 	"github.com/manuelringwald/wayfinder/pkg/cat065"
 	"github.com/manuelringwald/wayfinder/pkg/coverage"
 	"github.com/manuelringwald/wayfinder/pkg/feature"
+	"github.com/manuelringwald/wayfinder/pkg/feedmanager"
 	"github.com/manuelringwald/wayfinder/pkg/health"
 	"github.com/manuelringwald/wayfinder/pkg/impersonation"
 	"github.com/manuelringwald/wayfinder/pkg/metrics"
-	"github.com/manuelringwald/wayfinder/pkg/receiver"
 	"github.com/manuelringwald/wayfinder/pkg/store"
 	"github.com/manuelringwald/wayfinder/pkg/tenant"
 	"github.com/manuelringwald/wayfinder/pkg/ws"
@@ -149,6 +150,23 @@ func main() {
 		return nil
 	}
 
+	// Zero-touch onboarding (ONB-1, ADR 0011): builtin mode needs a session-signing
+	// key, but requiring the operator to set one re-introduces a manual setup step.
+	// When none is configured, generate an ephemeral random key and warn. The cost
+	// is explicit: sessions do not survive a restart and are not shared across
+	// replicas — a fixed WAYFINDER_SESSION_KEY remains the production recommendation.
+	if cfg.AuthMode == auth.ModeBuiltin && len(cfg.SessionKey) == 0 {
+		key := make([]byte, 32)
+		if _, err := rand.Read(key); err != nil {
+			logger.Error("generate ephemeral session key", slog.String("error", err.Error()))
+			os.Exit(1)
+		}
+		cfg.SessionKey = key
+		logger.Warn("WAYFINDER_SESSION_KEY not set — generated an ephemeral key; " +
+			"sessions reset on restart and are not multi-replica safe. Set a fixed " +
+			"key (e.g. openssl rand -hex 32) for production (ADR 0011)")
+	}
+
 	// Multi-tenancy (WF2-12): when WAYFINDER_DB_URL is set, open the DB, migrate
 	// and build the tenant-context middleware; otherwise run single-tenant. Done
 	// before the receivers so the feed catalogue (WF2-20.2) can drive them.
@@ -178,58 +196,46 @@ func main() {
 	feeds := resolveFeeds(catalogue, cfg)
 	logger.Info("feeds resolved", slog.Int("count", len(feeds)))
 
-	// One receiver per feed; each stamps its feed_id onto decoded tracks.
-	recvs, err := buildReceivers(feeds, logger, trackHandler, statusHandler, sensorStatusHandler)
-	if err != nil {
-		logger.Error("create receivers", slog.String("error", err.Error()))
-		os.Exit(1)
-	}
-
-	// Join each feed. A feed that fails to listen is logged and skipped so one
-	// misconfigured feed doesn't take down the others; if none can join, fatal.
-	var listening []*receiver.Receiver
-	for i, r := range recvs {
-		if err := r.Listen(); err != nil {
-			logger.Error("feed listen failed",
-				slog.Int64("feed_id", feeds[i].ID),
-				slog.String("group", feeds[i].Group),
-				slog.Int("port", feeds[i].Port),
-				slog.String("error", err.Error()))
-			continue
-		}
-		listening = append(listening, r)
-	}
-	if len(listening) == 0 {
-		logger.Error("no feeds could be joined")
-		os.Exit(1)
-	}
-	for _, r := range listening {
-		defer r.Close()
-	}
-
-	// Graceful shutdown on SIGTERM/SIGINT.
+	// Graceful shutdown on SIGTERM/SIGINT. Created before the feed manager so every
+	// receiver is a child of this context (cancel → all feeds leave their groups).
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	// Run receivers and broadcaster in parallel.
-	var wg sync.WaitGroup
+	// Process-wide, churn-stable decode-error counter (ONB-5): receivers come and go
+	// as feeds are added/removed at runtime, so the /metrics counter is accumulated
+	// here rather than summed over the live receiver set (which would make the
+	// monotonic counter drop when a feed is deleted).
+	var decodeErrorCount atomic.Int64
 
-	// Receiver goroutines (one per joined feed).
-	for _, r := range listening {
-		wg.Add(1)
-		go func(r *receiver.Receiver) {
-			defer wg.Done()
-			if err := r.Run(ctx); err != nil && err != context.Canceled {
-				msg := err.Error()
-				lastError.Store(&msg)
-				logger.Error("receiver error", slog.String("error", err.Error()))
-				cancel()
-			}
-		}(r)
+	// Live feed manager (ONB-5, ADR 0011): supervises one receiver per feed and lets
+	// the admin API join/leave multicast groups at runtime without a restart. The
+	// factory wires the shared handlers and stamps each feed's id onto its tracks.
+	factory := newReceiverFactory(logger, trackHandler, statusHandler, sensorStatusHandler, func() { decodeErrorCount.Add(1) })
+	feedManager := feedmanager.New(ctx, factory, logger)
+
+	// Start the resolved feeds (DB catalogue or the ENV fallback). A feed that fails
+	// to join is logged and skipped so one misconfigured feed doesn't sink the
+	// others; if none can join, fatal. The manager owns the receiver goroutines and
+	// their clean teardown (StopAll on shutdown).
+	for _, f := range feeds {
+		if err := feedManager.Start(feedmanager.Feed{ID: f.ID, Name: f.Name, Group: f.Group, Port: f.Port}); err != nil {
+			logger.Error("feed start failed",
+				slog.Int64("feed_id", f.ID), slog.String("group", f.Group),
+				slog.Int("port", f.Port), slog.String("error", err.Error()))
+			continue
+		}
 	}
+	if len(feedManager.Running()) == 0 {
+		logger.Error("no feeds could be joined")
+		os.Exit(1)
+	}
+	defer feedManager.StopAll()
+
+	// Run the broadcaster in parallel with the manager-owned receivers.
+	var wg sync.WaitGroup
 
 	// Broadcaster goroutine.
 	wg.Add(1)
@@ -246,6 +252,8 @@ func main() {
 	// Monitor feed staleness: periodically re-evaluate each feed's heartbeat age
 	// and broadcast per-feed snapshots when the aggregate state changes (e.g.
 	// ok→stale or recovery). Covers the case where no traffic arrives at all.
+	// Iterates the *live* feed set (feedManager.Running) so feeds added or removed
+	// at runtime (ONB-5) are tracked without a restart.
 	go func() {
 		interval := cfg.FeedStaleTimeout / 3
 		if interval < 250*time.Millisecond {
@@ -260,16 +268,50 @@ func main() {
 			case <-ticker.C:
 				if _, changed := feedRegistry.Observe(time.Now()); changed {
 					now := time.Now()
-					for _, f := range feeds {
-						broadcastFeedSnapshot(f.ID, feedRegistry.Snapshot(f.ID, now))
+					for _, fid := range feedManager.Running() {
+						broadcastFeedSnapshot(fid, feedRegistry.Snapshot(fid, now))
 					}
 				}
 			}
 		}
 	}()
 
-	// Start the aeronautical refresh loop (best-effort, ADR 0004).
+	// Start the aeronautical refresh loop (best-effort, ADR 0004). In multi-tenant
+	// mode this Service is the global fallback cache behind the per-tenant registry.
 	go aeroService.Run(ctx)
+
+	// OpenAIP per tenant (ONB-6, ADR 0011): in multi-tenant mode each tenant fetches
+	// OpenAIP with its own key (or the global fallback) against its own area of
+	// interest. The registry supervises one Service per tenant alongside the global
+	// fallback; a tenant without its own running Service falls back to the global
+	// cache. Built only with a DB (the per-tenant key/AOI live there).
+	var aeroRegistry *aeronautical.Registry
+	var aeroLife adminapi.TenantAeroLifecycle
+	if dbPool != nil {
+		aeroRegistry = aeronautical.NewRegistry(ctx, aeroService, newAeroClientFactory(cfg.OpenAIPBaseURL), cfg.OpenAIPRefresh, logger)
+		defer aeroRegistry.StopAll()
+		life := tenantAeroLifecycle{
+			reg:       aeroRegistry,
+			tenants:   store.NewTenantRepo(dbPool),
+			views:     store.NewViewConfigRepo(dbPool),
+			globalKey: cfg.OpenAIPAPIKey,
+			radiusKM:  cfg.OpenAIPRadiusKM,
+			fallback:  aeronautical.BoundingBoxFromCenter(cfg.MapCenterLat, cfg.MapCenterLon, cfg.OpenAIPRadiusKM),
+			logger:    logger,
+		}
+		aeroLife = life
+		// Boot: bring up each tenant's per-tenant refresh from the catalogue, so the
+		// per-tenant caches are warm without waiting for an admin edit.
+		bootCtx, cancelBoot := context.WithTimeout(ctx, 30*time.Second)
+		if tenants, terr := store.NewTenantRepo(dbPool).List(bootCtx); terr != nil {
+			logger.Warn("openaip: list tenants for per-tenant refresh failed", slog.String("error", terr.Error()))
+		} else {
+			for _, t := range tenants {
+				life.Apply(bootCtx, t.ID)
+			}
+		}
+		cancelBoot()
+	}
 
 	// Feature entitlements (WF2-50): per-tenant feature flags as data, fail-closed.
 	// Built once here so the admin API and /metrics share one instance. Multi-tenant
@@ -279,15 +321,17 @@ func main() {
 		featSvc = feature.New(store.NewEntitlementRepo(dbPool), logger)
 	}
 
-	// Start health/readiness/metrics probe server.
-	decodeErrors := func() int64 {
-		var n int64
-		for _, r := range listening {
-			n += r.DecodeErrorCount()
-		}
-		return n
+	// Start health/readiness/metrics probe server. Decode errors are read from the
+	// process-wide counter (monotonic across feed churn, ONB-5).
+	decodeErrors := func() int64 { return decodeErrorCount.Load() }
+	// OpenAIP fetch counters (ONB-6): in multi-tenant mode sum across every
+	// per-tenant Service plus the global one so the process-wide counter stays
+	// meaningful as tenants come and go; single-tenant → the global Service alone.
+	aeroCounts := func() (int64, int64) { return aeroService.FetchSuccessCount(), aeroService.FetchFailureCount() }
+	if aeroRegistry != nil {
+		aeroCounts = func() (int64, int64) { return aeroRegistry.FetchSuccessCount(), aeroRegistry.FetchFailureCount() }
 	}
-	go startProbeServer(logger, &blockCount, &trackCount, &tracksCurrent, &heartbeatCount, broadcaster, decodeErrors, feedRegistry, aeroService, &lastError, featSvc)
+	go startProbeServer(logger, &blockCount, &trackCount, &tracksCurrent, &heartbeatCount, broadcaster, decodeErrors, feedRegistry, aeroService, aeroCounts, &lastError, featSvc)
 
 	// Start WebSocket server.
 	if tenantMW == nil && cfg.AuthToken == "" {
@@ -330,8 +374,18 @@ func main() {
 	mux.HandleFunc("/api/map-config", mapConfigHandler(cfg))
 
 	// Aeronautical GeoJSON endpoints (/api/airspace, /api/navaids,
-	// /api/waypoints), served from the OpenAIP cache (ADR 0004).
-	aeroService.Register(mux)
+	// /api/waypoints), served from the OpenAIP cache (ADR 0004). In multi-tenant
+	// mode they are tenant-aware (ONB-6): behind the tenant middleware, each serves
+	// the requesting tenant's own per-tenant cache (with global fallback). In
+	// single-tenant mode they serve the global cache unauthenticated, as before.
+	if aeroRegistry != nil && tenantMW != nil {
+		aeroRegistry.Register(mux, tenantMW, func(r *http.Request) (int64, bool) {
+			id, ok := tenant.FromContext(r.Context())
+			return id.TenantID, ok
+		})
+	} else {
+		aeroService.Register(mux)
+	}
 
 	// Coverage rings: static GeoJSON computed once from config, served to the
 	// browser on demand. An empty FeatureCollection is returned when no sensors
@@ -372,8 +426,11 @@ func main() {
 		rescope := func(ctx context.Context, tenantID int64) {
 			rescopeTenant(ctx, broadcaster, subRepo, viewRepo, logger, tenantID)
 		}
+		// Feed lifecycle (ONB-5): the admin API joins/leaves multicast groups live
+		// via the feed manager, and forgets a deleted feed's health (adapter below).
+		feedLife := feedLifecycle{mgr: feedManager, registry: feedRegistry}
 		adminAPI := adminapi.New(viewRepo, subRepo, store.NewFeedRepo(dbPool), store.NewTenantRepo(dbPool),
-			store.NewUserRepo(dbPool), store.NewCredentialRepo(dbPool), featSvc, feedRegistry, logger, rescope)
+			store.NewUserRepo(dbPool), store.NewCredentialRepo(dbPool), featSvc, feedRegistry, feedLife, aeroLife, logger, rescope)
 		mux.Handle("/api/admin/", tenantMW(requireAdmin(adminAPI)))
 
 		// Cross-tenant read-only impersonation (ADR 0008, WF2-34): mint and clear
@@ -777,6 +834,21 @@ func setupTenancy(ctx context.Context, cfg Config, logger *slog.Logger) (func(ht
 		logger.Warn("WAYFINDER_AUTH_MODE=none — every request is the same fixed " +
 			"subject; relies on network isolation (ADR 0003)")
 	}
+
+	// Zero-touch onboarding (ONB-1, ADR 0011): in builtin mode, provision a default
+	// tenant + admin on first boot so the deployment is usable from the browser
+	// without any terminal step. Idempotent — a no-op once an admin exists.
+	if cfg.AuthMode == auth.ModeBuiltin {
+		var seedLog strings.Builder
+		if err := autoSeedDefaultAdmin(ctx, pool, &seedLog); err != nil {
+			pool.Close()
+			return nil, nil, fmt.Errorf("auto-seed default admin: %w", err)
+		}
+		if s := strings.TrimSpace(seedLog.String()); s != "" {
+			logger.Info("auto-seed", slog.String("detail", s))
+		}
+	}
+
 	logger.Info("multi-tenancy enabled", slog.String("auth_mode", string(cfg.AuthMode)))
 	return tenant.Middleware(authenticator, store.NewUserRepo(pool), logger), pool, nil
 }
@@ -1063,7 +1135,7 @@ func coverageRingsHandler(cfg Config) http.HandlerFunc {
 }
 
 // startProbeServer starts an HTTP server for health, readiness and metrics.
-func startProbeServer(logger *slog.Logger, blockCount, trackCount, tracksCurrent, heartbeatCount *atomic.Int64, broadcaster *broadcast.Broadcaster, decodeErrors func() int64, feedRegistry *health.Registry, aeroService *aeronautical.Service, lastError *atomic.Pointer[string], featSvc *feature.Service) {
+func startProbeServer(logger *slog.Logger, blockCount, trackCount, tracksCurrent, heartbeatCount *atomic.Int64, broadcaster *broadcast.Broadcaster, decodeErrors func() int64, feedRegistry *health.Registry, aeroService *aeronautical.Service, aeroCounts func() (success, failure int64), lastError *atomic.Pointer[string], featSvc *feature.Service) {
 	mux := http.NewServeMux()
 
 	// /health — liveness check (always ready unless startup failed).
@@ -1099,6 +1171,7 @@ func startProbeServer(logger *slog.Logger, blockCount, trackCount, tracksCurrent
 		if feedRegistry.Status(time.Now()).Stale {
 			feedStale = 1
 		}
+		aeroSuccess, aeroFailure := aeroCounts()
 		mset := []metrics.Metric{
 			metrics.Counter("wayfinder_cat062_blocks_received_total", "Total number of CAT062 data blocks received via multicast.", blockCount.Load()),
 			metrics.Counter("wayfinder_cat062_tracks_received_total", "Total number of track records received across all CAT062 blocks.", trackCount.Load()),
@@ -1109,9 +1182,9 @@ func startProbeServer(logger *slog.Logger, blockCount, trackCount, tracksCurrent
 			metrics.Counter("wayfinder_impersonation_sessions_total", "Total admin read-only impersonation /ws sessions started (ADR 0008). Excluded from the per-tenant series.", impersonationSessions.Load()),
 			metrics.Counter("wayfinder_cat065_heartbeats_received_total", "Total number of CAT065 SDPS-status heartbeats received.", heartbeatCount.Load()),
 			metrics.Gauge("wayfinder_feed_stale", "1 if the CAT065 heartbeat feed is currently stale, else 0.", feedStale),
-			metrics.Counter("wayfinder_openaip_fetch_success_total", "Total number of successful OpenAIP aeronautical fetches (per kind).", aeroService.FetchSuccessCount()),
-			metrics.Counter("wayfinder_openaip_fetch_failures_total", "Total number of failed OpenAIP aeronautical fetches (per kind).", aeroService.FetchFailureCount()),
-			metrics.Gauge("wayfinder_openaip_cache_age_seconds", "Seconds since the last successful OpenAIP fetch, or -1 if never.", aeroService.CacheAgeSeconds(time.Now())),
+			metrics.Counter("wayfinder_openaip_fetch_success_total", "Total successful OpenAIP fetches (per kind), summed across the global and all per-tenant caches.", aeroSuccess),
+			metrics.Counter("wayfinder_openaip_fetch_failures_total", "Total failed OpenAIP fetches (per kind), summed across the global and all per-tenant caches.", aeroFailure),
+			metrics.Gauge("wayfinder_openaip_cache_age_seconds", "Seconds since the last successful OpenAIP fetch of the global fallback cache, or -1 if never.", aeroService.CacheAgeSeconds(time.Now())),
 		}
 		// Per-tenant series (WF2-23.2). Labelled only by the stable tenant_id —
 		// never by high-cardinality identity (user/session), which stays in the

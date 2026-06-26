@@ -44,12 +44,55 @@ type SubscriptionStore interface {
 type FeedStore interface {
 	List(ctx context.Context) ([]store.Feed, error)
 	GetByID(ctx context.Context, id int64) (store.Feed, error)
+	// GetByName backs the duplicate-name pre-check on create (ONB-5); ErrNotFound
+	// means the name is free.
+	GetByName(ctx context.Context, name string) (store.Feed, error)
+	Create(ctx context.Context, name, multicastGroup string, port int, region *string, sensorMix []string) (store.Feed, error)
+	Delete(ctx context.Context, id int64) error
+}
+
+// FeedLifecycle starts and stops the live multicast receiver for a feed so a
+// catalogue change takes effect without a process restart (ONB-5, ADR 0011).
+// Satisfied in production by an adapter over the feed manager + health registry
+// (main.go). It is intentionally decoupled from the concrete receiver/manager
+// types (primitive params) so the admin API never imports the transport layer.
+// A nil lifecycle disables live-apply: the catalogue still changes, but the
+// running receiver set only follows on the next restart (single-tenant mode and
+// unit tests that do not exercise the live path).
+type FeedLifecycle interface {
+	// Start joins the multicast group for a newly catalogued feed. An error means
+	// the group could not be joined; the create handler then rolls the catalogue
+	// row back so a feed is never left half-created (catalogued but not receiving).
+	Start(id int64, name, group string, port int) error
+	// Stop leaves the multicast group for a deleted feed and releases its derived
+	// per-feed state (e.g. health). Returns whether a receiver was running.
+	Stop(id int64) bool
 }
 
 type TenantStore interface {
 	List(ctx context.Context) ([]store.Tenant, error)
 	GetByID(ctx context.Context, id int64) (store.Tenant, error)
+	GetBySlug(ctx context.Context, slug string) (store.Tenant, error)
+	Create(ctx context.Context, slug, name string) (store.Tenant, error)
 	SetStatus(ctx context.Context, id int64, status store.Status) error
+	Delete(ctx context.Context, id int64) error
+	// GetOpenAIPKey/SetOpenAIPKey back the per-tenant OpenAIP key (ONB-6). The key
+	// is read in isolation and never returned to the browser (only its presence is).
+	GetOpenAIPKey(ctx context.Context, id int64) (*string, error)
+	SetOpenAIPKey(ctx context.Context, id int64, key *string) error
+}
+
+// TenantAeroLifecycle applies a tenant's per-tenant OpenAIP aeronautical refresh
+// when its key — or, via its view, its area of interest — changes, and tears it
+// down when the tenant is deleted (ONB-6, ADR 0011). Satisfied in production by an
+// adapter over the aeronautical Registry (main.go). Apply re-reads the tenant's
+// effective key and AOI and (re)starts/stops its Service; it is decoupled from the
+// concrete registry (the admin API never imports the OpenAIP transport). A nil
+// lifecycle disables live-apply: the stored key still changes, but the running
+// per-tenant fetch only follows on the next restart (single-tenant mode / tests).
+type TenantAeroLifecycle interface {
+	Apply(ctx context.Context, tenantID int64)
+	Stop(tenantID int64)
 }
 
 // EntitlementService is the per-tenant feature surface the admin API needs
@@ -91,7 +134,9 @@ type Handler struct {
 	users      UserStore
 	creds      CredentialStore
 	feats      EntitlementService
-	feedHealth FeedHealthSource // may be nil; AP4 health endpoint returns empty list
+	feedHealth FeedHealthSource    // may be nil; AP4 health endpoint returns empty list
+	feedLife   FeedLifecycle       // may be nil; disables live receiver join/leave (ONB-5)
+	aeroLife   TenantAeroLifecycle // may be nil; disables live per-tenant OpenAIP apply (ONB-6)
 	rescope    RescopeFunc
 	logger     *slog.Logger
 	mux        *http.ServeMux
@@ -101,21 +146,40 @@ type Handler struct {
 // the wrong method. The cross-tenant provisioning routes (/api/admin/tenants/…)
 // are additionally guarded by requireAdmin (defence-in-depth). rescope (may be
 // nil) re-scopes a tenant's live streams after a mutation (WF2-33).
-func New(views ViewStore, subs SubscriptionStore, feeds FeedStore, tenants TenantStore, users UserStore, creds CredentialStore, feats EntitlementService, feedHealth FeedHealthSource, logger *slog.Logger, rescope RescopeFunc) *Handler {
-	h := &Handler{views: views, subs: subs, feeds: feeds, tenants: tenants, users: users, creds: creds, feats: feats, feedHealth: feedHealth, rescope: rescope, logger: logger}
+func New(views ViewStore, subs SubscriptionStore, feeds FeedStore, tenants TenantStore, users UserStore, creds CredentialStore, feats EntitlementService, feedHealth FeedHealthSource, feedLife FeedLifecycle, aeroLife TenantAeroLifecycle, logger *slog.Logger, rescope RescopeFunc) *Handler {
+	h := &Handler{views: views, subs: subs, feeds: feeds, tenants: tenants, users: users, creds: creds, feats: feats, feedHealth: feedHealth, feedLife: feedLife, aeroLife: aeroLife, rescope: rescope, logger: logger}
 	mux := http.NewServeMux()
 	// whoami: the SPA's role probe (WF2-32). It sits behind the same admin gate, so
 	// a 200 here both confirms access and tells the client which panels to render.
 	mux.HandleFunc("GET /api/admin/whoami", h.whoami)
+	// Account self-service (ONB-1, ADR 0011): the logged-in principal manages its
+	// own account — independent of role (no requireAdmin). These three routes are
+	// the only ones reachable while must_change_password is set (see the gate in
+	// ServeHTTP); changing the password is what clears the flag and unlocks the rest.
+	mux.HandleFunc("GET /api/admin/me", h.getMe)
+	mux.HandleFunc("PUT /api/admin/me/password", h.putMePassword)
+	mux.HandleFunc("DELETE /api/admin/me", h.deleteMe)
 	// Admin self-service (tenant from the Identity).
 	mux.HandleFunc("GET /api/admin/view", h.getView)
 	mux.HandleFunc("PUT /api/admin/view", h.putView)
 	mux.HandleFunc("GET /api/admin/subscriptions", h.getSubscriptions)
 	mux.HandleFunc("GET /api/admin/feeds", h.getFeeds)
+	// Feed lifecycle (ONB-5, ADR 0011): create and delete catalogue feeds from the
+	// UI; the live multicast receiver joins/leaves at once (no restart). Both are
+	// platform operations → requireAdmin. The more specific {feedID} delete pattern
+	// is distinct from the GET /api/admin/feeds/health route registered below.
+	mux.HandleFunc("POST /api/admin/feeds", h.requireAdmin(h.createFeed))
+	mux.HandleFunc("DELETE /api/admin/feeds/{feedID}", h.requireAdmin(h.deleteFeed))
 	// Read-only reference: the sensor-class catalogue (WF2-41).
 	mux.HandleFunc("GET /api/admin/sensor-classes", h.getSensorClasses)
 	// Cross-tenant provisioning (target tenant from the path).
 	mux.HandleFunc("GET /api/admin/tenants", h.requireAdmin(h.listTenants))
+	// Tenant lifecycle (ONB-4, ADR 0011): create and delete tenants from the UI.
+	// Delete cascades to the tenant's dependents (users, subscriptions,
+	// entitlements, views) but is refused (409) while the tenant still has
+	// accounts — the destructive cascade must be a conscious two-step.
+	mux.HandleFunc("POST /api/admin/tenants", h.requireAdmin(h.createTenant))
+	mux.HandleFunc("DELETE /api/admin/tenants/{tenantID}", h.requireAdmin(h.deleteTenant))
 	// AP3: tenant-centric admin dashboard. The overview aggregates each tenant's
 	// status, enabled features, subscribed feeds and account count in one call
 	// (avoids N+1 fetches when rendering the tenant table). Per-tenant view
@@ -134,6 +198,20 @@ func New(views ViewStore, subs SubscriptionStore, feeds FeedStore, tenants Tenan
 	// tenant's state, and set one flag. The billing/provisioning boundary.
 	mux.HandleFunc("GET /api/admin/tenants/{tenantID}/entitlements", h.requireAdmin(h.listTenantEntitlements))
 	mux.HandleFunc("PUT /api/admin/tenants/{tenantID}/entitlements/{key}", h.requireAdmin(h.setTenantEntitlement))
+	// OpenAIP per tenant (ONB-6, ADR 0011): read whether a per-tenant key is set
+	// (never the key itself) and set/clear it. Setting the key (re)starts the
+	// tenant's per-tenant OpenAIP refresh live (no restart).
+	mux.HandleFunc("GET /api/admin/tenants/{tenantID}/openaip", h.requireAdmin(h.getTenantOpenAIP))
+	mux.HandleFunc("PUT /api/admin/tenants/{tenantID}/openaip", h.requireAdmin(h.setTenantOpenAIP))
+	// Platform-admin management (ONB-3, ADR 0011): admins are global (no tenant)
+	// and managed through a dedicated surface, strictly separated from the
+	// per-tenant user routes below. The "last active admin" guard (409) lives in
+	// the delete/pause handlers. Cross-cutting platform operation → requireAdmin.
+	mux.HandleFunc("GET /api/admin/admins", h.requireAdmin(h.listAdmins))
+	mux.HandleFunc("POST /api/admin/admins", h.requireAdmin(h.createAdmin))
+	mux.HandleFunc("PATCH /api/admin/admins/{adminID}", h.requireAdmin(h.setAdminStatus))
+	mux.HandleFunc("DELETE /api/admin/admins/{adminID}", h.requireAdmin(h.deleteAdmin))
+	mux.HandleFunc("PUT /api/admin/admins/{adminID}/password", h.requireAdmin(h.setAdminPassword))
 	// Access management (AP6): an admin provisions and suspends access accounts
 	// per tenant, and pauses a whole tenant. Cross-tenant → requireAdmin.
 	mux.HandleFunc("PATCH /api/admin/tenants/{tenantID}", h.requireAdmin(h.setTenantStatus))
@@ -146,7 +224,30 @@ func New(views ViewStore, subs SubscriptionStore, feeds FeedStore, tenants Tenan
 	return h
 }
 
-func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) { h.mux.ServeHTTP(w, r) }
+// passwordChangeAllowlist is the exact set of (method, path) pairs reachable while
+// a principal's must_change_password flag is set (ONB-1, ADR 0011). Everything
+// else is refused fail-closed so the known default credential cannot be used for
+// anything but its own replacement: the role probe (so the SPA can render the
+// forced-change mask), reading one's own account, and the password change itself.
+var passwordChangeAllowlist = map[string]string{
+	"/api/admin/whoami":      http.MethodGet,
+	"/api/admin/me":          http.MethodGet,
+	"/api/admin/me/password": http.MethodPut,
+}
+
+// ServeHTTP applies the must_change_password gate before dispatching. The flag is
+// carried on the Identity (resolved by the tenant middleware), so the gate needs
+// no database lookup. A gated request gets 403 with a stable marker the SPA keys
+// on to show the forced-change mask.
+func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if id, ok := tenant.FromContext(r.Context()); ok && id.MustChangePassword {
+		if m, allowed := passwordChangeAllowlist[r.URL.Path]; !allowed || m != r.Method {
+			writeError(w, http.StatusForbidden, "password_change_required")
+			return
+		}
+	}
+	h.mux.ServeHTTP(w, r)
+}
 
 // whoamiDTO is the identity the SPA reads on entering /admin: it confirms access
 // (the route is behind the admin gate), reports the role so the client can render
@@ -154,11 +255,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) { h.mux.Serv
 // so the SPA can hide entitlement-gated UI. Both the role and the feature gating
 // in the UI are cosmetic — the server enforces them independently.
 type whoamiDTO struct {
-	Subject  string          `json:"subject"`
-	TenantID int64           `json:"tenant_id"`
-	UserID   int64           `json:"user_id"`
-	Role     store.Role      `json:"role"`
-	Features map[string]bool `json:"features"`
+	Subject            string          `json:"subject"`
+	TenantID           int64           `json:"tenant_id"`
+	UserID             int64           `json:"user_id"`
+	Role               store.Role      `json:"role"`
+	MustChangePassword bool            `json:"must_change_password"`
+	Features           map[string]bool `json:"features"`
 }
 
 func (h *Handler) whoami(w http.ResponseWriter, r *http.Request) {
@@ -168,11 +270,12 @@ func (h *Handler) whoami(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, whoamiDTO{
-		Subject:  id.Subject,
-		TenantID: id.TenantID,
-		UserID:   id.UserID,
-		Role:     id.Role,
-		Features: h.effectiveFeatures(r.Context(), id.TenantID),
+		Subject:            id.Subject,
+		TenantID:           id.TenantID,
+		UserID:             id.UserID,
+		Role:               id.Role,
+		MustChangePassword: id.MustChangePassword,
+		Features:           h.effectiveFeatures(r.Context(), id.TenantID),
 	})
 }
 
@@ -202,13 +305,17 @@ type viewDTO struct {
 	Layers    map[string]bool `json:"layers,omitempty"`
 }
 
-// feedDTO is the catalogue-facing shape of a feed (infra fields like the
-// multicast group/port are intentionally omitted from the admin surface).
+// feedDTO is the catalogue-facing shape of a feed. The multicast group/port are
+// the feed's wire coordinates; they are surfaced (ONB-5) because the feed-lifecycle
+// UI manages exactly those, and every /api/admin route is platform-admin only —
+// the coordinates are operational, not secret.
 type feedDTO struct {
-	ID        int64    `json:"id"`
-	Name      string   `json:"name"`
-	Region    *string  `json:"region,omitempty"`
-	SensorMix []string `json:"sensor_mix"`
+	ID             int64    `json:"id"`
+	Name           string   `json:"name"`
+	MulticastGroup string   `json:"multicast_group"`
+	Port           int      `json:"port"`
+	Region         *string  `json:"region,omitempty"`
+	SensorMix      []string `json:"sensor_mix"`
 }
 
 func (h *Handler) getView(w http.ResponseWriter, r *http.Request) {
@@ -249,7 +356,8 @@ func (h *Handler) putView(w http.ResponseWriter, r *http.Request) {
 		h.internalError(w, "upsert view", err)
 		return
 	}
-	h.triggerRescope(r.Context(), id.TenantID) // live-apply the new view (WF2-33)
+	h.triggerRescope(r.Context(), id.TenantID)   // live-apply the new view (WF2-33)
+	h.triggerAeroApply(r.Context(), id.TenantID) // re-fetch OpenAIP for the new AOI (ONB-6)
 	writeJSON(w, http.StatusOK, toViewDTO(out))
 }
 
@@ -323,6 +431,23 @@ func (h *Handler) requireAdmin(next http.HandlerFunc) http.HandlerFunc {
 func (h *Handler) triggerRescope(ctx context.Context, tenantID int64) {
 	if h.rescope != nil {
 		h.rescope(ctx, tenantID)
+	}
+}
+
+// triggerAeroApply re-applies the tenant's per-tenant OpenAIP refresh after a
+// change to its key or its view AOI (ONB-6). No-op when not wired (single-tenant
+// mode / tests). Idempotent on unchanged inputs (the registry compares key+AOI),
+// so calling it after every view edit is cheap.
+func (h *Handler) triggerAeroApply(ctx context.Context, tenantID int64) {
+	if h.aeroLife != nil {
+		h.aeroLife.Apply(ctx, tenantID)
+	}
+}
+
+// triggerAeroStop tears down a deleted tenant's per-tenant OpenAIP refresh (ONB-6).
+func (h *Handler) triggerAeroStop(tenantID int64) {
+	if h.aeroLife != nil {
+		h.aeroLife.Stop(tenantID)
 	}
 }
 
@@ -452,7 +577,8 @@ func (h *Handler) putTenantView(w http.ResponseWriter, r *http.Request) {
 		h.internalError(w, "upsert tenant view", err)
 		return
 	}
-	h.triggerRescope(r.Context(), tid) // live-apply the new view (WF2-33)
+	h.triggerRescope(r.Context(), tid)   // live-apply the new view (WF2-33)
+	h.triggerAeroApply(r.Context(), tid) // re-fetch OpenAIP for the new AOI (ONB-6)
 	writeJSON(w, http.StatusOK, toViewDTO(out))
 }
 
@@ -672,10 +798,21 @@ func toViewDTO(vc store.ViewConfig) viewDTO {
 	}
 }
 
+func toFeedDTO(f store.Feed) feedDTO {
+	return feedDTO{
+		ID:             f.ID,
+		Name:           f.Name,
+		MulticastGroup: f.MulticastGroup,
+		Port:           f.Port,
+		Region:         f.Region,
+		SensorMix:      f.SensorMix,
+	}
+}
+
 func toFeedDTOs(feeds []store.Feed) []feedDTO {
 	out := make([]feedDTO, len(feeds))
 	for i, f := range feeds {
-		out[i] = feedDTO{ID: f.ID, Name: f.Name, Region: f.Region, SensorMix: f.SensorMix}
+		out[i] = toFeedDTO(f)
 	}
 	return out
 }

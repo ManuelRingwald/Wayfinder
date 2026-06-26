@@ -46,6 +46,11 @@ export const useAdminStore = defineStore('admin', () => {
   // Cosmetic gating — the server enforces /api/admin/* via RequireRole(admin).
   const isAdmin = computed(() => role.value === 'admin')
   const isAuthorized = computed(() => identity.value !== null)
+  // ONB-1 (ADR 0011): a freshly seeded admin must replace its known default
+  // password before anything else. While true, the server refuses every admin
+  // route except the password change (403 password_change_required); the UI
+  // mirrors that by routing the user to the forced-change mask.
+  const mustChangePassword = computed(() => identity.value?.must_change_password === true)
   // WF2-50: per-tenant feature entitlements, delivered by whoami. UI gating off
   // these is cosmetic — the server enforces every feature server-side.
   const features = computed(() => identity.value?.features ?? {})
@@ -215,6 +220,86 @@ export const useAdminStore = defineStore('admin', () => {
     return r
   }
 
+  // --- tenant lifecycle (ONB-4, ADR 0011) -----------------------------------
+  // Create and delete tenants. The server enforces requireAdmin and guard B
+  // (deleting a tenant that still has accounts → 409); the UI gating is
+  // convenience only.
+
+  async function createTenant(payload) {
+    error.value = null
+    notice.value = null
+    const r = await apiFetch('/api/admin/tenants', { method: 'POST', body: JSON.stringify(payload) })
+    if (r.ok) notice.value = 'Mandant angelegt.'
+    else error.value = r.error
+    return r
+  }
+
+  async function deleteTenant(tenantId) {
+    error.value = null
+    notice.value = null
+    const r = await apiFetch(`/api/admin/tenants/${tenantId}`, { method: 'DELETE' })
+    if (r.ok) {
+      notice.value = 'Mandant gelöscht.'
+    } else if (r.status === 409) {
+      // Guard B: a tenant with accounts cannot be deleted until they are removed.
+      error.value = 'Löschen nicht möglich: Der Mandant hat noch Zugänge. Bitte zuerst alle Zugänge entfernen.'
+    } else {
+      error.value = r.error
+    }
+    return r
+  }
+
+  // --- feed lifecycle (ONB-5, ADR 0011) -------------------------------------
+  // Create and delete catalogue feeds. The server joins/leaves the multicast
+  // group live (no restart) and enforces requireAdmin; the UI gating is
+  // convenience only. createFeed validates server-side (multicast range, port,
+  // duplicate name → 409); deleteFeed cascades the feed's subscriptions away.
+
+  async function createFeed(payload) {
+    error.value = null
+    notice.value = null
+    const r = await apiFetch('/api/admin/feeds', { method: 'POST', body: JSON.stringify(payload) })
+    if (r.ok) {
+      notice.value = 'Feed angelegt.'
+    } else if (r.status === 409) {
+      error.value = 'Anlegen nicht möglich: Ein Feed mit diesem Namen existiert bereits.'
+    } else {
+      error.value = r.error
+    }
+    return r
+  }
+
+  async function deleteFeed(feedId) {
+    error.value = null
+    notice.value = null
+    const r = await apiFetch(`/api/admin/feeds/${feedId}`, { method: 'DELETE' })
+    if (r.ok) notice.value = 'Feed gelöscht.'
+    else error.value = r.error
+    return r
+  }
+
+  // --- OpenAIP per tenant (ONB-6, ADR 0011) ---------------------------------
+  // Each tenant may carry its own OpenAIP key. loadTenantOpenAIP reports only
+  // whether a key is set (the server never returns the key itself); the caller
+  // owns the transient {configured} state. setTenantOpenAIPKey sets (string) or
+  // clears (null) the key — the server (re)applies the per-tenant refresh live.
+
+  async function loadTenantOpenAIP(tenantId) {
+    return apiFetch(`/api/admin/tenants/${tenantId}/openaip`)
+  }
+
+  async function setTenantOpenAIPKey(tenantId, apiKey) {
+    error.value = null
+    notice.value = null
+    const r = await apiFetch(`/api/admin/tenants/${tenantId}/openaip`, {
+      method: 'PUT',
+      body: JSON.stringify({ api_key: apiKey }),
+    })
+    if (r.ok) notice.value = apiKey ? 'OpenAIP-Schlüssel gespeichert.' : 'OpenAIP-Schlüssel entfernt.'
+    else error.value = r.error
+    return r
+  }
+
   // --- access management (AP6) ----------------------------------------------
   // Per-tenant access accounts (role user). The server enforces every boundary
   // (requireAdmin → 403); the UI gating is convenience only.
@@ -282,6 +367,101 @@ export const useAdminStore = defineStore('admin', () => {
     return r
   }
 
+  // changeOwnPassword changes the logged-in principal's own password (ONB-1,
+  // ADR 0011). On success it reloads the identity so must_change_password flips to
+  // false and the dashboard unlocks. The current password is required so a stolen
+  // live session cannot silently rotate the credential.
+  async function changeOwnPassword(currentPassword, newPassword) {
+    error.value = null
+    notice.value = null
+    const r = await apiFetch('/api/admin/me/password', {
+      method: 'PUT',
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    })
+    if (r.ok) {
+      await loadIdentity()
+      notice.value = 'Passwort geändert.'
+    } else {
+      error.value = r.error
+    }
+    return r
+  }
+
+  // deleteOwnAccount deletes the logged-in principal's own account (ONB-2,
+  // ADR 0011). The server refuses with 409 if this is the last active admin.
+  // On success the session is effectively terminated — identity is cleared so
+  // the next render returns to the login form.
+  async function deleteOwnAccount() {
+    error.value = null
+    notice.value = null
+    const r = await apiFetch('/api/admin/me', { method: 'DELETE' })
+    if (r.ok) {
+      identity.value = null
+      accessStatus.value = 401
+      accessError.value = null
+    } else {
+      error.value = r.error
+    }
+    return r
+  }
+
+  // --- platform-admin management (ONB-3, ADR 0011) --------------------------
+  // Platform admins are global — they belong to no tenant. The server enforces
+  // every boundary (requireAdmin → 403) and the "last active admin" guard (409);
+  // the UI gating is convenience only. loadAdmins returns the raw result (the
+  // caller owns the transient list, like loadTenantUsers).
+
+  async function loadAdmins() {
+    return apiFetch('/api/admin/admins')
+  }
+
+  async function createAdmin(payload) {
+    error.value = null
+    notice.value = null
+    const r = await apiFetch('/api/admin/admins', { method: 'POST', body: JSON.stringify(payload) })
+    if (r.ok) notice.value = 'Administrator angelegt.'
+    else error.value = r.error
+    return r
+  }
+
+  async function setAdminStatus(adminId, status) {
+    error.value = null
+    notice.value = null
+    const r = await apiFetch(`/api/admin/admins/${adminId}`, { method: 'PATCH', body: JSON.stringify({ status }) })
+    if (r.ok) {
+      notice.value = status === 'paused' ? 'Administrator pausiert.' : 'Administrator reaktiviert.'
+    } else if (r.status === 409) {
+      // "Last active admin" guard — pausing the final admin would lock everyone out.
+      error.value = 'Pausieren nicht möglich: Das ist der letzte aktive Administrator.'
+    } else {
+      error.value = r.error
+    }
+    return r
+  }
+
+  async function deleteAdmin(adminId) {
+    error.value = null
+    notice.value = null
+    const r = await apiFetch(`/api/admin/admins/${adminId}`, { method: 'DELETE' })
+    if (r.ok) {
+      notice.value = 'Administrator gelöscht.'
+    } else if (r.status === 409) {
+      error.value = 'Löschen nicht möglich: Das ist der letzte aktive Administrator.'
+    } else {
+      error.value = r.error
+    }
+    return r
+  }
+
+  async function setAdminPassword(adminId, password) {
+    error.value = null
+    notice.value = null
+    const r = await apiFetch(`/api/admin/admins/${adminId}/password`, { method: 'PUT', body: JSON.stringify({ password }) })
+    if (r.ok) notice.value = 'Passwort gesetzt.'
+    else error.value = r.error
+    return r
+  }
+
   function clearBanners() {
     error.value = null
     notice.value = null
@@ -289,11 +469,16 @@ export const useAdminStore = defineStore('admin', () => {
 
   return {
     identity, accessError, accessStatus, view, feeds, subscriptions, tenants, overview, feedsHealth, error, notice,
-    role, isAdmin, isAuthorized, features, hasFeature,
+    role, isAdmin, isAuthorized, mustChangePassword, features, hasFeature,
     loadIdentity, login, loadView, saveView, loadFeeds, loadSubscriptions,
     loadTenants, loadTenantSubscriptions, grant, revoke,
     loadOverview, loadFeedsHealth, loadTenantView, saveTenantView, loadTenantEntitlements, setTenantEntitlement,
     loadTenantUsers, createUser, setUserStatus, deleteUser, setUserPassword, setTenantStatus,
+    createTenant, deleteTenant,
+    createFeed, deleteFeed,
+    loadTenantOpenAIP, setTenantOpenAIPKey,
+    changeOwnPassword, deleteOwnAccount,
+    loadAdmins, createAdmin, setAdminStatus, deleteAdmin, setAdminPassword,
     clearBanners,
   }
 })

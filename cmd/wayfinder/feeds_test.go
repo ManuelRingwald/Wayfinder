@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"testing"
 
+	"github.com/manuelringwald/wayfinder/pkg/feedmanager"
 	"github.com/manuelringwald/wayfinder/pkg/store"
 )
 
@@ -48,24 +49,21 @@ func TestResolveFeedsFromCatalogue(t *testing.T) {
 	}
 }
 
-func TestBuildReceivers(t *testing.T) {
+func TestNewReceiverFactory(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	factory := newReceiverFactory(logger, nil, nil, nil, nil)
 
-	recvs, err := buildReceivers([]feedConfig{
-		{ID: 1, Name: "a", Group: "239.255.0.62", Port: 8600},
-		{ID: 2, Name: "b", Group: "239.255.0.63", Port: 8601},
-	}, logger, nil, nil, nil)
+	// A valid feed builds a receiver (the manager later Listens/Runs it).
+	r, err := factory(feedmanager.Feed{ID: 1, Name: "a", Group: "239.255.0.62", Port: 8600})
 	if err != nil {
-		t.Fatalf("buildReceivers: %v", err)
+		t.Fatalf("factory: %v", err)
 	}
-	if len(recvs) != 2 {
-		t.Fatalf("want 2 receivers, got %d", len(recvs))
+	if r == nil {
+		t.Fatal("factory returned a nil receiver")
 	}
 
-	// An invalid multicast group is a hard error that names the feed.
-	if _, err := buildReceivers([]feedConfig{
-		{ID: 7, Name: "bad", Group: "not-an-ip", Port: 8600},
-	}, logger, nil, nil, nil); err == nil {
+	// An invalid multicast group is a build error (surfaced to Start).
+	if _, err := factory(feedmanager.Feed{ID: 7, Name: "bad", Group: "not-an-ip", Port: 8600}); err == nil {
 		t.Fatal("expected error for invalid multicast group, got nil")
 	}
 }

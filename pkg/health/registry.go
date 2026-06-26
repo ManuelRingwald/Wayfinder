@@ -85,6 +85,18 @@ func (r *Registry) getOrCreate(feedID int64) *feedEntry {
 	return e
 }
 
+// Forget drops all per-feed health state for feedID. It is called when a feed is
+// deleted from the catalogue (ONB-5, ADR 0011) so the dashboard stops reporting a
+// phantom (forever-stale) feed and the entry's memory is reclaimed. The global
+// aggregate is intentionally left untouched: it reflects whether *any* feed has
+// ever been seen / is stale, and a removed feed should not retroactively rewrite
+// that history. A subsequent heartbeat/track for the same id re-creates the entry.
+func (r *Registry) Forget(feedID int64) {
+	r.mu.Lock()
+	delete(r.entries, feedID)
+	r.mu.Unlock()
+}
+
 // RecordHeartbeat records a CAT065 heartbeat for feedID at wall-clock time now.
 func (r *Registry) RecordHeartbeat(feedID int64, now time.Time) {
 	r.getOrCreate(feedID).fh.RecordHeartbeat(now)

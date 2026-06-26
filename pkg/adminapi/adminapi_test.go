@@ -63,8 +63,13 @@ func (f *fakeVS) Unsubscribe(_ context.Context, tid, fid int64) error {
 }
 
 type fakeFeeds struct {
-	list []store.Feed
-	byID map[int64]store.Feed
+	list      []store.Feed
+	byID      map[int64]store.Feed
+	byName    map[string]store.Feed // for GetByName (ONB-5 duplicate pre-check)
+	nextID    int64                 // id assigned by Create
+	created   map[string]store.Feed // records Create calls by name (pre-init to record)
+	deleted   map[int64]bool        // records Delete calls (pre-init to record)
+	createErr error                 // when set, Create returns it (e.g. sensor-mix rejection)
 }
 
 func (f fakeFeeds) List(_ context.Context) ([]store.Feed, error) { return f.list, nil }
@@ -76,10 +81,46 @@ func (f fakeFeeds) GetByID(_ context.Context, id int64) (store.Feed, error) {
 	return store.Feed{}, store.ErrNotFound
 }
 
+func (f fakeFeeds) GetByName(_ context.Context, name string) (store.Feed, error) {
+	if x, ok := f.byName[name]; ok {
+		return x, nil
+	}
+	return store.Feed{}, store.ErrNotFound
+}
+
+func (f fakeFeeds) Create(_ context.Context, name, group string, port int, region *string, mix []string) (store.Feed, error) {
+	if f.createErr != nil {
+		return store.Feed{}, f.createErr
+	}
+	id := f.nextID
+	if id == 0 {
+		id = 1
+	}
+	feed := store.Feed{ID: id, Name: name, MulticastGroup: group, Port: port, Region: region, SensorMix: mix}
+	if f.created != nil {
+		f.created[name] = feed
+	}
+	return feed, nil
+}
+
+func (f fakeFeeds) Delete(_ context.Context, id int64) error {
+	if f.deleted != nil {
+		f.deleted[id] = true
+	}
+	return nil
+}
+
 type fakeTenants struct {
-	list      []store.Tenant
-	byID      map[int64]store.Tenant
-	statusSet map[int64]store.Status // records SetStatus calls (AP6)
+	list        []store.Tenant
+	byID        map[int64]store.Tenant
+	bySlug      map[string]store.Tenant // for GetBySlug (ONB-4 duplicate pre-check)
+	statusSet   map[int64]store.Status  // records SetStatus calls (AP6)
+	created     map[string]store.Tenant // records Create calls by slug (ONB-4); pre-init to record
+	deleted     map[int64]bool          // records Delete calls (ONB-4); pre-init to record
+	openaipKey  map[int64]*string       // GetOpenAIPKey result per tenant (ONB-6)
+	openaipSet  map[int64]*string       // records the value passed to SetOpenAIPKey; pre-init to record
+	openaipCall map[int64]bool          // records that SetOpenAIPKey was called (distinguishes a nil clear); pre-init
+	nextID      int64
 }
 
 func (f fakeTenants) List(_ context.Context) ([]store.Tenant, error) { return f.list, nil }
@@ -91,6 +132,25 @@ func (f fakeTenants) GetByID(_ context.Context, id int64) (store.Tenant, error) 
 	return store.Tenant{}, store.ErrNotFound
 }
 
+func (f fakeTenants) GetBySlug(_ context.Context, slug string) (store.Tenant, error) {
+	if x, ok := f.bySlug[slug]; ok {
+		return x, nil
+	}
+	return store.Tenant{}, store.ErrNotFound
+}
+
+func (f fakeTenants) Create(_ context.Context, slug, name string) (store.Tenant, error) {
+	id := f.nextID
+	if id == 0 {
+		id = 1
+	}
+	t := store.Tenant{ID: id, Slug: slug, Name: name, Status: store.StatusActive}
+	if f.created != nil {
+		f.created[slug] = t
+	}
+	return t, nil
+}
+
 func (f fakeTenants) SetStatus(_ context.Context, id int64, status store.Status) error {
 	if f.statusSet != nil {
 		f.statusSet[id] = status
@@ -98,20 +158,49 @@ func (f fakeTenants) SetStatus(_ context.Context, id int64, status store.Status)
 	return nil
 }
 
-// fakeUserStore satisfies UserStore and records mutations (AP6 access mgmt).
+func (f fakeTenants) Delete(_ context.Context, id int64) error {
+	if f.deleted != nil {
+		f.deleted[id] = true
+	}
+	return nil
+}
+
+func (f fakeTenants) GetOpenAIPKey(_ context.Context, id int64) (*string, error) {
+	return f.openaipKey[id], nil
+}
+
+func (f fakeTenants) SetOpenAIPKey(_ context.Context, id int64, key *string) error {
+	if f.openaipSet != nil {
+		f.openaipSet[id] = key
+	}
+	if f.openaipCall != nil {
+		f.openaipCall[id] = true
+	}
+	return nil
+}
+
+// fakeUserStore satisfies UserStore and records mutations (AP6 access mgmt +
+// ONB-3 platform-admin mgmt).
 type fakeUserStore struct {
-	byID      map[int64]store.User
-	bySubject map[string]store.User
-	listByTen map[int64][]store.User
-	created   store.User
-	createErr error
-	statusSet map[int64]store.Status
-	deleted   map[int64]bool
-	nextID    int64
+	byID         map[int64]store.User
+	bySubject    map[string]store.User
+	listByTen    map[int64][]store.User
+	admins       []store.User // ListAdmins result
+	created      store.User
+	createErr    error
+	statusSet    map[int64]store.Status
+	mustChgSet   map[int64]bool
+	activeAdmins int
+	deleted      map[int64]bool
+	nextID       int64
 }
 
 func (f *fakeUserStore) ListByTenant(_ context.Context, tenantID int64) ([]store.User, error) {
 	return f.listByTen[tenantID], nil
+}
+
+func (f *fakeUserStore) ListAdmins(_ context.Context) ([]store.User, error) {
+	return f.admins, nil
 }
 
 func (f *fakeUserStore) GetByID(_ context.Context, id int64) (store.User, error) {
@@ -128,7 +217,7 @@ func (f *fakeUserStore) GetBySubject(_ context.Context, subject string) (store.U
 	return store.User{}, store.ErrNotFound
 }
 
-func (f *fakeUserStore) Create(_ context.Context, tenantID int64, subject string, email *string, role store.Role) (store.User, error) {
+func (f *fakeUserStore) Create(_ context.Context, tenantID int64, subject string, email *string) (store.User, error) {
 	if f.createErr != nil {
 		return store.User{}, f.createErr
 	}
@@ -136,7 +225,19 @@ func (f *fakeUserStore) Create(_ context.Context, tenantID int64, subject string
 	if id == 0 {
 		id = 1
 	}
-	f.created = store.User{ID: id, TenantID: tenantID, Subject: subject, Email: email, Role: role, Status: store.StatusActive}
+	f.created = store.User{ID: id, TenantID: tenantID, Subject: subject, Email: email, Role: store.RoleUser, Status: store.StatusActive}
+	return f.created, nil
+}
+
+func (f *fakeUserStore) CreateAdmin(_ context.Context, subject string, email *string) (store.User, error) {
+	if f.createErr != nil {
+		return store.User{}, f.createErr
+	}
+	id := f.nextID
+	if id == 0 {
+		id = 1
+	}
+	f.created = store.User{ID: id, TenantID: 0, Subject: subject, Email: email, Role: store.RoleAdmin, Status: store.StatusActive}
 	return f.created, nil
 }
 
@@ -148,6 +249,18 @@ func (f *fakeUserStore) SetStatus(_ context.Context, id int64, status store.Stat
 	return nil
 }
 
+func (f *fakeUserStore) SetMustChangePassword(_ context.Context, id int64, must bool) error {
+	if f.mustChgSet == nil {
+		f.mustChgSet = map[int64]bool{}
+	}
+	f.mustChgSet[id] = must
+	return nil
+}
+
+func (f *fakeUserStore) CountActiveAdmins(_ context.Context) (int, error) {
+	return f.activeAdmins, nil
+}
+
 func (f *fakeUserStore) Delete(_ context.Context, id int64) error {
 	if f.deleted == nil {
 		f.deleted = map[int64]bool{}
@@ -156,9 +269,11 @@ func (f *fakeUserStore) Delete(_ context.Context, id int64) error {
 	return nil
 }
 
-// fakeCredStore satisfies CredentialStore and records the last hash set.
+// fakeCredStore satisfies CredentialStore and records the last hash set. getHash
+// (keyed by user id) backs the self-service password-change verification path.
 type fakeCredStore struct {
-	set map[int64]string
+	set     map[int64]string
+	getHash map[int64]string
 }
 
 func (f *fakeCredStore) Set(_ context.Context, userID int64, passwordHash string) error {
@@ -167,6 +282,13 @@ func (f *fakeCredStore) Set(_ context.Context, userID int64, passwordHash string
 	}
 	f.set[userID] = passwordHash
 	return nil
+}
+
+func (f *fakeCredStore) GetHash(_ context.Context, userID int64) (string, error) {
+	if h, ok := f.getHash[userID]; ok {
+		return h, nil
+	}
+	return "", store.ErrNotFound
 }
 
 // fakeEntitlements satisfies EntitlementService and records the last Set call
@@ -199,13 +321,13 @@ func handlerWith(vs *fakeVS, ff fakeFeeds, ft fakeTenants) *Handler {
 }
 
 func handlerWithEnt(vs *fakeVS, ff fakeFeeds, ft fakeTenants, fe EntitlementService) *Handler {
-	return New(vs, vs, ff, ft, &fakeUserStore{}, &fakeCredStore{}, fe, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+	return New(vs, vs, ff, ft, &fakeUserStore{}, &fakeCredStore{}, fe, nil, nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
 }
 
 // handlerForUsers builds a handler wired with the given user/credential/tenant
 // fakes for the AP6 access-management tests.
 func handlerForUsers(us UserStore, cs CredentialStore, ft fakeTenants) *Handler {
-	return New(&fakeVS{}, &fakeVS{}, fakeFeeds{}, ft, us, cs, &fakeEntitlements{}, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+	return New(&fakeVS{}, &fakeVS{}, fakeFeeds{}, ft, us, cs, &fakeEntitlements{}, nil, nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
 }
 
 // rescopeRecorder captures the tenant ids a handler asks to live-re-scope (WF2-33).
@@ -215,7 +337,7 @@ type rescopeRecorder struct{ calls []int64 }
 func (r *rescopeRecorder) fn(_ context.Context, tenantID int64) { r.calls = append(r.calls, tenantID) }
 
 func handlerWithRescope(vs *fakeVS, ff fakeFeeds, ft fakeTenants, rescope RescopeFunc) *Handler {
-	return New(vs, vs, ff, ft, &fakeUserStore{}, &fakeCredStore{}, &fakeEntitlements{}, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), rescope)
+	return New(vs, vs, ff, ft, &fakeUserStore{}, &fakeCredStore{}, &fakeEntitlements{}, nil, nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), rescope)
 }
 
 func adminReq(method, path, body string, tenantID int64, role store.Role) *http.Request {
@@ -729,7 +851,7 @@ func TestGetSensorClasses(t *testing.T) {
 // handlerForOverview wires the fakes the AP3 overview needs (custom user store
 // for the account count). fakeVS serves both views and subscriptions.
 func handlerForOverview(vs *fakeVS, ff fakeFeeds, ft fakeTenants, us UserStore, fe EntitlementService) *Handler {
-	return New(vs, vs, ff, ft, us, &fakeCredStore{}, fe, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+	return New(vs, vs, ff, ft, us, &fakeCredStore{}, fe, nil, nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
 }
 
 func TestGetOverviewAggregates(t *testing.T) {
@@ -799,7 +921,7 @@ func TestPutTenantViewUpsertsAndRescopes(t *testing.T) {
 	vs := &fakeVS{}
 	ft := fakeTenants{byID: map[int64]store.Tenant{5: {ID: 5}}}
 	rr := &rescopeRecorder{}
-	h := New(vs, vs, fakeFeeds{}, ft, &fakeUserStore{}, &fakeCredStore{}, &fakeEntitlements{}, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), rr.fn)
+	h := New(vs, vs, fakeFeeds{}, ft, &fakeUserStore{}, &fakeCredStore{}, &fakeEntitlements{}, nil, nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), rr.fn)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, adminReq(http.MethodPut, "/api/admin/tenants/5/view", `{"center_lat":48,"center_lon":11,"zoom":7}`, 99, store.RoleAdmin))
 	if rec.Code != http.StatusOK {
@@ -846,7 +968,7 @@ func (f *fakeFeedHealth) Snapshot(feedID int64, _ time.Time) health.FeedSnapshot
 
 func handlerForHealth(ff fakeFeeds, fh FeedHealthSource) *Handler {
 	ft := fakeTenants{}
-	return New(&fakeVS{}, &fakeVS{}, ff, ft, &fakeUserStore{}, &fakeCredStore{}, &fakeEntitlements{}, fh, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+	return New(&fakeVS{}, &fakeVS{}, ff, ft, &fakeUserStore{}, &fakeCredStore{}, &fakeEntitlements{}, fh, nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
 }
 
 func TestGetFeedsHealthNilSourceReturnsEmpty(t *testing.T) {

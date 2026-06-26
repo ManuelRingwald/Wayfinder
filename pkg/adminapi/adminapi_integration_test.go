@@ -50,7 +50,7 @@ func TestIntegrationAdminAPI(t *testing.T) {
 	h := New(store.NewViewConfigRepo(pool), store.NewSubscriptionRepo(pool), store.NewFeedRepo(pool),
 		store.NewTenantRepo(pool), store.NewUserRepo(pool), store.NewCredentialRepo(pool),
 		feature.New(store.NewEntitlementRepo(pool), slog.New(slog.NewTextHandler(io.Discard, nil))),
-		nil, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+		nil, nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
 
 	req := func(method, path, body string, role store.Role) *httptest.ResponseRecorder {
 		var r *http.Request
@@ -196,7 +196,7 @@ func TestIntegrationAdminAPI(t *testing.T) {
 
 	// --- AP3: tenant-centric dashboard (real-PG) ---
 	// Create one access account so the overview's user_count is meaningful.
-	if _, err := store.NewUserRepo(pool).Create(ctx, ten.ID, "operator-1", nil, store.RoleUser); err != nil {
+	if _, err := store.NewUserRepo(pool).Create(ctx, ten.ID, "operator-1", nil); err != nil {
 		t.Fatalf("create user: %v", err)
 	}
 	var overview []map[string]any

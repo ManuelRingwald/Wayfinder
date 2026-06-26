@@ -53,17 +53,28 @@ type Tenant struct {
 	CreatedAt time.Time
 }
 
-// User belongs to exactly one tenant. Subject is the OIDC subject (proxy mode)
-// or the username (builtin mode), ADR 0006 §5; it is the key by which an
-// authenticated request is resolved to a tenant (WF2-11/12). Email is optional.
-// Status is the account lifecycle (AP6): a paused account cannot log in, but its
-// row and configuration are retained.
+// User is either a platform admin or a tenant user, and the two are strictly
+// separated (ONB-3, ADR 0011): a user (pilot/controller account) belongs to
+// exactly one tenant; an admin (platform operator) belongs to none. TenantID
+// carries that — a non-zero tenant for a user, and 0 (database NULL) for an
+// admin. The invariant (admin XOR tenant) is enforced at the database by a CHECK
+// constraint and in the store by separate Create/CreateAdmin constructors.
+//
+// Subject is the OIDC subject (proxy mode) or the username (builtin mode),
+// ADR 0006 §5; it is the key by which an authenticated request is resolved
+// (WF2-11/12). Email is optional. Status is the account lifecycle (AP6): a paused
+// account cannot log in, but its row and configuration are retained.
+// MustChangePassword (ONB-1, ADR 0011) marks an account whose password must be
+// replaced before any other admin action is allowed — set on the auto-seeded
+// default admin so the known default credential is valid for exactly one step:
+// the one that replaces it.
 type User struct {
-	ID        int64
-	TenantID  int64
-	Subject   string
-	Email     *string
-	Role      Role
-	Status    Status
-	CreatedAt time.Time
+	ID                 int64
+	TenantID           int64 // 0 == no tenant (platform admin); non-zero for a tenant user
+	Subject            string
+	Email              *string
+	Role               Role
+	Status             Status
+	MustChangePassword bool
+	CreatedAt          time.Time
 }

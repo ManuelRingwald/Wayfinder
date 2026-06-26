@@ -120,17 +120,31 @@ func (s *Service) Register(mux *http.ServeMux) {
 	}
 }
 
-// handler serves the cached collection for one kind, or an empty collection if
-// nothing has been cached yet (graceful degradation, ADR 0004).
+// Serve returns the cached collection for one kind, or an empty collection if
+// nothing has been cached yet (graceful degradation, ADR 0004). It is the read
+// side shared by the single-tenant HTTP handler and the per-tenant Registry
+// (ONB-6), which serves a tenant's own cache and falls back to this one.
+func (s *Service) Serve(kind Kind) FeatureCollection {
+	if c := s.cache[kind]; c != nil {
+		if ptr := c.Load(); ptr != nil {
+			return *ptr
+		}
+	}
+	return EmptyCollection()
+}
+
+// handler serves the cached collection for one kind (single-tenant path).
 func (s *Service) handler(kind Kind) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		fc := EmptyCollection()
-		if ptr := s.cache[kind].Load(); ptr != nil {
-			fc = *ptr
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(fc)
+		writeFeatureCollection(w, s.Serve(kind))
 	}
+}
+
+// writeFeatureCollection encodes a FeatureCollection as JSON. Shared by the
+// single-tenant Service handler and the per-tenant Registry handlers (ONB-6).
+func writeFeatureCollection(w http.ResponseWriter, fc FeatureCollection) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(fc)
 }
 
 // FetchSuccessCount returns the number of successful per-kind fetches.

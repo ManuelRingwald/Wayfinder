@@ -1,0 +1,75 @@
+# Zero-touch onboarding stack (ONB-1, ADR 0011).
+#
+# Brings up the full multi-tenant Wayfinder platform — PostgreSQL + the Wayfinder
+# server in builtin-auth mode — with a single command:
+#
+#     docker compose -f docker-compose.onboarding.yml up --build
+#
+# On first boot Wayfinder auto-provisions a default tenant and a default admin
+# (username "admin", password "admin"). Open http://localhost:8081/admin, log in,
+# and you are immediately required to set a new password before anything else is
+# reachable (must_change_password, enforced server-side). No `bootstrap` or
+# `feed add` terminal step is needed to get a usable login.
+#
+# This file is the multi-tenant counterpart to the single-tenant demo
+# docker-compose.yml. Use that one for a quick anonymous ASD without a database;
+# use this one for the real, configurable platform.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: wayfinder
+      POSTGRES_PASSWORD: wayfinder
+      POSTGRES_DB: wayfinder
+    # Published on loopback so the host-networked wayfinder service can reach it at
+    # localhost:5432 (multicast forces host networking on wayfinder, which rules
+    # out Docker's service-name DNS — see DOCKER.md).
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - wayfinder-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wayfinder -d wayfinder"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    restart: unless-stopped
+
+  wayfinder:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    # Host networking is required to receive the CAT062/UDP-multicast feed
+    # (239.255.0.62:8600 by default) — multicast does not traverse Docker's
+    # default bridge network. See DOCKER.md for the macOS/Windows caveat.
+    network_mode: host
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # Firefly's CAT062/UDP-multicast feed (ADR 0006 / ICD-CAT062.md).
+      FIREFLY_CAT062_GROUP: ${FIREFLY_CAT062_GROUP:-239.255.0.62}
+      FIREFLY_CAT062_PORT: ${FIREFLY_CAT062_PORT:-8600}
+      # Multi-tenancy + builtin login. The default admin is auto-seeded on first
+      # boot (ADR 0011); WAYFINDER_DB_URL points at the db service via loopback.
+      WAYFINDER_DB_URL: "postgres://wayfinder:wayfinder@localhost:5432/wayfinder?sslmode=disable"
+      WAYFINDER_AUTH_MODE: "builtin"
+      # Session-signing key. If left unset Wayfinder generates an ephemeral key and
+      # warns (sessions reset on restart). Set a fixed key for production:
+      #   openssl rand -hex 32
+      WAYFINDER_SESSION_KEY: ${WAYFINDER_SESSION_KEY:-}
+      # Map center/zoom for the ASD frontend (default: Frankfurt, Firefly's demo).
+      WAYFINDER_MAP_CENTER_LAT: ${WAYFINDER_MAP_CENTER_LAT:-50.0379}
+      WAYFINDER_MAP_CENTER_LON: ${WAYFINDER_MAP_CENTER_LON:-8.5622}
+      WAYFINDER_MAP_ZOOM: ${WAYFINDER_MAP_ZOOM:-8}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+
+volumes:
+  wayfinder-db:

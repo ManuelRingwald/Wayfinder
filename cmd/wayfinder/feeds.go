@@ -1,12 +1,13 @@
 package main
 
 import (
-	"fmt"
 	"log/slog"
 
 	"github.com/manuelringwald/wayfinder/pkg/cat062"
 	"github.com/manuelringwald/wayfinder/pkg/cat063"
 	"github.com/manuelringwald/wayfinder/pkg/cat065"
+	"github.com/manuelringwald/wayfinder/pkg/feedmanager"
+	"github.com/manuelringwald/wayfinder/pkg/health"
 	"github.com/manuelringwald/wayfinder/pkg/receiver"
 	"github.com/manuelringwald/wayfinder/pkg/store"
 )
@@ -41,20 +42,22 @@ func resolveFeeds(catalogue []store.Feed, cfg Config) []feedConfig {
 	return feeds
 }
 
-// buildReceivers creates one receiver per feed, each stamping its feed_id onto
-// decoded tracks (WF2-20.1). statusHandler receives (feedID, status) so the
-// per-feed health registry (AP4) knows which feed each CAT065 heartbeat belongs
-// to. sensorStatusHandler receives (feedID, statuses) for CAT063 per-sensor
-// status updates (ADR 0022). It does not open sockets — call Listen on each.
-// An invalid feed (e.g. a malformed multicast group) is a hard error naming the
-// offending feed.
-func buildReceivers(feeds []feedConfig, logger *slog.Logger,
+// newReceiverFactory returns a feedmanager.Factory that builds one receiver per
+// feed, each stamping its feed_id onto decoded tracks (WF2-20.1). statusHandler
+// receives (feedID, status) so the per-feed health registry (AP4) knows which
+// feed each CAT065 heartbeat belongs to; sensorStatusHandler receives
+// (feedID, statuses) for CAT063 per-sensor status (ADR 0022). onDecodeError is
+// the process-wide decode-error counter hook (ONB-5). The factory is used both at
+// boot (existing catalogue) and for feeds added live from the admin API: it does
+// not open sockets — the manager calls Listen/Run. An invalid feed (e.g. a
+// malformed multicast group) surfaces as a build error naming the offending feed.
+func newReceiverFactory(logger *slog.Logger,
 	trackHandler func(int64, []cat062.DecodedTrack) error,
 	statusHandler func(int64, cat065.ServiceStatus) error,
-	sensorStatusHandler func(int64, []cat063.SensorStatus) error) ([]*receiver.Receiver, error) {
-	recvs := make([]*receiver.Receiver, 0, len(feeds))
-	for _, f := range feeds {
-		fid := f.ID // capture for closure
+	sensorStatusHandler func(int64, []cat063.SensorStatus) error,
+	onDecodeError func()) feedmanager.Factory {
+	return func(f feedmanager.Feed) (feedmanager.Receiver, error) {
+		fid := f.ID // capture for closures
 		r, err := receiver.New(receiver.Config{
 			FeedID:  fid,
 			Group:   f.Group,
@@ -68,11 +71,30 @@ func buildReceivers(feeds []feedConfig, logger *slog.Logger,
 			SensorStatusHandler: func(statuses []cat063.SensorStatus) error {
 				return sensorStatusHandler(fid, statuses)
 			},
+			OnDecodeError: onDecodeError,
 		})
 		if err != nil {
-			return nil, fmt.Errorf("feed %q (id=%d): %w", f.Name, f.ID, err)
+			return nil, err
 		}
-		recvs = append(recvs, r)
+		return r, nil
 	}
-	return recvs, nil
+}
+
+// feedLifecycle adapts the feed manager + health registry to
+// adminapi.FeedLifecycle (ONB-5): Start joins a newly catalogued feed's multicast
+// group; Stop leaves a deleted feed's group and forgets its health so the
+// dashboard stops reporting a phantom (forever-stale) feed.
+type feedLifecycle struct {
+	mgr      *feedmanager.Manager
+	registry *health.Registry
+}
+
+func (l feedLifecycle) Start(id int64, name, group string, port int) error {
+	return l.mgr.Start(feedmanager.Feed{ID: id, Name: name, Group: group, Port: port})
+}
+
+func (l feedLifecycle) Stop(id int64) bool {
+	stopped := l.mgr.Stop(id)
+	l.registry.Forget(id)
+	return stopped
 }

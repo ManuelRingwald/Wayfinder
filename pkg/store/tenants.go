@@ -68,6 +68,50 @@ func (r *TenantRepo) SetStatus(ctx context.Context, id int64, status Status) err
 	return nil
 }
 
+// Delete removes a tenant and, by ON DELETE CASCADE, every row that references
+// it: its users (and their credentials), feed subscriptions, entitlements and
+// view configs (ONB-4, ADR 0011). The cascade is atomic (one DELETE). A missing
+// tenant yields ErrNotFound. The caller is responsible for any higher-level guard
+// (e.g. refusing to delete a tenant that still has accounts).
+func (r *TenantRepo) Delete(ctx context.Context, id int64) error {
+	const q = `DELETE FROM tenants WHERE id = $1`
+	tag, err := r.db.Exec(ctx, q, id)
+	if err != nil {
+		return wrap("delete tenant", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// GetOpenAIPKey returns the tenant's per-tenant OpenAIP API key (ONB-6, ADR 0011),
+// or nil when none is set — in which case the caller falls back to the global key.
+// The key is read in isolation (not part of the shared Tenant row) so a secret is
+// never carried through the general tenant DTOs. A missing tenant yields ErrNotFound.
+func (r *TenantRepo) GetOpenAIPKey(ctx context.Context, id int64) (*string, error) {
+	const q = `SELECT openaip_api_key FROM tenants WHERE id = $1`
+	var key *string
+	if err := r.db.QueryRow(ctx, q, id).Scan(&key); err != nil {
+		return nil, wrap("get tenant openaip key", err)
+	}
+	return key, nil
+}
+
+// SetOpenAIPKey sets (non-nil) or clears (nil) the tenant's OpenAIP API key. A nil
+// key restores the global-key fallback. A missing tenant yields ErrNotFound.
+func (r *TenantRepo) SetOpenAIPKey(ctx context.Context, id int64, key *string) error {
+	const q = `UPDATE tenants SET openaip_api_key = $2 WHERE id = $1`
+	tag, err := r.db.Exec(ctx, q, id, key)
+	if err != nil {
+		return wrap("set tenant openaip key", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // List returns all tenants ordered by id.
 func (r *TenantRepo) List(ctx context.Context) ([]Tenant, error) {
 	const q = `SELECT ` + tenantColumns + ` FROM tenants ORDER BY id`
