@@ -97,11 +97,13 @@ Programmcode herunter).
    Jede Zeile sollte eine Versionsnummer ausgeben (keine Fehlermeldung).
 
 > ⚠️ **Mac-Besonderheit (wichtig!):** Docker läuft auf dem Mac in einer kleinen
-> internen Linux-Maschine. Der direkte „Host-Netzwerk"-Modus aus vielen
-> Anleitungen funktioniert hier **nicht**. Diese Anleitung umgeht das Problem,
-> indem Firefly und Wayfinder **gemeinsam** in einem Container-Netz laufen — das
-> klappt auf dem Mac **genauso wie auf Linux**. Sie müssen nichts extra tun,
-> einfach den Schritten folgen.
+> internen Linux-Maschine. Der direkte „Host-Netzwerk"-Modus funktioniert hier
+> **nicht** — das betrifft das Repo-eigene `docker-compose.yml` (Single-Tenant)
+> und `docker-compose.onboarding.yml` (Multi-Tenant-Schnellstart), die beide
+> `network_mode: host` nutzen. **Teil 4** (Einzelplatz) umgeht das Problem, indem
+> Firefly und Wayfinder **gemeinsam** in einem eigenen Bridge-Netz laufen — das
+> klappt auf dem Mac **genauso wie auf Linux**. Für den Multi-Tenant-Schnellstart
+> (Teil 5) → DOCKER.md beschreibt das Mac-kompatible Master-Compose.
 
 ### 🪟 Windows
 
@@ -310,9 +312,10 @@ Feeds, die ihm zugewiesen wurden. Dazu kommen drei neue Bausteine hinzu:
 
 > ⚡ **Schnellster Weg (Zero-Touch-Onboarding, ADR 0011):** Das Repo enthält eine
 > fertige Compose-Datei `docker-compose.onboarding.yml` (PostgreSQL + Wayfinder im
-> `builtin`-Modus). Ein einziger Befehl genügt:
+> `builtin`-Modus). Aus dem `wayfinder`-Ordner:
 >
 > ```bash
+> cd ~/asd/wayfinder
 > docker compose -f docker-compose.onboarding.yml up --build
 > ```
 >
@@ -321,9 +324,18 @@ Feeds, die ihm zugewiesen wurden. Dazu kommen drei neue Bausteine hinzu:
 > Sie `http://localhost:8081/admin`, melden Sie sich an, und Sie werden
 > **sofort zum Passwortwechsel gezwungen** (bevor irgendeine andere Aktion
 > möglich ist). **Kein `bootstrap`, kein Terminal-Schritt** nötig, um einen
-> nutzbaren Login zu bekommen. Die Schritte 5.1–5.4 unten beschreiben denselben
-> Aufbau „von Hand" — wer die fertige Datei nutzt, kann **Schritt 5.4
-> (`bootstrap`) überspringen**.
+> nutzbaren Login zu bekommen.
+>
+> **Wichtig — Karte startet leer:** Die Datei enthält kein Firefly. Ohne laufende
+> CAT062-Quelle sehen Sie nur die Karte (kein Flugzeug, kein FEED-OK-Banner) —
+> das ist kein Fehler. Für echte Tracks → Firefly separat starten (DOCKER.md)
+> oder die manuellen Schritte 5.1–5.5 unten nutzen (Firefly mit dabei).
+>
+> **macOS/Windows:** `network_mode: host` funktioniert unter Docker Desktop nicht.
+> → DOCKER.md beschreibt das Mac-kompatible Master-Compose für den E2E-Fall.
+>
+> Wer diesen Schnellstart nutzt, **überspringt die Schritte 5.1–5.4 komplett**
+> (die beschreiben denselben Aufbau von Hand). Weiter ab **Schritt 5.5** (Feeds).
 
 ### Schritt 5.1 — Steuerungsordner anlegen
 
@@ -515,7 +527,7 @@ docker compose up -d --build
 Öffnen Sie **<http://localhost:8081/admin>** und melden Sie sich an:
 
 - **Benutzername:** `admin`
-- **Passwort:** das in Schritt 5.4 gewählte (`MeinAdminPasswort123`)
+- **Passwort:** `admin` (bei Zero-Touch-Schnellstart — Sie werden sofort zum Wechsel gezwungen) **oder** das in Schritt 5.4 selbst gewählte Passwort
 
 Sie sehen die Admin-Oberfläche. Seit AP3 (ADR 0009) ist sie
 **mandantenzentriert**: zuerst eine **Übersicht aller Mandanten** (mit Status,
@@ -535,10 +547,11 @@ die **Feeds** und die **Zugänge** dieses Kunden verwalten.
 > Die Werte stammen aus derselben Quelle wie die `/metrics`-Felder
 > `wayfinder_feed_stale` / `wayfinder_cat065_heartbeats_received_total`.
 
-> **Rollen (ADR 0009):** Es gibt genau zwei Rollen — **`admin`** (Plattform-
-> Betreiber, sieht den ganzen Admin-Bereich) und **`user`** (Endnutzer/Lotse
-> eines Kunden, meldet sich an und sieht nur das zugewiesene Lagebild). Ein
-> Kunde bekommt also `user`-Zugänge; den Admin-Bereich erreicht nur `admin`.
+> **Rollen:** Es gibt genau zwei Rollen — **`admin`** (Plattform-Betreiber:
+> verwaltet **alle** Mandanten, Feeds und Zugänge; hat Zugang zum kompletten
+> Admin-Bereich) und **`user`** (Endnutzer/Lotse eines Mandanten: meldet sich an
+> und sieht nur das ihm zugewiesene Lagebild). Ein Kunde bekommt also
+> `user`-Zugänge; den Admin-Bereich (`/admin`) erreicht nur `admin`.
 
 ### Schritt 5.8 — Einen Kunden-Mandanten anlegen
 
@@ -596,7 +609,7 @@ herausfinden, dann zuweisen. (`{tenant-id}` / `feed_id` aus `feed list` bzw. der
 Admin-Liste.)
 
 ```bash
-# Beispiel: Feed 1 dem Mandanten 2 zuweisen — als angemeldeter super_admin.
+# Beispiel: Feed 1 dem Mandanten 2 zuweisen — als angemeldeter admin.
 curl -X POST http://localhost:8081/api/admin/tenants/2/subscriptions \
   -H 'Content-Type: application/json' \
   -d '{"feed_id":1}'
@@ -612,15 +625,15 @@ zugewiesenen Feeds — und **keine** anderen.
 ✅ **Fertig!** Sie haben eine Multi-Tenant-Plattform aufgesetzt. Weitere Kunden:
 Schritte 5.8 + 5.9 wiederholen.
 
-### Schritt 5.11 — „View as Tenant": die Sicht eines Kunden einsehen (nur `super_admin`)
+### Schritt 5.11 — „View as Tenant": die Sicht eines Kunden einsehen (nur `admin`)
 
-Für den Support gibt es einen **Read-Only-Einblick**: ein `super_admin` kann die
+Für den Support gibt es einen **Read-Only-Einblick**: ein `admin` kann die
 Lage **so sehen, wie ein bestimmter Kunde sie sieht** — ohne dessen Passwort, nur
 lesend, vollständig protokolliert (ADR 0008).
 
 So funktioniert es im Browser:
 
-1. Als `super_admin` (`admin`) am Lagebild **<http://localhost:8081>** angemeldet,
+1. Als `admin` am Lagebild **<http://localhost:8081>** angemeldet,
    erscheint oben mittig die Schaltfläche **„Als Mandant ansehen"**.
 2. Mandanten auswählen (z. B. „Kunde Nord GmbH") → die Karte wechselt sofort auf
    **dessen** Feeds und Sicht; ein **gelber Banner** zeigt
@@ -632,7 +645,7 @@ So funktioniert es im Browser:
 
 - **Nur lesend:** Es lässt sich nichts im Namen des Kunden ändern — Verwaltung
   läuft immer über die echte Identität.
-- **Nur `super_admin`:** `operator`/`tenant_admin` sehen die Funktion nicht; ein
+- **Nur `admin`:** Nutzer mit Rolle `user` sehen die Funktion nicht; ein
   gefälschter Zugriffsversuch wird serverseitig **laut abgewiesen und ins
   Audit-Log geschrieben**.
 - **Zeitlich befristet:** Der Einblick läuft nach `WAYFINDER_IMPERSONATION_TTL`
@@ -640,7 +653,7 @@ So funktioniert es im Browser:
 - **Voraussetzung:** Ein Signing-Key (`WAYFINDER_SESSION_KEY`) muss gesetzt sein —
   im `builtin`-Aufbau aus Teil 5 ist das bereits der Fall.
 
-> 📖 Die laufende Aufsicht über diese Einblicke (Audit-Spur „wer sah welchen
+>> 📖 Die laufende Aufsicht über diese Einblicke (Audit-Spur „wer sah welchen
 > Mandanten") ist im **Betriebsführungshandbuch** (`docs/BETRIEB.md`, Abschnitt
 > Sicherheits-Betrieb) beschrieben.
 
@@ -778,11 +791,11 @@ Mandanten zugeordneten Nutzer → `401`).
 
 | Flag / Variable | Default | Beschreibung |
 |-----------------|---------|--------------|
-| `-tenant` | *(Pflicht)* | Mandanten-Slug (eindeutig, z. B. `kunde-nord`) |
-| `-tenant-name` | = Slug | Anzeigename des Mandanten |
+| `-tenant` | *(leer)* | Mandanten-Slug (z. B. `kunde-nord`). **Pflicht** für `-role user`; **nicht benötigt** für `-role admin` (Admins sind mandantenlos) |
+| `-tenant-name` | = Slug | Anzeigename des Mandanten (nur wenn `-tenant` gesetzt) |
 | `-subject` | *(Pflicht)* | Benutzername (builtin) bzw. OIDC-Subject (proxy) |
 | `-email` | *(leer)* | optionale E-Mail |
-| `-role` | `tenant_admin` | `operator` \| `tenant_admin` \| `super_admin` |
+| `-role` | `admin` | `user` \| `admin` |
 | `-password` | *(leer)* | builtin-Passwort (besser über `WAYFINDER_BOOTSTRAP_PASSWORD`) |
 | `WAYFINDER_BOOTSTRAP_PASSWORD` | *(leer)* | builtin-Passwort (bevorzugt — **nicht** in der Prozessliste sichtbar) |
 
@@ -814,9 +827,14 @@ Mandanten zugeordneten Nutzer → `401`).
 | `GET /api/admin/view` · `PUT /api/admin/view` | Eigene Sicht (Zentrum/Zoom/AOI/FL) lesen/setzen | admin |
 | `GET /api/admin/subscriptions` | Eigene abonnierte Feeds | admin |
 | `GET /api/admin/feeds` | Feed-Katalog (read-only) | admin |
-| `GET /api/admin/tenants` | Alle Mandanten | super_admin |
-| `POST /api/admin/tenants/{id}/subscriptions` | Feed zuweisen (`{"feed_id":…}`), idempotent | super_admin |
-| `DELETE /api/admin/tenants/{id}/subscriptions/{feedID}` | Feed entziehen | super_admin |
+| `GET /api/admin/overview` | Alle Mandanten (Übersicht) | admin |
+| `GET /api/admin/tenants` | Alle Mandanten (Liste) | admin |
+| `POST /api/admin/tenants` | Mandant anlegen | admin |
+| `DELETE /api/admin/tenants/{id}` | Mandant löschen (nur wenn keine Zugänge) | admin |
+| `POST /api/admin/tenants/{id}/subscriptions` | Feed zuweisen (`{"feed_id":…}`), idempotent | admin |
+| `DELETE /api/admin/tenants/{id}/subscriptions/{feedID}` | Feed entziehen | admin |
+| `GET /api/admin/tenants/{id}/openaip` | OpenAIP-Schlüssel-Status (`{"configured":bool}`) | admin |
+| `PUT /api/admin/tenants/{id}/openaip` | OpenAIP-Schlüssel setzen/löschen | admin |
 
 > 🔒 **Mandanten-Isolation:** Ein `/ws`-Client sieht **nur** Tracks aus den Feeds,
 > die sein Mandant **abonniert** hat. Kein Abo → keine Tracks (fail-closed).
