@@ -10,11 +10,12 @@ import (
 	"github.com/manuelringwald/wayfinder/pkg/store"
 )
 
-// TestIntegrationAutoSeed exercises the ONB-1 (ADR 0011) boot auto-seed against a
-// real Postgres: the first run provisions the default tenant + admin with the
-// known default password and the forced-change flag; a second run is a no-op (an
-// admin already exists); and once the admin has rotated its password and cleared
-// the flag, a restart does not undo that. Skips without WAYFINDER_TEST_DB_URL.
+// TestIntegrationAutoSeed exercises the ONB-1/ONB-3 (ADR 0011) boot auto-seed
+// against a real Postgres: the first run provisions the default (tenant-less)
+// admin with the known default password and the forced-change flag, plus a
+// convenience default tenant; a second run is a no-op (an admin already exists);
+// and once the admin has rotated its password and cleared the flag, a restart
+// does not undo that. Skips without WAYFINDER_TEST_DB_URL.
 func TestIntegrationAutoSeed(t *testing.T) {
 	dsn := os.Getenv("WAYFINDER_TEST_DB_URL")
 	if dsn == "" {
@@ -51,6 +52,10 @@ func TestIntegrationAutoSeed(t *testing.T) {
 	if u.Role != store.RoleAdmin || !u.MustChangePassword {
 		t.Fatalf("seeded admin = {role:%s mustChange:%v}, want {admin true}", u.Role, u.MustChangePassword)
 	}
+	// The platform admin is tenant-less (ONB-3).
+	if u.TenantID != 0 {
+		t.Fatalf("seeded admin TenantID = %d, want 0 (tenant-less platform admin)", u.TenantID)
+	}
 	hash, err := creds.GetHash(ctx, u.ID)
 	if err != nil {
 		t.Fatalf("credential not set: %v", err)
@@ -59,15 +64,15 @@ func TestIntegrationAutoSeed(t *testing.T) {
 		t.Fatal("default password does not verify")
 	}
 
-	// Second boot: a no-op — no duplicate tenant/user.
+	// Second boot: a no-op — no duplicate admin.
 	out.Reset()
 	if err := autoSeedDefaultAdmin(ctx, pool, &out); err != nil {
 		t.Fatalf("second seed: %v", err)
 	}
-	if all, err := users.ListByTenant(ctx, u.TenantID); err != nil {
-		t.Fatalf("list users: %v", err)
-	} else if len(all) != 1 {
-		t.Fatalf("user count after re-seed = %d, want 1 (idempotent)", len(all))
+	if admins, err := users.ListAdmins(ctx); err != nil {
+		t.Fatalf("list admins: %v", err)
+	} else if len(admins) != 1 {
+		t.Fatalf("admin count after re-seed = %d, want 1 (idempotent)", len(admins))
 	}
 
 	// Operator rotates the password and clears the flag; a later boot must not undo

@@ -18,17 +18,29 @@ type UserRepo struct {
 // NewUserRepo returns a UserRepo backed by the given pool.
 func NewUserRepo(db *pgxpool.Pool) *UserRepo { return &UserRepo{db: db} }
 
-// Create inserts a user under the given tenant. The role is validated before the
-// query (fail-closed: an unknown role never reaches the database). A nil email
-// stores SQL NULL. A duplicate subject is rejected by the UNIQUE constraint.
-func (r *UserRepo) Create(ctx context.Context, tenantID int64, subject string, email *string, role Role) (User, error) {
-	if !role.Valid() {
-		return User{}, fmt.Errorf("store: create user: invalid role %q", role)
-	}
-	const q = `INSERT INTO users (tenant_id, subject, email, role) VALUES ($1, $2, $3, $4) RETURNING ` + userColumns
-	u, err := scanUser(r.db.QueryRow(ctx, q, tenantID, subject, email, string(role)))
+// Create inserts a tenant user (role 'user') under the given tenant. Platform
+// admins are created via CreateAdmin instead — the two are strictly separated
+// (ONB-3, ADR 0011), so this constructor never sets role 'admin'. A nil email
+// stores SQL NULL. A duplicate subject is rejected by the UNIQUE constraint; a
+// missing/zero tenant is rejected by the FK and the role/tenant CHECK constraint.
+func (r *UserRepo) Create(ctx context.Context, tenantID int64, subject string, email *string) (User, error) {
+	const q = `INSERT INTO users (tenant_id, subject, email, role) VALUES ($1, $2, $3, 'user') RETURNING ` + userColumns
+	u, err := scanUser(r.db.QueryRow(ctx, q, tenantID, subject, email))
 	if err != nil {
 		return User{}, wrap("create user", err)
+	}
+	return u, nil
+}
+
+// CreateAdmin inserts a platform admin (role 'admin', no tenant). Admins are
+// global — they belong to no tenant (ONB-3, ADR 0011) — so tenant_id is stored as
+// NULL and reads back as TenantID 0. A nil email stores SQL NULL. A duplicate
+// subject is rejected by the UNIQUE constraint.
+func (r *UserRepo) CreateAdmin(ctx context.Context, subject string, email *string) (User, error) {
+	const q = `INSERT INTO users (tenant_id, subject, email, role) VALUES (NULL, $1, $2, 'admin') RETURNING ` + userColumns
+	u, err := scanUser(r.db.QueryRow(ctx, q, subject, email))
+	if err != nil {
+		return User{}, wrap("create admin", err)
 	}
 	return u, nil
 }
@@ -76,6 +88,31 @@ func (r *UserRepo) ListByTenant(ctx context.Context, tenantID int64) ([]User, er
 		return nil, wrap("iterate users", err)
 	}
 	return users, nil
+}
+
+// ListAdmins returns every platform admin (role 'admin'), ordered by id. Admins
+// have no tenant, so unlike ListByTenant this is a global list — it backs the
+// /api/admin/admins management surface (ONB-3, ADR 0011).
+func (r *UserRepo) ListAdmins(ctx context.Context) ([]User, error) {
+	const q = `SELECT ` + userColumns + ` FROM users WHERE role = 'admin' ORDER BY id`
+	rows, err := r.db.Query(ctx, q)
+	if err != nil {
+		return nil, wrap("list admins", err)
+	}
+	defer rows.Close()
+
+	var admins []User
+	for rows.Next() {
+		u, err := scanUser(rows)
+		if err != nil {
+			return nil, wrap("scan admin", err)
+		}
+		admins = append(admins, u)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, wrap("iterate admins", err)
+	}
+	return admins, nil
 }
 
 // SetStatus updates a user's lifecycle status (AP6). The status is validated
@@ -139,15 +176,21 @@ func (r *UserRepo) Delete(ctx context.Context, id int64) error {
 }
 
 // scanUser reads a user row. role and status are scanned through strings so the
-// named types do not depend on pgx's type map.
+// named types do not depend on pgx's type map. tenant_id is nullable (a platform
+// admin has none, ONB-3): a SQL NULL maps to TenantID 0, the in-process sentinel
+// for "no tenant".
 func scanUser(row rowScanner) (User, error) {
 	var (
-		u      User
-		role   string
-		status string
+		u        User
+		tenantID *int64
+		role     string
+		status   string
 	)
-	if err := row.Scan(&u.ID, &u.TenantID, &u.Subject, &u.Email, &role, &status, &u.MustChangePassword, &u.CreatedAt); err != nil {
+	if err := row.Scan(&u.ID, &tenantID, &u.Subject, &u.Email, &role, &status, &u.MustChangePassword, &u.CreatedAt); err != nil {
 		return User{}, err
+	}
+	if tenantID != nil {
+		u.TenantID = *tenantID
 	}
 	u.Role = Role(role)
 	u.Status = Status(status)

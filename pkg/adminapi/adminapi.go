@@ -141,6 +141,15 @@ func New(views ViewStore, subs SubscriptionStore, feeds FeedStore, tenants Tenan
 	// tenant's state, and set one flag. The billing/provisioning boundary.
 	mux.HandleFunc("GET /api/admin/tenants/{tenantID}/entitlements", h.requireAdmin(h.listTenantEntitlements))
 	mux.HandleFunc("PUT /api/admin/tenants/{tenantID}/entitlements/{key}", h.requireAdmin(h.setTenantEntitlement))
+	// Platform-admin management (ONB-3, ADR 0011): admins are global (no tenant)
+	// and managed through a dedicated surface, strictly separated from the
+	// per-tenant user routes below. The "last active admin" guard (409) lives in
+	// the delete/pause handlers. Cross-cutting platform operation → requireAdmin.
+	mux.HandleFunc("GET /api/admin/admins", h.requireAdmin(h.listAdmins))
+	mux.HandleFunc("POST /api/admin/admins", h.requireAdmin(h.createAdmin))
+	mux.HandleFunc("PATCH /api/admin/admins/{adminID}", h.requireAdmin(h.setAdminStatus))
+	mux.HandleFunc("DELETE /api/admin/admins/{adminID}", h.requireAdmin(h.deleteAdmin))
+	mux.HandleFunc("PUT /api/admin/admins/{adminID}/password", h.requireAdmin(h.setAdminPassword))
 	// Access management (AP6): an admin provisions and suspends access accounts
 	// per tenant, and pauses a whole tenant. Cross-tenant → requireAdmin.
 	mux.HandleFunc("PATCH /api/admin/tenants/{tenantID}", h.requireAdmin(h.setTenantStatus))

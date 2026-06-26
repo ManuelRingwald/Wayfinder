@@ -85,8 +85,12 @@ func LoginHandler(users UserLookup, creds CredentialLookup, tenants TenantLookup
 			// log in even with correct credentials. Both checks are fail-closed: a
 			// tenant lookup error is treated as suspended. The generic 401 below does
 			// not reveal that this was the reason (no paused/active enumeration).
+			// A platform admin has no tenant (TenantID 0, ONB-3) — there is no tenant
+			// to cascade from, so the tenant-pause check is skipped for admins (only
+			// their own account status gates them; otherwise GetByID(0) would fail and
+			// fail-closed lock every admin out).
 			suspended = u.Status == store.StatusPaused
-			if !suspended && tenants != nil {
+			if !suspended && tenants != nil && u.TenantID != 0 {
 				if t, terr := tenants.GetByID(r.Context(), u.TenantID); terr != nil || t.Status == store.StatusPaused {
 					suspended = true
 				}

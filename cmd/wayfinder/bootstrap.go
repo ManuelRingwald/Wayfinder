@@ -30,74 +30,46 @@ type bootstrapParams struct {
 
 // validate checks the required fields and the role without touching the
 // database, so callers fail fast (and the check is unit-testable DB-free).
+// A tenant is required only for a user: a platform admin has no tenant (ONB-3,
+// ADR 0011), so -tenant is not required (and is ignored) for role admin.
 func (p bootstrapParams) validate() error {
-	if p.TenantSlug == "" {
-		return errors.New("missing -tenant")
-	}
 	if p.Subject == "" {
 		return errors.New("missing -subject")
 	}
 	if !p.Role.Valid() {
 		return fmt.Errorf("invalid -role %q (user|admin)", p.Role)
 	}
+	if p.Role == store.RoleUser && p.TenantSlug == "" {
+		return errors.New("missing -tenant (required for a user)")
+	}
 	return nil
 }
 
-// runBootstrap provisions the tenant, user and (optionally) credential. It is
-// idempotent: an existing tenant/user is reused, not duplicated, so the command
-// is safe to re-run (e.g. to (re)set the admin password). Progress is written to
-// out. A user that already exists under a *different* tenant is treated as a
-// conflict rather than silently re-homed.
+// runBootstrap provisions the account and (optionally) credential. It is
+// idempotent: an existing account is reused, not duplicated, so the command is
+// safe to re-run (e.g. to (re)set a password). Progress is written to out.
+//
+// The account world depends on the role (ONB-3, ADR 0011): a user is homed under
+// a tenant (get-or-create by slug), while a platform admin is global and has no
+// tenant (the -tenant flag is ignored). An existing subject in the *wrong* world
+// (a user re-bootstrapped as admin or vice versa, or a user under a different
+// tenant) is treated as a conflict rather than silently re-homed/converted.
 func runBootstrap(ctx context.Context, pool *pgxpool.Pool, p bootstrapParams, out io.Writer) error {
 	if err := p.validate(); err != nil {
 		return err
-	}
-	name := p.TenantName
-	if name == "" {
-		name = p.TenantSlug
 	}
 
 	tenants := store.NewTenantRepo(pool)
 	users := store.NewUserRepo(pool)
 	creds := store.NewCredentialRepo(pool)
 
-	// Tenant: get-or-create by slug.
-	t, err := tenants.GetBySlug(ctx, p.TenantSlug)
-	switch {
-	case errors.Is(err, store.ErrNotFound):
-		if t, err = tenants.Create(ctx, p.TenantSlug, name); err != nil {
-			return fmt.Errorf("create tenant: %w", err)
-		}
-		fmt.Fprintf(out, "created tenant %q (id=%d)\n", t.Slug, t.ID)
-	case err != nil:
-		return fmt.Errorf("look up tenant: %w", err)
-	default:
-		fmt.Fprintf(out, "tenant %q already exists (id=%d)\n", t.Slug, t.ID)
-	}
-
-	// User: get-or-create by subject.
-	u, err := users.GetBySubject(ctx, p.Subject)
-	switch {
-	case errors.Is(err, store.ErrNotFound):
-		var email *string
-		if p.Email != "" {
-			email = &p.Email
-		}
-		if u, err = users.Create(ctx, t.ID, p.Subject, email, p.Role); err != nil {
-			return fmt.Errorf("create user: %w", err)
-		}
-		fmt.Fprintf(out, "created user %q (id=%d, role=%s)\n", u.Subject, u.ID, u.Role)
-	case err != nil:
-		return fmt.Errorf("look up user: %w", err)
-	default:
-		if u.TenantID != t.ID {
-			return fmt.Errorf("user %q already exists under a different tenant (id=%d); refusing to re-home", p.Subject, u.TenantID)
-		}
-		fmt.Fprintf(out, "user %q already exists (id=%d, role=%s)\n", u.Subject, u.ID, u.Role)
+	u, err := provisionAccount(ctx, tenants, users, p, out)
+	if err != nil {
+		return err
 	}
 
 	// Credential: only when a password is supplied (builtin mode). Set is an
-	// upsert, so this also (re)sets the password of an existing user.
+	// upsert, so this also (re)sets the password of an existing account.
 	if p.Password != "" {
 		hash, err := auth.HashPassword(p.Password)
 		if err != nil {
@@ -106,12 +78,81 @@ func runBootstrap(ctx context.Context, pool *pgxpool.Pool, p bootstrapParams, ou
 		if err := creds.Set(ctx, u.ID, hash); err != nil {
 			return fmt.Errorf("set credential: %w", err)
 		}
-		fmt.Fprintf(out, "set builtin password for user %q\n", u.Subject)
+		fmt.Fprintf(out, "set builtin password for %q\n", u.Subject)
 	} else {
-		fmt.Fprintf(out, "no -password given: user has no builtin credential "+
+		fmt.Fprintf(out, "no -password given: account has no builtin credential "+
 			"(fine for proxy mode; for builtin mode re-run with -password or WAYFINDER_BOOTSTRAP_PASSWORD)\n")
 	}
 	return nil
+}
+
+// provisionAccount get-or-creates the account for p, branching on the role: a
+// user under its tenant, an admin globally. It returns the resolved account.
+func provisionAccount(ctx context.Context, tenants *store.TenantRepo, users *store.UserRepo, p bootstrapParams, out io.Writer) (store.User, error) {
+	var email *string
+	if p.Email != "" {
+		email = &p.Email
+	}
+
+	// Admin world: global, no tenant.
+	if p.Role == store.RoleAdmin {
+		u, err := users.GetBySubject(ctx, p.Subject)
+		switch {
+		case errors.Is(err, store.ErrNotFound):
+			if u, err = users.CreateAdmin(ctx, p.Subject, email); err != nil {
+				return store.User{}, fmt.Errorf("create admin: %w", err)
+			}
+			fmt.Fprintf(out, "created admin %q (id=%d)\n", u.Subject, u.ID)
+			return u, nil
+		case err != nil:
+			return store.User{}, fmt.Errorf("look up account: %w", err)
+		default:
+			if u.Role != store.RoleAdmin {
+				return store.User{}, fmt.Errorf("subject %q already exists as a tenant user; refusing to convert to admin", p.Subject)
+			}
+			fmt.Fprintf(out, "admin %q already exists (id=%d)\n", u.Subject, u.ID)
+			return u, nil
+		}
+	}
+
+	// User world: homed under a tenant (get-or-create by slug).
+	name := p.TenantName
+	if name == "" {
+		name = p.TenantSlug
+	}
+	t, err := tenants.GetBySlug(ctx, p.TenantSlug)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		if t, err = tenants.Create(ctx, p.TenantSlug, name); err != nil {
+			return store.User{}, fmt.Errorf("create tenant: %w", err)
+		}
+		fmt.Fprintf(out, "created tenant %q (id=%d)\n", t.Slug, t.ID)
+	case err != nil:
+		return store.User{}, fmt.Errorf("look up tenant: %w", err)
+	default:
+		fmt.Fprintf(out, "tenant %q already exists (id=%d)\n", t.Slug, t.ID)
+	}
+
+	u, err := users.GetBySubject(ctx, p.Subject)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		if u, err = users.Create(ctx, t.ID, p.Subject, email); err != nil {
+			return store.User{}, fmt.Errorf("create user: %w", err)
+		}
+		fmt.Fprintf(out, "created user %q (id=%d)\n", u.Subject, u.ID)
+		return u, nil
+	case err != nil:
+		return store.User{}, fmt.Errorf("look up account: %w", err)
+	default:
+		if u.Role != store.RoleUser {
+			return store.User{}, fmt.Errorf("subject %q already exists as a platform admin; refusing to convert to a tenant user", p.Subject)
+		}
+		if u.TenantID != t.ID {
+			return store.User{}, fmt.Errorf("user %q already exists under a different tenant (id=%d); refusing to re-home", p.Subject, u.TenantID)
+		}
+		fmt.Fprintf(out, "user %q already exists (id=%d)\n", u.Subject, u.ID)
+		return u, nil
+	}
 }
 
 // bootstrapCommand is the `wayfinder bootstrap` entry point: it parses flags,

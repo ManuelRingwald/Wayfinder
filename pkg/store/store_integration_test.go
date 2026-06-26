@@ -51,7 +51,7 @@ func TestIntegrationUserStatusLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create tenant: %v", err)
 	}
-	u, err := users.Create(ctx, ten.ID, "alice", nil, RoleUser)
+	u, err := users.Create(ctx, ten.ID, "alice", nil)
 	if err != nil {
 		t.Fatalf("create user: %v", err)
 	}
@@ -148,7 +148,7 @@ func TestIntegrationUserRepo(t *testing.T) {
 	}
 
 	email := "lotse@ffm.example"
-	u, err := users.Create(ctx, ten.ID, "oidc|abc", &email, RoleUser)
+	u, err := users.Create(ctx, ten.ID, "oidc|abc", &email)
 	if err != nil {
 		t.Fatalf("create user: %v", err)
 	}
@@ -163,14 +163,9 @@ func TestIntegrationUserRepo(t *testing.T) {
 	}
 
 	// A nullable email round-trips as nil.
-	u2, err := users.Create(ctx, ten.ID, "oidc|noemail", nil, RoleAdmin)
+	u2, err := users.Create(ctx, ten.ID, "oidc|noemail", nil)
 	if err != nil || u2.Email != nil {
 		t.Fatalf("create user without email = %+v, %v", u2, err)
-	}
-
-	// Invalid role is rejected before hitting the database.
-	if _, err := users.Create(ctx, ten.ID, "oidc|x", nil, Role("root")); err == nil {
-		t.Fatal("expected invalid role to be rejected")
 	}
 
 	// Unknown subject -> ErrNotFound.
@@ -181,5 +176,58 @@ func TestIntegrationUserRepo(t *testing.T) {
 	list, err := users.ListByTenant(ctx, ten.ID)
 	if err != nil || len(list) != 2 {
 		t.Fatalf("ListByTenant len = %d, %v", len(list), err)
+	}
+}
+
+// TestIntegrationAdminTenantSeparation verifies the strict admin/user separation
+// (ONB-3, ADR 0011) against a real database: a platform admin is created with no
+// tenant (TenantID 0), ListAdmins returns only admins (not tenant users), and the
+// role/tenant CHECK constraint rejects both half-states (admin WITH a tenant, user
+// WITHOUT one).
+func TestIntegrationAdminTenantSeparation(t *testing.T) {
+	pool := testPool(t)
+	ctx := context.Background()
+	tenants := NewTenantRepo(pool)
+	users := NewUserRepo(pool)
+
+	ten, err := tenants.Create(ctx, "acme", "ACME")
+	if err != nil {
+		t.Fatalf("create tenant: %v", err)
+	}
+
+	// A platform admin has no tenant.
+	admin, err := users.CreateAdmin(ctx, "root", nil)
+	if err != nil {
+		t.Fatalf("CreateAdmin: %v", err)
+	}
+	if admin.Role != RoleAdmin || admin.TenantID != 0 {
+		t.Fatalf("admin = %+v, want role admin and TenantID 0 (no tenant)", admin)
+	}
+	// Round-trips as tenant-less through GetBySubject too (the middleware path).
+	if got, _ := users.GetBySubject(ctx, "root"); got.TenantID != 0 || got.Role != RoleAdmin {
+		t.Fatalf("GetBySubject(admin) = %+v, want tenant-less admin", got)
+	}
+
+	// A tenant user lives under a tenant; ListAdmins must not include it.
+	if _, err := users.Create(ctx, ten.ID, "pilot", nil); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	admins, err := users.ListAdmins(ctx)
+	if err != nil {
+		t.Fatalf("ListAdmins: %v", err)
+	}
+	if len(admins) != 1 || admins[0].Subject != "root" {
+		t.Fatalf("ListAdmins = %+v, want exactly [root]", admins)
+	}
+
+	// The CHECK constraint rejects an admin WITH a tenant.
+	if _, err := pool.Exec(ctx,
+		`INSERT INTO users (tenant_id, subject, role) VALUES ($1, 'bad-admin', 'admin')`, ten.ID); err == nil {
+		t.Fatal("expected the role/tenant CHECK to reject an admin with a tenant")
+	}
+	// ...and a user WITHOUT one.
+	if _, err := pool.Exec(ctx,
+		`INSERT INTO users (tenant_id, subject, role) VALUES (NULL, 'bad-user', 'user')`); err == nil {
+		t.Fatal("expected the role/tenant CHECK to reject a tenant-less user")
 	}
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 
@@ -22,16 +23,20 @@ const (
 	defaultAdminPassword   = "admin"
 )
 
-// autoSeedDefaultAdmin provisions the default tenant + admin on first boot so a
-// fresh deployment is usable without any terminal step (ONB-1, ADR 0011). It is
-// idempotent and fail-safe: it only seeds when there is no active admin yet, so a
-// restart (or an operator who has already changed the password / added admins)
-// never re-creates or resets anything. It is a no-op outside builtin mode — none/
-// proxy modes mint no local password, so a seeded builtin credential is pointless.
+// autoSeedDefaultAdmin provisions the default platform admin (and a convenience
+// default tenant) on first boot so a fresh deployment is usable without any
+// terminal step (ONB-1/ONB-3, ADR 0011). It is idempotent and fail-safe: it only
+// seeds when there is no active admin yet, so a restart (or an operator who has
+// already changed the password / added admins) never re-creates or resets
+// anything. It is a no-op outside builtin mode — none/proxy modes mint no local
+// password, so a seeded builtin credential is pointless.
 //
-// The seed reuses runBootstrap (the same idempotent provisioning the CLI uses) and
-// then marks the new admin must_change_password, so the known default credential
-// must be rotated at first login.
+// The admin is global (no tenant, ONB-3). The default tenant is created
+// separately as a convenience home for pilot/controller accounts, so the operator
+// can add tenant users from the UI immediately after the first login. The seed
+// reuses runBootstrap (the same idempotent provisioning the CLI uses) and then
+// marks the new admin must_change_password, so the known default credential must
+// be rotated at first login.
 func autoSeedDefaultAdmin(ctx context.Context, pool *pgxpool.Pool, out io.Writer) error {
 	users := store.NewUserRepo(pool)
 
@@ -43,12 +48,24 @@ func autoSeedDefaultAdmin(ctx context.Context, pool *pgxpool.Pool, out io.Writer
 		return nil // already provisioned (or operator-managed) — leave it alone
 	}
 
+	// Convenience default tenant (get-or-create) — a home for the operator's first
+	// pilot accounts. Independent of the admin, which belongs to no tenant.
+	tenants := store.NewTenantRepo(pool)
+	if _, err := tenants.GetBySlug(ctx, defaultAdminTenantSlug); errors.Is(err, store.ErrNotFound) {
+		if t, cerr := tenants.Create(ctx, defaultAdminTenantSlug, defaultAdminTenantName); cerr != nil {
+			return fmt.Errorf("auto-seed: create default tenant: %w", cerr)
+		} else {
+			fmt.Fprintf(out, "auto-seeded default tenant %q (id=%d)\n", t.Slug, t.ID)
+		}
+	} else if err != nil {
+		return fmt.Errorf("auto-seed: look up default tenant: %w", err)
+	}
+
+	// Tenant-less default admin.
 	p := bootstrapParams{
-		TenantSlug: defaultAdminTenantSlug,
-		TenantName: defaultAdminTenantName,
-		Subject:    defaultAdminSubject,
-		Role:       store.RoleAdmin,
-		Password:   defaultAdminPassword,
+		Subject:  defaultAdminSubject,
+		Role:     store.RoleAdmin,
+		Password: defaultAdminPassword,
 	}
 	if err := runBootstrap(ctx, pool, p, out); err != nil {
 		return fmt.Errorf("auto-seed: bootstrap default admin: %w", err)

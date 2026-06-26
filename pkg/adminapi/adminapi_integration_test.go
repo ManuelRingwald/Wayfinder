@@ -196,7 +196,7 @@ func TestIntegrationAdminAPI(t *testing.T) {
 
 	// --- AP3: tenant-centric dashboard (real-PG) ---
 	// Create one access account so the overview's user_count is meaningful.
-	if _, err := store.NewUserRepo(pool).Create(ctx, ten.ID, "operator-1", nil, store.RoleUser); err != nil {
+	if _, err := store.NewUserRepo(pool).Create(ctx, ten.ID, "operator-1", nil); err != nil {
 		t.Fatalf("create user: %v", err)
 	}
 	var overview []map[string]any

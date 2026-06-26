@@ -208,7 +208,10 @@ Durch `authMiddleware` geschützt (wenn `WAYFINDER_AUTH_TOKEN` gesetzt).
 | `/api/admin/feeds/health` | GET | **AP4:** Gesundheitszustand aller Feeds — je Feed `{feed_id, color, stale, ever_seen, last_heartbeat_ago_s, track_count_recent, sensors_active, sensors_total}` aus der In-Memory-Health-Registry; `color` ist **grün** (Heartbeat frisch, unabhängig vom Verkehr — leerer Himmel ist kein Fehler) / **gelb** (Sensor-Teilausfall: `sensors_active < sensors_total > 0`; CAT063, ADR 0010) / **rot** (kein Heartbeat = toter Feed oder nie gesehen); **admin** |
 | `/api/admin/tenants/{id}/view` | GET/PUT | **AP3:** Standard-Sicht **eines beliebigen** Mandanten lesen/schreiben (cross-tenant Editor; gleiche `validateView` wie `/api/admin/view`); **admin** |
 | `/api/admin/tenants/{id}/entitlements[/{key}]` | GET/PUT | Feature-Entitlements pro Mandant; **admin** (WF2-50) |
-| `/api/admin/tenants/{id}/users` | GET/POST | Zugänge eines Mandanten auflisten / anlegen (AP6); **admin**. POST `{subject, email?, password?}` → 201; Rolle immer `user`; Passwort min. 8 Zeichen; doppelter Subject → 409 |
+| `/api/admin/admins` | GET/POST | **ONB-3 (ADR 0011):** Plattform-Admins (global, **kein Mandant**) auflisten / anlegen; **admin**. POST `{subject, email?, password?}` → 201; doppelter Subject → 409; Passwort min. 8 (optional, für Proxy-Modus) |
+| `/api/admin/admins/{id}` | PATCH/DELETE | **ONB-3:** Admin pausieren/reaktivieren (`{status}`) bzw. löschen; **admin**; **„letzter aktiver Admin"-Guard** (Pausieren/Löschen des letzten aktiven Admins → 409); ID eines Mandanten-Nutzers → 404 (nicht auf dieser Fläche erreichbar) |
+| `/api/admin/admins/{id}/password` | PUT | **ONB-3:** Admin-Passwort setzen/zurücksetzen (`{password}`, min. 8); **admin** |
+| `/api/admin/tenants/{id}/users` | GET/POST | Zugänge eines Mandanten (Rolle `user`) auflisten / anlegen (AP6); **admin**. POST `{subject, email?, password?}` → 201; Rolle **immer `user`** (ein mitgeschicktes `role:"admin"` → 400, Admins laufen über `/api/admin/admins`, ONB-3); Passwort min. 8 Zeichen; doppelter Subject → 409 |
 | `/api/admin/tenants/{id}/users/{uid}` | PATCH/DELETE | Zugang pausieren/reaktivieren (`{status:"active"\|"paused"}`) bzw. löschen (AP6); **admin**. User-ID aus fremdem Mandanten → 404 |
 | `/api/admin/tenants/{id}/users/{uid}/password` | PUT | Passwort setzen/zurücksetzen (`{password}`, min. 8) (AP6); **admin** |
 | `/api/admin/tenants/{id}` | PATCH | Mandant pausieren/reaktivieren (`{status}`); kaskadiert via Login-Enforcement auf alle Zugänge (AP6); **admin** |
@@ -477,14 +480,33 @@ migriert, verweigert das Re-Homing eines Subjects in einen anderen Mandanten.
 
 **Boot-Auto-Seed (ONB-1, ADR 0011):** In `builtin`-Modus mit gesetzter
 `WAYFINDER_DB_URL` provisioniert Wayfinder beim Start **automatisch** einen
-Standard-Mandanten (`default`) + Standard-Admin (Subject `admin`, Passwort
-`admin`) — aber **nur, wenn noch kein aktiver Admin existiert**
-(`UserRepo.CountActiveAdmins == 0`). Der seedete Admin trägt
-`must_change_password=true`; das bekannte Default-Passwort ist also nur bis zum
-erzwungenen Wechsel beim ersten Login gültig. Der Seed (`cmd/wayfinder/seed.go`)
-ist idempotent und wiederverwendet `runBootstrap`; ein Neustart oder ein bereits
-rotiertes Passwort wird nie überschrieben. So ist eine frische Instanz ohne
-Terminal-Schritt benutzbar (`docker-compose.onboarding.yml`).
+Standard-Mandanten (`default`, als bequemes Zuhause für die ersten Lotsen-Zugänge)
++ Standard-Admin (Subject `admin`, Passwort `admin`) — aber **nur, wenn noch kein
+aktiver Admin existiert** (`UserRepo.CountActiveAdmins == 0`). Der seedete Admin
+trägt `must_change_password=true`; das bekannte Default-Passwort ist also nur bis
+zum erzwungenen Wechsel beim ersten Login gültig. Der Seed
+(`cmd/wayfinder/seed.go`) ist idempotent und wiederverwendet `runBootstrap`; ein
+Neustart oder ein bereits rotiertes Passwort wird nie überschrieben. So ist eine
+frische Instanz ohne Terminal-Schritt benutzbar (`docker-compose.onboarding.yml`).
+
+**Strikte Admin/Nutzer-Trennung (ONB-3, ADR 0011):** Plattform-Admins und
+Mandanten-Nutzer (Lotsen) sind sauber getrennt. Ein **Admin ist global** und
+gehört **keinem Mandanten** an; ein **Nutzer gehört genau einem Mandanten**.
+Migration `00007_admin_tenant_nullable.sql` macht `users.tenant_id` nullable,
+löst bestehende Admins von ihrem (bedeutungslosen) Mandanten und erzwingt die
+Invariante per **CHECK-Constraint** (`admin` ⇒ `tenant_id IS NULL`, `user` ⇒
+`tenant_id IS NOT NULL`). In Go bildet `TenantID == 0` „kein Mandant" ab
+(`scanUser` liest NULL → 0). **Folgen:** der `store.UserRepo` hat getrennte
+Konstruktoren `Create` (Nutzer, mit Mandant) und `CreateAdmin` (Admin, ohne);
+`runBootstrap` verzweigt nach Rolle (Admin braucht **kein** `-tenant`); der
+Login-Pfad überspringt die Mandanten-Pause-Kaskade für tenantlose Admins (sonst
+Selbst-Aussperrung); ein Admin hat auf der ASD-Karte ohne „Als Mandant ansehen"
+(WF2-34) kein Feed-Scope (TenantID 0 → leeres Bild — gewollt). Admin-Verwaltung
+läuft über die **dedizierten** Routen `/api/admin/admins` (siehe Endpunkt-Tabelle);
+die per-Mandant-Route `/api/admin/tenants/{id}/users` verwaltet ausschließlich
+Nutzer. Der **„letzter aktiver Admin"-Guard** (`wouldOrphanAdmins` →
+`CountActiveAdmins`) schützt Pausieren/Löschen von Admins (409) — dieselbe
+Invariante wie beim Boot-Seed und `DELETE /api/admin/me`.
 **`/admin`-Gate:** `tenant.RequireRole(tenant_admin, super_admin)` hinter der
 Tenant-Middleware (fail-closed `403` ohne passende Rolle/Identität); liefert eine
 minimale whoami-JSON-Antwort, Admin-UI folgt WF2-32.

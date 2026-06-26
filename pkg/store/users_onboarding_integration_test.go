@@ -27,7 +27,8 @@ func TestIntegrationMustChangePasswordAndAdminCount(t *testing.T) {
 		t.Fatalf("CountActiveAdmins on empty = (%d, %v), want (0, nil)", n, err)
 	}
 
-	admin, err := users.Create(ctx, ten.ID, "admin", nil, RoleAdmin)
+	// Platform admins are tenant-less (ONB-3).
+	admin, err := users.CreateAdmin(ctx, "admin", nil)
 	if err != nil {
 		t.Fatalf("create admin: %v", err)
 	}
@@ -64,7 +65,7 @@ func TestIntegrationMustChangePasswordAndAdminCount(t *testing.T) {
 		t.Fatalf("CountActiveAdmins with paused admin = %d, want 0", n)
 	}
 	// A plain user never counts as an admin.
-	if _, err := users.Create(ctx, ten.ID, "alice", nil, RoleUser); err != nil {
+	if _, err := users.Create(ctx, ten.ID, "alice", nil); err != nil {
 		t.Fatalf("create user: %v", err)
 	}
 	if n, _ := users.CountActiveAdmins(ctx); n != 0 {

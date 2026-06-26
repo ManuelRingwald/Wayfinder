@@ -98,11 +98,13 @@ func (f fakeTenants) SetStatus(_ context.Context, id int64, status store.Status)
 	return nil
 }
 
-// fakeUserStore satisfies UserStore and records mutations (AP6 access mgmt).
+// fakeUserStore satisfies UserStore and records mutations (AP6 access mgmt +
+// ONB-3 platform-admin mgmt).
 type fakeUserStore struct {
 	byID         map[int64]store.User
 	bySubject    map[string]store.User
 	listByTen    map[int64][]store.User
+	admins       []store.User // ListAdmins result
 	created      store.User
 	createErr    error
 	statusSet    map[int64]store.Status
@@ -114,6 +116,10 @@ type fakeUserStore struct {
 
 func (f *fakeUserStore) ListByTenant(_ context.Context, tenantID int64) ([]store.User, error) {
 	return f.listByTen[tenantID], nil
+}
+
+func (f *fakeUserStore) ListAdmins(_ context.Context) ([]store.User, error) {
+	return f.admins, nil
 }
 
 func (f *fakeUserStore) GetByID(_ context.Context, id int64) (store.User, error) {
@@ -130,7 +136,7 @@ func (f *fakeUserStore) GetBySubject(_ context.Context, subject string) (store.U
 	return store.User{}, store.ErrNotFound
 }
 
-func (f *fakeUserStore) Create(_ context.Context, tenantID int64, subject string, email *string, role store.Role) (store.User, error) {
+func (f *fakeUserStore) Create(_ context.Context, tenantID int64, subject string, email *string) (store.User, error) {
 	if f.createErr != nil {
 		return store.User{}, f.createErr
 	}
@@ -138,7 +144,19 @@ func (f *fakeUserStore) Create(_ context.Context, tenantID int64, subject string
 	if id == 0 {
 		id = 1
 	}
-	f.created = store.User{ID: id, TenantID: tenantID, Subject: subject, Email: email, Role: role, Status: store.StatusActive}
+	f.created = store.User{ID: id, TenantID: tenantID, Subject: subject, Email: email, Role: store.RoleUser, Status: store.StatusActive}
+	return f.created, nil
+}
+
+func (f *fakeUserStore) CreateAdmin(_ context.Context, subject string, email *string) (store.User, error) {
+	if f.createErr != nil {
+		return store.User{}, f.createErr
+	}
+	id := f.nextID
+	if id == 0 {
+		id = 1
+	}
+	f.created = store.User{ID: id, TenantID: 0, Subject: subject, Email: email, Role: store.RoleAdmin, Status: store.StatusActive}
 	return f.created, nil
 }
 

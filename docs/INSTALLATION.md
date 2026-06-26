@@ -439,8 +439,14 @@ openaip:
 > des Standard-Kontos anlegen wollen.
 
 Eine frische Datenbank hat (ohne Auto-Seed) **noch keinen** Nutzer. Der eingebaute
-Befehl `bootstrap` legt den **ersten Mandanten + Admin** an. Er startet die
+Befehl `bootstrap` legt den **ersten Plattform-Admin** an. Er startet die
 Datenbank automatisch mit und richtet das Schema ein.
+
+> 🔑 **Admins sind mandanten-los (ONB-3, ADR 0011):** Ein Plattform-Admin gehört
+> **keinem** Mandanten an — `-role admin` braucht daher **kein** `-tenant` (ein
+> mitgegebenes `-tenant` wird ignoriert). Mandanten und Lotsen-Zugänge (Rolle
+> `user`) legen Sie danach bequem über die Oberfläche an (Schritt 5.8b). Einen
+> Mandanten-Nutzer per CLI anzulegen verlangt dagegen `-role user -tenant <slug>`.
 
 Geben Sie das **als einen Block** ein (das Passwort wird über eine Variable
 übergeben, damit es **nicht** in der Befehlsliste sichtbar ist):
@@ -450,22 +456,18 @@ WAYFINDER_BOOTSTRAP_PASSWORD='MeinAdminPasswort123' \
 docker compose run --rm \
   -e WAYFINDER_BOOTSTRAP_PASSWORD \
   wayfinder bootstrap \
-    -tenant platform \
-    -tenant-name "Plattform-Betreiber" \
     -subject admin \
-    -role super_admin
+    -role admin
 ```
 
 Erwartete Ausgabe (sinngemäß):
 ```
-created tenant "platform" (id=1)
-created user "admin" (id=1, role=super_admin)
-set builtin password for user "admin"
+created admin "admin" (id=1)
+set builtin password for "admin"
 ```
 
 > 🔁 Der Befehl ist **idempotent** — Sie können ihn gefahrlos erneut ausführen
-> (z. B. um das Passwort neu zu setzen). Bestehende Mandanten/Nutzer werden
-> wiederverwendet.
+> (z. B. um das Passwort neu zu setzen). Bestehende Konten werden wiederverwendet.
 
 ### Schritt 5.5 — Feeds in den Katalog aufnehmen
 

@@ -106,6 +106,36 @@ func TestCreateUserValidation(t *testing.T) {
 	}
 }
 
+// TestCreateUserRejectsAdminRole verifies the strict separation (ONB-3): the
+// per-tenant user route refuses to create a platform admin — that is exclusively
+// /api/admin/admins. No account is created.
+func TestCreateUserRejectsAdminRole(t *testing.T) {
+	us := &fakeUserStore{bySubject: map[string]store.User{}, nextID: 7}
+	rec := httptest.NewRecorder()
+	handlerForUsers(us, &fakeCredStore{}, tenantsWith(7)).ServeHTTP(rec,
+		adminReq(http.MethodPost, "/api/admin/tenants/7/users", `{"subject":"sneaky","role":"admin","password":"longenough"}`, 7, store.RoleAdmin))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (admins are managed via /api/admin/admins)", rec.Code)
+	}
+	if us.created.ID != 0 {
+		t.Error("no account must be created when an admin role is requested on the tenant route")
+	}
+}
+
+// An explicit role:"user" is accepted (it matches the only role this route makes).
+func TestCreateUserAcceptsExplicitUserRole(t *testing.T) {
+	us := &fakeUserStore{bySubject: map[string]store.User{}, nextID: 8}
+	rec := httptest.NewRecorder()
+	handlerForUsers(us, &fakeCredStore{}, tenantsWith(7)).ServeHTTP(rec,
+		adminReq(http.MethodPost, "/api/admin/tenants/7/users", `{"subject":"pilot","role":"user","password":"longenough"}`, 7, store.RoleAdmin))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201; body=%s", rec.Code, rec.Body.String())
+	}
+	if us.created.Role != store.RoleUser || us.created.TenantID != 7 {
+		t.Fatalf("created = %+v, want tenant user", us.created)
+	}
+}
+
 func TestCreateUserDuplicateSubject(t *testing.T) {
 	us := &fakeUserStore{bySubject: map[string]store.User{
 		"taken": {ID: 9, TenantID: 3, Subject: "taken", Role: store.RoleUser},

@@ -11,13 +11,17 @@ import (
 	"github.com/manuelringwald/wayfinder/pkg/store"
 )
 
-// UserStore is the slice of the user repo the access-management routes need
-// (AP6). *store.UserRepo satisfies it; tests use a fake.
+// UserStore is the slice of the user repo the access-management routes need (AP6)
+// plus the platform-admin management routes (ONB-3). *store.UserRepo satisfies it;
+// tests use a fake. Create provisions a tenant user; CreateAdmin provisions a
+// tenant-less platform admin — the two are strictly separated (ONB-3, ADR 0011).
 type UserStore interface {
 	ListByTenant(ctx context.Context, tenantID int64) ([]store.User, error)
+	ListAdmins(ctx context.Context) ([]store.User, error)
 	GetByID(ctx context.Context, id int64) (store.User, error)
 	GetBySubject(ctx context.Context, subject string) (store.User, error)
-	Create(ctx context.Context, tenantID int64, subject string, email *string, role store.Role) (store.User, error)
+	Create(ctx context.Context, tenantID int64, subject string, email *string) (store.User, error)
+	CreateAdmin(ctx context.Context, subject string, email *string) (store.User, error)
 	SetStatus(ctx context.Context, id int64, status store.Status) error
 	SetMustChangePassword(ctx context.Context, id int64, must bool) error
 	CountActiveAdmins(ctx context.Context) (int, error)
@@ -84,6 +88,7 @@ func (h *Handler) createUser(w http.ResponseWriter, r *http.Request) {
 		Subject  string `json:"subject"`
 		Email    string `json:"email"`
 		Password string `json:"password"`
+		Role     string `json:"role"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
@@ -92,6 +97,14 @@ func (h *Handler) createUser(w http.ResponseWriter, r *http.Request) {
 	body.Subject = strings.TrimSpace(body.Subject)
 	if body.Subject == "" {
 		writeError(w, http.StatusBadRequest, "subject is required")
+		return
+	}
+	// Strict separation (ONB-3, ADR 0011): this per-tenant route provisions tenant
+	// users only. Platform admins are global (no tenant) and are managed through
+	// /api/admin/admins. Reject any attempt to create an admin here so the two
+	// worlds cannot be mixed via the tenant URL. An empty or "user" role is fine.
+	if role := strings.TrimSpace(body.Role); role != "" && role != string(store.RoleUser) {
+		writeError(w, http.StatusBadRequest, "this route creates tenant users only; manage platform admins via /api/admin/admins")
 		return
 	}
 	if body.Password != "" && len(body.Password) < minPasswordLen {
@@ -116,8 +129,9 @@ func (h *Handler) createUser(w http.ResponseWriter, r *http.Request) {
 		email = &e
 	}
 	// Accounts created here are always role "user" — this endpoint provisions
-	// access accounts, not platform admins (those go through bootstrap).
-	u, err := h.users.Create(r.Context(), tid, body.Subject, email, store.RoleUser)
+	// tenant access accounts, not platform admins (those go through
+	// /api/admin/admins). The store's Create constructor encodes that invariant.
+	u, err := h.users.Create(r.Context(), tid, body.Subject, email)
 	if err != nil {
 		h.internalError(w, "create user", err)
 		return
