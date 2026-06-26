@@ -79,7 +79,11 @@ func (f fakeFeeds) GetByID(_ context.Context, id int64) (store.Feed, error) {
 type fakeTenants struct {
 	list      []store.Tenant
 	byID      map[int64]store.Tenant
-	statusSet map[int64]store.Status // records SetStatus calls (AP6)
+	bySlug    map[string]store.Tenant // for GetBySlug (ONB-4 duplicate pre-check)
+	statusSet map[int64]store.Status  // records SetStatus calls (AP6)
+	created   map[string]store.Tenant // records Create calls by slug (ONB-4); pre-init to record
+	deleted   map[int64]bool          // records Delete calls (ONB-4); pre-init to record
+	nextID    int64
 }
 
 func (f fakeTenants) List(_ context.Context) ([]store.Tenant, error) { return f.list, nil }
@@ -91,9 +95,35 @@ func (f fakeTenants) GetByID(_ context.Context, id int64) (store.Tenant, error) 
 	return store.Tenant{}, store.ErrNotFound
 }
 
+func (f fakeTenants) GetBySlug(_ context.Context, slug string) (store.Tenant, error) {
+	if x, ok := f.bySlug[slug]; ok {
+		return x, nil
+	}
+	return store.Tenant{}, store.ErrNotFound
+}
+
+func (f fakeTenants) Create(_ context.Context, slug, name string) (store.Tenant, error) {
+	id := f.nextID
+	if id == 0 {
+		id = 1
+	}
+	t := store.Tenant{ID: id, Slug: slug, Name: name, Status: store.StatusActive}
+	if f.created != nil {
+		f.created[slug] = t
+	}
+	return t, nil
+}
+
 func (f fakeTenants) SetStatus(_ context.Context, id int64, status store.Status) error {
 	if f.statusSet != nil {
 		f.statusSet[id] = status
+	}
+	return nil
+}
+
+func (f fakeTenants) Delete(_ context.Context, id int64) error {
+	if f.deleted != nil {
+		f.deleted[id] = true
 	}
 	return nil
 }

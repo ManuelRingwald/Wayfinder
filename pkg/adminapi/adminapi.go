@@ -49,7 +49,10 @@ type FeedStore interface {
 type TenantStore interface {
 	List(ctx context.Context) ([]store.Tenant, error)
 	GetByID(ctx context.Context, id int64) (store.Tenant, error)
+	GetBySlug(ctx context.Context, slug string) (store.Tenant, error)
+	Create(ctx context.Context, slug, name string) (store.Tenant, error)
 	SetStatus(ctx context.Context, id int64, status store.Status) error
+	Delete(ctx context.Context, id int64) error
 }
 
 // EntitlementService is the per-tenant feature surface the admin API needs
@@ -123,6 +126,12 @@ func New(views ViewStore, subs SubscriptionStore, feeds FeedStore, tenants Tenan
 	mux.HandleFunc("GET /api/admin/sensor-classes", h.getSensorClasses)
 	// Cross-tenant provisioning (target tenant from the path).
 	mux.HandleFunc("GET /api/admin/tenants", h.requireAdmin(h.listTenants))
+	// Tenant lifecycle (ONB-4, ADR 0011): create and delete tenants from the UI.
+	// Delete cascades to the tenant's dependents (users, subscriptions,
+	// entitlements, views) but is refused (409) while the tenant still has
+	// accounts — the destructive cascade must be a conscious two-step.
+	mux.HandleFunc("POST /api/admin/tenants", h.requireAdmin(h.createTenant))
+	mux.HandleFunc("DELETE /api/admin/tenants/{tenantID}", h.requireAdmin(h.deleteTenant))
 	// AP3: tenant-centric admin dashboard. The overview aggregates each tenant's
 	// status, enabled features, subscribed feeds and account count in one call
 	// (avoids N+1 fetches when rendering the tenant table). Per-tenant view

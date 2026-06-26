@@ -536,9 +536,15 @@ die **Feeds** und die **Zugänge** dieses Kunden verwalten.
 
 ### Schritt 5.8 — Einen Kunden-Mandanten anlegen
 
+> 🖥️ **Seit ONB-4 (ADR 0011) bequem über die Oberfläche:** Mandanten legen Sie
+> im Admin-Bereich unter „Mandanten → Mandant anlegen" an (und löschen sie dort —
+> ein Mandant mit noch vorhandenen Zugängen wird aus Sicherheitsgründen erst nach
+> Entfernen der Konten gelöscht). Der folgende CLI-Weg bleibt als
+> Skript-/Automatisierungs-Pfad erhalten.
+
 Für jeden Kunden legen Sie einen eigenen Mandanten mit einem ersten `user`-Zugang
-an — mit `bootstrap` (das Anlegen *neuer* Mandanten läuft weiterhin über
-`bootstrap`; weitere Zugänge danach bequem über die Oberfläche, Schritt 5.8b):
+an — per Oberfläche oder mit `bootstrap` (weitere Zugänge danach bequem über die
+Oberfläche, Schritt 5.8b):
 
 ```bash
 WAYFINDER_BOOTSTRAP_PASSWORD='KundePasswort456' \

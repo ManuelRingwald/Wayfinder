@@ -136,6 +136,69 @@ func TestIntegrationTenantRepo(t *testing.T) {
 	}
 }
 
+// TestIntegrationTenantDeleteCascades verifies ONB-4 (ADR 0011): deleting a
+// tenant removes every row that references it — its users (and their
+// credentials), feed subscriptions and entitlements — via ON DELETE CASCADE in a
+// single atomic DELETE. A second delete yields ErrNotFound. Feeds are a global
+// catalogue and must survive.
+func TestIntegrationTenantDeleteCascades(t *testing.T) {
+	pool := testPool(t)
+	ctx := context.Background()
+	tenants := NewTenantRepo(pool)
+	users := NewUserRepo(pool)
+	creds := NewCredentialRepo(pool)
+	feeds := NewFeedRepo(pool)
+	subs := NewSubscriptionRepo(pool)
+	ents := NewEntitlementRepo(pool)
+
+	ten, err := tenants.Create(ctx, "acme", "ACME")
+	if err != nil {
+		t.Fatalf("create tenant: %v", err)
+	}
+	u, err := users.Create(ctx, ten.ID, "pilot", nil)
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	if err := creds.Set(ctx, u.ID, "$argon2id$hash"); err != nil {
+		t.Fatalf("set credential: %v", err)
+	}
+	feed, err := feeds.Create(ctx, "FFM", "239.255.0.62", 8600, nil, []string{"PSR"})
+	if err != nil {
+		t.Fatalf("create feed: %v", err)
+	}
+	if err := subs.Subscribe(ctx, ten.ID, feed.ID); err != nil {
+		t.Fatalf("subscribe: %v", err)
+	}
+	if err := ents.Set(ctx, ten.ID, "stca", true); err != nil {
+		t.Fatalf("set entitlement: %v", err)
+	}
+
+	// Delete the tenant: the cascade must take its dependents with it.
+	if err := tenants.Delete(ctx, ten.ID); err != nil {
+		t.Fatalf("delete tenant: %v", err)
+	}
+	if _, err := tenants.GetByID(ctx, ten.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("tenant survived delete = %v, want ErrNotFound", err)
+	}
+	if _, err := users.GetByID(ctx, u.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("user survived tenant delete = %v, want ErrNotFound", err)
+	}
+	if _, err := creds.GetHash(ctx, u.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("credential survived tenant delete = %v, want ErrNotFound", err)
+	}
+	if subscribed, err := subs.IsSubscribed(ctx, ten.ID, feed.ID); err != nil || subscribed {
+		t.Fatalf("subscription survived tenant delete (subscribed=%v, err=%v)", subscribed, err)
+	}
+	// The feed is a global catalogue entry and must NOT be deleted with the tenant.
+	if _, err := feeds.GetByID(ctx, feed.ID); err != nil {
+		t.Fatalf("feed must survive tenant delete: %v", err)
+	}
+	// A second delete is a clean ErrNotFound.
+	if err := tenants.Delete(ctx, ten.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("Delete(missing) = %v, want ErrNotFound", err)
+	}
+}
+
 func TestIntegrationUserRepo(t *testing.T) {
 	pool := testPool(t)
 	ctx := context.Background()

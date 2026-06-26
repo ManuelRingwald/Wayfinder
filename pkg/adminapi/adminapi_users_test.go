@@ -250,6 +250,156 @@ func TestSetTenantStatusUnknown(t *testing.T) {
 	}
 }
 
+// --- tenant lifecycle (ONB-4) -----------------------------------------------
+
+func TestCreateTenant(t *testing.T) {
+	ft := fakeTenants{bySlug: map[string]store.Tenant{}, created: map[string]store.Tenant{}, nextID: 5}
+	rec := httptest.NewRecorder()
+	handlerForUsers(&fakeUserStore{}, &fakeCredStore{}, ft).ServeHTTP(rec,
+		adminReq(http.MethodPost, "/api/admin/tenants", `{"slug":"acme","name":"ACME Air"}`, 99, store.RoleAdmin))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201; body=%s", rec.Code, rec.Body.String())
+	}
+	var got tenantDTO
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.Slug != "acme" || got.Name != "ACME Air" || got.Status != "active" {
+		t.Fatalf("created tenant = %+v", got)
+	}
+	if _, ok := ft.created["acme"]; !ok {
+		t.Error("Create was not called with the slug")
+	}
+}
+
+func TestCreateTenantDefaultsNameToSlug(t *testing.T) {
+	ft := fakeTenants{bySlug: map[string]store.Tenant{}, created: map[string]store.Tenant{}}
+	rec := httptest.NewRecorder()
+	handlerForUsers(&fakeUserStore{}, &fakeCredStore{}, ft).ServeHTTP(rec,
+		adminReq(http.MethodPost, "/api/admin/tenants", `{"slug":"acme"}`, 99, store.RoleAdmin))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201", rec.Code)
+	}
+	if ft.created["acme"].Name != "acme" {
+		t.Fatalf("name = %q, want default to slug", ft.created["acme"].Name)
+	}
+}
+
+func TestCreateTenantValidation(t *testing.T) {
+	cases := map[string]struct {
+		body string
+		want int
+	}{
+		"missing slug":    {`{"name":"x"}`, http.StatusBadRequest},
+		"blank slug":      {`{"slug":"  "}`, http.StatusBadRequest},
+		"uppercase slug":  {`{"slug":"ACME"}`, http.StatusBadRequest},
+		"space in slug":   {`{"slug":"ac me"}`, http.StatusBadRequest},
+		"leading hyphen":  {`{"slug":"-acme"}`, http.StatusBadRequest},
+		"trailing hyphen": {`{"slug":"acme-"}`, http.StatusBadRequest},
+		"bad json":        {`not-json`, http.StatusBadRequest},
+	}
+	for name, tc := range cases {
+		ft := fakeTenants{bySlug: map[string]store.Tenant{}, created: map[string]store.Tenant{}}
+		rec := httptest.NewRecorder()
+		handlerForUsers(&fakeUserStore{}, &fakeCredStore{}, ft).
+			ServeHTTP(rec, adminReq(http.MethodPost, "/api/admin/tenants", tc.body, 99, store.RoleAdmin))
+		if rec.Code != tc.want {
+			t.Errorf("%s: status = %d, want %d", name, rec.Code, tc.want)
+		}
+		if len(ft.created) != 0 {
+			t.Errorf("%s: an invalid tenant reached the store", name)
+		}
+	}
+}
+
+func TestCreateTenantDuplicateSlug(t *testing.T) {
+	ft := fakeTenants{
+		bySlug:  map[string]store.Tenant{"acme": {ID: 1, Slug: "acme"}},
+		created: map[string]store.Tenant{},
+	}
+	rec := httptest.NewRecorder()
+	handlerForUsers(&fakeUserStore{}, &fakeCredStore{}, ft).ServeHTTP(rec,
+		adminReq(http.MethodPost, "/api/admin/tenants", `{"slug":"acme","name":"dup"}`, 99, store.RoleAdmin))
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409", rec.Code)
+	}
+	if len(ft.created) != 0 {
+		t.Error("duplicate slug must not reach Create")
+	}
+}
+
+func TestDeleteTenantEmptySucceeds(t *testing.T) {
+	ft := fakeTenants{
+		byID:    map[int64]store.Tenant{5: {ID: 5, Slug: "acme"}},
+		deleted: map[int64]bool{},
+	}
+	us := &fakeUserStore{listByTen: map[int64][]store.User{}} // no accounts
+	rec := httptest.NewRecorder()
+	handlerForUsers(us, &fakeCredStore{}, ft).ServeHTTP(rec,
+		adminReq(http.MethodDelete, "/api/admin/tenants/5", "", 99, store.RoleAdmin))
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204; body=%s", rec.Code, rec.Body.String())
+	}
+	if !ft.deleted[5] {
+		t.Error("empty tenant should have been deleted")
+	}
+}
+
+func TestDeleteTenantWithAccountsRefused(t *testing.T) {
+	ft := fakeTenants{
+		byID:    map[int64]store.Tenant{5: {ID: 5, Slug: "acme"}},
+		deleted: map[int64]bool{},
+	}
+	us := &fakeUserStore{listByTen: map[int64][]store.User{
+		5: {{ID: 1, TenantID: 5, Subject: "pilot", Role: store.RoleUser}},
+	}}
+	rec := httptest.NewRecorder()
+	handlerForUsers(us, &fakeCredStore{}, ft).ServeHTTP(rec,
+		adminReq(http.MethodDelete, "/api/admin/tenants/5", "", 99, store.RoleAdmin))
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409 (tenant not empty)", rec.Code)
+	}
+	if ft.deleted[5] {
+		t.Error("a non-empty tenant must not be deleted (guard B)")
+	}
+}
+
+func TestDeleteTenantUnknownIs404(t *testing.T) {
+	rec := httptest.NewRecorder()
+	handlerForUsers(&fakeUserStore{}, &fakeCredStore{}, fakeTenants{}).ServeHTTP(rec,
+		adminReq(http.MethodDelete, "/api/admin/tenants/9", "", 99, store.RoleAdmin))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rec.Code)
+	}
+}
+
+// TestTenantLifecycleRoutesForbidNonAdmin verifies the ONB-4 routes are behind
+// requireAdmin: a role user gets 403 and no mutation occurs.
+func TestTenantLifecycleRoutesForbidNonAdmin(t *testing.T) {
+	routes := []struct {
+		method, path, body string
+	}{
+		{http.MethodPost, "/api/admin/tenants", `{"slug":"x","name":"X"}`},
+		{http.MethodDelete, "/api/admin/tenants/5", ""},
+	}
+	for _, rt := range routes {
+		ft := fakeTenants{
+			bySlug:  map[string]store.Tenant{},
+			byID:    map[int64]store.Tenant{5: {ID: 5}},
+			created: map[string]store.Tenant{},
+			deleted: map[int64]bool{},
+		}
+		rec := httptest.NewRecorder()
+		handlerForUsers(&fakeUserStore{}, &fakeCredStore{}, ft).ServeHTTP(rec, adminReq(rt.method, rt.path, rt.body, 7, store.RoleUser))
+		if rec.Code != http.StatusForbidden {
+			t.Errorf("%s %s: status = %d, want 403", rt.method, rt.path, rec.Code)
+		}
+		if len(ft.created) != 0 || len(ft.deleted) != 0 {
+			t.Errorf("%s %s: a mutation occurred despite 403", rt.method, rt.path)
+		}
+	}
+}
+
 // TestAccessRoutesForbidNonAdmin verifies every AP6 route is behind requireAdmin:
 // a role user (non-admin) reaching them gets 403 and no mutation occurs.
 func TestAccessRoutesForbidNonAdmin(t *testing.T) {
