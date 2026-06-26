@@ -5,6 +5,21 @@
        All tabs are available to the single admin role (ADR 0009). -->
   <v-app-bar density="comfortable" flat color="surface">
     <v-app-bar-title>Wayfinder — Administration</v-app-bar-title>
+    <!-- ONB-3 (ADR 0011): top-level navigation between the tenant world and the
+         platform-admin world — the strict separation made visible. Hidden during
+         the forced password change (the only reachable action then is the mask). -->
+    <v-btn-toggle
+      v-if="admin.isAuthorized && !admin.mustChangePassword"
+      v-model="section"
+      density="comfortable"
+      variant="text"
+      color="primary"
+      mandatory
+      class="ml-4"
+    >
+      <v-btn value="tenants" prepend-icon="mdi-domain">Mandanten</v-btn>
+      <v-btn value="admins" prepend-icon="mdi-shield-account">Plattform-Administratoren</v-btn>
+    </v-btn-toggle>
     <v-spacer />
     <!-- ONB-2 (ADR 0011): chip opens the self-management panel (password change
          + account deletion) for the currently logged-in principal. -->
@@ -163,16 +178,22 @@
           {{ admin.notice }}
         </v-alert>
 
+        <!-- ONB-3 (ADR 0011): platform-admin management — a separate world from
+             the tenant overview, selected via the header navigation. -->
+        <AdminPlatformAdmins v-if="section === 'admins'" />
+
         <!-- AP3 (ADR 0009): tenant-centric admin. The overview lists all tenants;
              selecting one opens its central configuration page. The old per-tab
              layout (own view / subscriptions / provisioning / users) is replaced
              by this master/detail flow. -->
-        <AdminTenantDetail
-          v-if="selectedTenant !== null"
-          :tenant-id="selectedTenant"
-          @back="selectedTenant = null"
-        />
-        <AdminTenants v-else @select="selectedTenant = $event" />
+        <template v-else>
+          <AdminTenantDetail
+            v-if="selectedTenant !== null"
+            :tenant-id="selectedTenant"
+            @back="selectedTenant = null"
+          />
+          <AdminTenants v-else @select="selectedTenant = $event" />
+        </template>
       </template>
     </v-container>
   </v-main>
@@ -183,9 +204,11 @@ import { ref, onMounted } from 'vue'
 import { useAdminStore } from '@/stores/admin.js'
 import AdminTenants from '@/components/admin/AdminTenants.vue'
 import AdminTenantDetail from '@/components/admin/AdminTenantDetail.vue'
+import AdminPlatformAdmins from '@/components/admin/AdminPlatformAdmins.vue'
 import MyAccountPanel from '@/components/admin/MyAccountPanel.vue'
 
 const admin = useAdminStore()
+const section = ref('tenants') // ONB-3: 'tenants' | 'admins' — header navigation
 const selectedTenant = ref(null) // null = overview; a tenant id = detail page
 const loaded = ref(false)
 const myAccountOpen = ref(false) // ONB-2: "Mein Konto" dialog open state

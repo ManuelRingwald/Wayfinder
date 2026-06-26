@@ -325,6 +325,63 @@ export const useAdminStore = defineStore('admin', () => {
     return r
   }
 
+  // --- platform-admin management (ONB-3, ADR 0011) --------------------------
+  // Platform admins are global — they belong to no tenant. The server enforces
+  // every boundary (requireAdmin → 403) and the "last active admin" guard (409);
+  // the UI gating is convenience only. loadAdmins returns the raw result (the
+  // caller owns the transient list, like loadTenantUsers).
+
+  async function loadAdmins() {
+    return apiFetch('/api/admin/admins')
+  }
+
+  async function createAdmin(payload) {
+    error.value = null
+    notice.value = null
+    const r = await apiFetch('/api/admin/admins', { method: 'POST', body: JSON.stringify(payload) })
+    if (r.ok) notice.value = 'Administrator angelegt.'
+    else error.value = r.error
+    return r
+  }
+
+  async function setAdminStatus(adminId, status) {
+    error.value = null
+    notice.value = null
+    const r = await apiFetch(`/api/admin/admins/${adminId}`, { method: 'PATCH', body: JSON.stringify({ status }) })
+    if (r.ok) {
+      notice.value = status === 'paused' ? 'Administrator pausiert.' : 'Administrator reaktiviert.'
+    } else if (r.status === 409) {
+      // "Last active admin" guard — pausing the final admin would lock everyone out.
+      error.value = 'Pausieren nicht möglich: Das ist der letzte aktive Administrator.'
+    } else {
+      error.value = r.error
+    }
+    return r
+  }
+
+  async function deleteAdmin(adminId) {
+    error.value = null
+    notice.value = null
+    const r = await apiFetch(`/api/admin/admins/${adminId}`, { method: 'DELETE' })
+    if (r.ok) {
+      notice.value = 'Administrator gelöscht.'
+    } else if (r.status === 409) {
+      error.value = 'Löschen nicht möglich: Das ist der letzte aktive Administrator.'
+    } else {
+      error.value = r.error
+    }
+    return r
+  }
+
+  async function setAdminPassword(adminId, password) {
+    error.value = null
+    notice.value = null
+    const r = await apiFetch(`/api/admin/admins/${adminId}/password`, { method: 'PUT', body: JSON.stringify({ password }) })
+    if (r.ok) notice.value = 'Passwort gesetzt.'
+    else error.value = r.error
+    return r
+  }
+
   function clearBanners() {
     error.value = null
     notice.value = null
@@ -337,6 +394,8 @@ export const useAdminStore = defineStore('admin', () => {
     loadTenants, loadTenantSubscriptions, grant, revoke,
     loadOverview, loadFeedsHealth, loadTenantView, saveTenantView, loadTenantEntitlements, setTenantEntitlement,
     loadTenantUsers, createUser, setUserStatus, deleteUser, setUserPassword, setTenantStatus,
-    changeOwnPassword, deleteOwnAccount, clearBanners,
+    changeOwnPassword, deleteOwnAccount,
+    loadAdmins, createAdmin, setAdminStatus, deleteAdmin, setAdminPassword,
+    clearBanners,
   }
 })

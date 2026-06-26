@@ -216,6 +216,92 @@ describe('admin store — self-management (ONB-2)', () => {
   })
 })
 
+describe('admin store — platform-admin management (ONB-3)', () => {
+  it('loadAdmins GETs /api/admin/admins without storing globally', async () => {
+    const calls = installFetch({
+      'GET /api/admin/admins': {
+        status: 200,
+        body: [{ id: 1, subject: 'root', status: 'active', must_change_password: false }],
+      },
+    })
+    const s = useAdminStore()
+    const r = await s.loadAdmins()
+    expect(r.ok).toBe(true)
+    expect(r.data[0].subject).toBe('root')
+    expect(calls[0].url).toBe('/api/admin/admins')
+    expect(calls[0].method).toBe('GET')
+  })
+
+  it('createAdmin POSTs the payload and sets a success notice', async () => {
+    const calls = installFetch({
+      'POST /api/admin/admins': { status: 201, body: { id: 7, subject: 'ops', status: 'active' } },
+    })
+    const s = useAdminStore()
+    const r = await s.createAdmin({ subject: 'ops', password: 'hunter2!!' })
+    expect(r.ok).toBe(true)
+    const post = calls.find((c) => c.method === 'POST')
+    expect(post.url).toBe('/api/admin/admins')
+    expect(JSON.parse(post.body)).toEqual({ subject: 'ops', password: 'hunter2!!' })
+    expect(s.notice).toMatch(/angelegt/)
+  })
+
+  it('createAdmin surfaces a 409 duplicate error', async () => {
+    installFetch({ 'POST /api/admin/admins': { status: 409, body: { error: 'subject already exists' } } })
+    const s = useAdminStore()
+    const r = await s.createAdmin({ subject: 'taken' })
+    expect(r.ok).toBe(false)
+    expect(s.error).toBe('subject already exists')
+  })
+
+  it('setAdminStatus PATCHes the new status', async () => {
+    const calls = installFetch({ 'PATCH /api/admin/admins/7': { status: 204 } })
+    const s = useAdminStore()
+    const r = await s.setAdminStatus(7, 'paused')
+    expect(r.ok).toBe(true)
+    const patch = calls.find((c) => c.method === 'PATCH')
+    expect(patch.url).toBe('/api/admin/admins/7')
+    expect(JSON.parse(patch.body)).toEqual({ status: 'paused' })
+    expect(s.notice).toMatch(/pausiert/)
+  })
+
+  it('setAdminStatus shows a friendly message on the 409 last-admin guard', async () => {
+    installFetch({ 'PATCH /api/admin/admins/7': { status: 409, body: { error: 'cannot pause the last active admin' } } })
+    const s = useAdminStore()
+    const r = await s.setAdminStatus(7, 'paused')
+    expect(r.ok).toBe(false)
+    expect(r.status).toBe(409)
+    expect(s.error).toMatch(/letzte aktive Administrator/)
+  })
+
+  it('deleteAdmin DELETEs the admin', async () => {
+    const calls = installFetch({ 'DELETE /api/admin/admins/7': { status: 204 } })
+    const s = useAdminStore()
+    const r = await s.deleteAdmin(7)
+    expect(r.ok).toBe(true)
+    expect(calls[0].url).toBe('/api/admin/admins/7')
+    expect(calls[0].method).toBe('DELETE')
+    expect(s.notice).toMatch(/gelöscht/)
+  })
+
+  it('deleteAdmin shows a friendly message on the 409 last-admin guard', async () => {
+    installFetch({ 'DELETE /api/admin/admins/7': { status: 409, body: { error: 'cannot delete the last active admin' } } })
+    const s = useAdminStore()
+    const r = await s.deleteAdmin(7)
+    expect(r.ok).toBe(false)
+    expect(s.error).toMatch(/letzte aktive Administrator/)
+  })
+
+  it('setAdminPassword PUTs the new password', async () => {
+    const calls = installFetch({ 'PUT /api/admin/admins/7/password': { status: 204 } })
+    const s = useAdminStore()
+    const r = await s.setAdminPassword(7, 'newsecret1')
+    expect(r.ok).toBe(true)
+    const put = calls.find((c) => c.method === 'PUT')
+    expect(put.url).toBe('/api/admin/admins/7/password')
+    expect(JSON.parse(put.body)).toEqual({ password: 'newsecret1' })
+  })
+})
+
 describe('admin store — login', () => {
   it('login POSTs subject and password to /api/login', async () => {
     const calls = installFetch({ 'POST /api/login': { status: 204 } })

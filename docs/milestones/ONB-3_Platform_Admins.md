@@ -4,8 +4,9 @@
 > von **Plattform-Admins** und **Mandanten-Nutzern** sauber und gibt dem Betreiber
 > eine dedizierte Oberfläche, um weitere Admins ohne Terminal zu verwalten.
 >
-> **Lieferung in zwei Commits:** (1) Backend (dieses Dokument beschreibt es),
-> (2) Frontend (Vue-Komponente „Plattform-Administratoren" + Store + Navigation).
+> **Lieferung in zwei Commits:** (1) Backend, (2) Frontend (Vue-Komponente
+> „Plattform-Administratoren" + Store-Actions + Header-Navigation). Beide sind
+> umgesetzt; dieses Dokument beschreibt sie.
 
 ## Fachlicher Hintergrund
 
@@ -89,6 +90,32 @@ Ein Admin hat `TenantID 0` → auf der ASD-Karte **kein Feed-Scope** (leeres Bil
 Das ist gewollt: Admins betrachten die Lage eines Mandanten über „Als Mandant
 ansehen" (WF2-34, read-only Impersonation), nicht über eine eigene Mandanten-Bindung.
 
+## Was umgesetzt wurde (Frontend)
+
+### 1. Store-Actions (`admin.js`)
+
+Fünf neue Actions, gespiegelt an der AP6-Zugangsverwaltung: `loadAdmins()`
+(liefert die Liste, Komponente besitzt sie), `createAdmin(payload)`,
+`setAdminStatus(id, status)`, `deleteAdmin(id)`, `setAdminPassword(id, pw)`. Der
+**„letzter aktiver Admin"-Guard** (HTTP 409) des Servers wird in
+`setAdminStatus`/`deleteAdmin` in eine verständliche deutsche Banner-Meldung
+übersetzt („… Das ist der letzte aktive Administrator.").
+
+### 2. Komponente `AdminPlatformAdmins.vue`
+
+Eigene Verwaltungs-Ansicht (Vorlage `AdminUsers.vue`, aber **mandanten-frei**):
+Liste aller Admins (Benutzername, E-Mail, Status; ein Chip „Passwortwechsel nötig"
+spiegelt `must_change_password`), plus Dialoge zum Anlegen, Passwort-Setzen und
+Löschen sowie Pausieren/Reaktivieren. Ein erklärender Hinweis nennt die
+Mandanten-Losigkeit und den Last-Admin-Schutz.
+
+### 3. Header-Navigation (`AdminView.vue`)
+
+Ein `v-btn-toggle` in der App-Bar schaltet zwischen **„Mandanten"** (bestehende
+Übersicht/Detail) und **„Plattform-Administratoren"** (neue Ansicht) — die strikte
+Welten-Trennung sichtbar gemacht. Im Pflichtwechsel-Zustand ist die Navigation
+ausgeblendet (dann ist nur die Passwort-Maske erreichbar).
+
 ## Byte-/Verhaltens-Vertrag
 
 - Admin: `role='admin'`, `tenant_id IS NULL`. Nutzer: `role='user'`,
@@ -97,8 +124,9 @@ ansehen" (WF2-34, read-only Impersonation), nicht über eine eigene Mandanten-Bi
   (`/api/admin/admins/{id}` **und** `DELETE /api/admin/me`).
 - `bootstrap -role admin` benötigt **kein** `-tenant`.
 
-## Qualitäts-Gates (Backend-Commit)
+## Qualitäts-Gates
 
+**Backend-Commit:**
 - `go test -p 1 ./...` gegen real-PG (`scripts/pg-test.sh`) ✅, `go vet`/`gofmt` ✅.
 - Tests:
   - `pkg/store/store_integration_test.go::TestIntegrationAdminTenantSeparation`
@@ -109,6 +137,12 @@ ansehen" (WF2-34, read-only Impersonation), nicht über eine eigene Mandanten-Bi
     Nicht-Admin-ID → 404, requireAdmin → 403).
   - `pkg/adminapi/adminapi_users_test.go::TestCreateUserRejectsAdminRole`.
   - `pkg/tenant/login_test.go` (tenant-loser Admin nicht ausgesperrt).
+
+**Frontend-Commit:**
+- `npm run test` (148 Tests) ✅, `npm run build` aktualisiert `dist/` ✅.
+- Tests: `frontend/src/stores/__tests__/admin.test.js` (ONB-3-Block:
+  `loadAdmins`/`createAdmin`/`setAdminStatus`/`deleteAdmin`/`setAdminPassword`,
+  inkl. 409-Last-Admin-Guard-Übersetzung).
 
 ## Rückverfolgbarkeit
 
