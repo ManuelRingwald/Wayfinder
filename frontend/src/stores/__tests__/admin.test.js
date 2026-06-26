@@ -266,6 +266,51 @@ describe('admin store — tenant lifecycle (ONB-4)', () => {
   })
 })
 
+describe('admin store — feed lifecycle (ONB-5)', () => {
+  it('createFeed POSTs the payload and sets a success notice', async () => {
+    const calls = installFetch({
+      'POST /api/admin/feeds': {
+        status: 201,
+        body: { id: 5, name: 'north', multicast_group: '239.255.0.70', port: 8600, sensor_mix: ['PSR'] },
+      },
+    })
+    const s = useAdminStore()
+    const r = await s.createFeed({ name: 'north', multicast_group: '239.255.0.70', port: 8600, sensor_mix: ['PSR'] })
+    expect(r.ok).toBe(true)
+    const post = calls.find((c) => c.method === 'POST')
+    expect(post.url).toBe('/api/admin/feeds')
+    expect(JSON.parse(post.body)).toEqual({ name: 'north', multicast_group: '239.255.0.70', port: 8600, sensor_mix: ['PSR'] })
+    expect(s.notice).toMatch(/angelegt/)
+  })
+
+  it('createFeed shows a friendly message on the 409 duplicate name', async () => {
+    installFetch({ 'POST /api/admin/feeds': { status: 409, body: { error: 'a feed with this name already exists' } } })
+    const s = useAdminStore()
+    const r = await s.createFeed({ name: 'north', multicast_group: '239.255.0.70', port: 8600 })
+    expect(r.ok).toBe(false)
+    expect(r.status).toBe(409)
+    expect(s.error).toMatch(/bereits/)
+  })
+
+  it('createFeed surfaces a 400 invalid multicast group', async () => {
+    installFetch({ 'POST /api/admin/feeds': { status: 400, body: { error: 'multicast_group must be an IPv4 address' } } })
+    const s = useAdminStore()
+    const r = await s.createFeed({ name: 'north', multicast_group: 'nope', port: 8600 })
+    expect(r.ok).toBe(false)
+    expect(s.error).toMatch(/IPv4/)
+  })
+
+  it('deleteFeed DELETEs the feed and sets a success notice', async () => {
+    const calls = installFetch({ 'DELETE /api/admin/feeds/3': { status: 204 } })
+    const s = useAdminStore()
+    const r = await s.deleteFeed(3)
+    expect(r.ok).toBe(true)
+    expect(calls[0].url).toBe('/api/admin/feeds/3')
+    expect(calls[0].method).toBe('DELETE')
+    expect(s.notice).toMatch(/gelöscht/)
+  })
+})
+
 describe('admin store — platform-admin management (ONB-3)', () => {
   it('loadAdmins GETs /api/admin/admins without storing globally', async () => {
     const calls = installFetch({

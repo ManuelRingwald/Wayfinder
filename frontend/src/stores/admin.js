@@ -249,6 +249,35 @@ export const useAdminStore = defineStore('admin', () => {
     return r
   }
 
+  // --- feed lifecycle (ONB-5, ADR 0011) -------------------------------------
+  // Create and delete catalogue feeds. The server joins/leaves the multicast
+  // group live (no restart) and enforces requireAdmin; the UI gating is
+  // convenience only. createFeed validates server-side (multicast range, port,
+  // duplicate name → 409); deleteFeed cascades the feed's subscriptions away.
+
+  async function createFeed(payload) {
+    error.value = null
+    notice.value = null
+    const r = await apiFetch('/api/admin/feeds', { method: 'POST', body: JSON.stringify(payload) })
+    if (r.ok) {
+      notice.value = 'Feed angelegt.'
+    } else if (r.status === 409) {
+      error.value = 'Anlegen nicht möglich: Ein Feed mit diesem Namen existiert bereits.'
+    } else {
+      error.value = r.error
+    }
+    return r
+  }
+
+  async function deleteFeed(feedId) {
+    error.value = null
+    notice.value = null
+    const r = await apiFetch(`/api/admin/feeds/${feedId}`, { method: 'DELETE' })
+    if (r.ok) notice.value = 'Feed gelöscht.'
+    else error.value = r.error
+    return r
+  }
+
   // --- access management (AP6) ----------------------------------------------
   // Per-tenant access accounts (role user). The server enforces every boundary
   // (requireAdmin → 403); the UI gating is convenience only.
@@ -424,6 +453,7 @@ export const useAdminStore = defineStore('admin', () => {
     loadOverview, loadFeedsHealth, loadTenantView, saveTenantView, loadTenantEntitlements, setTenantEntitlement,
     loadTenantUsers, createUser, setUserStatus, deleteUser, setUserPassword, setTenantStatus,
     createTenant, deleteTenant,
+    createFeed, deleteFeed,
     changeOwnPassword, deleteOwnAccount,
     loadAdmins, createAdmin, setAdminStatus, deleteAdmin, setAdminPassword,
     clearBanners,

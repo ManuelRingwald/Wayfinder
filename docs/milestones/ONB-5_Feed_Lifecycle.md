@@ -6,8 +6,7 @@
 > Server-Neustart erzwang, entfällt.
 >
 > **Lieferung in zwei Commits:** (1) Backend (Feed-Manager, Store, API, Wiring),
-> (2) Frontend (Feed-Verwaltungs-UI + Store-Actions). Dieses Dokument beschreibt
-> den **Backend-Commit**; der Frontend-Abschnitt wird mit Commit 2 ergänzt.
+> (2) Frontend (Feed-Verwaltungs-UI + Store-Actions). Beide sind umgesetzt.
 
 ## Fachlicher Hintergrund
 
@@ -104,6 +103,20 @@ Adapter lebt in `main.go`. Eine `nil`-Lifecycle deaktiviert das Live-Apply
 (Single-Tenant / Tests): der Katalog ändert sich, die Receiver-Menge folgt erst
 beim Neustart.
 
+## Was umgesetzt wurde (Frontend)
+
+- **Store-Actions** (`admin.js`): `createFeed(payload)` (POST, Erfolgs-Banner;
+  409-Duplikatname → verständliche deutsche Meldung), `deleteFeed(id)` (DELETE).
+- **`AdminFeeds.vue`** (neue Komponente, Vorlage `AdminPlatformAdmins.vue`):
+  Feed-Katalog als Tabelle (Name, `multicast_group:port`, Sensor-Mix-Chips,
+  **Gesundheits-Chip** aus `feedsHealth` — grün/gelb/rot wie im Dashboard);
+  „Feed anlegen"-Dialog (Name, Multicast-Gruppe, Port, optionaler Sensor-Mix)
+  + Löschen-Bestätigung (mit Hinweis, dass Abos kaskadieren). Lädt nach jeder
+  Mutation neu (`loadFeeds` + `loadFeedsHealth`).
+- **Navigation** (`AdminView.vue`): dritter Eintrag **„Feeds"** im Header-Toggle
+  (Mandanten ↔ Feeds ↔ Plattform-Administratoren), im Pflichtwechsel-Zustand
+  ausgeblendet.
+
 ## Byte-/Verhaltens-Vertrag
 
 - `POST /api/admin/feeds`: 201 + `{id, name, multicast_group, port, region?,
@@ -127,6 +140,11 @@ beim Neustart.
     `TestDeleteFeedSucceeds`, `…UnknownIs404`, `TestFeedLifecycleRoutesForbidNonAdmin`,
     `…WithoutLifecycle`.
   - `cmd/wayfinder/feeds_test.go::TestNewReceiverFactory`.
+
+**Frontend-Commit:**
+- `npm run test` (157 Tests) ✅, `npm run build` aktualisiert `dist/` ✅.
+- Tests: `frontend/src/stores/__tests__/admin.test.js` (ONB-5-Block:
+  `createFeed` 201/409/400, `deleteFeed` 204).
 
 ## Sicherheits-Bewertung (CLAUDE.md §7)
 

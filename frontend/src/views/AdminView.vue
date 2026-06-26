@@ -18,6 +18,7 @@
       class="ml-4"
     >
       <v-btn value="tenants" prepend-icon="mdi-domain">Mandanten</v-btn>
+      <v-btn value="feeds" prepend-icon="mdi-access-point-network">Feeds</v-btn>
       <v-btn value="admins" prepend-icon="mdi-shield-account">Plattform-Administratoren</v-btn>
     </v-btn-toggle>
     <v-spacer />
@@ -182,6 +183,10 @@
              the tenant overview, selected via the header navigation. -->
         <AdminPlatformAdmins v-if="section === 'admins'" />
 
+        <!-- ONB-5 (ADR 0011): feed catalogue management — create/delete data
+             sources; the server joins/leaves their multicast groups live. -->
+        <AdminFeeds v-else-if="section === 'feeds'" />
+
         <!-- AP3 (ADR 0009): tenant-centric admin. The overview lists all tenants;
              selecting one opens its central configuration page. The old per-tab
              layout (own view / subscriptions / provisioning / users) is replaced
@@ -205,10 +210,11 @@ import { useAdminStore } from '@/stores/admin.js'
 import AdminTenants from '@/components/admin/AdminTenants.vue'
 import AdminTenantDetail from '@/components/admin/AdminTenantDetail.vue'
 import AdminPlatformAdmins from '@/components/admin/AdminPlatformAdmins.vue'
+import AdminFeeds from '@/components/admin/AdminFeeds.vue'
 import MyAccountPanel from '@/components/admin/MyAccountPanel.vue'
 
 const admin = useAdminStore()
-const section = ref('tenants') // ONB-3: 'tenants' | 'admins' — header navigation
+const section = ref('tenants') // 'tenants' | 'feeds' | 'admins' — header navigation (ONB-3/5)
 const selectedTenant = ref(null) // null = overview; a tenant id = detail page
 const loaded = ref(false)
 const myAccountOpen = ref(false) // ONB-2: "Mein Konto" dialog open state
