@@ -1,7 +1,6 @@
 # ADR 0012 — Mandanten-eigene Tracker-Instanzen & Auto-Orchestrierung
 
-- **Status:** **ENTWURF — zur Freigabe vorgelegt** (kein Produktivcode, bis
-  freigegeben).
+- **Status:** **AKZEPTIERT** ✅ (2026-06-27).
 - **Datum:** 2026-06-26
 - **Schnittstellen-relevant:** **teilweise** — der **CAT062/063/065-Draht-Vertrag
   bleibt unverändert**. Schnittstellen-Wirkung entsteht nur **eingangsseitig bei
