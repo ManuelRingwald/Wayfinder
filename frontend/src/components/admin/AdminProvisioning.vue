@@ -1,7 +1,7 @@
 <template>
-  <!-- super_admin cross-tenant provisioning (WF2-31b/32). Pick a tenant, then
-       grant/revoke catalogue feeds for it. This tab is only rendered for
-       super_admin; the server independently enforces the boundary (requireSuper →
+  <!-- Admin cross-tenant provisioning (WF2-31b/32). Pick a tenant, then
+       grant/revoke catalogue feeds for it. This tab is only rendered for the
+       admin role; the server independently enforces the boundary (requireAdmin →
        403), so the gating here is convenience, not security. -->
   <!-- Standalone tenant picker: hidden when embedded (AP3 detail page passes a
        tenantId prop and owns the tenant context). -->
