@@ -1,8 +1,19 @@
 # ADR 0013 — Modular CWP & Enterprise ATC Integration
 
-- **Status:** **ENTWURF — zur Freigabe vorgelegt** (kein Produktivcode, bis
-  freigegeben). Dieser ADR setzt die **Richtung & die Kontrakte** für ein
-  Programm aus mehreren Epics, nicht ein einzelnes Feature.
+- **Status:** **AKZEPTIERT** ✅ (2026-06-28). Dieser ADR setzt die **Richtung &
+  die Kontrakte** für ein Programm aus mehreren Epics, nicht ein einzelnes
+  Feature. **Umsetzung = Priorität 2** (Roadmap): erst nach dem Go-to-Market-
+  Fundament (Prio 1 — Zero-Touch/Admin-UI **+** Auto-Orchestrierung ORCH).
+- **Ratifiziert (2026-06-28, drei offene Punkte beantwortet):**
+  1. **Plane-Trennung NATS (Surveillance) + AMQP (Information) akzeptiert** — die
+     doppelte Betriebs-Komplexität ist der bewusste Preis; Radar-Firehose und
+     Enterprise-Messaging haben unvereinbare Anforderungen, **kein Architektur-
+     Kompromiss** an dieser Stelle.
+  2. **Multi-Monitor-Grenze = ein Browser / ein PC** (BroadcastChannel) ist die
+     richtige Grenze; reale Tower-Setups fahren mehrere Monitore an **einem**
+     starken Thin-Client. **Keine** PC-übergreifende Synchronisation nötig.
+  3. **Reihenfolge = Prio 2** — die CWP-Erweiterung folgt **nach** dem
+     Prio-1-Fundament.
 - **Datum:** 2026-06-28
 - **Schnittstellen-relevant:**
   - **Gegenüber dem CAT062/063/065-Draht-Vertrag mit Firefly: nein** — der

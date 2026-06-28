@@ -21,6 +21,40 @@
 
 ---
 
+## ⭐ Prioritäts-Rahmen (verbindlich — Betreiber-Entscheidung 2026-06-28)
+
+> **Strikte Reihenfolge.** Erst das **Go-to-Market-Fundament** (Prio 1)
+> abschließen, **dann** die CWP-Erweiterung (Prio 2). **Kein** Vorziehen von
+> Prio-2-Paketen, solange Prio 1 nicht steht. Diese Ordnung ist **maßgeblich** und
+> überlagert die historische „Stufen"-Nummerierung in §1 (die Stufen 0–4 sind
+> bereits abgeschlossen; die verbleibende Stufe 6/ORCH ist **Prio 1**).
+
+### 🥇 PRIORITÄT 1 — SaaS-/„Netflix"-Fundament: Zero-Touch & Admin-UI **+** Auto-Orchestrierung
+
+Das vollständige Selbstbedienungs-Fundament: ein Administrator fährt das System
+hoch und provisioniert einen Mandanten **komplett über die Oberfläche** — Mandant,
+Feeds, Feature-Toggles, Nutzer — **inkl. Feed-Zuweisung und Auto-Spawning der
+passenden Firefly-Instanz** (Orchestrierung). Das ist das **Go-to-Market-Fundament**.
+
+| Epic | Inhalt | Status |
+|------|--------|--------|
+| **ONB** (ADR 0011) | Zero-Touch-Onboarding: Admin-Seed + Pflicht-Passwortwechsel, Selbstverwaltung, **Mandanten / Feeds / Feature-Toggles / Nutzer-CRUD live aus der UI**, OpenAIP pro Mandant | ✅ **vollständig** (ONB-0…ONB-6) |
+| **ORCH** (ADR 0012) | **Auto-Orchestrierung:** Feed-Quell-Datenmodell, `InstanceBackend` (Docker→K8s), Reconciler am Feed-Lebenszyklus, Orchestrierungs-UX, Firefly-Live-Ingestion, Skalierung/HA — „**Feed zuweisen ⇒ passende Firefly-Instanz startet automatisch**" | 🚧 **ORCH-0 ✅ · ORCH-1…6 offen — aktueller Bau-Fokus** |
+
+**➡️ Der nächste konkrete Schritt liegt in Prio 1: `ORCH-1` (Feed-Quell-Datenmodell).**
+Details: §1 „Stufe 6 — Epic ORCH".
+
+### 🥈 PRIORITÄT 2 — Modular CWP & Enterprise ATC Integration
+
+Erst **nachdem** Prio 1 steht: die Suite aus **ASD + EFS + IMS**, der
+BroadcastChannel-**CWP-Bus**, das **FDP**/Strip-Lebenszyklus-Backend mit
+operativen Rollen (Tower/Approach/Ground) und Handover, sowie das **IMS** auf
+**SWIM** (AMQP 1.0, AIXM/FIXM/IWXXM, FAA-SCDS-validierbar). Architektur
+**ratifiziert in ADR 0013** (akzeptiert 2026-06-28). Arbeitspakete: **Epic
+CWP/EFS/IMS** — siehe §1 „Prio 2 · Epic CWP".
+
+---
+
 ## 0. Strategische Ausrichtung: Wayfinder 2.0
 
 Wayfinder 2.0 ist der **leitende Programmrahmen** für die nächste Phase: der
@@ -234,7 +268,7 @@ Details & Begründung: Konzept §7/§8.
 | **WF2-41** | Feed-Sensorklassen-Katalog & Entitlements (Feed-Metadaten; Abos binden an Feeds) | **S3 · Sonnet 4.6** | WF2-20, WF2-50 | ✅ **erledigt** (`pkg/sensorclass`: kontrolliertes Vokabular + Legacy-Kanonisierung, am `FeedRepo.Create`-Chokepoint erzwungen; `multi_feed`-Grant-Gate → 409 fail-early, harte Invariante; `GET /api/admin/sensor-classes`; real-PG-Tests) |
 | **WF2-42** | Cross-Project-Issue an Firefly: echte Per-Track-Provenienz (FLARM-Diskriminator) = ICD-Änderung | **S2 · Sonnet 4.6** | WF2-40 | ✅ **erledigt** (Issue [Firefly #30](https://github.com/manuelringwald/firefly/issues/30) `from-wayfinder` angelegt: ICD-v2.5.0-Vorschlag `provenance`-Enum + `source_ages`; Ball bei Firefly — siehe §3) |
 
-### Stufe 6 — Mandanten-eigene Tracker-Instanzen & Auto-Orchestrierung (Epic ORCH)
+### 🥇 Prio 1 · Stufe 6 — Mandanten-eigene Tracker-Instanzen & Auto-Orchestrierung (Epic ORCH)
 
 > **Betreiber-Entscheidung (2026-06-26):** Sensor-Trennung pro Mandant wird
 > **nicht** in Wayfinder per Track-Heuristik gelöst, sondern über **eine
@@ -321,6 +355,57 @@ Details & Begründung: Konzept §7/§8.
 > Heuristik bzw. Schnittstellen-Last ohne Mehrwert einführen. Die reine
 > **Feed-UX-Verbesserung** (Sensor-Mix als Checkboxen statt Freitext, Default-
 > Template-Button) bleibt sinnvoll und wandert als kleines Paket in ORCH-1.
+
+### 🥈 Prio 2 · Epic CWP — Modular CWP & Enterprise ATC Integration (ADR 0013)
+
+> **Reihenfolge: strikt nach Prio 1** (Zero-Touch/Admin-UI **+** ORCH). Architektur
+> **ratifiziert in ADR 0013** (`docs/decisions/0013-modular-cwp-enterprise-atc-integration.md`,
+> akzeptiert 2026-06-28). Wayfinder wächst vom isolierten **ASD** zur modularen
+> **CWP-Suite** (Controller Working Position) aus **ASD + EFS + IMS**.
+>
+> **Sechs ratifizierte Leitentscheidungen (ADR 0013, D1–D6):**
+> 1. **Drei komponierbare Module + Shell** — standalone / split-screen /
+>    multi-monitor; **kein** modulübergreifender Monolith-Store.
+> 2. **Client-Koordination über `BroadcastChannel`** (nativer, same-origin
+>    CWP-Bus) — **das Backend trägt kein UI-Highlighting**. Korrelations-Vertrag
+>    ICAO-24-Bit → Callsign → Track-Nr.; Session-Guard-Token gegen Kontext-Bleed.
+> 3. **EFS = zustandsbehaftete Strips**, getrieben von einer **deterministischen,
+>    auditierten FDP-State-Machine**; operative Rollen erststeklassig; **Handover**
+>    als geführte, rollen-bewachte Transition.
+> 4. **Workstation-/Rollen-Modell** — Login-Kontext = **Mandant + operative Rolle
+>    + Arbeitsplatz**; zwei orthogonale Rollen-Achsen (Autz `user|admin` vs.
+>    operativ `approach|tower|ground|…`), strikt getrennt.
+> 5. **IMS auf SWIM von Tag 1** — Pub/Sub **AMQP 1.0** (FAA-SCDS-Realität),
+>    Ports & Adapters für **AIXM/FIXM/IWXXM**, später gegen die öffentlichen
+>    **FAA-SCDS**-Feeds validierbar.
+> 6. **Drei Server-Planes bewusst getrennt** (Surveillance CAT062/NATS · Flugdaten
+>    FDP · Information SWIM/AMQP) + ein Client-Plane (BroadcastChannel). `tenant_id`
+>    **bleibt die autoritative Isolationsgrenze**; SWIM-Eingang = untrusted external
+>    data (robustes XML-Parsing, fail-closed).
+>
+> **Ratifizierte Eckpunkte (2026-06-28):** NATS+AMQP-Doppelbetrieb akzeptiert
+> (kein Architektur-Kompromiss); Multi-Monitor-Grenze = ein Browser/ein PC (keine
+> PC-übergreifende Sync). **CAT062-Draht-Vertrag mit Firefly bleibt unverändert.**
+
+| AP | Inhalt | Stufe · Modell | Abh. | Status |
+|----|--------|----------------|------|--------|
+| **CWP-0** | **ADR 0013** „Modular CWP & Enterprise ATC Integration" — Richtung + D1–D6 (Module/Shell, BroadcastChannel-Bus, FDP-State-Machine, Workstation/Rollen, SWIM/AMQP, Plane-Trennung) | **S5 · Opus 4.8 / Fable 5** | — | ✅ **erledigt** (ADR 0013 akzeptiert 2026-06-28) |
+| **CWP-1** | **CWP-Shell + Bus-Fundament (Frontend):** App-Shell, Modul-Routing (eigenes Fenster je Modul), `useCwpBus()`-Composable, versioniertes `cwp-bus`-Schema + Session-Guard; Refactor `asd.selectedTrack` auf den Bus | **S4 · Opus 4.8** | CWP-0 (Prio 1 done) | ⏳ offen |
+| **CWP-2** 🔒 | **Workstation/Rollen-Modell (Backend):** Migration `controller_roles`/`workstations`, `Identity`-Erweiterung (`WorkstationID`/`ControllerRole`), Login-Kontext, Admin-API CRUD; `tenant_id` bleibt autoritativ | **S4 · Opus 4.8** | CWP-0 | ⏳ offen |
+| **CWP-3** | **Workstation-Admin-UI:** Arbeitsplätze anlegen/zuweisen, operative Rolle + Feed binden, Login-Auswahl | **S3 · Sonnet 4.6** | CWP-2 | ⏳ offen |
+| **EFS-1** 🔒 | **FDP-State-Machine (Backend):** `pkg/fdp`, Strip-Lebenszyklus + Transitions-Guards, Persistenz (`flights`/`flight_strips`/`strip_transitions`), vollständiges Audit; Flight-Objekte Stufe A (track-korreliert) | **S5 · Fable 5 / Opus 4.8** | CWP-2 | ⏳ offen |
+| **EFS-2** | **EFS-Modul (Frontend):** Strip-Bay, Statusdarstellung, Auswahl ↔ ASD über den Bus | **S3–S4 · Sonnet 4.6 / Opus 4.8** | CWP-1, EFS-1 | ⏳ offen |
+| **EFS-3** 🔒 | **Handover-Flow:** Anbieten/Annehmen/Ablehnen rollen-bewacht, UI + Backend, lückenlos auditiert | **S4 · Opus 4.8** | EFS-1, EFS-2 | ⏳ offen |
+| **IMS-1** 🔒 | **SWIM-Informations-Modell + AMQP-Adapter-Rand (Backend):** `pkg/ims`, kanonisches Modell, AMQP-1.0-Subscriber-Gerüst, **ein** dünner vertikaler Schnitt (z. B. IWXXM-METAR) Ende-zu-Ende | **S5 · Fable 5 / Opus 4.8** | CWP-0 | ⏳ offen |
+| **IMS-2** | **IMS-Modul (Frontend):** Topic-Abos über WS, Read-Model-Ansichten (NOTAM/Wetter), Korrelation zu ASD-Layern/EFS | **S3–S4 · Sonnet 4.6 / Opus 4.8** | CWP-1, IMS-1 | ⏳ offen |
+| **IMS-3** 🔒 | **AIXM/FIXM-Adapter + SCDS-Anbindung:** weitere Format-Adapter; Anbindung an die öffentlichen FAA-SCDS-Feeds zur Validierung (Registrierung nötig) | **S5 · Fable 5 / Opus 4.8** | IMS-1 | ⏳ offen (extern abhängig) |
+
+> **Querschnitt Sicherheit (🔒, über alle CWP-Pakete):** untrusted-SWIM-Ingress-
+> Härtung (XXE/Limits/Fuzzing), Bus-Session-Guard-Tests, FDP-Transitions-Authz,
+> Isolations-Negativtests. **Ehrliche Grenze:** echte Flugpläne (FDP Stufe B,
+> FIXM) und die SCDS-Anbindung sind die größten Abhängigkeiten; bis dahin EFS
+> track-abgeleitet, IMS ein dünner vertikaler Schnitt. Siehe ADR 0013 „Ehrliche
+> Grenzen".
 
 ### Stufe 5 — Monetarisierung & HA-Betrieb (optional / zuletzt)
 | AP | Inhalt | Stufe · Modell | Abh. | Status |
