@@ -578,9 +578,9 @@ von der präzisen inneren Mandanten-AOI (WF2-21.2). `pkg/store/feed_sources.go`:
 `CoverageBBox(marginKm)` (reine Ableitung, lat/lon-geklemmt) und dedizierte
 Accessoren `FeedRepo.GetSourceConfig`/`SetSourceConfig` (nicht in der schlanken
 `Feed`-Zeile, analog OpenAIP-Key-Isolation). **Rein Wayfinder-intern**, keine
-CAT062-Schnittstellen-Wirkung. Admin-API (ORCH-1b) + UI-Quell-Builder (ORCH-1c)
-folgen; der Reconciler (ORCH-3) übersetzt `coverage_bbox` später nach
-`FIREFLY_COVERAGE_BBOX`.
+CAT062-Schnittstellen-Wirkung. Bedienbar über `GET/PUT /api/admin/feeds/{id}/sources`
+(ORCH-1b) und den Quell-Builder im „Feeds"-Tab (ORCH-1c, `AdminFeeds.vue`). Der
+Reconciler (ORCH-3) übersetzt `coverage_bbox` später nach `FIREFLY_COVERAGE_BBOX`.
 
 **Scoped Fan-out (WF2-21.1, 🔒 NFR-SEC-003):** der Broadcaster stellt einem
 `/ws`-Client einen Track **nur** zu, wenn dessen Mandant den Feed abonniert hat.

@@ -311,6 +311,51 @@ describe('admin store — feed lifecycle (ONB-5)', () => {
   })
 })
 
+describe('admin store — feed source configuration (ORCH-1c)', () => {
+  it('loadFeedSources GETs the feed sources', async () => {
+    const calls = installFetch({
+      'GET /api/admin/feeds/3/sources': {
+        status: 200,
+        body: { sources: [{ type: 'adsb_opensky', bbox: { min_lat: 48, min_lon: 7, max_lat: 50, max_lon: 9 } }], coverage_bbox: null },
+      },
+    })
+    const s = useAdminStore()
+    const r = await s.loadFeedSources(3)
+    expect(r.ok).toBe(true)
+    expect(r.data.sources).toHaveLength(1)
+    expect(calls[0].url).toBe('/api/admin/feeds/3/sources')
+    expect(calls[0].method).toBe('GET')
+  })
+
+  it('saveFeedSources PUTs the payload and sets a success notice', async () => {
+    const calls = installFetch({
+      'PUT /api/admin/feeds/3/sources': {
+        status: 200,
+        body: { sources: [{ type: 'radar_asterix', sac: 1, sic: 4 }], coverage_bbox: null },
+      },
+    })
+    const s = useAdminStore()
+    const payload = { sources: [{ type: 'radar_asterix', sac: 1, sic: 4 }] }
+    const r = await s.saveFeedSources(3, payload)
+    expect(r.ok).toBe(true)
+    const put = calls.find((c) => c.method === 'PUT')
+    expect(put.url).toBe('/api/admin/feeds/3/sources')
+    expect(JSON.parse(put.body)).toEqual(payload)
+    expect(s.notice).toMatch(/gespeichert/)
+  })
+
+  it('saveFeedSources surfaces a 400 with the offending source index', async () => {
+    installFetch({
+      'PUT /api/admin/feeds/3/sources': { status: 400, body: { error: 'invalid sources: store: source[0]: adsb_opensky requires a bbox' } },
+    })
+    const s = useAdminStore()
+    const r = await s.saveFeedSources(3, { sources: [{ type: 'adsb_opensky' }] })
+    expect(r.ok).toBe(false)
+    expect(r.status).toBe(400)
+    expect(s.error).toMatch(/source\[0\]/)
+  })
+})
+
 describe('admin store — OpenAIP per tenant (ONB-6)', () => {
   it('loadTenantOpenAIP reports the configured status', async () => {
     installFetch({ 'GET /api/admin/tenants/5/openaip': { status: 200, body: { configured: true } } })

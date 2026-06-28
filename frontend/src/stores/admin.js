@@ -278,6 +278,30 @@ export const useAdminStore = defineStore('admin', () => {
     return r
   }
 
+  // --- feed source configuration (ORCH-1b, ADR 0012) ------------------------
+  // A feed carries the generic source list (adsb_opensky/flarm_aprs/
+  // radar_asterix) the orchestrator will turn into a dedicated Firefly instance,
+  // plus the coarse outer coverage bbox. loadFeedSources returns the raw response
+  // (the dialog owns the transient form state). saveFeedSources PUTs the config;
+  // the server validates (closed vocabulary, per-kind rules → 400 with index) and
+  // derives coverage_bbox when omitted — the UI gating is convenience only.
+
+  async function loadFeedSources(feedId) {
+    return apiFetch(`/api/admin/feeds/${feedId}/sources`)
+  }
+
+  async function saveFeedSources(feedId, payload) {
+    error.value = null
+    notice.value = null
+    const r = await apiFetch(`/api/admin/feeds/${feedId}/sources`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    })
+    if (r.ok) notice.value = 'Quellen gespeichert.'
+    else error.value = r.error
+    return r
+  }
+
   // --- OpenAIP per tenant (ONB-6, ADR 0011) ---------------------------------
   // Each tenant may carry its own OpenAIP key. loadTenantOpenAIP reports only
   // whether a key is set (the server never returns the key itself); the caller
@@ -476,6 +500,7 @@ export const useAdminStore = defineStore('admin', () => {
     loadTenantUsers, createUser, setUserStatus, deleteUser, setUserPassword, setTenantStatus,
     createTenant, deleteTenant,
     createFeed, deleteFeed,
+    loadFeedSources, saveFeedSources,
     loadTenantOpenAIP, setTenantOpenAIPKey,
     changeOwnPassword, deleteOwnAccount,
     loadAdmins, createAdmin, setAdminStatus, deleteAdmin, setAdminPassword,
