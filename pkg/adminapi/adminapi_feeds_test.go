@@ -233,3 +233,153 @@ func TestCreateFeedWithoutLifecycle(t *testing.T) {
 		t.Error("feed should still be catalogued without a lifecycle")
 	}
 }
+
+// --- ORCH-1b: feed source configuration -------------------------------------
+
+// feedSourcesFixture builds a feed store with one feed (id 3) ready for source
+// config round-trips.
+func feedSourcesFixture() fakeFeeds {
+	return fakeFeeds{
+		byID:      map[int64]store.Feed{3: {ID: 3, Name: "speyer"}},
+		sourceCfg: map[int64]store.SourceConfig{},
+		coverage:  map[int64]*store.BBox{},
+	}
+}
+
+func TestGetFeedSourcesDefaultsEmpty(t *testing.T) {
+	ff := feedSourcesFixture()
+	rec := httptest.NewRecorder()
+	handlerForFeeds(ff, nil).ServeHTTP(rec,
+		adminReq(http.MethodGet, "/api/admin/feeds/3/sources", "", 99, store.RoleAdmin))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	var got feedSourcesDTO
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.Sources == nil {
+		t.Error("sources should serialise as [] not null")
+	}
+	if len(got.Sources) != 0 || got.CoverageBBox != nil {
+		t.Fatalf("default = %+v, want empty/nil", got)
+	}
+}
+
+func TestGetFeedSourcesUnknownIs404(t *testing.T) {
+	ff := feedSourcesFixture()
+	rec := httptest.NewRecorder()
+	handlerForFeeds(ff, nil).ServeHTTP(rec,
+		adminReq(http.MethodGet, "/api/admin/feeds/9/sources", "", 99, store.RoleAdmin))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rec.Code)
+	}
+}
+
+func TestPutFeedSourcesRoundTripAndDerivesCoverage(t *testing.T) {
+	ff := feedSourcesFixture()
+	body := `{"sources":[
+		{"type":"adsb_opensky","bbox":{"min_lat":48,"min_lon":7,"max_lat":50,"max_lon":9},"cred_ref":"secret/speyer"},
+		{"type":"radar_asterix","sac":1,"sic":4}
+	]}`
+	rec := httptest.NewRecorder()
+	handlerForFeeds(ff, nil).ServeHTTP(rec,
+		adminReq(http.MethodPut, "/api/admin/feeds/3/sources", body, 99, store.RoleAdmin))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	var got feedSourcesDTO
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got.Sources) != 2 || got.Sources[0].Type != store.SourceADSBOpenSky {
+		t.Fatalf("sources = %+v", got.Sources)
+	}
+	// Coverage was not supplied, so the server derives it from the source bbox
+	// (+ default margin): it must contain the source bbox and be wider.
+	c := got.CoverageBBox
+	if c == nil {
+		t.Fatal("coverage should have been derived")
+	}
+	if c.MinLat >= 48 || c.MaxLat <= 50 || c.MinLon >= 7 || c.MaxLon <= 9 {
+		t.Errorf("derived coverage %+v does not pad the source bbox", *c)
+	}
+	// The store recorded the config and coverage.
+	if len(ff.sourceCfg[3]) != 2 || ff.coverage[3] == nil {
+		t.Errorf("store state = %+v / %+v", ff.sourceCfg[3], ff.coverage[3])
+	}
+}
+
+func TestPutFeedSourcesExplicitCoverageOverrides(t *testing.T) {
+	ff := feedSourcesFixture()
+	body := `{"sources":[{"type":"adsb_opensky","bbox":{"min_lat":48,"min_lon":7,"max_lat":50,"max_lon":9}}],
+		"coverage_bbox":{"min_lat":40,"min_lon":0,"max_lat":55,"max_lon":15}}`
+	rec := httptest.NewRecorder()
+	handlerForFeeds(ff, nil).ServeHTTP(rec,
+		adminReq(http.MethodPut, "/api/admin/feeds/3/sources", body, 99, store.RoleAdmin))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	var got feedSourcesDTO
+	_ = json.Unmarshal(rec.Body.Bytes(), &got)
+	want := store.BBox{MinLat: 40, MinLon: 0, MaxLat: 55, MaxLon: 15}
+	if got.CoverageBBox == nil || *got.CoverageBBox != want {
+		t.Fatalf("coverage = %+v, want explicit %+v", got.CoverageBBox, want)
+	}
+}
+
+func TestPutFeedSourcesInvalidIsRejected(t *testing.T) {
+	cases := map[string]string{
+		"adsb without bbox":  `{"sources":[{"type":"adsb_opensky"}]}`,
+		"unknown type":       `{"sources":[{"type":"satellite"}]}`,
+		"radar without sic":  `{"sources":[{"type":"radar_asterix","sac":1}]}`,
+		"bad coverage range": `{"sources":[],"coverage_bbox":{"min_lat":-100,"min_lon":0,"max_lat":10,"max_lon":10}}`,
+	}
+	for name, body := range cases {
+		t.Run(name, func(t *testing.T) {
+			ff := feedSourcesFixture()
+			rec := httptest.NewRecorder()
+			handlerForFeeds(ff, nil).ServeHTTP(rec,
+				adminReq(http.MethodPut, "/api/admin/feeds/3/sources", body, 99, store.RoleAdmin))
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400; body=%s", rec.Code, rec.Body.String())
+			}
+			// A rejected request must not write to the store.
+			if len(ff.sourceCfg[3]) != 0 {
+				t.Errorf("rejected config must not be stored: %+v", ff.sourceCfg[3])
+			}
+		})
+	}
+}
+
+func TestPutFeedSourcesUnknownIs404(t *testing.T) {
+	ff := feedSourcesFixture()
+	rec := httptest.NewRecorder()
+	handlerForFeeds(ff, nil).ServeHTTP(rec,
+		adminReq(http.MethodPut, "/api/admin/feeds/9/sources",
+			`{"sources":[{"type":"radar_asterix","sac":1,"sic":4}]}`, 99, store.RoleAdmin))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404; body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestFeedSourcesRoutesForbidNonAdmin verifies both source routes are admin-gated.
+func TestFeedSourcesRoutesForbidNonAdmin(t *testing.T) {
+	ff := feedSourcesFixture()
+	h := handlerForFeeds(ff, nil)
+	reqs := []*http.Request{
+		adminReq(http.MethodGet, "/api/admin/feeds/3/sources", "", 99, store.RoleUser),
+		adminReq(http.MethodPut, "/api/admin/feeds/3/sources",
+			`{"sources":[{"type":"radar_asterix","sac":1,"sic":4}]}`, 99, store.RoleUser),
+	}
+	for _, req := range reqs {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusForbidden {
+			t.Errorf("%s %s: status = %d, want 403", req.Method, req.URL.Path, rec.Code)
+		}
+	}
+	if len(ff.sourceCfg[3]) != 0 {
+		t.Error("a forbidden request must not write source config")
+	}
+}

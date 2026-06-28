@@ -159,3 +159,121 @@ func validateMulticast(group string, port int) error {
 	}
 	return nil
 }
+
+// Feed source configuration (ORCH-1b, ADR 0012). A feed gains the generic,
+// Firefly-agnostic source list the orchestrator will later turn into a dedicated
+// Firefly instance, plus the coarse outer coverage bbox handed to that instance.
+// These are platform-admin operations (requireAdmin); the config is internal
+// orchestration metadata, not tenant-facing, and cred_ref is only a *reference*
+// to a per-feed secret — never the secret value (ADR 0012 §6).
+
+// defaultCoverageMarginKm pads the derived coverage bbox beyond the union of the
+// source query windows, so the coarse outer bound comfortably contains the
+// precise inner tenant AOI. The operator may override coverage explicitly.
+const defaultCoverageMarginKm = 50.0
+
+// feedSourcesDTO is the wire shape of a feed's source configuration. Sources
+// reuses the store model's JSON tags (type/bbox/sac/sic/cred_ref); CoverageBBox
+// is the derived coarse outer bound (null when no source carries a bbox).
+type feedSourcesDTO struct {
+	Sources      store.SourceConfig `json:"sources"`
+	CoverageBBox *store.BBox        `json:"coverage_bbox"`
+}
+
+// getFeedSources returns a feed's source configuration and derived coverage.
+func (h *Handler) getFeedSources(w http.ResponseWriter, r *http.Request) {
+	fid, err := pathInt(r, "feedID")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid feed id")
+		return
+	}
+	sources, coverage, err := h.feeds.GetSourceConfig(r.Context(), fid)
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "feed not found")
+		return
+	}
+	if err != nil {
+		h.internalError(w, "get feed sources", err)
+		return
+	}
+	if sources == nil {
+		sources = store.SourceConfig{}
+	}
+	writeJSON(w, http.StatusOK, feedSourcesDTO{Sources: sources, CoverageBBox: coverage})
+}
+
+// putFeedSources replaces a feed's source configuration. The sources are
+// validated server-side (closed vocabulary, per-kind rules) — a rejected config
+// returns 400 with the offending entry's index, never a partial write. When the
+// body omits coverage_bbox, the server derives the coarse outer bound from the
+// source bboxes (+ a default margin); an explicit coverage_bbox lets the operator
+// override. The stored config is read back so the response is canonical.
+func (h *Handler) putFeedSources(w http.ResponseWriter, r *http.Request) {
+	fid, err := pathInt(r, "feedID")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid feed id")
+		return
+	}
+	var body feedSourcesDTO
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16384)).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if err := body.Sources.Validate(); err != nil {
+		var ise *store.InvalidSourceError
+		if errors.As(err, &ise) {
+			writeError(w, http.StatusBadRequest, "invalid sources: "+ise.Error())
+			return
+		}
+		writeError(w, http.StatusBadRequest, "invalid sources")
+		return
+	}
+
+	coverage := body.CoverageBBox
+	if coverage == nil {
+		coverage = body.Sources.CoverageBBox(defaultCoverageMarginKm) // may be nil
+	} else if err := validateBBox(coverage); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid coverage_bbox: "+err.Error())
+		return
+	}
+
+	if err := h.feeds.SetSourceConfig(r.Context(), fid, body.Sources, coverage); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "feed not found")
+			return
+		}
+		var ise *store.InvalidSourceError
+		if errors.As(err, &ise) {
+			writeError(w, http.StatusBadRequest, "invalid sources: "+ise.Error())
+			return
+		}
+		h.internalError(w, "set feed sources", err)
+		return
+	}
+
+	sources, cov, err := h.feeds.GetSourceConfig(r.Context(), fid)
+	if err != nil {
+		h.internalError(w, "read back feed sources", err)
+		return
+	}
+	if sources == nil {
+		sources = store.SourceConfig{}
+	}
+	writeJSON(w, http.StatusOK, feedSourcesDTO{Sources: sources, CoverageBBox: cov})
+}
+
+// validateBBox enforces the WGS84 invariants on an operator-supplied coverage
+// bbox so a 400 is returned for bad input rather than surfacing a store error as
+// a 500. Mirrors the AOI check in validateView.
+func validateBBox(b *store.BBox) error {
+	if b.MinLat < -90 || b.MinLat > 90 || b.MaxLat < -90 || b.MaxLat > 90 {
+		return errors.New("latitude out of range [-90,90]")
+	}
+	if b.MinLon < -180 || b.MinLon > 180 || b.MaxLon < -180 || b.MaxLon > 180 {
+		return errors.New("longitude out of range [-180,180]")
+	}
+	if b.MinLat > b.MaxLat || b.MinLon > b.MaxLon {
+		return errors.New("min must be <= max")
+	}
+	return nil
+}

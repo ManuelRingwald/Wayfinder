@@ -120,6 +120,7 @@ Anforderungs-Register: **FR-ORCH-001** (Quell-Datenmodell), **NFR-SEC-004**
 ## Nächste Häppchen
 
 - **ORCH-1b** — Admin-API: `GET/PUT /api/admin/feeds/{id}/sources`,
-  Validierung→`400` mit Quell-Index, hinter `requireAdmin`.
+  Validierung→`400` mit Quell-Index, hinter `requireAdmin`. ✅ erledigt
+  (`docs/milestones/ORCH-1b_Feed_Source_Admin_API.md`).
 - **ORCH-1c** — Frontend-Quell-Builder im Feed-Dialog (Sensor-Mix-Checkboxen,
   BBox-Vorschlag aus Mandanten-AOI + Marge).

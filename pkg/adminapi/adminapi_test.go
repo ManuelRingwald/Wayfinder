@@ -70,6 +70,9 @@ type fakeFeeds struct {
 	created   map[string]store.Feed // records Create calls by name (pre-init to record)
 	deleted   map[int64]bool        // records Delete calls (pre-init to record)
 	createErr error                 // when set, Create returns it (e.g. sensor-mix rejection)
+
+	sourceCfg map[int64]store.SourceConfig // source config per feed (ORCH-1b)
+	coverage  map[int64]*store.BBox        // derived coverage per feed (ORCH-1b)
 }
 
 func (f fakeFeeds) List(_ context.Context) ([]store.Feed, error) { return f.list, nil }
@@ -106,6 +109,26 @@ func (f fakeFeeds) Create(_ context.Context, name, group string, port int, regio
 func (f fakeFeeds) Delete(_ context.Context, id int64) error {
 	if f.deleted != nil {
 		f.deleted[id] = true
+	}
+	return nil
+}
+
+func (f fakeFeeds) GetSourceConfig(_ context.Context, id int64) (store.SourceConfig, *store.BBox, error) {
+	if _, ok := f.byID[id]; !ok {
+		return nil, nil, store.ErrNotFound
+	}
+	return f.sourceCfg[id], f.coverage[id], nil
+}
+
+func (f fakeFeeds) SetSourceConfig(_ context.Context, id int64, sources store.SourceConfig, coverage *store.BBox) error {
+	if _, ok := f.byID[id]; !ok {
+		return store.ErrNotFound
+	}
+	if f.sourceCfg != nil {
+		f.sourceCfg[id] = sources
+	}
+	if f.coverage != nil {
+		f.coverage[id] = coverage
 	}
 	return nil
 }
