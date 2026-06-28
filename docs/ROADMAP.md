@@ -39,9 +39,9 @@ passenden Firefly-Instanz** (Orchestrierung). Das ist das **Go-to-Market-Fundame
 | Epic | Inhalt | Status |
 |------|--------|--------|
 | **ONB** (ADR 0011) | Zero-Touch-Onboarding: Admin-Seed + Pflicht-Passwortwechsel, Selbstverwaltung, **Mandanten / Feeds / Feature-Toggles / Nutzer-CRUD live aus der UI**, OpenAIP pro Mandant | ✅ **vollständig** (ONB-0…ONB-6) |
-| **ORCH** (ADR 0012) | **Auto-Orchestrierung:** Feed-Quell-Datenmodell, `InstanceBackend` (Docker→K8s), Reconciler am Feed-Lebenszyklus, Orchestrierungs-UX, Firefly-Live-Ingestion, Skalierung/HA — „**Feed zuweisen ⇒ passende Firefly-Instanz startet automatisch**" | 🚧 **ORCH-0 ✅ · ORCH-1…6 offen — aktueller Bau-Fokus** |
+| **ORCH** (ADR 0012) | **Auto-Orchestrierung:** Feed-Quell-Datenmodell, `InstanceBackend` (Docker→K8s), Reconciler am Feed-Lebenszyklus, Orchestrierungs-UX, Firefly-Live-Ingestion, Skalierung/HA — „**Feed zuweisen ⇒ passende Firefly-Instanz startet automatisch**" | 🚧 **ORCH-0/1 ✅ · ORCH-2…6 offen — aktueller Bau-Fokus** |
 
-**➡️ Der nächste konkrete Schritt liegt in Prio 1: `ORCH-1` (Feed-Quell-Datenmodell).**
+**➡️ Der nächste konkrete Schritt liegt in Prio 1: `ORCH-2` (`InstanceBackend` + Docker-Adapter, getrennte Control-Plane).**
 Details: §1 „Stufe 6 — Epic ORCH".
 
 ### 🥈 PRIORITÄT 2 — Modular CWP & Enterprise ATC Integration
@@ -341,7 +341,7 @@ Details & Begründung: Konzept §7/§8.
 | AP | Inhalt | Stufe · Modell | Abh. | Status |
 |----|--------|----------------|------|--------|
 | **ORCH-0** 🔒 | **ADR 0012** „Mandanten-eigene Tracker-Instanzen & Auto-Orchestrierung" (`docs/decisions/0012-mandanten-tracker-orchestrierung.md`) — ratifiziert Option A, Firefly-Autonomie (Ports & Adapters, keine Tenant-Kenntnis), Coverage-BBox-in-Firefly vs. autoritative-AOI-in-Wayfinder, `InstanceBackend` (Docker→K8s), Reconciler-Lebenszyklus am Feed, Sicherheits-/Control-Plane-Grenze | **S4 · Opus 4.8** | — | ✅ **erledigt** (ADR 0012 akzeptiert 2026-06-27) |
-| **ORCH-1** | **Feed-Quell-Datenmodell (Wayfinder):** Feed bekommt `source_config` (erweiterbare Quell-Liste: `adsb_opensky` mit BBox + Cred-Ref, `flarm_aprs`, `radar_asterix` mit SIC/SAC + Endpoint) + abgeleitete `coverage_bbox`; Migration, Admin-API, UI-Quell-Builder (BBox-Vorschlag aus Mandanten-AOI + Marge) | **S3–S4 · Sonnet 4.6 / Opus 4.8** | ORCH-0 | ⏳ offen |
+| **ORCH-1** | **Feed-Quell-Datenmodell (Wayfinder):** Feed bekommt `source_config` (erweiterbare Quell-Liste: `adsb_opensky` mit BBox + Cred-Ref, `flarm_aprs`, `radar_asterix` mit SIC/SAC + Endpoint) + abgeleitete `coverage_bbox`; Migration, Admin-API, UI-Quell-Builder (BBox-Vorschlag aus Mandanten-AOI + Marge) | **S3–S4 · Sonnet 4.6 / Opus 4.8** | ORCH-0 | ✅ **erledigt** (1a Schema+Store · 1b Admin-API · 1c Frontend; Milestones `ORCH-1a/-1b/-1c`, FR-ORCH-001/NFR-SEC-004) |
 | **ORCH-2** 🔒 | **`InstanceBackend`-Abstraktion (Wayfinder):** Interface `Start/Stop/Status` (idempotent), **Docker-Adapter** (lokal/Dev) zuerst; läuft als **separater Control-Plane-Prozess** mit Least-Privilege, **nicht** im browser-zugewandten Server; Multicast-Gruppen-/Port-Allokation kollisionsfrei | **S4–S5 · Opus 4.8 / Fable 5** | ORCH-0 | ⏳ offen |
 | **ORCH-3** 🔒 | **Reconciler (Wayfinder):** Soll-aus-Feed-Aktivität (≥ 1 Abo → 1 Instanz mit Quell-/Coverage-Konfig; idle → Abbau); idempotente Reconcile-Schleife, Crash-Recovery, Orphan-Cleanup; Instanz-Identität ↔ `feed_id` | **S4–S5 · Opus 4.8 / Fable 5** | ORCH-1, ORCH-2 | ⏳ offen |
 | **ORCH-4** | **Orchestrierungs-UX (Wayfinder):** „Feed zuweisen → Instanz startet" sichtbar gemacht — Instanz-Status-Chip (provisioning/running/failed) je Mandant/Feed, Start/Stop-Steuerung, Anbindung an die bestehende Feed-Health (AP4) | **S3 · Sonnet 4.6** | ORCH-3 | ⏳ offen |
