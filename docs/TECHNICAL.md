@@ -563,6 +563,23 @@ feedcmd.go`): `wayfinder feed add -name -group [-port] [-region] [-sensor-mix]`
 und `wayfinder feed list` pflegen den Katalog, bis die Admin-API existiert
 (WF2-31). NATS-/Stream-Feed-Source folgt WF2-53.
 
+**Feed-Quell-Datenmodell (ORCH-1a, ADR 0012):** Vorbereitung der Auto-
+Orchestrierung. Migration `00010_feed_source_config.sql` ergänzt `feeds` um
+`source_config` (JSONB-Array, Default `'[]'`) — die generische, Firefly-agnostische
+Liste der Live-Quellen, aus denen die dem Feed gewidmete Firefly-Instanz später
+ihre Tracks rechnen soll (`adsb_opensky`/`flarm_aprs` mit WGS84-`bbox`,
+`radar_asterix` mit `sac`/`sic`; optional `cred_ref` als **Verweis** auf ein
+Pro-Feed-Secret, nie Klartext) — und `coverage_bbox` (JSONB, nullable), die daraus
+abgeleitete **grobe äußere** Geo-Grenze (Union der Quell-BBoxen + Marge), getrennt
+von der präzisen inneren Mandanten-AOI (WF2-21.2). `pkg/store/feed_sources.go`:
+`SourceConfig.Validate` (geschlossenes Vokabular, Per-Art-Regeln am Schreib-Rand),
+`CoverageBBox(marginKm)` (reine Ableitung, lat/lon-geklemmt) und dedizierte
+Accessoren `FeedRepo.GetSourceConfig`/`SetSourceConfig` (nicht in der schlanken
+`Feed`-Zeile, analog OpenAIP-Key-Isolation). **Rein Wayfinder-intern**, keine
+CAT062-Schnittstellen-Wirkung. Admin-API (ORCH-1b) + UI-Quell-Builder (ORCH-1c)
+folgen; der Reconciler (ORCH-3) übersetzt `coverage_bbox` später nach
+`FIREFLY_COVERAGE_BBOX`.
+
 **Scoped Fan-out (WF2-21.1, 🔒 NFR-SEC-003):** der Broadcaster stellt einem
 `/ws`-Client einen Track **nur** zu, wenn dessen Mandant den Feed abonniert hat.
 `broadcast.Scope` (Menge erlaubter `feed_id`; nil = unscoped/Single-Tenant, leer =
