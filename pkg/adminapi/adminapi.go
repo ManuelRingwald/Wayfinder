@@ -48,6 +48,10 @@ type FeedStore interface {
 	// means the name is free.
 	GetByName(ctx context.Context, name string) (store.Feed, error)
 	Create(ctx context.Context, name, multicastGroup string, port int, region *string, sensorMix []string) (store.Feed, error)
+	// CreateAutoAllocated inserts a feed on the next free multicast endpoint from
+	// the configured pool (ORCH-4) — used when the admin omits group/port. Returns
+	// store.ErrPoolExhausted when the pool is full.
+	CreateAutoAllocated(ctx context.Context, name string, region *string, sensorMix []string) (store.Feed, error)
 	Delete(ctx context.Context, id int64) error
 	// GetSourceConfig/SetSourceConfig back the feed's generic source configuration
 	// and derived coverage bbox (ORCH-1, ADR 0012); a missing feed yields

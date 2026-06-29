@@ -138,6 +138,72 @@ func TestCreateFeedInvalidSensorMix(t *testing.T) {
 	}
 }
 
+// ORCH-4: omitting both group and port has the server auto-allocate a
+// collision-free endpoint, which is returned and joined live.
+func TestCreateFeedAutoAllocatesEndpoint(t *testing.T) {
+	ff := fakeFeeds{byName: map[string]store.Feed{}, created: map[string]store.Feed{}, nextID: 5}
+	life := &fakeLifecycle{}
+	rec := httptest.NewRecorder()
+	handlerForFeeds(ff, life).ServeHTTP(rec, adminReq(http.MethodPost, "/api/admin/feeds",
+		`{"name":"auto","sensor_mix":["PSR"]}`, 99, store.RoleAdmin))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201; body=%s", rec.Code, rec.Body.String())
+	}
+	var got feedDTO
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.MulticastGroup == "" || got.Port == 0 {
+		t.Fatalf("auto-allocated feed missing endpoint: %+v", got)
+	}
+	if len(life.started) != 1 {
+		t.Errorf("auto-allocated feed should be joined live, got %v", life.started)
+	}
+}
+
+// ORCH-4: supplying only one of group/port is a client error (provide both or
+// neither).
+func TestCreateFeedPartialEndpointRejected(t *testing.T) {
+	for _, body := range []string{
+		`{"name":"x","multicast_group":"239.255.0.70"}`,
+		`{"name":"x","port":8600}`,
+	} {
+		ff := fakeFeeds{byName: map[string]store.Feed{}, created: map[string]store.Feed{}}
+		rec := httptest.NewRecorder()
+		handlerForFeeds(ff, &fakeLifecycle{}).ServeHTTP(rec,
+			adminReq(http.MethodPost, "/api/admin/feeds", body, 99, store.RoleAdmin))
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("body %s: status = %d, want 400", body, rec.Code)
+		}
+		if len(ff.created) != 0 {
+			t.Errorf("body %s: must not reach the store", body)
+		}
+	}
+}
+
+// ORCH-4: a manual endpoint that collides surfaces the store's ErrEndpointTaken
+// as 409.
+func TestCreateFeedEndpointTakenIs409(t *testing.T) {
+	ff := fakeFeeds{byName: map[string]store.Feed{}, created: map[string]store.Feed{}, createErr: store.ErrEndpointTaken}
+	rec := httptest.NewRecorder()
+	handlerForFeeds(ff, &fakeLifecycle{}).ServeHTTP(rec, adminReq(http.MethodPost, "/api/admin/feeds",
+		`{"name":"dup","multicast_group":"239.255.0.62","port":8600}`, 99, store.RoleAdmin))
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409", rec.Code)
+	}
+}
+
+// ORCH-4: an exhausted pool on the auto path surfaces as 507.
+func TestCreateFeedPoolExhaustedIs507(t *testing.T) {
+	ff := fakeFeeds{byName: map[string]store.Feed{}, created: map[string]store.Feed{}, createErr: store.ErrPoolExhausted}
+	rec := httptest.NewRecorder()
+	handlerForFeeds(ff, &fakeLifecycle{}).ServeHTTP(rec, adminReq(http.MethodPost, "/api/admin/feeds",
+		`{"name":"nofree"}`, 99, store.RoleAdmin))
+	if rec.Code != http.StatusInsufficientStorage {
+		t.Fatalf("status = %d, want 507", rec.Code)
+	}
+}
+
 // TestCreateFeedRollsBackOnJoinFailure verifies the catalogue row is deleted when
 // the live multicast join fails, so a feed is never left catalogued-but-silent.
 func TestCreateFeedRollsBackOnJoinFailure(t *testing.T) {

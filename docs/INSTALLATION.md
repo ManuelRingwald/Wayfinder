@@ -429,6 +429,10 @@ services:
       # (Feed → Quellen → „Secret hinterlegen") bleibt deaktiviert (503).
       # Erzeugen: export WAYFINDER_SECRET_KEY=$(openssl rand -base64 32)
       WAYFINDER_SECRET_KEY: ${WAYFINDER_SECRET_KEY:-}
+      # Optional (ORCH-4): Pool für die automatische Multicast-Endpoint-Vergabe
+      # beim Feed-Anlegen (eine Gruppe je Feed). Defaults reichen i. d. R.:
+      # WAYFINDER_FEED_GROUP_BASE=239.255.0  WAYFINDER_FEED_PORT=8600
+      # WAYFINDER_FEED_OCTET_MIN=1  WAYFINDER_FEED_OCTET_MAX=254  (~254 Feeds)
       WAYFINDER_MAP_CENTER_LAT: "50.0379"   # Frankfurt
       WAYFINDER_MAP_CENTER_LON: "8.5622"
       WAYFINDER_MAP_ZOOM: "8"

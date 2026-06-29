@@ -78,7 +78,23 @@
       <v-card-title class="text-subtitle-1">Feed anlegen</v-card-title>
       <v-card-text>
         <v-text-field v-model="form.name" label="Name" autofocus class="mb-2" />
-        <div class="d-flex ga-3">
+
+        <!-- ORCH-4: by default the server auto-allocates a collision-free
+             multicast endpoint (one group per feed). Advanced users can override
+             with an explicit group/port. -->
+        <v-switch
+          v-model="form.autoEndpoint"
+          color="primary"
+          density="compact"
+          hide-details
+          label="Multicast-Endpoint automatisch zuweisen"
+          class="mb-1"
+        />
+        <p v-if="form.autoEndpoint" class="text-caption text-medium-emphasis mb-2">
+          Der Server vergibt die nächste freie Multicast-Gruppe (eigene Gruppe je
+          Feed) — sauberste Netz-Isolation, keine Kollisionen.
+        </p>
+        <div v-else class="d-flex ga-3">
           <v-text-field
             v-model="form.multicast_group"
             label="Multicast-Gruppe"
@@ -275,11 +291,14 @@ const busy = ref(false)
 const createDialog = ref(false)
 const deleteDialog = ref(false)
 const target = ref(null)
-const form = ref({ name: '', multicast_group: '', port: 8600, sensorMix: '' })
+const form = ref({ name: '', autoEndpoint: true, multicast_group: '', port: 8600, sensorMix: '' })
 
-const canCreate = computed(
-  () => form.value.name.trim() !== '' && form.value.multicast_group.trim() !== '' && form.value.port > 0,
-)
+const canCreate = computed(() => {
+  if (form.value.name.trim() === '') return false
+  // Auto-allocation needs only a name; a manual override needs group + port.
+  if (form.value.autoEndpoint) return true
+  return form.value.multicast_group.trim() !== '' && form.value.port > 0
+})
 
 async function refresh() {
   busy.value = true
@@ -288,16 +307,17 @@ async function refresh() {
 }
 
 function openCreate() {
-  form.value = { name: '', multicast_group: '', port: 8600, sensorMix: '' }
+  form.value = { name: '', autoEndpoint: true, multicast_group: '', port: 8600, sensorMix: '' }
   createDialog.value = true
 }
 
 async function submitCreate() {
   busy.value = true
-  const payload = {
-    name: form.value.name.trim(),
-    multicast_group: form.value.multicast_group.trim(),
-    port: form.value.port,
+  // ORCH-4: omit group/port to auto-allocate; send them only for a manual override.
+  const payload = { name: form.value.name.trim() }
+  if (!form.value.autoEndpoint) {
+    payload.multicast_group = form.value.multicast_group.trim()
+    payload.port = form.value.port
   }
   const mix = form.value.sensorMix
     .split(',')

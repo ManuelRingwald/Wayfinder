@@ -292,6 +292,37 @@ describe('admin store — feed lifecycle (ONB-5)', () => {
     expect(s.error).toMatch(/bereits/)
   })
 
+  it('createFeed auto-allocates when group/port are omitted (ORCH-4)', async () => {
+    const calls = installFetch({
+      'POST /api/admin/feeds': {
+        status: 201,
+        body: { id: 6, name: 'auto', multicast_group: '239.255.0.1', port: 8600, sensor_mix: [] },
+      },
+    })
+    const s = useAdminStore()
+    const r = await s.createFeed({ name: 'auto' })
+    expect(r.ok).toBe(true)
+    const post = calls.find((c) => c.method === 'POST')
+    expect(JSON.parse(post.body)).toEqual({ name: 'auto' }) // no endpoint sent
+    expect(s.notice).toMatch(/angelegt/)
+  })
+
+  it('createFeed maps a 409 taken endpoint to a distinct message (ORCH-4)', async () => {
+    installFetch({ 'POST /api/admin/feeds': { status: 409, body: { error: 'multicast endpoint already in use' } } })
+    const s = useAdminStore()
+    const r = await s.createFeed({ name: 'x', multicast_group: '239.255.0.1', port: 8600 })
+    expect(r.ok).toBe(false)
+    expect(s.error).toMatch(/Endpoint/)
+  })
+
+  it('createFeed maps a 507 exhausted pool to a friendly message (ORCH-4)', async () => {
+    installFetch({ 'POST /api/admin/feeds': { status: 507, body: { error: 'no free multicast endpoint available (pool exhausted)' } } })
+    const s = useAdminStore()
+    const r = await s.createFeed({ name: 'x' })
+    expect(r.ok).toBe(false)
+    expect(s.error).toMatch(/Pool erschöpft/)
+  })
+
   it('createFeed surfaces a 400 invalid multicast group', async () => {
     installFetch({ 'POST /api/admin/feeds': { status: 400, body: { error: 'multicast_group must be an IPv4 address' } } })
     const s = useAdminStore()

@@ -262,7 +262,13 @@ export const useAdminStore = defineStore('admin', () => {
     if (r.ok) {
       notice.value = 'Feed angelegt.'
     } else if (r.status === 409) {
-      error.value = 'Anlegen nicht möglich: Ein Feed mit diesem Namen existiert bereits.'
+      // 409 covers a duplicate name and (manual override) a taken multicast endpoint.
+      error.value = /endpoint|multicast/i.test(r.error || '')
+        ? 'Anlegen nicht möglich: Dieser Multicast-Endpoint ist bereits belegt.'
+        : 'Anlegen nicht möglich: Ein Feed mit diesem Namen existiert bereits.'
+    } else if (r.status === 507) {
+      // ORCH-4: the auto-allocation pool has no free multicast endpoint left.
+      error.value = 'Anlegen nicht möglich: Kein freier Multicast-Endpoint verfügbar (Pool erschöpft).'
     } else {
       error.value = r.error
     }

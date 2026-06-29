@@ -447,7 +447,8 @@ func main() {
 		} else if os.Getenv("WAYFINDER_SECRET_KEY") != "" {
 			logger.Warn("WAYFINDER_SECRET_KEY set but invalid (need base64-encoded 32 bytes) — secret routes disabled")
 		}
-		adminAPI := adminapi.New(viewRepo, subRepo, store.NewFeedRepo(dbPool), store.NewTenantRepo(dbPool),
+		feedRepo := store.NewFeedRepo(dbPool).WithMulticastPool(cfg.feedPool())
+		adminAPI := adminapi.New(viewRepo, subRepo, feedRepo, store.NewTenantRepo(dbPool),
 			store.NewUserRepo(dbPool), store.NewCredentialRepo(dbPool), featSvc, feedRegistry, feedLife, aeroLife, secretSvc, logger, rescope)
 		mux.Handle("/api/admin/", tenantMW(requireAdmin(adminAPI)))
 
@@ -551,6 +552,16 @@ type Config struct {
 	// write-only secret admin routes (they return 503); the same key is configured
 	// on the orchestrator to decrypt at launch. WAYFINDER_SECRET_KEY.
 	SecretKey []byte
+
+	// Multicast endpoint pool for auto-allocation (ORCH-4, ADR 0012). When an admin
+	// creates a feed without a group/port, the server assigns the next free group
+	// from this /24 (one group per feed, fixed port) — collision-free via the
+	// feeds_endpoint_unique constraint. WAYFINDER_FEED_GROUP_BASE (default
+	// 239.255.0), WAYFINDER_FEED_PORT (8600), WAYFINDER_FEED_OCTET_MIN/MAX (1/254).
+	FeedGroupBase24 string
+	FeedPort        int
+	FeedOctetMin    int
+	FeedOctetMax    int
 
 	// Coverage rings overlay (Paket 6, ASD-012 extension).
 	// Populated from WAYFINDER_COVERAGE_SENSOR_N_* env-vars.
@@ -790,6 +801,13 @@ func loadConfig() Config {
 	// wiring time (run) so a typo is loud, not silently insecure.
 	cfg.SecretKey = parseSecretKey(os.Getenv("WAYFINDER_SECRET_KEY"))
 
+	// Multicast endpoint pool (ORCH-4). Invalid/unset values fall back to the
+	// store's DefaultMulticastPool via feedPool().
+	cfg.FeedGroupBase24 = os.Getenv("WAYFINDER_FEED_GROUP_BASE")
+	cfg.FeedPort = atoiDefault(os.Getenv("WAYFINDER_FEED_PORT"), 0)
+	cfg.FeedOctetMin = atoiDefault(os.Getenv("WAYFINDER_FEED_OCTET_MIN"), -1)
+	cfg.FeedOctetMax = atoiDefault(os.Getenv("WAYFINDER_FEED_OCTET_MAX"), -1)
+
 	if v := os.Getenv("WAYFINDER_OPENAIP_REFRESH"); v != "" {
 		if d, err := time.ParseDuration(v); err == nil && d > 0 {
 			cfg.OpenAIPRefresh = d
@@ -846,6 +864,40 @@ func parseSecretKey(s string) []byte {
 		return nil
 	}
 	return key
+}
+
+// atoiDefault parses s as an int, returning def for empty or malformed input
+// (12-Factor leniency: a typo'd numeric env falls back, it does not abort).
+func atoiDefault(s string, def int) int {
+	if s == "" {
+		return def
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return def
+	}
+	return n
+}
+
+// feedPool builds the multicast endpoint pool from config, overriding only the
+// fields that are explicitly set; the rest keep store.DefaultMulticastPool
+// (ORCH-4). WithMulticastPool validates the result and falls back wholesale to the
+// default if the combination is unusable.
+func (c Config) feedPool() store.MulticastPool {
+	p := store.DefaultMulticastPool
+	if c.FeedGroupBase24 != "" {
+		p.Base24 = c.FeedGroupBase24
+	}
+	if c.FeedPort > 0 {
+		p.Port = c.FeedPort
+	}
+	if c.FeedOctetMin >= 0 {
+		p.OctetMin = c.FeedOctetMin
+	}
+	if c.FeedOctetMax >= 0 {
+		p.OctetMax = c.FeedOctetMax
+	}
+	return p
 }
 
 // setupTenancy wires up multi-tenancy when WAYFINDER_DB_URL is configured: it

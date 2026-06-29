@@ -13,17 +13,17 @@
 ## 🎯 Stand 2026-06-29
 
 - **Zuletzt aktualisiert:** 2026-06-29
-- **Letzte Arbeit:** **ORCH-2c (3b)** — änderungs-getriebener Reconcile (auf Branch
-  `claude/roadmap-action-points-z50u6w`). Migration `00012` (Statement-Trigger auf
-  `feeds`/`subscriptions` → `pg_notify('wayfinder_reconcile')`), `orchestrator.Listener`
-  (dedizierte `LISTEN`-Verbindung, Resync-on-(Re-)Connect, Reconnect-Backoff),
-  `Reconciler.Run` um nicht-blockierenden Size-1-Trigger-Channel (Coalescing),
-  Intervall bleibt Sicherheitsnetz. Real-PG-verifiziert (Migration + Listener).
-  Davor in main gemergt: **ORCH-1** (#77), **ORCH-2a/2b/2c-1-3a + ORCH-3** (#78),
-  **ORCH-2c 3a-API** (#79). Cross-Project: Firefly **#35** (ORCH-5 Quell-Eingangs-Kontrakt) offen.
-- **Nächster Schritt:** **Container-Injection** (`cred_ref` → Firefly-Quell-Env) ist
-  durch Firefly #35 geblockt; unabhängig buildbar: **ORCH-4** (Multicast-Allokation).
-  Ankündigung & „Go" je Schritt.
+- **Letzte Arbeit:** **ORCH-4** — automatische Multicast-Endpoint-Allokation (auf Branch
+  `claude/roadmap-action-points-z50u6w`). Migration `00013` (`UNIQUE(multicast_group, port)`),
+  `store.MulticastPool` + `CreateAutoAllocated` (eine Gruppe je Feed aus konfiguriertem /24,
+  race-sicher via Constraint+Retry), Admin-API `POST /feeds` mit **optionalem** Endpoint
+  (Auto-Vergabe / manueller Override / 400 / 409 / 507), `WAYFINDER_FEED_*`-Config,
+  Frontend-Auto-Schalter. Real-PG-verifiziert. Davor in main gemergt: **ORCH-1** (#77),
+  **ORCH-2a/2b/2c-1-3a + ORCH-3** (#78), **ORCH-2c 3a-API** (#79), **ORCH-2c 3b** (#80).
+  Cross-Project: Firefly **#35** (ORCH-5 Quell-Eingangs-Kontrakt) offen.
+- **Nächster Schritt:** **ORCH-5 / Container-Injection** (`cred_ref` + Live-Quellen →
+  Firefly-Container-Env) — durch Firefly #35 geblockt. Sonst **ORCH-6** o. a. Tracks
+  (AP7 Session-Registry, Prio 2 CWP). Ankündigung & „Go" je Schritt.
 
 ---
 
@@ -57,13 +57,14 @@
 | **ORCH-2c 1–3a (ADR 0012)** | `StoreDesiredState`, `wayfinder-orchestrator`-Binary (Least-Privilege), AES-256-GCM Secret-Store + Resolver | ✅ |
 | **ORCH-2c 3a-API (ADR 0012 §6)** | Write-only Secret-Admin-API + `SecretSealer` + `WAYFINDER_SECRET_KEY` + Frontend-Bedienung | ✅ |
 | **ORCH-2c 3b (ADR 0012 §5)** | Änderungs-getriebener Reconcile: Migration 00012 (`LISTEN/NOTIFY`-Trigger) + `Listener` + Trigger-Channel/Coalescing | ✅ |
+| **ORCH-4 (ADR 0012)** | Automatische Multicast-Endpoint-Allokation: Migration 00013 (`UNIQUE`) + `MulticastPool`/`CreateAutoAllocated` + optionaler Endpoint im Admin-API + Frontend | ✅ |
 | **ADR 0013** | Modular CWP & Enterprise ATC Integration ratifiziert (Prio 2, Planung) | ✅ |
 
 ### 🚧 Offen
 
 Siehe zentrale **`docs/ROADMAP.md`** für aktuelle Priorisierung (Prio 1 / Prio 2):
 
-- **Prio 1 (jetzt):** ORCH-4 (Multicast-Allokation) → ORCH-5 (Container-Injection + Firefly-Quell-Env, cross-project, Firefly #35) → ORCH-6 (ORCH-1, ORCH-2/3, ORCH-2c 3a+3a-API+3b ✅)
+- **Prio 1 (jetzt):** ORCH-5 (Container-Injection + Firefly-Quell-Env, cross-project, Firefly #35) → ORCH-6 (ORCH-1, ORCH-2/3, ORCH-2c 3a+3a-API+3b, ORCH-4 ✅)
 - **Prio 2 (nach Prio 1):** Modular CWP / EFS / IMS (ADR 0013, Epic CWP-0…IMS-3)
 - **ADR 0009 AP7:** Session-Registry, DB-gestützt (S4, offen)
 
