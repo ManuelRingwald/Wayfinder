@@ -138,6 +138,66 @@ func TestIntegrationFeedSourceConfig(t *testing.T) {
 	}
 }
 
+func TestIntegrationSecretRepo(t *testing.T) {
+	pool := testPool(t)
+	ctx := context.Background()
+	feeds := NewFeedRepo(pool)
+	secrets := NewSecretRepo(pool)
+
+	f, err := feeds.Create(ctx, "Speyer", "239.255.0.80", 8800, nil, nil)
+	if err != nil {
+		t.Fatalf("create feed: %v", err)
+	}
+
+	// No secrets yet.
+	if refs, err := secrets.ListRefs(ctx, f.ID); err != nil || len(refs) != 0 {
+		t.Fatalf("ListRefs initial = %v, %v, want empty", refs, err)
+	}
+	if _, err := secrets.Get(ctx, f.ID, "secret/opensky"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("Get(missing) = %v, want ErrNotFound", err)
+	}
+
+	// Store opaque ciphertext (the repo is crypto-agnostic).
+	if err := secrets.Set(ctx, f.ID, "secret/opensky", "ciphertext-blob-1"); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	if err := secrets.Set(ctx, f.ID, "secret/flarm", "ciphertext-blob-2"); err != nil {
+		t.Fatalf("set 2: %v", err)
+	}
+	got, err := secrets.Get(ctx, f.ID, "secret/opensky")
+	if err != nil || got != "ciphertext-blob-1" {
+		t.Fatalf("Get = %q, %v", got, err)
+	}
+	refs, err := secrets.ListRefs(ctx, f.ID)
+	if err != nil || len(refs) != 2 || refs[0] != "secret/flarm" || refs[1] != "secret/opensky" {
+		t.Fatalf("ListRefs = %v, %v, want sorted [flarm, opensky]", refs, err)
+	}
+
+	// Upsert replaces the ciphertext.
+	if err := secrets.Set(ctx, f.ID, "secret/opensky", "ciphertext-blob-3"); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	if got, _ := secrets.Get(ctx, f.ID, "secret/opensky"); got != "ciphertext-blob-3" {
+		t.Fatalf("after upsert = %q, want blob-3", got)
+	}
+
+	// Delete removes it; re-delete yields ErrNotFound.
+	if err := secrets.Delete(ctx, f.ID, "secret/opensky"); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if err := secrets.Delete(ctx, f.ID, "secret/opensky"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("re-delete = %v, want ErrNotFound", err)
+	}
+
+	// Deleting the feed cascades its remaining secrets away.
+	if err := feeds.Delete(ctx, f.ID); err != nil {
+		t.Fatalf("delete feed: %v", err)
+	}
+	if refs, err := secrets.ListRefs(ctx, f.ID); err != nil || len(refs) != 0 {
+		t.Fatalf("ListRefs after feed delete = %v, %v, want empty (cascade)", refs, err)
+	}
+}
+
 func TestIntegrationSubscriptionRepoIsolation(t *testing.T) {
 	pool := testPool(t)
 	ctx := context.Background()
@@ -182,12 +242,43 @@ func TestIntegrationSubscriptionRepoIsolation(t *testing.T) {
 		t.Fatalf("feed ids = %v, %v", ids, err)
 	}
 
+	// ListSubscribedFeeds returns the distinct feeds with ≥1 subscription
+	// (ORCH-3 desired-instance input). Both feeds have a subscriber here.
+	subscribed, err := subs.ListSubscribedFeeds(ctx)
+	if err != nil {
+		t.Fatalf("list subscribed feeds: %v", err)
+	}
+	if len(subscribed) != 2 {
+		t.Fatalf("subscribed feeds = %d, want 2", len(subscribed))
+	}
+	// A second subscriber on feed1 must not duplicate it (DISTINCT).
+	if err := subs.Subscribe(ctx, stg.ID, feed1.ID); err != nil {
+		t.Fatalf("second subscribe: %v", err)
+	}
+	if again, _ := subs.ListSubscribedFeeds(ctx); len(again) != 2 {
+		t.Fatalf("subscribed feeds after 2nd subscriber = %d, want 2 (distinct)", len(again))
+	}
+
 	// Unsubscribe removes access.
 	if err := subs.Unsubscribe(ctx, ffm.ID, feed1.ID); err != nil {
 		t.Fatalf("unsubscribe: %v", err)
 	}
 	if ok, _ := subs.IsSubscribed(ctx, ffm.ID, feed1.ID); ok {
 		t.Fatal("Frankfurt should no longer be subscribed after unsubscribe")
+	}
+
+	// feed2 lost its only subscriber? No — stg still has feed1; remove all of
+	// feed2's subscribers and confirm it drops out of the subscribed set.
+	if err := subs.Unsubscribe(ctx, stg.ID, feed2.ID); err != nil {
+		t.Fatalf("unsubscribe feed2: %v", err)
+	}
+	remaining, err := subs.ListSubscribedFeeds(ctx)
+	if err != nil {
+		t.Fatalf("list subscribed feeds (after): %v", err)
+	}
+	// feed1 still has stg; feed2 has none → only feed1 remains.
+	if len(remaining) != 1 || remaining[0].ID != feed1.ID {
+		t.Fatalf("subscribed feeds = %+v, want only feed1", remaining)
 	}
 }
 

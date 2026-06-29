@@ -73,6 +73,36 @@ func (r *SubscriptionRepo) ListFeedIDsByTenant(ctx context.Context, tenantID int
 	return ids, nil
 }
 
+// ListSubscribedFeeds returns the distinct feed rows that have at least one
+// subscription, ordered by id. This is the orchestrator's desired-instance input
+// (ORCH-3/2c, ADR 0012 §5): a feed with ≥ 1 active subscription must have a
+// running tracker instance. A feed with no subscriber is omitted (its instance
+// should be torn down). DISTINCT collapses the many-subscribers-per-feed case.
+func (r *SubscriptionRepo) ListSubscribedFeeds(ctx context.Context) ([]Feed, error) {
+	const q = `SELECT DISTINCT f.id, f.name, f.multicast_group, f.port, f.region, f.sensor_mix, f.created_at
+		FROM feeds f
+		JOIN subscriptions s ON s.feed_id = f.id
+		ORDER BY f.id`
+	rows, err := r.db.Query(ctx, q)
+	if err != nil {
+		return nil, wrap("list subscribed feeds", err)
+	}
+	defer rows.Close()
+
+	var feeds []Feed
+	for rows.Next() {
+		f, err := scanFeed(rows)
+		if err != nil {
+			return nil, wrap("scan feed", err)
+		}
+		feeds = append(feeds, f)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, wrap("iterate subscribed feeds", err)
+	}
+	return feeds, nil
+}
+
 // ListFeedsByTenant returns the full feed rows a tenant is subscribed to. This is
 // the query the scoped fan-out (WF2-21) uses to decide which feeds' tracks a
 // tenant's clients may receive.
