@@ -35,6 +35,8 @@ import (
 	"github.com/manuelringwald/wayfinder/pkg/health"
 	"github.com/manuelringwald/wayfinder/pkg/impersonation"
 	"github.com/manuelringwald/wayfinder/pkg/metrics"
+	"github.com/manuelringwald/wayfinder/pkg/orchestrator"
+	"github.com/manuelringwald/wayfinder/pkg/secret"
 	"github.com/manuelringwald/wayfinder/pkg/store"
 	"github.com/manuelringwald/wayfinder/pkg/tenant"
 	"github.com/manuelringwald/wayfinder/pkg/ws"
@@ -429,8 +431,24 @@ func main() {
 		// Feed lifecycle (ONB-5): the admin API joins/leaves multicast groups live
 		// via the feed manager, and forgets a deleted feed's health (adapter below).
 		feedLife := feedLifecycle{mgr: feedManager, registry: feedRegistry}
+		// Per-feed source-credential sealing (ORCH-2c 3a, ADR 0012 §6). Wired only
+		// when a valid WAYFINDER_SECRET_KEY is configured; otherwise the secret routes
+		// stay disabled (503) rather than storing credentials unencrypted. A set but
+		// malformed key is logged loudly so a typo does not silently downgrade.
+		var secretSvc adminapi.SecretService
+		if len(cfg.SecretKey) == secret.KeySize {
+			if cipher, err := secret.NewCipher(cfg.SecretKey); err == nil {
+				secretSvc = orchestrator.NewSecretSealer(store.NewSecretRepo(dbPool), cipher)
+				logger.Info("per-feed source-credential encryption enabled (ORCH-2c)",
+					slog.String("path", "/api/admin/feeds/{id}/secrets"))
+			} else {
+				logger.Warn("WAYFINDER_SECRET_KEY rejected — secret routes disabled", slog.String("error", err.Error()))
+			}
+		} else if os.Getenv("WAYFINDER_SECRET_KEY") != "" {
+			logger.Warn("WAYFINDER_SECRET_KEY set but invalid (need base64-encoded 32 bytes) — secret routes disabled")
+		}
 		adminAPI := adminapi.New(viewRepo, subRepo, store.NewFeedRepo(dbPool), store.NewTenantRepo(dbPool),
-			store.NewUserRepo(dbPool), store.NewCredentialRepo(dbPool), featSvc, feedRegistry, feedLife, aeroLife, logger, rescope)
+			store.NewUserRepo(dbPool), store.NewCredentialRepo(dbPool), featSvc, feedRegistry, feedLife, aeroLife, secretSvc, logger, rescope)
 		mux.Handle("/api/admin/", tenantMW(requireAdmin(adminAPI)))
 
 		// Cross-tenant read-only impersonation (ADR 0008, WF2-34): mint and clear
@@ -527,6 +545,12 @@ type Config struct {
 	OpenAIPBaseURL  string        // WAYFINDER_OPENAIP_BASE_URL (optional override)
 	OpenAIPRefresh  time.Duration // WAYFINDER_OPENAIP_REFRESH (Go duration, default 24h)
 	OpenAIPRadiusKM float64       // WAYFINDER_OPENAIP_RADIUS_KM (default 250)
+
+	// SecretKey is the deployment-managed AES-256 key (32 bytes, base64) that seals
+	// per-feed source credentials at rest (ORCH-2c, ADR 0012 §6). Unset disables the
+	// write-only secret admin routes (they return 503); the same key is configured
+	// on the orchestrator to decrypt at launch. WAYFINDER_SECRET_KEY.
+	SecretKey []byte
 
 	// Coverage rings overlay (Paket 6, ASD-012 extension).
 	// Populated from WAYFINDER_COVERAGE_SENSOR_N_* env-vars.
@@ -760,6 +784,12 @@ func loadConfig() Config {
 	cfg.OpenAIPAPIKey = os.Getenv("WAYFINDER_OPENAIP_API_KEY")
 	cfg.OpenAIPBaseURL = os.Getenv("WAYFINDER_OPENAIP_BASE_URL")
 
+	// Per-feed source-credential encryption key (ORCH-2c, ADR 0012 §6). Invalid or
+	// unset leaves SecretKey nil — the secret admin routes then stay disabled (503)
+	// rather than storing credentials unencrypted. Parse errors are surfaced at
+	// wiring time (run) so a typo is loud, not silently insecure.
+	cfg.SecretKey = parseSecretKey(os.Getenv("WAYFINDER_SECRET_KEY"))
+
 	if v := os.Getenv("WAYFINDER_OPENAIP_REFRESH"); v != "" {
 		if d, err := time.ParseDuration(v); err == nil && d > 0 {
 			cfg.OpenAIPRefresh = d
@@ -801,6 +831,21 @@ func loadConfig() Config {
 	cfg.OIDCAudience = os.Getenv("WAYFINDER_OIDC_AUDIENCE")
 
 	return cfg
+}
+
+// parseSecretKey decodes the deployment secret key (base64, 32 bytes) used to seal
+// per-feed source credentials (ORCH-2c, ADR 0012 §6). An empty or malformed value
+// yields nil — the secret routes then stay disabled (the wiring logs a set-but-
+// invalid key loudly), so credentials are never stored unencrypted by accident.
+func parseSecretKey(s string) []byte {
+	if s == "" {
+		return nil
+	}
+	key, err := secret.KeyFromBase64(s)
+	if err != nil {
+		return nil
+	}
+	return key
 }
 
 // setupTenancy wires up multi-tenancy when WAYFINDER_DB_URL is configured: it

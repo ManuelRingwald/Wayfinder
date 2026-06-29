@@ -344,13 +344,13 @@ func handlerWith(vs *fakeVS, ff fakeFeeds, ft fakeTenants) *Handler {
 }
 
 func handlerWithEnt(vs *fakeVS, ff fakeFeeds, ft fakeTenants, fe EntitlementService) *Handler {
-	return New(vs, vs, ff, ft, &fakeUserStore{}, &fakeCredStore{}, fe, nil, nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+	return New(vs, vs, ff, ft, &fakeUserStore{}, &fakeCredStore{}, fe, nil, nil, nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
 }
 
 // handlerForUsers builds a handler wired with the given user/credential/tenant
 // fakes for the AP6 access-management tests.
 func handlerForUsers(us UserStore, cs CredentialStore, ft fakeTenants) *Handler {
-	return New(&fakeVS{}, &fakeVS{}, fakeFeeds{}, ft, us, cs, &fakeEntitlements{}, nil, nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+	return New(&fakeVS{}, &fakeVS{}, fakeFeeds{}, ft, us, cs, &fakeEntitlements{}, nil, nil, nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
 }
 
 // rescopeRecorder captures the tenant ids a handler asks to live-re-scope (WF2-33).
@@ -360,7 +360,7 @@ type rescopeRecorder struct{ calls []int64 }
 func (r *rescopeRecorder) fn(_ context.Context, tenantID int64) { r.calls = append(r.calls, tenantID) }
 
 func handlerWithRescope(vs *fakeVS, ff fakeFeeds, ft fakeTenants, rescope RescopeFunc) *Handler {
-	return New(vs, vs, ff, ft, &fakeUserStore{}, &fakeCredStore{}, &fakeEntitlements{}, nil, nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), rescope)
+	return New(vs, vs, ff, ft, &fakeUserStore{}, &fakeCredStore{}, &fakeEntitlements{}, nil, nil, nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), rescope)
 }
 
 func adminReq(method, path, body string, tenantID int64, role store.Role) *http.Request {
@@ -874,7 +874,7 @@ func TestGetSensorClasses(t *testing.T) {
 // handlerForOverview wires the fakes the AP3 overview needs (custom user store
 // for the account count). fakeVS serves both views and subscriptions.
 func handlerForOverview(vs *fakeVS, ff fakeFeeds, ft fakeTenants, us UserStore, fe EntitlementService) *Handler {
-	return New(vs, vs, ff, ft, us, &fakeCredStore{}, fe, nil, nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+	return New(vs, vs, ff, ft, us, &fakeCredStore{}, fe, nil, nil, nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
 }
 
 func TestGetOverviewAggregates(t *testing.T) {
@@ -944,7 +944,7 @@ func TestPutTenantViewUpsertsAndRescopes(t *testing.T) {
 	vs := &fakeVS{}
 	ft := fakeTenants{byID: map[int64]store.Tenant{5: {ID: 5}}}
 	rr := &rescopeRecorder{}
-	h := New(vs, vs, fakeFeeds{}, ft, &fakeUserStore{}, &fakeCredStore{}, &fakeEntitlements{}, nil, nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), rr.fn)
+	h := New(vs, vs, fakeFeeds{}, ft, &fakeUserStore{}, &fakeCredStore{}, &fakeEntitlements{}, nil, nil, nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), rr.fn)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, adminReq(http.MethodPut, "/api/admin/tenants/5/view", `{"center_lat":48,"center_lon":11,"zoom":7}`, 99, store.RoleAdmin))
 	if rec.Code != http.StatusOK {
@@ -991,7 +991,7 @@ func (f *fakeFeedHealth) Snapshot(feedID int64, _ time.Time) health.FeedSnapshot
 
 func handlerForHealth(ff fakeFeeds, fh FeedHealthSource) *Handler {
 	ft := fakeTenants{}
-	return New(&fakeVS{}, &fakeVS{}, ff, ft, &fakeUserStore{}, &fakeCredStore{}, &fakeEntitlements{}, fh, nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+	return New(&fakeVS{}, &fakeVS{}, ff, ft, &fakeUserStore{}, &fakeCredStore{}, &fakeEntitlements{}, fh, nil, nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
 }
 
 func TestGetFeedsHealthNilSourceReturnsEmpty(t *testing.T) {

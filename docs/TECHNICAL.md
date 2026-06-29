@@ -210,6 +210,9 @@ Durch `authMiddleware` geschützt (wenn `WAYFINDER_AUTH_TOKEN` gesetzt).
 | `/api/admin/feeds/{id}` | DELETE | **ONB-5:** Feed löschen → 204; **der Live-Receiver verlässt die Multicast-Gruppe sofort**; kaskadiert (ON DELETE CASCADE) auf die Abos, die ihn referenzierten (Guard C: kein Blockieren bei bestehenden Abos — Grants kaskadieren); unbekannter Feed → 404; **admin** |
 | `/api/admin/feeds/{id}/sources` | GET | **ORCH-1b (ADR 0012):** Quell-Konfiguration des Feeds — `{sources:[{type, bbox?, sac?, sic?, cred_ref?}], coverage_bbox}`; `sources` serialisiert als `[]` (nie `null`); unbekannter Feed → 404; **admin** |
 | `/api/admin/feeds/{id}/sources` | PUT | **ORCH-1b:** Quell-Konfiguration setzen → 200 (kanonisch zurückgelesen). Server-validiert: geschlossenes Quell-Vokabular (`adsb_opensky`/`flarm_aprs` erfordern `bbox`, keine `sac`/`sic`; `radar_asterix` erfordert `sac`/`sic` 0..255), WGS84-`bbox`, `cred_ref` als Verweis (non-blank, ≤200) — Verstoß → **400 mit Quell-Index**, **kein** Teil-Write. Fehlt `coverage_bbox`, leitet der Server die **grobe äußere** BBox aus den Quell-BBoxen + Default-Marge (50 km) ab; eine explizit gesetzte `coverage_bbox` (WGS84-validiert) gewinnt (Operator-Override). Unbekannter Feed → 404; **admin** |
+| `/api/admin/feeds/{id}/secrets` | GET | **ORCH-2c 3a-API (ADR 0012 §6):** meldet **welche** `cred_ref`s einen hinterlegten Wert haben — `{secrets:[{ref, configured:true}]}`. **Nie ein Wert.** Ohne konfigurierten Schlüssel (`WAYFINDER_SECRET_KEY`) → **503**; unbekannter Feed → 404; **admin** |
+| `/api/admin/feeds/{id}/secrets/{ref…}` | PUT | **ORCH-2c 3a-API:** Wert für `cred_ref` setzen/ersetzen (`{value}`) → 204; der Wert wird **vor** der Speicherung AES-256-GCM-versiegelt und **nie** zurückgegeben. Leerer Wert → 400 (Löschen via DELETE), zu lang (>4096) → 400. Das `{ref…}`-Trailing-Wildcard erlaubt Slashes im `cred_ref`. Ohne Schlüssel → **503**; unbekannter Feed → 404; **admin** |
+| `/api/admin/feeds/{id}/secrets/{ref…}` | DELETE | **ORCH-2c 3a-API:** Wert für `cred_ref` entfernen → 204; nicht gesetzt → 404. Ohne Schlüssel → **503**; unbekannter Feed → 404; **admin** |
 | `/api/admin/tenants/{id}/view` | GET/PUT | **AP3:** Standard-Sicht **eines beliebigen** Mandanten lesen/schreiben (cross-tenant Editor; gleiche `validateView` wie `/api/admin/view`); **admin** |
 | `/api/admin/tenants/{id}/entitlements[/{key}]` | GET/PUT | Feature-Entitlements pro Mandant; **admin** (WF2-50) |
 | `/api/admin/tenants/{id}/openaip` | GET | **ONB-6 (ADR 0011):** meldet `{configured: bool}` — ob der Mandant einen **eigenen** OpenAIP-Schlüssel hat. **Nie der Schlüssel selbst.** **admin** |
@@ -475,6 +478,7 @@ Identitäts-Modell siehe ADR 0006 §5.
 | `WAYFINDER_SESSION_TTL` | `12h` | duration | builtin: Session-Lebensdauer. |
 | `WAYFINDER_NONE_SUBJECT` | `default` | string | none: festes Subject je Anfrage. |
 | `WAYFINDER_BOOTSTRAP_PASSWORD` | *(leer)* | string | Nur vom `bootstrap`-Subcommand gelesen: builtin-Passwort des ersten Admins. |
+| `WAYFINDER_SECRET_KEY` | *(leer)* | string (base64-32-Byte) | **ORCH-2c (ADR 0012 §6):** AES-256-Schlüssel, der Pro-Feed-Quell-Credentials (`feed_secrets`) verschlüsselt. Leer/ungültig → die write-only Secret-Routen (`…/feeds/{id}/secrets`) sind **deaktiviert** (503), nie unverschlüsselt speichernd. Erzeugen: `openssl rand -base64 32`. **Derselbe Schlüssel** muss am Orchestrator gesetzt sein, der die Werte beim Container-Start entschlüsselt. |
 
 **builtin-Login-Endpoints:** `POST /api/login` (`{"subject","password"}` →
 HttpOnly-Cookie via `auth.MintSession`, sonst `401` mit Timing-Angleich gegen
@@ -619,11 +623,21 @@ Host-Networking), `WAYFINDER_FIREFLY_SCENE` (optionale Platzhalter-Quelle →
 Secret-Auflösung folgen ORCH-5/2c-3. **🔒 Nur dieser Prozess** erhält Zugriff auf
 den **Docker-Socket** (`/var/run/docker.sock`) — der Browser-Rand nie (ADR 0012 §6).
 
-**Stand:** Reconciler-Kern + Store-Soll + getrenntes Binary + Docker-Adapter
-verdrahtet; die Secret-Auflösung (`cred_ref` → Wert) + der Änderungs-Trigger
-(ORCH-2c 3/3) folgen. Der Orchestrator ist noch **nicht** im nutzer-orientierten
-Standard-Deployment (`INSTALLATION.md`) verdrahtet — die volle Integration
-(Compose-Service + Socket-Mount + Secrets) kommt mit 2c-3/ORCH-5.
+**Secret-Verwaltung (ORCH-2c 3a + 3a-API):** Quell-Credentials liegen
+AES-256-GCM-verschlüsselt in `feed_secrets`; der Server hält den Schlüssel
+(`WAYFINDER_SECRET_KEY`, base64-32-Byte) nur zum **Seal beim Schreiben**
+(`orchestrator.SecretSealer`, write-only Admin-API `…/feeds/{id}/secrets`), die
+getrennte Control-Plane zum **Open beim Start** (`SecretResolver`). Ohne Schlüssel
+sind die Secret-Routen deaktiviert (503), nie unverschlüsselt speichernd. Der Wert
+verlässt den Server **nie** Richtung Browser (`GET` meldet nur `configured`).
+
+**Stand:** Reconciler-Kern + Store-Soll + getrenntes Binary + Docker-Adapter +
+verschlüsselter Secret-Speicher/-Resolver + write-only Secret-API verdrahtet; die
+**Container-Injection** des aufgelösten Werts (`cred_ref` → Firefly-Quell-Env) +
+der Änderungs-Trigger (ORCH-2c 3b, `LISTEN/NOTIFY`) folgen. Der Orchestrator ist
+noch **nicht** im nutzer-orientierten Standard-Deployment (`INSTALLATION.md`)
+verdrahtet — die volle Integration (Compose-Service + Socket-Mount + Secret-Key)
+kommt mit ORCH-5.
 
 **Scoped Fan-out (WF2-21.1, 🔒 NFR-SEC-003):** der Broadcaster stellt einem
 `/ws`-Client einen Track **nur** zu, wenn dessen Mandant den Feed abonniert hat.

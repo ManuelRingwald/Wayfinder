@@ -356,6 +356,58 @@ describe('admin store — feed source configuration (ORCH-1c)', () => {
   })
 })
 
+describe('admin store — per-feed source credentials (ORCH-2c 3a)', () => {
+  it('loadFeedSecrets GETs the configured refs', async () => {
+    const calls = installFetch({
+      'GET /api/admin/feeds/3/secrets': {
+        status: 200,
+        body: { secrets: [{ ref: 'secret/opensky', configured: true }] },
+      },
+    })
+    const s = useAdminStore()
+    const r = await s.loadFeedSecrets(3)
+    expect(r.ok).toBe(true)
+    expect(r.data.secrets).toHaveLength(1)
+    expect(calls[0].method).toBe('GET')
+    expect(calls[0].url).toBe('/api/admin/feeds/3/secrets')
+  })
+
+  it('loadFeedSecrets surfaces a 503 when the secret store is disabled', async () => {
+    installFetch({
+      'GET /api/admin/feeds/3/secrets': { status: 503, body: { error: 'secret store not configured' } },
+    })
+    const s = useAdminStore()
+    const r = await s.loadFeedSecrets(3)
+    expect(r.ok).toBe(false)
+    expect(r.status).toBe(503)
+  })
+
+  it('setFeedSecret PUTs the value, encoding a slashed cred_ref', async () => {
+    const calls = installFetch({
+      'PUT /api/admin/feeds/3/secrets/secret/opensky': { status: 204 },
+    })
+    const s = useAdminStore()
+    const r = await s.setFeedSecret(3, 'secret/opensky', 'sky-token')
+    expect(r.ok).toBe(true)
+    const put = calls.find((c) => c.method === 'PUT')
+    expect(put.url).toBe('/api/admin/feeds/3/secrets/secret/opensky')
+    expect(JSON.parse(put.body)).toEqual({ value: 'sky-token' })
+    expect(s.notice).toMatch(/gespeichert/)
+  })
+
+  it('deleteFeedSecret DELETEs the ref and sets a notice', async () => {
+    const calls = installFetch({
+      'DELETE /api/admin/feeds/3/secrets/secret/opensky': { status: 204 },
+    })
+    const s = useAdminStore()
+    const r = await s.deleteFeedSecret(3, 'secret/opensky')
+    expect(r.ok).toBe(true)
+    const del = calls.find((c) => c.method === 'DELETE')
+    expect(del.url).toBe('/api/admin/feeds/3/secrets/secret/opensky')
+    expect(s.notice).toMatch(/entfernt/)
+  })
+})
+
 describe('admin store — OpenAIP per tenant (ONB-6)', () => {
   it('loadTenantOpenAIP reports the configured status', async () => {
     installFetch({ 'GET /api/admin/tenants/5/openaip': { status: 200, body: { configured: true } } })
