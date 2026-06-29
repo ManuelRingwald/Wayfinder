@@ -582,6 +582,31 @@ CAT062-Schnittstellen-Wirkung. Bedienbar über `GET/PUT /api/admin/feeds/{id}/so
 (ORCH-1b) und den Quell-Builder im „Feeds"-Tab (ORCH-1c, `AdminFeeds.vue`). Der
 Reconciler (ORCH-3) übersetzt `coverage_bbox` später nach `FIREFLY_COVERAGE_BBOX`.
 
+**Auto-Orchestrierung — Control-Plane (ORCH-2/3, ADR 0012):** Wayfinder fährt pro
+abonniertem Feed automatisch eine Firefly-Instanz hoch. Bausteine:
+`pkg/instance` (`Backend`-Abstraktion `Start`/`Stop`/`Status`/`RunningFeeds`,
+idempotent, Identität = `feed_id`; generische `Spec` mit Multicast-Endpoint,
+Coverage, Quellen und Secret-**Referenzen**; `MemoryBackend` als Platzhalter bis
+zum Docker-Adapter), `pkg/reconciler` (Operator-Muster: Soll = alle Feeds mit ≥ 1
+Abo, Ist = `Backend.RunningFeeds`; idempotent, crash-fest, Orphan-Cleanup,
+Per-Feed-Fehler isoliert) und `pkg/orchestrator` (`StoreDesiredState`: Soll aus
+`SubscriptionRepo.ListSubscribedFeeds` × `FeedRepo.GetSourceConfig`).
+**🔒 Getrennter Prozess (ADR 0012 §6):** Die Control-Plane läuft als **eigenes
+Binary `cmd/wayfinder-orchestrator`**, NICHT im browser-zugewandten Server — nur
+dieser Prozess erhält später das Privileg, Tracker-Instanzen zu starten
+(Container-Runtime), während der Browser-Rand bloß den Soll-Zustand in die DB
+schreibt. Beide kommunizieren ausschließlich über den Katalog. Das Binary
+**migriert NICHT** (der Hauptserver besitzt das Schema; ein einziger Migrator
+vermeidet Races). Env: `WAYFINDER_DB_URL` (Pflicht), `WAYFINDER_ORCHESTRATOR_INTERVAL`
+(Reconcile-Periode, Default `15s`), `WAYFINDER_LOG_LEVEL`. Modi: `--once` (ein
+Reconcile-Lauf, dann Exit — für CI/Dev/k8s-Job; Exit 2 = Config/Flag-Fehler,
+Exit 1 = Laufzeitfehler) und Default (Reconcile-Schleife mit Graceful-Shutdown
+auf SIGINT/SIGTERM). **Stand:** Prozess-Skelett gegen Store-Soll + Reconciler
+verdrahtet, Backend noch `MemoryBackend`; der echte Docker-Adapter (ORCH-2b) und
+die Secret-Auflösung + der Änderungs-Trigger (ORCH-2c 3/3) folgen. Bis dahin ist
+der Orchestrator **nicht** Teil des Standard-Deployments (`INSTALLATION.md`), weil
+er noch nichts real startet.
+
 **Scoped Fan-out (WF2-21.1, 🔒 NFR-SEC-003):** der Broadcaster stellt einem
 `/ws`-Client einen Track **nur** zu, wenn dessen Mandant den Feed abonniert hat.
 `broadcast.Scope` (Menge erlaubter `feed_id`; nil = unscoped/Single-Tenant, leer =
