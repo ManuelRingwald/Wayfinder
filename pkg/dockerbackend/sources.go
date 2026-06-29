@@ -11,9 +11,9 @@ import (
 // source-input contract (ORCH-5; Firefly ADR 0023, docs/source-input-contract.md).
 // This is the Wayfinder side of the cross-project wire: a Firefly instance reads
 // FIREFLY_SOURCES (a JSON array) plus, per credentialled source, a separate named
-// credential env. Here we emit only the *structure* and the credential env
-// *names* a source references — the resolved credential *values* are injected by
-// the control plane (ORCH-5b), never inlined into the JSON blob.
+// credential env. The credential *value* is emitted only when the control plane
+// has resolved it (ORCH-5b); it is never inlined into the JSON blob, which carries
+// only the cred_env *name*.
 
 // fireflySource is one entry of the FIREFLY_SOURCES JSON array. The field shapes
 // mirror Firefly's contract: type, an optional bbox (store.BBox already carries
@@ -28,20 +28,26 @@ type fireflySource struct {
 }
 
 // credEnvName is the deterministic env name carrying the resolved credential for
-// the source at list position i (referenced from the JSON by cred_env). The
-// control plane sets this env to the resolved "user:pass" value (ORCH-5b).
+// the source at list position i (referenced from the JSON by cred_env).
 func credEnvName(i int) string {
 	return fmt.Sprintf("FIREFLY_SOURCE_%d_SECRET", i)
 }
 
-// fireflySourcesJSON renders a feed's source list as the FIREFLY_SOURCES JSON
-// array. It returns ok=false for an empty list (no sources to emit). The output
-// is deterministic (fixed struct field order, source order preserved) so the
-// spec hash stays stable across reconciles. Credential *values* are not included;
-// a source with a cred_ref gets a cred_env *name* the control plane fills.
-func fireflySourcesJSON(sources store.SourceConfig) (string, bool) {
+// fireflySourcesEnv renders a feed's source list into the FIREFLY_SOURCES JSON
+// array and the matching credential value envs. It returns ok=false for an empty
+// list (no sources to emit). resolved maps a cred_ref to its plaintext value
+// (ORCH-5b); a source's cred_env is set — and a FIREFLY_SOURCE_<i>_SECRET=<value>
+// env emitted — **only** when its cred_ref resolved to a non-empty value. A source
+// whose credential is unresolved (no key / secret not set) is rendered without
+// cred_env, so Firefly runs it anonymously rather than failing on a missing env.
+//
+// The output is deterministic (fixed field order, source order preserved, value
+// envs in source order) so the spec hash stays stable across reconciles — and
+// changes when a secret rotates, which is what triggers a restart with the new
+// value.
+func fireflySourcesEnv(sources store.SourceConfig, resolved map[string]string) (sourcesJSON string, credEnvs []string, ok bool) {
 	if len(sources) == 0 {
-		return "", false
+		return "", nil, false
 	}
 	out := make([]fireflySource, 0, len(sources))
 	for i, s := range sources {
@@ -52,13 +58,17 @@ func fireflySourcesJSON(sources store.SourceConfig) (string, bool) {
 			SIC:  s.SIC,
 		}
 		if s.CredRef != nil {
-			fs.CredEnv = credEnvName(i)
+			if v, found := resolved[*s.CredRef]; found && v != "" {
+				name := credEnvName(i)
+				fs.CredEnv = name
+				credEnvs = append(credEnvs, name+"="+v)
+			}
 		}
 		out = append(out, fs)
 	}
 	b, err := json.Marshal(out)
 	if err != nil {
-		return "", false
+		return "", nil, false
 	}
-	return string(b), true
+	return string(b), credEnvs, true
 }

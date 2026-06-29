@@ -13,17 +13,19 @@
 ## 🎯 Stand 2026-06-29
 
 - **Zuletzt aktualisiert:** 2026-06-29
-- **Letzte Arbeit:** **ORCH-5a** — `FIREFLY_SOURCES`-Rendering im Docker-Adapter
-  (`pkg/dockerbackend/sources.go`): `fireflySourcesJSON` übersetzt `spec.Sources` →
-  `FIREFLY_SOURCES`-JSON (Fireflys Kontrakt ADR 0023), `fireflyEnv` setzt zusätzlich
-  `FIREFLY_MODE=live`; je credentialled Quelle ein `cred_env`-**Name** (kein Wert).
-  Deterministisch (stabiler Spec-Hash), 5 Tests, alle Gates grün. **Firefly-Seite von
-  #35 ist fertig** (ADR 0023 + 2a Parser + 2b Live-Verdrahtung, alles in Firefly-main).
-  Davor in Wayfinder-main: ORCH-1…4 (#77–#81).
-- **Nächster Schritt:** **ORCH-5b** — `SecretResolver` im `wayfinder-orchestrator`
-  verdrahten (`WAYFINDER_SECRET_KEY`), `cred_ref` → `user:pass` auflösen und in die
-  benannten Cred-Envs injizieren; UI-Zwei-Felder (UX-2). **Sicherheits-relevant** →
-  eigene Ankündigung & „Go". Danach End-to-End-Abnahme.
+- **Letzte Arbeit:** **ORCH-5b-1** — Quell-Credential-Auflösung in der Control-Plane
+  (Variante A). `Spec.ResolvedSecrets` (cred_ref → Klartext, nur von der
+  Control-Plane gefüllt); `StoreDesiredState.WithSecretResolver` löst je Spec die
+  `SecretRefs` **best-effort** über den `SecretResolver` auf (fehlt Key/Secret →
+  Quelle anonym, WARN, kein Abbruch); `fireflySourcesEnv` injiziert die Werte als
+  separate `FIREFLY_SOURCE_<i>_SECRET`-Envs (nie ins JSON, nie geloggt);
+  `cmd/wayfinder-orchestrator` verdrahtet `WAYFINDER_SECRET_KEY` → Resolver. Weil der
+  Wert in die Env fließt, triggert eine Rotation via Spec-Hash einen Restart. Neue
+  Tests (Resolver-Pfad + LoadConfig-Key), alle Gates grün. Davor: ORCH-5a
+  (`FIREFLY_SOURCES`-Rendering), ORCH-1…4 (#77–#81), Firefly-Seite von #35 (ADR 0023).
+- **Nächster Schritt:** **ORCH-5b-2** — UI-Zwei-Felder im Admin (Feed → Quellen →
+  Secret): Benutzername + Passwort → **ein** verschlüsseltes `user:pass`-Secret
+  (UX-2). Danach End-to-End-Abnahme.
 
 ---
 

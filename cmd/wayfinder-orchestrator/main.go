@@ -14,7 +14,10 @@
 // dev/CI) or the real Docker backend (ORCH-2b, WAYFINDER_ORCHESTRATOR_BACKEND=docker).
 // A change-driven trigger (ORCH-2c 3b) makes it converge the instant a feed or
 // subscription changes (Postgres LISTEN/NOTIFY), with the interval as the safety
-// net. Secret injection into the spawned container is ORCH-5 (cross-project).
+// net. When a deployment key (WAYFINDER_SECRET_KEY) is configured, this process —
+// and only this process — decrypts each feed's source credentials and injects them
+// into the spawned tracker (ORCH-5b, ADR 0012 §6); without a key, credentialled
+// sources run anonymously.
 package main
 
 import (
@@ -32,6 +35,7 @@ import (
 	"github.com/manuelringwald/wayfinder/pkg/instance"
 	"github.com/manuelringwald/wayfinder/pkg/orchestrator"
 	"github.com/manuelringwald/wayfinder/pkg/reconciler"
+	"github.com/manuelringwald/wayfinder/pkg/secret"
 	"github.com/manuelringwald/wayfinder/pkg/store"
 )
 
@@ -59,6 +63,13 @@ type config struct {
 	fireflyImg string // WAYFINDER_FIREFLY_IMAGE (required for the docker backend)
 	fireflyNet string // WAYFINDER_FIREFLY_NETWORK (default "host"; multicast)
 	fireflyScn string // WAYFINDER_FIREFLY_SCENE (optional placeholder source)
+
+	// secretKey is the deployment key (WAYFINDER_SECRET_KEY, base64 32 bytes) used
+	// to decrypt per-feed source credentials at launch (ORCH-5b, ADR 0012 §6). nil
+	// when unset/invalid — credentialled sources then run anonymously. This process
+	// is the only one that decrypts credentials; the browser-facing server only
+	// seals them.
+	secretKey []byte
 }
 
 func main() {
@@ -124,7 +135,24 @@ func loadConfig(getenv func(string) string, args []string) (config, error) {
 		dsn: dsn, interval: interval, logLevel: level, once: *once,
 		backend: backend, fireflyImg: fireflyImg, fireflyNet: fireflyNet,
 		fireflyScn: getenv("WAYFINDER_FIREFLY_SCENE"),
+		secretKey:  parseSecretKey(getenv("WAYFINDER_SECRET_KEY")),
 	}, nil
+}
+
+// parseSecretKey decodes the deployment secret key (base64, 32 bytes) used to
+// decrypt per-feed source credentials at launch (ORCH-5b, ADR 0012 §6). An empty
+// or malformed value yields nil — credentialled sources then run anonymously (the
+// run wiring logs a set-but-invalid key loudly). The decoded key never appears in
+// the config string output or logs.
+func parseSecretKey(s string) []byte {
+	if s == "" {
+		return nil
+	}
+	key, err := secret.KeyFromBase64(s)
+	if err != nil {
+		return nil
+	}
+	return key
 }
 
 // newBackend builds the instance backend selected by the config. The Docker
@@ -160,6 +188,21 @@ func run(ctx context.Context, cfg config, logger *slog.Logger) error {
 		store.NewSubscriptionRepo(pool),
 		store.NewFeedRepo(pool),
 	)
+	// Credential resolution (ORCH-5b, ADR 0012 §6): when a deployment key is
+	// configured, this least-privilege process decrypts per-feed source credentials
+	// and injects them into the spawned tracker. Without a usable key, credentialled
+	// sources run anonymously (resolution is best-effort, never fatal).
+	if cfg.secretKey != nil {
+		cipher, err := secret.NewCipher(cfg.secretKey)
+		if err != nil {
+			return fmt.Errorf("build secret cipher: %w", err)
+		}
+		resolver := orchestrator.NewSecretResolver(store.NewSecretRepo(pool), cipher)
+		desired.WithSecretResolver(resolver, logger)
+		logger.Info("orchestrator: source credential resolution enabled")
+	} else if os.Getenv("WAYFINDER_SECRET_KEY") != "" {
+		logger.Warn("WAYFINDER_SECRET_KEY set but invalid (need base64-encoded 32 bytes) — credentialled sources will run anonymously")
+	}
 	backend, err := newBackend(cfg, logger)
 	if err != nil {
 		return err
