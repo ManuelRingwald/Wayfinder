@@ -601,11 +601,29 @@ vermeidet Races). Env: `WAYFINDER_DB_URL` (Pflicht), `WAYFINDER_ORCHESTRATOR_INT
 (Reconcile-Periode, Default `15s`), `WAYFINDER_LOG_LEVEL`. Modi: `--once` (ein
 Reconcile-Lauf, dann Exit — für CI/Dev/k8s-Job; Exit 2 = Config/Flag-Fehler,
 Exit 1 = Laufzeitfehler) und Default (Reconcile-Schleife mit Graceful-Shutdown
-auf SIGINT/SIGTERM). **Stand:** Prozess-Skelett gegen Store-Soll + Reconciler
-verdrahtet, Backend noch `MemoryBackend`; der echte Docker-Adapter (ORCH-2b) und
-die Secret-Auflösung + der Änderungs-Trigger (ORCH-2c 3/3) folgen. Bis dahin ist
-der Orchestrator **nicht** Teil des Standard-Deployments (`INSTALLATION.md`), weil
-er noch nichts real startet.
+auf SIGINT/SIGTERM).
+
+**Backend-Auswahl (ORCH-2b):** `WAYFINDER_ORCHESTRATOR_BACKEND` = `memory`
+(Default — In-Memory-Platzhalter, startet nichts; sicher für Dev/CI, redet nie
+mit Docker) oder `docker`. Der **Docker-Adapter** (`pkg/dockerbackend`) fährt je
+Feed einen Firefly-Container: Identität via Label `wayfinder.feed_id`,
+Drift-Erkennung via `wayfinder.spec_hash` (gleicher Hash → idempotenter
+No-op/Restart, geänderter → Replace), `RunningFeeds` listet auch gestoppte
+managed Container (Orphan-Cleanup). Die Lebenszyklus-Logik steckt hinter einem
+schmalen `ContainerClient`-Interface (Fake-getestet); nur `client.go` importiert
+das Docker-SDK. Env für `docker`: `WAYFINDER_FIREFLY_IMAGE` (Pflicht),
+`WAYFINDER_FIREFLY_NETWORK` (Default `host` — Multicast braucht i. d. R.
+Host-Networking), `WAYFINDER_FIREFLY_SCENE` (optionale Platzhalter-Quelle →
+`FIREFLY_SCENE`). Der Container bekommt heute `FIREFLY_CAT062_GROUP/PORT` und
+`FIREFLY_COVERAGE_BBOX`; die echte Quell-Eingangs-Env (`FIREFLY_SOURCES`) +
+Secret-Auflösung folgen ORCH-5/2c-3. **🔒 Nur dieser Prozess** erhält Zugriff auf
+den **Docker-Socket** (`/var/run/docker.sock`) — der Browser-Rand nie (ADR 0012 §6).
+
+**Stand:** Reconciler-Kern + Store-Soll + getrenntes Binary + Docker-Adapter
+verdrahtet; die Secret-Auflösung (`cred_ref` → Wert) + der Änderungs-Trigger
+(ORCH-2c 3/3) folgen. Der Orchestrator ist noch **nicht** im nutzer-orientierten
+Standard-Deployment (`INSTALLATION.md`) verdrahtet — die volle Integration
+(Compose-Service + Socket-Mount + Secrets) kommt mit 2c-3/ORCH-5.
 
 **Scoped Fan-out (WF2-21.1, 🔒 NFR-SEC-003):** der Broadcaster stellt einem
 `/ws`-Client einen Track **nur** zu, wenn dessen Mandant den Feed abonniert hat.

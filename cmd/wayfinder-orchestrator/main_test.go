@@ -97,3 +97,51 @@ func TestLoadConfigUnknownFlagErrors(t *testing.T) {
 		t.Fatal("an unknown flag should be an error")
 	}
 }
+
+func TestLoadConfigBackendDefaultsToMemory(t *testing.T) {
+	cfg, err := loadConfig(envFunc(map[string]string{"WAYFINDER_DB_URL": "x"}), nil)
+	if err != nil {
+		t.Fatalf("loadConfig: %v", err)
+	}
+	if cfg.backend != backendMemory {
+		t.Errorf("backend = %q, want memory", cfg.backend)
+	}
+	if cfg.fireflyNet != "host" {
+		t.Errorf("fireflyNet = %q, want host", cfg.fireflyNet)
+	}
+}
+
+func TestLoadConfigDockerRequiresImage(t *testing.T) {
+	// docker backend without an image is rejected.
+	_, err := loadConfig(envFunc(map[string]string{
+		"WAYFINDER_DB_URL":               "x",
+		"WAYFINDER_ORCHESTRATOR_BACKEND": "docker",
+	}), nil)
+	if err == nil {
+		t.Fatal("docker backend without WAYFINDER_FIREFLY_IMAGE should fail")
+	}
+	// with an image it is accepted.
+	cfg, err := loadConfig(envFunc(map[string]string{
+		"WAYFINDER_DB_URL":               "x",
+		"WAYFINDER_ORCHESTRATOR_BACKEND": "docker",
+		"WAYFINDER_FIREFLY_IMAGE":        "firefly:1.0",
+		"WAYFINDER_FIREFLY_NETWORK":      "bridge",
+		"WAYFINDER_FIREFLY_SCENE":        "demo",
+	}), nil)
+	if err != nil {
+		t.Fatalf("docker backend with image: %v", err)
+	}
+	if cfg.backend != backendDocker || cfg.fireflyImg != "firefly:1.0" || cfg.fireflyNet != "bridge" || cfg.fireflyScn != "demo" {
+		t.Fatalf("docker config not parsed: %+v", cfg)
+	}
+}
+
+func TestLoadConfigUnknownBackendErrors(t *testing.T) {
+	_, err := loadConfig(envFunc(map[string]string{
+		"WAYFINDER_DB_URL":               "x",
+		"WAYFINDER_ORCHESTRATOR_BACKEND": "k8s",
+	}), nil)
+	if err == nil {
+		t.Fatal("an unknown backend should be an error")
+	}
+}

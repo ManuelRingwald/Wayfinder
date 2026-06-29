@@ -9,10 +9,10 @@
 // the running set toward it via the reconciler. The two communicate only through
 // the catalogue, never point-to-point.
 //
-// This step (ORCH-2c, 2/3) provides the process skeleton wired to the real
-// store-backed desired state and the reconciler. The instance backend is still
-// the in-memory placeholder (the real Docker adapter is ORCH-2b); secret
-// resolution and a change-driven trigger are ORCH-2c (3/3).
+// The process is wired to the real store-backed desired state and reconciler
+// (ORCH-2c 2/3) and can drive either the in-memory placeholder backend (default,
+// dev/CI) or the real Docker backend (ORCH-2b, WAYFINDER_ORCHESTRATOR_BACKEND=docker).
+// Secret resolution and a change-driven trigger are ORCH-2c (3/3).
 package main
 
 import (
@@ -26,6 +26,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/manuelringwald/wayfinder/pkg/dockerbackend"
 	"github.com/manuelringwald/wayfinder/pkg/instance"
 	"github.com/manuelringwald/wayfinder/pkg/orchestrator"
 	"github.com/manuelringwald/wayfinder/pkg/reconciler"
@@ -37,12 +38,25 @@ import (
 // converge within one interval until the change-driven trigger lands (ORCH-2c 3/3).
 const defaultInterval = 15 * time.Second
 
+// backend kinds selectable via WAYFINDER_ORCHESTRATOR_BACKEND.
+const (
+	backendMemory = "memory" // in-memory placeholder (dev/CI; spawns nothing)
+	backendDocker = "docker" // real Docker containers (ORCH-2b)
+)
+
 // config is the orchestrator's resolved runtime configuration.
 type config struct {
 	dsn      string        // WAYFINDER_DB_URL
 	interval time.Duration // WAYFINDER_ORCHESTRATOR_INTERVAL
 	logLevel slog.Level    // WAYFINDER_LOG_LEVEL
 	once     bool          // --once: run a single reconcile pass and exit
+
+	// Backend selection (ORCH-2b). The default is the in-memory placeholder so a
+	// bare run never accidentally talks to a Docker socket; "docker" is opt-in.
+	backend    string // WAYFINDER_ORCHESTRATOR_BACKEND: memory | docker
+	fireflyImg string // WAYFINDER_FIREFLY_IMAGE (required for the docker backend)
+	fireflyNet string // WAYFINDER_FIREFLY_NETWORK (default "host"; multicast)
+	fireflyScn string // WAYFINDER_FIREFLY_SCENE (optional placeholder source)
 }
 
 func main() {
@@ -88,7 +102,43 @@ func loadConfig(getenv func(string) string, args []string) (config, error) {
 		_ = level.UnmarshalText([]byte(v)) // invalid → leaves the default
 	}
 
-	return config{dsn: dsn, interval: interval, logLevel: level, once: *once}, nil
+	backend := backendMemory
+	if v := getenv("WAYFINDER_ORCHESTRATOR_BACKEND"); v != "" {
+		backend = v
+	}
+	if backend != backendMemory && backend != backendDocker {
+		return config{}, fmt.Errorf("WAYFINDER_ORCHESTRATOR_BACKEND must be %q or %q, got %q", backendMemory, backendDocker, backend)
+	}
+	fireflyImg := getenv("WAYFINDER_FIREFLY_IMAGE")
+	if backend == backendDocker && fireflyImg == "" {
+		return config{}, errors.New("WAYFINDER_FIREFLY_IMAGE is required when WAYFINDER_ORCHESTRATOR_BACKEND=docker")
+	}
+	fireflyNet := getenv("WAYFINDER_FIREFLY_NETWORK")
+	if fireflyNet == "" {
+		fireflyNet = "host"
+	}
+
+	return config{
+		dsn: dsn, interval: interval, logLevel: level, once: *once,
+		backend: backend, fireflyImg: fireflyImg, fireflyNet: fireflyNet,
+		fireflyScn: getenv("WAYFINDER_FIREFLY_SCENE"),
+	}, nil
+}
+
+// newBackend builds the instance backend selected by the config. The Docker
+// backend is the only path that touches the container runtime (ADR 0012 §6); the
+// memory backend spawns nothing and is the safe default for dev/CI.
+func newBackend(cfg config, logger *slog.Logger) (instance.Backend, error) {
+	switch cfg.backend {
+	case backendDocker:
+		client, err := dockerbackend.NewDockerClient()
+		if err != nil {
+			return nil, fmt.Errorf("connect to docker: %w", err)
+		}
+		return dockerbackend.New(client, cfg.fireflyImg, cfg.fireflyNet, cfg.fireflyScn, logger), nil
+	default:
+		return instance.NewMemoryBackend(), nil
+	}
 }
 
 // run opens the catalogue, wires the store-backed desired state, the reconciler
@@ -108,10 +158,11 @@ func run(ctx context.Context, cfg config, logger *slog.Logger) error {
 		store.NewSubscriptionRepo(pool),
 		store.NewFeedRepo(pool),
 	)
-	// Placeholder backend until the Docker adapter (ORCH-2b). In-memory state is
-	// per-process: meaningful for the lifetime of a loop run, reset on restart —
-	// real cross-restart persistence arrives with the container backend.
-	backend := instance.NewMemoryBackend()
+	backend, err := newBackend(cfg, logger)
+	if err != nil {
+		return err
+	}
+	logger.Info("orchestrator: backend selected", slog.String("backend", cfg.backend))
 	rec := reconciler.New(desired, backend, logger)
 
 	if cfg.once {
