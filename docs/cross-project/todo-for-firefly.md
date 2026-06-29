@@ -164,3 +164,38 @@ gerade). Nicht vermischen.
 erweitern (`Color()`: gelb = `0 < aktiv < gesamt`, „leerer Himmel" raus aus
 gelb) · WF-3 UI „2 / 3 Radare aktiv (Sensor 2 still)" in `FeedStatusChip` +
 Admin-Ampel.
+
+---
+
+## ORCH-5 (Auto-Orchestrierung) — Quell-Eingangs-Kontrakt + Live-Input-Adapter ⏳
+
+**GitHub Issue:** [Firefly #35](https://github.com/manuelringwald/firefly/issues/35)
+`from-wayfinder` (angelegt 2026-06-29) — **offen**.
+
+**Auslöser:** Wayfinders Auto-Orchestrierung (ADR 0012) fährt pro Feed eine
+eigene Firefly-Instanz. In `main` bereits: ORCH-1 (generische `source_config` +
+`coverage_bbox`), ORCH-2/2b/3 (`InstanceBackend` + Docker-Adapter + Reconciler),
+ORCH-2c 3a + 3a-API (AES-256-GCM-Secret-Speicher + write-only Admin-API +
+`SecretResolver`). **Was fehlt:** der Orchestrator kann eine Instanz starten,
+ihr aber **nicht sagen, woraus** sie rechnen soll — der Docker-Adapter setzt
+bewusst **kein** `FIREFLY_SOURCES`, weil der **Eingangs-Kontrakt auf
+Firefly-Seite** noch nicht ratifiziert ist.
+
+**Bitte um (Firefly-Seite):**
+
+| AP | Inhalt | Hinweis |
+|----|--------|---------|
+| **Env-Kontrakt** | Env-getriebene Quell-Konfig (Var. A: eine JSON-`FIREFLY_SOURCES`; Var. B: indizierte `FIREFLY_SOURCE_N_*`) | Firefly wählt Form/Namen; Wayfinder mappt im Docker-Adapter |
+| **Secret-Env** | Konvention, **welche Env** je Quelle das (beim Start aufgelöste) Credential trägt | z. B. `FIREFLY_SOURCE_0_SECRET` |
+| **Input-Adapter** | `adsb_opensky` (OpenSky-Client), `flarm_aprs` (OGN/APRS), `radar_asterix` (ASTERIX-Eingang CAT048/001) — Ports & Adapters, Kern format-neutral | vermutlich eigener ADR + Meilenstein (SDPS/FEP-Familie) |
+| **Versionierung** | Eingangs-Kontrakt versionieren (analog zur Ausgabe-ICD?) | — |
+
+**Abgrenzung (kein Charter-Konflikt):** Der **Ausgabe**-Vertrag (CAT062/UDP)
+bleibt unberührt; dies ist ein **neuer Eingangs-Kontrakt** auf Firefly-Seite,
+kein Code-Import. Quell-Vokabular bleibt Wayfinder-seitig (`adsb_opensky`/
+`flarm_aprs`/`radar_asterix`); Firefly definiert nur die Env-Form + Adapter.
+
+**Wayfinder-Folge (nach Ratifizierung):** Docker-Adapter übersetzt
+`source_config` → die von Firefly gewählten Envs; `SecretResolver` injiziert die
+aufgelösten Werte in die vereinbarten Secret-Envs; End-to-End-Abnahme
+(Quelle → Firefly-Instanz → CAT062 → Wayfinder-Lagebild).
