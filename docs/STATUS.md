@@ -13,15 +13,17 @@
 ## 🎯 Stand 2026-06-29
 
 - **Zuletzt aktualisiert:** 2026-06-29
-- **Letzte Arbeit:** **ORCH-2c (3a-API)** — write-only Secret-Admin-API + Sealer +
-  Frontend (auf Branch `claude/roadmap-action-points-z50u6w`). `SecretSealer`
-  (Schreib-Gegenstück zum Resolver), `GET/PUT/DELETE /api/admin/feeds/{id}/secrets[/{ref…}]`
-  (requireAdmin, write-only, `{ref…}`-Wildcard für Slash-Refs, 503 ohne Schlüssel),
-  `WAYFINDER_SECRET_KEY` in den Server verdrahtet, Secret-Bedienung im Quellen-Dialog.
-  Davor in main gemergt: **ORCH-1** (PR #77) + **ORCH-2a/2b/2c-1-3a + ORCH-3** (PR #78).
-- **Nächster Schritt:** **ORCH-2c (3b)** — Postgres `LISTEN/NOTIFY`-Änderungs-Trigger
-  (sofortiger Reconcile); danach **Container-Injection** des aufgelösten Secrets
-  (`cred_ref` → Firefly-Quell-Env, braucht ORCH-5-Contract). Ankündigung & „Go" je Schritt.
+- **Letzte Arbeit:** **ORCH-2c (3b)** — änderungs-getriebener Reconcile (auf Branch
+  `claude/roadmap-action-points-z50u6w`). Migration `00012` (Statement-Trigger auf
+  `feeds`/`subscriptions` → `pg_notify('wayfinder_reconcile')`), `orchestrator.Listener`
+  (dedizierte `LISTEN`-Verbindung, Resync-on-(Re-)Connect, Reconnect-Backoff),
+  `Reconciler.Run` um nicht-blockierenden Size-1-Trigger-Channel (Coalescing),
+  Intervall bleibt Sicherheitsnetz. Real-PG-verifiziert (Migration + Listener).
+  Davor in main gemergt: **ORCH-1** (#77), **ORCH-2a/2b/2c-1-3a + ORCH-3** (#78),
+  **ORCH-2c 3a-API** (#79). Cross-Project: Firefly **#35** (ORCH-5 Quell-Eingangs-Kontrakt) offen.
+- **Nächster Schritt:** **Container-Injection** (`cred_ref` → Firefly-Quell-Env) ist
+  durch Firefly #35 geblockt; unabhängig buildbar: **ORCH-4** (Multicast-Allokation).
+  Ankündigung & „Go" je Schritt.
 
 ---
 
@@ -54,13 +56,14 @@
 | **ORCH-2b (ADR 0012)** | Docker-Backend-Adapter (`ContainerClient`, Spec-Hash, Labels) | ✅ |
 | **ORCH-2c 1–3a (ADR 0012)** | `StoreDesiredState`, `wayfinder-orchestrator`-Binary (Least-Privilege), AES-256-GCM Secret-Store + Resolver | ✅ |
 | **ORCH-2c 3a-API (ADR 0012 §6)** | Write-only Secret-Admin-API + `SecretSealer` + `WAYFINDER_SECRET_KEY` + Frontend-Bedienung | ✅ |
+| **ORCH-2c 3b (ADR 0012 §5)** | Änderungs-getriebener Reconcile: Migration 00012 (`LISTEN/NOTIFY`-Trigger) + `Listener` + Trigger-Channel/Coalescing | ✅ |
 | **ADR 0013** | Modular CWP & Enterprise ATC Integration ratifiziert (Prio 2, Planung) | ✅ |
 
 ### 🚧 Offen
 
 Siehe zentrale **`docs/ROADMAP.md`** für aktuelle Priorisierung (Prio 1 / Prio 2):
 
-- **Prio 1 (jetzt):** ORCH-2c (3b LISTEN/NOTIFY) → ORCH-4 (Multicast-Allokation) → ORCH-5 (Container-Injection + Firefly-Quell-Env, cross-project) → ORCH-6 (ORCH-1, ORCH-2/3, ORCH-2c 3a+3a-API ✅)
+- **Prio 1 (jetzt):** ORCH-4 (Multicast-Allokation) → ORCH-5 (Container-Injection + Firefly-Quell-Env, cross-project, Firefly #35) → ORCH-6 (ORCH-1, ORCH-2/3, ORCH-2c 3a+3a-API+3b ✅)
 - **Prio 2 (nach Prio 1):** Modular CWP / EFS / IMS (ADR 0013, Epic CWP-0…IMS-3)
 - **ADR 0009 AP7:** Session-Registry, DB-gestützt (S4, offen)
 

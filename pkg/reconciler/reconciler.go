@@ -103,11 +103,21 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 	return errors.Join(errs...)
 }
 
-// Run reconciles once immediately, then on every tick of interval until ctx is
-// cancelled. A reconcile error is logged (Reconcile already logs per-feed detail)
-// and the loop continues — transient failures self-heal on the next tick. Run
-// blocks until ctx is done and returns ctx.Err().
-func (r *Reconciler) Run(ctx context.Context, interval time.Duration) error {
+// Run reconciles once immediately, then on every tick of interval AND on every
+// signal from trigger, until ctx is cancelled. A reconcile error is logged
+// (Reconcile already logs per-feed detail) and the loop continues — transient
+// failures self-heal on the next tick. Run blocks until ctx is done and returns
+// ctx.Err().
+//
+// trigger is the change-driven path (ORCH-2c 3b): a signal — emitted by the
+// Postgres LISTEN/NOTIFY listener when a feed or subscription changes — makes the
+// orchestrator converge at once instead of waiting up to one interval. It may be
+// nil (no listener, e.g. the memory backend or tests), in which case only the
+// interval drives reconciles. The interval is kept even with a trigger as a safety
+// net that self-heals any notification missed during a listener reconnect. Bursts
+// coalesce upstream: the listener uses a buffered, non-blocking send, so many rapid
+// changes collapse into a single pending signal rather than one reconcile each.
+func (r *Reconciler) Run(ctx context.Context, interval time.Duration, trigger <-chan struct{}) error {
 	if err := r.Reconcile(ctx); err != nil {
 		r.logger.Warn("initial reconcile had errors", slog.String("error", err.Error()))
 	}
@@ -120,6 +130,10 @@ func (r *Reconciler) Run(ctx context.Context, interval time.Duration) error {
 		case <-ticker.C:
 			if err := r.Reconcile(ctx); err != nil {
 				r.logger.Warn("reconcile had errors", slog.String("error", err.Error()))
+			}
+		case <-trigger:
+			if err := r.Reconcile(ctx); err != nil {
+				r.logger.Warn("change-driven reconcile had errors", slog.String("error", err.Error()))
 			}
 		}
 	}

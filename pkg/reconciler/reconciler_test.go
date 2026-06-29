@@ -179,7 +179,7 @@ func TestRunReconcilesUntilCancelled(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- r.Run(ctx, time.Millisecond) }()
+	go func() { done <- r.Run(ctx, time.Millisecond, nil) }()
 
 	// Wait until at least the initial reconcile + a tick have happened.
 	deadline := time.After(2 * time.Second)
@@ -202,5 +202,50 @@ func TestRunReconcilesUntilCancelled(t *testing.T) {
 	}
 	if st, _ := backend.Status(context.Background(), 1); st != instance.StatusRunning {
 		t.Error("feed 1 should be running after Run")
+	}
+}
+
+// A signal on the trigger channel reconciles at once, without waiting for the
+// interval tick (ORCH-2c 3b). The interval here is huge so only the trigger (and
+// the initial pass) can drive a reconcile within the test.
+func TestRunReconcilesOnTrigger(t *testing.T) {
+	desired := &fakeDesired{specs: []instance.Spec{spec(1, 8600)}}
+	backend := instance.NewMemoryBackend()
+	r := New(desired, backend, discardLogger())
+
+	trigger := make(chan struct{}, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- r.Run(ctx, time.Hour, trigger) }()
+
+	// Wait for the initial reconcile to complete (feed 1 running), then change the
+	// desired set and fire the trigger: the change must take effect promptly.
+	waitFor(t, func() bool { st, _ := backend.Status(context.Background(), 1); return st == instance.StatusRunning })
+
+	desired.set([]instance.Spec{spec(1, 8600), spec(2, 8601)})
+	trigger <- struct{}{}
+
+	waitFor(t, func() bool { st, _ := backend.Status(context.Background(), 2); return st == instance.StatusRunning })
+
+	cancel()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("Run returned %v, want context.Canceled", err)
+	}
+}
+
+// waitFor polls cond until true or a 2s deadline elapses.
+func waitFor(t *testing.T, cond func() bool) {
+	t.Helper()
+	deadline := time.After(2 * time.Second)
+	for {
+		if cond() {
+			return
+		}
+		select {
+		case <-deadline:
+			t.Fatal("condition not met within deadline")
+		case <-time.After(time.Millisecond):
+		}
 	}
 }
