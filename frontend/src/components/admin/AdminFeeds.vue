@@ -193,8 +193,10 @@
             class="mt-2"
           />
 
-          <!-- Secret value (ORCH-2c 3a): set/clear the credential the cred_ref
-               points at. Write-only — the server reports only whether a value is
+          <!-- Secret value (ORCH-2c 3a; ORCH-5b-2): set/clear the credential the
+               cred_ref points at. Two fields — username + password — are combined
+               into one "user:pass" value (UX-2); the server splits at the first
+               colon. Write-only: the server reports only whether a value is
                configured, never the value. Hidden when the secret store is off. -->
           <div v-if="secretStoreEnabled && (s.cred_ref || '').trim()" class="mt-2">
             <div class="d-flex align-center ga-2 mb-1">
@@ -206,12 +208,20 @@
                 {{ isSecretConfigured(s.cred_ref) ? 'Secret hinterlegt' : 'Kein Secret' }}
               </v-chip>
             </div>
-            <div class="d-flex align-center ga-2">
+            <div class="d-flex align-start ga-2">
               <v-text-field
-                v-model="secretInput[i]"
+                v-model="secretUser[i]"
+                type="text"
+                autocomplete="off"
+                label="Benutzername"
+                hint="z. B. OpenSky-Client-ID — kein Doppelpunkt"
+                density="compact"
+              />
+              <v-text-field
+                v-model="secretPass[i]"
                 type="password"
                 autocomplete="new-password"
-                :label="isSecretConfigured(s.cred_ref) ? 'Neuen Wert setzen (ersetzt)' : 'Wert setzen'"
+                :label="isSecretConfigured(s.cred_ref) ? 'Passwort (ersetzt)' : 'Passwort'"
                 density="compact"
                 hide-details
               />
@@ -219,8 +229,9 @@
                 size="small"
                 color="primary"
                 variant="tonal"
+                class="mt-1"
                 :loading="secretBusy === i"
-                :disabled="!(secretInput[i] || '').length"
+                :disabled="!(secretUser[i] || '').length || !(secretPass[i] || '').length || secretError(i) !== ''"
                 @click="saveSecret(i)"
               >
                 Speichern
@@ -230,12 +241,22 @@
                 size="small"
                 color="error"
                 variant="text"
+                class="mt-1"
                 :loading="secretBusy === i"
                 @click="clearSecret(i)"
               >
                 Entfernen
               </v-btn>
             </div>
+            <v-alert
+              v-if="secretError(i)"
+              type="warning"
+              variant="tonal"
+              density="compact"
+              class="mt-1"
+            >
+              {{ secretError(i) }}
+            </v-alert>
           </div>
         </v-card>
 
@@ -284,6 +305,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useAdminStore } from '@/stores/admin.js'
+import { validateCredential, combineCredential } from '@/admin/credential.js'
 
 const admin = useAdminStore()
 const busy = ref(false)
@@ -356,19 +378,32 @@ const sources = ref([])
 const sourcesError = ref('')
 const coveragePreview = ref('')
 
-// Per-feed source credentials (ORCH-2c 3a). secretStoreEnabled mirrors the
-// server: false when no WAYFINDER_SECRET_KEY is configured (the secret routes
+// Per-feed source credentials (ORCH-2c 3a; ORCH-5b-2). secretStoreEnabled mirrors
+// the server: false when no WAYFINDER_SECRET_KEY is configured (the secret routes
 // return 503), so the controls stay hidden rather than pretending to work.
 // secretRefs holds the cred_refs that already have a stored value (the server
-// never returns the value itself); secretInput holds the transient new value the
-// admin types, keyed by source row index; secretBusy is the row currently saving.
+// never returns the value itself). The admin enters a credential as two fields —
+// secretUser and secretPass, keyed by source row index — which are combined into a
+// single "user:pass" value before storing (UX-2; Firefly splits at the first
+// colon). secretBusy is the row currently saving.
 const secretStoreEnabled = ref(false)
 const secretRefs = ref(new Set())
-const secretInput = ref({})
+const secretUser = ref({})
+const secretPass = ref({})
 const secretBusy = ref(-1)
 
 function isSecretConfigured(ref) {
   return secretRefs.value.has((ref || '').trim())
+}
+
+// secretError surfaces the per-row validation message (empty username/password or
+// a colon in the username) so the UI can block an invalid save; '' when valid or
+// when nothing has been typed yet.
+function secretError(i) {
+  const u = secretUser.value[i] || ''
+  const p = secretPass.value[i] || ''
+  if (!u && !p) return ''
+  return validateCredential(u, p)
 }
 
 // loadFeedSecretsState reads which cred_refs are configured for the feed. A 503
@@ -390,14 +425,18 @@ async function loadFeedSecretsState(feedId) {
 
 async function saveSecret(i) {
   const ref = (sources.value[i]?.cred_ref || '').trim()
-  const value = secretInput.value[i] || ''
-  if (!ref || !value) return
+  // Combine the two fields into the single "user:pass" value the store keeps;
+  // null means the pair is invalid (empty field / colon in username) — never store
+  // a malformed value the resolver would later misread.
+  const value = combineCredential(secretUser.value[i], secretPass.value[i])
+  if (!ref || value === null) return
   secretBusy.value = i
   const r = await admin.setFeedSecret(sourcesTarget.value.id, ref, value)
   secretBusy.value = -1
   if (r.ok) {
     secretRefs.value = new Set(secretRefs.value).add(ref)
-    secretInput.value = { ...secretInput.value, [i]: '' }
+    secretUser.value = { ...secretUser.value, [i]: '' }
+    secretPass.value = { ...secretPass.value, [i]: '' }
   } else {
     sourcesError.value = r.error || 'Secret konnte nicht gespeichert werden.'
   }
@@ -446,7 +485,8 @@ async function openSources(f) {
   busy.value = true
   secretStoreEnabled.value = false
   secretRefs.value = new Set()
-  secretInput.value = {}
+  secretUser.value = {}
+  secretPass.value = {}
   const r = await admin.loadFeedSources(f.id)
   if (r.ok) {
     sources.value = (r.data.sources || []).map(toFormSource)
