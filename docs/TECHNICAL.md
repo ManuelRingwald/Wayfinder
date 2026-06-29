@@ -478,7 +478,7 @@ Identitäts-Modell siehe ADR 0006 §5.
 | `WAYFINDER_SESSION_TTL` | `12h` | duration | builtin: Session-Lebensdauer. |
 | `WAYFINDER_NONE_SUBJECT` | `default` | string | none: festes Subject je Anfrage. |
 | `WAYFINDER_BOOTSTRAP_PASSWORD` | *(leer)* | string | Nur vom `bootstrap`-Subcommand gelesen: builtin-Passwort des ersten Admins. |
-| `WAYFINDER_SECRET_KEY` | *(leer)* | string (base64-32-Byte) | **ORCH-2c (ADR 0012 §6):** AES-256-Schlüssel, der Pro-Feed-Quell-Credentials (`feed_secrets`) verschlüsselt. Leer/ungültig → die write-only Secret-Routen (`…/feeds/{id}/secrets`) sind **deaktiviert** (503), nie unverschlüsselt speichernd. Erzeugen: `openssl rand -base64 32`. **Derselbe Schlüssel** muss am Orchestrator gesetzt sein, der die Werte beim Container-Start entschlüsselt. |
+| `WAYFINDER_SECRET_KEY` | *(leer)* | string (base64-32-Byte) | **ORCH-2c (ADR 0012 §6):** AES-256-Schlüssel, der Pro-Feed-Quell-Credentials (`feed_secrets`) verschlüsselt. **Am Server (`cmd/wayfinder`):** leer/ungültig → die write-only Secret-Routen (`…/feeds/{id}/secrets`) sind **deaktiviert** (503), nie unverschlüsselt speichernd. **Am Orchestrator (`cmd/wayfinder-orchestrator`, ORCH-5b-1):** **derselbe** Schlüssel muss gesetzt sein, damit die Control-Plane die Werte beim Container-Start entschlüsselt und als `FIREFLY_SOURCE_<i>_SECRET` injiziert; leer/ungültig → credentialled Quellen laufen **anonym** (WARN, kein Abbruch). Erzeugen: `openssl rand -base64 32`. |
 | `WAYFINDER_FEED_GROUP_BASE` | `239.255.0` | string (3 Oktette) | **ORCH-4 (ADR 0012):** /24-Basis für die automatische Multicast-Endpoint-Vergabe beim Feed-Anlegen (eine Gruppe je Feed). Ungültige Kombi → Fallback auf den Default-Pool. |
 | `WAYFINDER_FEED_PORT` | `8600` | int | **ORCH-4:** fester Port für jede auto-allokierte Gruppe. |
 | `WAYFINDER_FEED_OCTET_MIN` / `_MAX` | `1` / `254` | int (0..255) | **ORCH-4:** zuweisbarer Bereich des letzten Gruppen-Oktetts → Kapazität (Default ~254 Feeds; auf /16 weitbar). |
@@ -605,7 +605,8 @@ dieser Prozess erhält später das Privileg, Tracker-Instanzen zu starten
 schreibt. Beide kommunizieren ausschließlich über den Katalog. Das Binary
 **migriert NICHT** (der Hauptserver besitzt das Schema; ein einziger Migrator
 vermeidet Races). Env: `WAYFINDER_DB_URL` (Pflicht), `WAYFINDER_ORCHESTRATOR_INTERVAL`
-(Reconcile-Periode, Default `15s`), `WAYFINDER_LOG_LEVEL`. Modi: `--once` (ein
+(Reconcile-Periode, Default `15s`), `WAYFINDER_LOG_LEVEL`, `WAYFINDER_SECRET_KEY`
+(optional — Cred-Auflösung, s. u.). Modi: `--once` (ein
 Reconcile-Lauf, dann Exit — für CI/Dev/k8s-Job; Exit 2 = Config/Flag-Fehler,
 Exit 1 = Laufzeitfehler) und Default (Reconcile-Schleife mit Graceful-Shutdown
 auf SIGINT/SIGTERM).
@@ -623,11 +624,11 @@ das Docker-SDK. Env für `docker`: `WAYFINDER_FIREFLY_IMAGE` (Pflicht),
 Host-Networking), `WAYFINDER_FIREFLY_SCENE` (optionale Platzhalter-Quelle →
 `FIREFLY_SCENE`). Der Container bekommt `FIREFLY_CAT062_GROUP/PORT` und
 `FIREFLY_COVERAGE_BBOX`; **bei vorhandenen Quellen** zusätzlich `FIREFLY_MODE=live`
-und `FIREFLY_SOURCES` (Fireflys Eingangs-Kontrakt ADR 0023; `fireflySourcesJSON`
-rendert `spec.Sources` → JSON, je credentialled Quelle ein `cred_env`-**Name**,
-ORCH-5a). Die Credential-**Werte** löst die Control-Plane auf und injiziert sie in
-die benannten Cred-Envs (ORCH-5b folgt; bis dahin laufen nur credential-lose
-Quellen vollständig). **🔒 Nur dieser Prozess** erhält Zugriff auf
+und `FIREFLY_SOURCES` (Fireflys Eingangs-Kontrakt ADR 0023; `fireflySourcesEnv`
+rendert `spec.Sources` → JSON, je credentialled **aufgelöster** Quelle ein
+`cred_env`-**Name**, ORCH-5a). Die Credential-**Werte** löst die Control-Plane auf
+(ORCH-5b-1, s. u.) und injiziert sie als separate `FIREFLY_SOURCE_<i>_SECRET`-Envs
+— nie ins `FIREFLY_SOURCES`-JSON. **🔒 Nur dieser Prozess** erhält Zugriff auf
 den **Docker-Socket** (`/var/run/docker.sock`) — der Browser-Rand nie (ADR 0012 §6).
 
 **Secret-Verwaltung (ORCH-2c 3a + 3a-API):** Quell-Credentials liegen
@@ -637,6 +638,19 @@ AES-256-GCM-verschlüsselt in `feed_secrets`; der Server hält den Schlüssel
 getrennte Control-Plane zum **Open beim Start** (`SecretResolver`). Ohne Schlüssel
 sind die Secret-Routen deaktiviert (503), nie unverschlüsselt speichernd. Der Wert
 verlässt den Server **nie** Richtung Browser (`GET` meldet nur `configured`).
+
+**Cred-Auflösung beim Start (ORCH-5b-1, Variante A):** Ist am Orchestrator
+**derselbe** `WAYFINDER_SECRET_KEY` gesetzt, baut `cmd/wayfinder-orchestrator`
+einen `SecretResolver` und reicht ihn via `StoreDesiredState.WithSecretResolver`
+hinein. Beim Berechnen des Soll-Zustands entschlüsselt die Control-Plane je Spec
+die `SecretRefs` zu Klartext (`Spec.ResolvedSecrets`), den der Docker-Adapter als
+`FIREFLY_SOURCE_<i>_SECRET`-Env injiziert. **Best-effort:** fehlt der Key oder ein
+einzelnes Secret (kein Eintrag/falscher Key/manipuliert), läuft **nur diese Quelle
+anonym** weiter (kein `cred_env`) — WARN-Log, **kein** Reconcile-Abbruch. Der
+Klartext lebt ausschließlich im Least-Privilege-Orchestrator (in-memory), nie am
+Browser-Rand und **nie im Log**. Weil der Wert in die Container-Env fließt, ändert
+eine **Secret-Rotation** den Spec-Hash → der Reconciler startet die Instanz mit dem
+neuen Wert neu.
 
 **Änderungs-getriebener Reconcile (ORCH-2c 3b):** Der Orchestrator konvergiert
 nicht nur im Intervall-Takt, sondern **sofort** bei einer Katalog-Änderung.

@@ -225,10 +225,12 @@ func (b *Backend) find(ctx context.Context, feedID int64) (*ContainerInfo, error
 // input contract (ORCH-5; Firefly ADR 0023). Order is deterministic so the spec
 // hash is stable.
 //
-// FIREFLY_SOURCES carries only the source *structure* and the cred_env *names* a
-// source references (fireflySourcesJSON); the resolved credential *values* are
-// injected separately by the control plane (ORCH-5b), never inlined here. A feed
-// without sources falls back to the optional placeholder scene.
+// FIREFLY_SOURCES carries the source *structure* and the cred_env *names*; the
+// resolved credential *values* (spec.ResolvedSecrets, filled by the control plane,
+// ORCH-5b) are emitted as separate FIREFLY_SOURCE_<i>_SECRET envs, never inlined
+// into the JSON blob. A source whose credential is unresolved is rendered without
+// cred_env (Firefly then runs it anonymously). A feed without sources falls back
+// to the optional placeholder scene.
 func (b *Backend) fireflyEnv(spec instance.Spec) []string {
 	env := []string{
 		"FIREFLY_CAT062_GROUP=" + spec.Group,
@@ -239,8 +241,9 @@ func (b *Backend) fireflyEnv(spec instance.Spec) []string {
 		env = append(env, fmt.Sprintf("FIREFLY_COVERAGE_BBOX=%g,%g,%g,%g",
 			c.MinLat, c.MinLon, c.MaxLat, c.MaxLon))
 	}
-	if sourcesJSON, ok := fireflySourcesJSON(spec.Sources); ok {
+	if sourcesJSON, credEnvs, ok := fireflySourcesEnv(spec.Sources, spec.ResolvedSecrets); ok {
 		env = append(env, "FIREFLY_MODE=live", "FIREFLY_SOURCES="+sourcesJSON)
+		env = append(env, credEnvs...)
 	} else if b.sceneDefault != "" {
 		env = append(env, "FIREFLY_SCENE="+b.sceneDefault)
 	}

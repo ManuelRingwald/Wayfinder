@@ -428,6 +428,10 @@ services:
       # Credentials verschlüsselt. Leer = die Secret-Verwaltung im Admin
       # (Feed → Quellen → „Secret hinterlegen") bleibt deaktiviert (503).
       # Erzeugen: export WAYFINDER_SECRET_KEY=$(openssl rand -base64 32)
+      # Wichtig (ORCH-5b): DERSELBE Schlüssel muss auch am Orchestrator-Prozess
+      # (cmd/wayfinder-orchestrator) gesetzt sein, damit dieser die Credentials
+      # beim Tracker-Start entschlüsseln und injizieren kann; fehlt er dort,
+      # laufen credentialled Quellen anonym (WARN, kein Abbruch).
       WAYFINDER_SECRET_KEY: ${WAYFINDER_SECRET_KEY:-}
       # Optional (ORCH-4): Pool für die automatische Multicast-Endpoint-Vergabe
       # beim Feed-Anlegen (eine Gruppe je Feed). Defaults reichen i. d. R.:

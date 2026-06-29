@@ -13,6 +13,7 @@ package orchestrator
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/manuelringwald/wayfinder/pkg/instance"
 	"github.com/manuelringwald/wayfinder/pkg/store"
@@ -30,19 +31,48 @@ type SourceConfigReader interface {
 	GetSourceConfig(ctx context.Context, feedID int64) (store.SourceConfig, *store.BBox, error)
 }
 
+// FeedSecretResolver turns a feed's cred_ref handle into its plaintext credential
+// (satisfied by *SecretResolver). It is optional: when configured (a deployment
+// secret key is present, ORCH-5b) StoreDesiredState resolves each spec's secret
+// references into Spec.ResolvedSecrets so the values reach the spawned container's
+// env. The plaintext lives only in this least-privilege control-plane process and
+// is never logged.
+type FeedSecretResolver interface {
+	Resolve(ctx context.Context, feedID int64, credRef string) (string, error)
+}
+
 // StoreDesiredState implements reconciler.DesiredState from the catalogue: the
 // desired set is every subscribed feed, each turned into an instance.Spec from
-// its source configuration. It performs no spawning and resolves no secrets — it
-// only translates catalogue rows into launch specs (the Spec carries secret
-// references, never values, ADR 0012 §6).
+// its source configuration. It translates catalogue rows into launch specs; when a
+// secret resolver is wired (WithSecretResolver, ORCH-5b) it additionally resolves
+// each feed's secret references into plaintext values for the launch (ADR 0012 §6)
+// — best-effort, so a missing key or secret degrades a source to anonymous rather
+// than failing the whole reconcile pass.
 type StoreDesiredState struct {
 	feeds   SubscribedFeedLister
 	sources SourceConfigReader
+	secrets FeedSecretResolver // nil when no deployment key is configured
+	logger  *slog.Logger
 }
 
 // NewStoreDesiredState wires the adapter over the subscription and feed repos.
+// Secret resolution is off by default (the Spec then carries only references); use
+// WithSecretResolver to enable it.
 func NewStoreDesiredState(feeds SubscribedFeedLister, sources SourceConfigReader) *StoreDesiredState {
-	return &StoreDesiredState{feeds: feeds, sources: sources}
+	return &StoreDesiredState{feeds: feeds, sources: sources, logger: slog.Default()}
+}
+
+// WithSecretResolver enables credential resolution at desired-state computation
+// (ORCH-5b): each spec's secret references are decrypted into Spec.ResolvedSecrets
+// so the launch backend can inject the values into the tracker container. The
+// resolver lives only in this control-plane process (it holds the deployment key).
+// A nil logger keeps the default. Returns the same value for fluent wiring.
+func (d *StoreDesiredState) WithSecretResolver(r FeedSecretResolver, logger *slog.Logger) *StoreDesiredState {
+	d.secrets = r
+	if logger != nil {
+		d.logger = logger
+	}
+	return d
 }
 
 // DesiredSpecs returns one Spec per subscribed feed. A failure to read any feed's
@@ -61,12 +91,43 @@ func (d *StoreDesiredState) DesiredSpecs(ctx context.Context) ([]instance.Spec, 
 		if err != nil {
 			return nil, fmt.Errorf("orchestrator: source config for feed %d: %w", f.ID, err)
 		}
-		specs = append(specs, instance.SpecFromFeed(instance.Feed{
+		spec := instance.SpecFromFeed(instance.Feed{
 			ID:    f.ID,
 			Name:  f.Name,
 			Group: f.MulticastGroup,
 			Port:  f.Port,
-		}, sources, coverage))
+		}, sources, coverage)
+		d.resolveSecrets(ctx, &spec)
+		specs = append(specs, spec)
 	}
 	return specs, nil
+}
+
+// resolveSecrets fills spec.ResolvedSecrets from the spec's secret references when a
+// resolver is configured. It is deliberately best-effort: a reference that cannot be
+// resolved (no secret stored, wrong key, tampered blob) is logged at WARN and left
+// out, so the dependent source is rendered anonymously (fireflySourcesEnv omits its
+// cred_env) rather than failing the launch or aborting the reconcile pass. The
+// resolved plaintext is never logged — only the reference and the error reason.
+func (d *StoreDesiredState) resolveSecrets(ctx context.Context, spec *instance.Spec) {
+	if d.secrets == nil || len(spec.SecretRefs) == 0 {
+		return
+	}
+	resolved := make(map[string]string, len(spec.SecretRefs))
+	for _, ref := range spec.SecretRefs {
+		v, err := d.secrets.Resolve(ctx, spec.FeedID, ref)
+		if err != nil {
+			d.logger.Warn("secret unresolved — source runs anonymously",
+				slog.Int64("feed_id", spec.FeedID),
+				slog.String("cred_ref", ref),
+				slog.String("error", err.Error()))
+			continue
+		}
+		if v != "" {
+			resolved[ref] = v
+		}
+	}
+	if len(resolved) > 0 {
+		spec.ResolvedSecrets = resolved
+	}
 }

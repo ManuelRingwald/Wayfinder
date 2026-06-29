@@ -83,6 +83,14 @@ type Spec struct {
 	// control plane resolves them to values at launch and hands them to the
 	// Backend out of band (ADR 0012 §6).
 	SecretRefs []string
+	// ResolvedSecrets maps a cred_ref to its resolved plaintext credential value
+	// (ORCH-5b, ADR 0012 §6). It is filled by the control plane (StoreDesiredState
+	// via the SecretResolver) — never by SpecFromFeed, which stays pure — and is
+	// nil when no key is configured or no source is credentialled. The value lives
+	// only in this least-privilege orchestrator process (never browser-facing) and
+	// flows into the spawned container's env, so a secret rotation changes the spec
+	// hash and the reconciler restarts the instance with the new value.
+	ResolvedSecrets map[string]string
 }
 
 // SpecFromFeed derives the launch Spec for a feed from its descriptor, source

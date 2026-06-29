@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"log/slog"
 	"testing"
 	"time"
@@ -27,6 +29,33 @@ func TestLoadConfigDefaults(t *testing.T) {
 	}
 	if cfg.once {
 		t.Error("once should default to false")
+	}
+}
+
+// A valid base64 32-byte WAYFINDER_SECRET_KEY is decoded; an unset or malformed
+// key yields nil (credentialled sources then run anonymously) without failing the
+// load.
+func TestLoadConfigSecretKey(t *testing.T) {
+	key := make([]byte, 32)
+	_, _ = rand.Read(key)
+	valid := base64.StdEncoding.EncodeToString(key)
+
+	cfg, err := loadConfig(envFunc(map[string]string{"WAYFINDER_DB_URL": "x", "WAYFINDER_SECRET_KEY": valid}), nil)
+	if err != nil {
+		t.Fatalf("loadConfig: %v", err)
+	}
+	if len(cfg.secretKey) != 32 {
+		t.Errorf("secretKey len = %d, want 32", len(cfg.secretKey))
+	}
+
+	for _, v := range []string{"", "not-base64!!", base64.StdEncoding.EncodeToString([]byte("too short"))} {
+		cfg, err := loadConfig(envFunc(map[string]string{"WAYFINDER_DB_URL": "x", "WAYFINDER_SECRET_KEY": v}), nil)
+		if err != nil {
+			t.Fatalf("loadConfig(%q): %v", v, err)
+		}
+		if cfg.secretKey != nil {
+			t.Errorf("secretKey for %q = %v, want nil", v, cfg.secretKey)
+		}
 	}
 }
 
