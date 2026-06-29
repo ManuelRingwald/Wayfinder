@@ -182,12 +182,43 @@ func TestIntegrationSubscriptionRepoIsolation(t *testing.T) {
 		t.Fatalf("feed ids = %v, %v", ids, err)
 	}
 
+	// ListSubscribedFeeds returns the distinct feeds with ≥1 subscription
+	// (ORCH-3 desired-instance input). Both feeds have a subscriber here.
+	subscribed, err := subs.ListSubscribedFeeds(ctx)
+	if err != nil {
+		t.Fatalf("list subscribed feeds: %v", err)
+	}
+	if len(subscribed) != 2 {
+		t.Fatalf("subscribed feeds = %d, want 2", len(subscribed))
+	}
+	// A second subscriber on feed1 must not duplicate it (DISTINCT).
+	if err := subs.Subscribe(ctx, stg.ID, feed1.ID); err != nil {
+		t.Fatalf("second subscribe: %v", err)
+	}
+	if again, _ := subs.ListSubscribedFeeds(ctx); len(again) != 2 {
+		t.Fatalf("subscribed feeds after 2nd subscriber = %d, want 2 (distinct)", len(again))
+	}
+
 	// Unsubscribe removes access.
 	if err := subs.Unsubscribe(ctx, ffm.ID, feed1.ID); err != nil {
 		t.Fatalf("unsubscribe: %v", err)
 	}
 	if ok, _ := subs.IsSubscribed(ctx, ffm.ID, feed1.ID); ok {
 		t.Fatal("Frankfurt should no longer be subscribed after unsubscribe")
+	}
+
+	// feed2 lost its only subscriber? No — stg still has feed1; remove all of
+	// feed2's subscribers and confirm it drops out of the subscribed set.
+	if err := subs.Unsubscribe(ctx, stg.ID, feed2.ID); err != nil {
+		t.Fatalf("unsubscribe feed2: %v", err)
+	}
+	remaining, err := subs.ListSubscribedFeeds(ctx)
+	if err != nil {
+		t.Fatalf("list subscribed feeds (after): %v", err)
+	}
+	// feed1 still has stg; feed2 has none → only feed1 remains.
+	if len(remaining) != 1 || remaining[0].ID != feed1.ID {
+		t.Fatalf("subscribed feeds = %+v, want only feed1", remaining)
 	}
 }
 
