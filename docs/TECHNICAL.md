@@ -631,13 +631,25 @@ getrennte Control-Plane zum **Open beim Start** (`SecretResolver`). Ohne Schlüs
 sind die Secret-Routen deaktiviert (503), nie unverschlüsselt speichernd. Der Wert
 verlässt den Server **nie** Richtung Browser (`GET` meldet nur `configured`).
 
+**Änderungs-getriebener Reconcile (ORCH-2c 3b):** Der Orchestrator konvergiert
+nicht nur im Intervall-Takt, sondern **sofort** bei einer Katalog-Änderung.
+Statement-Level-Trigger auf `feeds`/`subscriptions` (Migration `00012`) rufen
+`pg_notify('wayfinder_reconcile','')` — DB-seitig, fängt jeden Schreiber. Ein
+`orchestrator.Listener` hält eine **dedizierte** Verbindung (`LISTEN`), wandelt
+jede Notification in ein Reconcile-Signal und feuert nach jedem (Re-)Connect ein
+**Resync**-Signal (verpasste Änderungen während einer Verbindungslücke). Das
+Signal-Senden ist nicht-blockierend auf einen Size-1-Channel → ein Burst
+**coalesct** zu einem Reconcile; das Intervall bleibt Sicherheitsnetz. Leerer
+Payload (der Reconciler liest das volle Soll). `feed_secrets` ist noch **nicht**
+abgedeckt (erst mit der Container-Injection spec-relevant, ORCH-5).
+
 **Stand:** Reconciler-Kern + Store-Soll + getrenntes Binary + Docker-Adapter +
-verschlüsselter Secret-Speicher/-Resolver + write-only Secret-API verdrahtet; die
-**Container-Injection** des aufgelösten Werts (`cred_ref` → Firefly-Quell-Env) +
-der Änderungs-Trigger (ORCH-2c 3b, `LISTEN/NOTIFY`) folgen. Der Orchestrator ist
-noch **nicht** im nutzer-orientierten Standard-Deployment (`INSTALLATION.md`)
-verdrahtet — die volle Integration (Compose-Service + Socket-Mount + Secret-Key)
-kommt mit ORCH-5.
+verschlüsselter Secret-Speicher/-Resolver + write-only Secret-API + änderungs-
+getriebener Reconcile (`LISTEN/NOTIFY`) verdrahtet; offen bleibt die
+**Container-Injection** des aufgelösten Werts (`cred_ref` → Firefly-Quell-Env,
+ORCH-5, cross-project). Der Orchestrator ist noch **nicht** im nutzer-orientierten
+Standard-Deployment (`INSTALLATION.md`) verdrahtet — die volle Integration
+(Compose-Service + Socket-Mount + Secret-Key) kommt mit ORCH-5.
 
 **Scoped Fan-out (WF2-21.1, 🔒 NFR-SEC-003):** der Broadcaster stellt einem
 `/ws`-Client einen Track **nur** zu, wenn dessen Mandant den Feed abonniert hat.

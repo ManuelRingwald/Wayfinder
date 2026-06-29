@@ -12,7 +12,9 @@
 // The process is wired to the real store-backed desired state and reconciler
 // (ORCH-2c 2/3) and can drive either the in-memory placeholder backend (default,
 // dev/CI) or the real Docker backend (ORCH-2b, WAYFINDER_ORCHESTRATOR_BACKEND=docker).
-// Secret resolution and a change-driven trigger are ORCH-2c (3/3).
+// A change-driven trigger (ORCH-2c 3b) makes it converge the instant a feed or
+// subscription changes (Postgres LISTEN/NOTIFY), with the interval as the safety
+// net. Secret injection into the spawned container is ORCH-5 (cross-project).
 package main
 
 import (
@@ -172,9 +174,22 @@ func run(ctx context.Context, cfg config, logger *slog.Logger) error {
 
 	ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	// Change-driven trigger (ORCH-2c 3b): a buffered, size-1 channel so a burst of
+	// notifications coalesces into a single pending reconcile. The listener runs on
+	// its own dedicated connection and converts Postgres NOTIFYs (and reconnects)
+	// into signals; the reconcile loop reads them alongside the interval safety net.
+	trigger := make(chan struct{}, 1)
+	listener := orchestrator.NewListener(cfg.dsn, logger)
+	go func() {
+		if err := listener.Listen(ctx, trigger); err != nil && !errors.Is(err, context.Canceled) {
+			logger.Warn("reconcile listener stopped", slog.String("error", err.Error()))
+		}
+	}()
+
 	logger.Info("orchestrator: starting reconcile loop",
-		slog.Duration("interval", cfg.interval))
-	err = rec.Run(ctx, cfg.interval)
+		slog.Duration("interval", cfg.interval), slog.String("trigger_channel", orchestrator.ReconcileChannel))
+	err = rec.Run(ctx, cfg.interval, trigger)
 	if errors.Is(err, context.Canceled) {
 		logger.Info("orchestrator: shutting down cleanly")
 		return nil
