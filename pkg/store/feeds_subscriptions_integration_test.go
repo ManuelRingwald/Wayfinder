@@ -138,6 +138,66 @@ func TestIntegrationFeedSourceConfig(t *testing.T) {
 	}
 }
 
+func TestIntegrationSecretRepo(t *testing.T) {
+	pool := testPool(t)
+	ctx := context.Background()
+	feeds := NewFeedRepo(pool)
+	secrets := NewSecretRepo(pool)
+
+	f, err := feeds.Create(ctx, "Speyer", "239.255.0.80", 8800, nil, nil)
+	if err != nil {
+		t.Fatalf("create feed: %v", err)
+	}
+
+	// No secrets yet.
+	if refs, err := secrets.ListRefs(ctx, f.ID); err != nil || len(refs) != 0 {
+		t.Fatalf("ListRefs initial = %v, %v, want empty", refs, err)
+	}
+	if _, err := secrets.Get(ctx, f.ID, "secret/opensky"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("Get(missing) = %v, want ErrNotFound", err)
+	}
+
+	// Store opaque ciphertext (the repo is crypto-agnostic).
+	if err := secrets.Set(ctx, f.ID, "secret/opensky", "ciphertext-blob-1"); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	if err := secrets.Set(ctx, f.ID, "secret/flarm", "ciphertext-blob-2"); err != nil {
+		t.Fatalf("set 2: %v", err)
+	}
+	got, err := secrets.Get(ctx, f.ID, "secret/opensky")
+	if err != nil || got != "ciphertext-blob-1" {
+		t.Fatalf("Get = %q, %v", got, err)
+	}
+	refs, err := secrets.ListRefs(ctx, f.ID)
+	if err != nil || len(refs) != 2 || refs[0] != "secret/flarm" || refs[1] != "secret/opensky" {
+		t.Fatalf("ListRefs = %v, %v, want sorted [flarm, opensky]", refs, err)
+	}
+
+	// Upsert replaces the ciphertext.
+	if err := secrets.Set(ctx, f.ID, "secret/opensky", "ciphertext-blob-3"); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	if got, _ := secrets.Get(ctx, f.ID, "secret/opensky"); got != "ciphertext-blob-3" {
+		t.Fatalf("after upsert = %q, want blob-3", got)
+	}
+
+	// Delete removes it; re-delete yields ErrNotFound.
+	if err := secrets.Delete(ctx, f.ID, "secret/opensky"); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if err := secrets.Delete(ctx, f.ID, "secret/opensky"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("re-delete = %v, want ErrNotFound", err)
+	}
+
+	// Deleting the feed cascades its remaining secrets away.
+	if err := feeds.Delete(ctx, f.ID); err != nil {
+		t.Fatalf("delete feed: %v", err)
+	}
+	if refs, err := secrets.ListRefs(ctx, f.ID); err != nil || len(refs) != 0 {
+		t.Fatalf("ListRefs after feed delete = %v, %v, want empty (cascade)", refs, err)
+	}
+}
+
 func TestIntegrationSubscriptionRepoIsolation(t *testing.T) {
 	pool := testPool(t)
 	ctx := context.Background()
