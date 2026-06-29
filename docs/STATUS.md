@@ -13,17 +13,17 @@
 ## 🎯 Stand 2026-06-29
 
 - **Zuletzt aktualisiert:** 2026-06-29
-- **Letzte Arbeit:** **ORCH-4** — automatische Multicast-Endpoint-Allokation (auf Branch
-  `claude/roadmap-action-points-z50u6w`). Migration `00013` (`UNIQUE(multicast_group, port)`),
-  `store.MulticastPool` + `CreateAutoAllocated` (eine Gruppe je Feed aus konfiguriertem /24,
-  race-sicher via Constraint+Retry), Admin-API `POST /feeds` mit **optionalem** Endpoint
-  (Auto-Vergabe / manueller Override / 400 / 409 / 507), `WAYFINDER_FEED_*`-Config,
-  Frontend-Auto-Schalter. Real-PG-verifiziert. Davor in main gemergt: **ORCH-1** (#77),
-  **ORCH-2a/2b/2c-1-3a + ORCH-3** (#78), **ORCH-2c 3a-API** (#79), **ORCH-2c 3b** (#80).
-  Cross-Project: Firefly **#35** (ORCH-5 Quell-Eingangs-Kontrakt) offen.
-- **Nächster Schritt:** **ORCH-5 / Container-Injection** (`cred_ref` + Live-Quellen →
-  Firefly-Container-Env) — durch Firefly #35 geblockt. Sonst **ORCH-6** o. a. Tracks
-  (AP7 Session-Registry, Prio 2 CWP). Ankündigung & „Go" je Schritt.
+- **Letzte Arbeit:** **ORCH-5a** — `FIREFLY_SOURCES`-Rendering im Docker-Adapter
+  (`pkg/dockerbackend/sources.go`): `fireflySourcesJSON` übersetzt `spec.Sources` →
+  `FIREFLY_SOURCES`-JSON (Fireflys Kontrakt ADR 0023), `fireflyEnv` setzt zusätzlich
+  `FIREFLY_MODE=live`; je credentialled Quelle ein `cred_env`-**Name** (kein Wert).
+  Deterministisch (stabiler Spec-Hash), 5 Tests, alle Gates grün. **Firefly-Seite von
+  #35 ist fertig** (ADR 0023 + 2a Parser + 2b Live-Verdrahtung, alles in Firefly-main).
+  Davor in Wayfinder-main: ORCH-1…4 (#77–#81).
+- **Nächster Schritt:** **ORCH-5b** — `SecretResolver` im `wayfinder-orchestrator`
+  verdrahten (`WAYFINDER_SECRET_KEY`), `cred_ref` → `user:pass` auflösen und in die
+  benannten Cred-Envs injizieren; UI-Zwei-Felder (UX-2). **Sicherheits-relevant** →
+  eigene Ankündigung & „Go". Danach End-to-End-Abnahme.
 
 ---
 

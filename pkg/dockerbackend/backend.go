@@ -219,13 +219,16 @@ func (b *Backend) find(ctx context.Context, feedID int64) (*ContainerInfo, error
 	return nil, nil
 }
 
-// fireflyEnv translates a Spec into the Firefly container environment. Today it
-// sets the known, ratified output config (multicast group/port) plus the coarse
-// coverage bound and an optional placeholder scene source. The real live-source
-// input env (FIREFLY_SOURCES and the per-source credentials resolved from
-// SecretRefs) is intentionally NOT emitted yet: that contract is cross-project
-// (ORCH-5, Firefly) and secret resolution is ORCH-2c (3/3). Order is deterministic
-// so the spec hash is stable.
+// fireflyEnv translates a Spec into the Firefly container environment: the
+// ratified output config (multicast group/port), the coarse coverage bound, and —
+// when the feed has live sources — Firefly's live mode driven by the FIREFLY_SOURCES
+// input contract (ORCH-5; Firefly ADR 0023). Order is deterministic so the spec
+// hash is stable.
+//
+// FIREFLY_SOURCES carries only the source *structure* and the cred_env *names* a
+// source references (fireflySourcesJSON); the resolved credential *values* are
+// injected separately by the control plane (ORCH-5b), never inlined here. A feed
+// without sources falls back to the optional placeholder scene.
 func (b *Backend) fireflyEnv(spec instance.Spec) []string {
 	env := []string{
 		"FIREFLY_CAT062_GROUP=" + spec.Group,
@@ -236,7 +239,9 @@ func (b *Backend) fireflyEnv(spec instance.Spec) []string {
 		env = append(env, fmt.Sprintf("FIREFLY_COVERAGE_BBOX=%g,%g,%g,%g",
 			c.MinLat, c.MinLon, c.MaxLat, c.MaxLon))
 	}
-	if b.sceneDefault != "" {
+	if sourcesJSON, ok := fireflySourcesJSON(spec.Sources); ok {
+		env = append(env, "FIREFLY_MODE=live", "FIREFLY_SOURCES="+sourcesJSON)
+	} else if b.sceneDefault != "" {
 		env = append(env, "FIREFLY_SCENE="+b.sceneDefault)
 	}
 	return env

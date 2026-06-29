@@ -621,9 +621,13 @@ schmalen `ContainerClient`-Interface (Fake-getestet); nur `client.go` importiert
 das Docker-SDK. Env für `docker`: `WAYFINDER_FIREFLY_IMAGE` (Pflicht),
 `WAYFINDER_FIREFLY_NETWORK` (Default `host` — Multicast braucht i. d. R.
 Host-Networking), `WAYFINDER_FIREFLY_SCENE` (optionale Platzhalter-Quelle →
-`FIREFLY_SCENE`). Der Container bekommt heute `FIREFLY_CAT062_GROUP/PORT` und
-`FIREFLY_COVERAGE_BBOX`; die echte Quell-Eingangs-Env (`FIREFLY_SOURCES`) +
-Secret-Auflösung folgen ORCH-5/2c-3. **🔒 Nur dieser Prozess** erhält Zugriff auf
+`FIREFLY_SCENE`). Der Container bekommt `FIREFLY_CAT062_GROUP/PORT` und
+`FIREFLY_COVERAGE_BBOX`; **bei vorhandenen Quellen** zusätzlich `FIREFLY_MODE=live`
+und `FIREFLY_SOURCES` (Fireflys Eingangs-Kontrakt ADR 0023; `fireflySourcesJSON`
+rendert `spec.Sources` → JSON, je credentialled Quelle ein `cred_env`-**Name**,
+ORCH-5a). Die Credential-**Werte** löst die Control-Plane auf und injiziert sie in
+die benannten Cred-Envs (ORCH-5b folgt; bis dahin laufen nur credential-lose
+Quellen vollständig). **🔒 Nur dieser Prozess** erhält Zugriff auf
 den **Docker-Socket** (`/var/run/docker.sock`) — der Browser-Rand nie (ADR 0012 §6).
 
 **Secret-Verwaltung (ORCH-2c 3a + 3a-API):** Quell-Credentials liegen
