@@ -39,3 +39,50 @@ func (r *SecretResolver) Resolve(ctx context.Context, feedID int64, credRef stri
 	}
 	return r.cipher.Open(ciphertext)
 }
+
+// SecretWriter persists (and removes) a feed's encrypted credential blobs by
+// reference, and lists which refs are configured (satisfied by *store.SecretRepo).
+// It stores only opaque ciphertext — the key never reaches the persistence layer.
+type SecretWriter interface {
+	Set(ctx context.Context, feedID int64, credRef, ciphertext string) error
+	Delete(ctx context.Context, feedID int64, credRef string) error
+	ListRefs(ctx context.Context, feedID int64) ([]string, error)
+}
+
+// SecretSealer is the write-side counterpart of SecretResolver (ORCH-2c, ADR 0012
+// §6). It seals a plaintext credential with the deployment key and stores the
+// resulting ciphertext; it lives in the browser-facing server, the only component
+// that accepts an operator-supplied value. The plaintext is sealed immediately and
+// never persisted in the clear, never returned to the browser and never logged.
+// Reads of the value happen only in the orchestrator control plane (SecretResolver).
+type SecretSealer struct {
+	secrets SecretWriter
+	cipher  *secret.Cipher
+}
+
+// NewSecretSealer wires the sealer over the secret store and cipher.
+func NewSecretSealer(secrets SecretWriter, cipher *secret.Cipher) *SecretSealer {
+	return &SecretSealer{secrets: secrets, cipher: cipher}
+}
+
+// SetSecret seals the plaintext credential for a feed's cred_ref and stores it
+// (idempotent upsert).
+func (s *SecretSealer) SetSecret(ctx context.Context, feedID int64, credRef, plaintext string) error {
+	blob, err := s.cipher.Seal(plaintext)
+	if err != nil {
+		return err
+	}
+	return s.secrets.Set(ctx, feedID, credRef, blob)
+}
+
+// DeleteSecret removes a feed's cred_ref secret; a missing ref surfaces the
+// store's ErrNotFound.
+func (s *SecretSealer) DeleteSecret(ctx context.Context, feedID int64, credRef string) error {
+	return s.secrets.Delete(ctx, feedID, credRef)
+}
+
+// ListSecretRefs returns the cred_refs that have a stored secret for the feed
+// (the values are never exposed — only which refs are configured).
+func (s *SecretSealer) ListSecretRefs(ctx context.Context, feedID int64) ([]string, error) {
+	return s.secrets.ListRefs(ctx, feedID)
+}

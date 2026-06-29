@@ -176,6 +176,51 @@
             density="compact"
             class="mt-2"
           />
+
+          <!-- Secret value (ORCH-2c 3a): set/clear the credential the cred_ref
+               points at. Write-only — the server reports only whether a value is
+               configured, never the value. Hidden when the secret store is off. -->
+          <div v-if="secretStoreEnabled && (s.cred_ref || '').trim()" class="mt-2">
+            <div class="d-flex align-center ga-2 mb-1">
+              <v-chip
+                size="x-small"
+                :color="isSecretConfigured(s.cred_ref) ? 'success' : 'warning'"
+                variant="tonal"
+              >
+                {{ isSecretConfigured(s.cred_ref) ? 'Secret hinterlegt' : 'Kein Secret' }}
+              </v-chip>
+            </div>
+            <div class="d-flex align-center ga-2">
+              <v-text-field
+                v-model="secretInput[i]"
+                type="password"
+                autocomplete="new-password"
+                :label="isSecretConfigured(s.cred_ref) ? 'Neuen Wert setzen (ersetzt)' : 'Wert setzen'"
+                density="compact"
+                hide-details
+              />
+              <v-btn
+                size="small"
+                color="primary"
+                variant="tonal"
+                :loading="secretBusy === i"
+                :disabled="!(secretInput[i] || '').length"
+                @click="saveSecret(i)"
+              >
+                Speichern
+              </v-btn>
+              <v-btn
+                v-if="isSecretConfigured(s.cred_ref)"
+                size="small"
+                color="error"
+                variant="text"
+                :loading="secretBusy === i"
+                @click="clearSecret(i)"
+              >
+                Entfernen
+              </v-btn>
+            </div>
+          </div>
         </v-card>
 
         <v-btn size="small" variant="tonal" prepend-icon="mdi-plus" @click="addSource">
@@ -291,6 +336,68 @@ const sources = ref([])
 const sourcesError = ref('')
 const coveragePreview = ref('')
 
+// Per-feed source credentials (ORCH-2c 3a). secretStoreEnabled mirrors the
+// server: false when no WAYFINDER_SECRET_KEY is configured (the secret routes
+// return 503), so the controls stay hidden rather than pretending to work.
+// secretRefs holds the cred_refs that already have a stored value (the server
+// never returns the value itself); secretInput holds the transient new value the
+// admin types, keyed by source row index; secretBusy is the row currently saving.
+const secretStoreEnabled = ref(false)
+const secretRefs = ref(new Set())
+const secretInput = ref({})
+const secretBusy = ref(-1)
+
+function isSecretConfigured(ref) {
+  return secretRefs.value.has((ref || '').trim())
+}
+
+// loadFeedSecretsState reads which cred_refs are configured for the feed. A 503
+// means the secret store is disabled server-side; anything else leaves it on.
+async function loadFeedSecretsState(feedId) {
+  secretStoreEnabled.value = false
+  secretRefs.value = new Set()
+  const r = await admin.loadFeedSecrets(feedId)
+  if (r.ok) {
+    secretStoreEnabled.value = true
+    secretRefs.value = new Set((r.data.secrets || []).map((s) => s.ref))
+  } else if (r.status === 503) {
+    secretStoreEnabled.value = false
+  } else {
+    // Unknown error: keep the controls hidden but surface the reason.
+    sourcesError.value = r.error || 'Secret-Status konnte nicht geladen werden.'
+  }
+}
+
+async function saveSecret(i) {
+  const ref = (sources.value[i]?.cred_ref || '').trim()
+  const value = secretInput.value[i] || ''
+  if (!ref || !value) return
+  secretBusy.value = i
+  const r = await admin.setFeedSecret(sourcesTarget.value.id, ref, value)
+  secretBusy.value = -1
+  if (r.ok) {
+    secretRefs.value = new Set(secretRefs.value).add(ref)
+    secretInput.value = { ...secretInput.value, [i]: '' }
+  } else {
+    sourcesError.value = r.error || 'Secret konnte nicht gespeichert werden.'
+  }
+}
+
+async function clearSecret(i) {
+  const ref = (sources.value[i]?.cred_ref || '').trim()
+  if (!ref) return
+  secretBusy.value = i
+  const r = await admin.deleteFeedSecret(sourcesTarget.value.id, ref)
+  secretBusy.value = -1
+  if (r.ok) {
+    const next = new Set(secretRefs.value)
+    next.delete(ref)
+    secretRefs.value = next
+  } else {
+    sourcesError.value = r.error || 'Secret konnte nicht entfernt werden.'
+  }
+}
+
 // blankSource returns a fresh form entry of the given type with the shape the
 // per-type inputs bind to (bbox always present so v-model has a target; unused
 // fields are stripped on submit).
@@ -317,14 +424,18 @@ async function openSources(f) {
   coveragePreview.value = ''
   sourcesDialog.value = true
   busy.value = true
+  secretStoreEnabled.value = false
+  secretRefs.value = new Set()
+  secretInput.value = {}
   const r = await admin.loadFeedSources(f.id)
-  busy.value = false
   if (r.ok) {
     sources.value = (r.data.sources || []).map(toFormSource)
     coveragePreview.value = formatBBox(r.data.coverage_bbox)
+    await loadFeedSecretsState(f.id)
   } else {
     sourcesError.value = r.error || 'Quellen konnten nicht geladen werden.'
   }
+  busy.value = false
 }
 
 function addSource() {

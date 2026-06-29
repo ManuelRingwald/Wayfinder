@@ -13,15 +13,15 @@
 ## 🎯 Stand 2026-06-29
 
 - **Zuletzt aktualisiert:** 2026-06-29
-- **Letzte Arbeit:** **ORCH-1 + ORCH-2/3 komplett & in main gemergt** (PR #77 + PR #78).
-  - ORCH-1: `source_config`/`coverage_bbox`, Admin-API, Frontend-Quell-Builder.
-  - ORCH-2a: `Backend`-Interface + `MemoryBackend` + `Spec`/`SpecFromFeed`.
-  - ORCH-3: Reconciler (Operator-Muster, crash-fest, Fehler-isoliert).
-  - ORCH-2c (1/3): `StoreDesiredState`-Adapter.
-  - ORCH-2c (2/3): `wayfinder-orchestrator`-Binary (Least-Privilege, eigener Prozess).
-  - ORCH-2b: Docker-Backend-Adapter (`ContainerClient`, Spec-Hash, `wayfinder.*`-Labels).
-  - ORCH-2c (3a): AES-256-GCM Secret-Speicher (`feed_secrets`, Migration 00011) + `SecretResolver`.
-- **Nächster Schritt:** **ORCH-2c (3a-API)** — write-only Admin-API für Secrets (`PUT/DELETE /api/admin/feeds/{id}/secrets/{ref}`, `GET` nur `{configured}`), verdrahtet `WAYFINDER_SECRET_KEY` in beide Binaries (S3 · Sonnet)
+- **Letzte Arbeit:** **ORCH-2c (3a-API)** — write-only Secret-Admin-API + Sealer +
+  Frontend (auf Branch `claude/roadmap-action-points-z50u6w`). `SecretSealer`
+  (Schreib-Gegenstück zum Resolver), `GET/PUT/DELETE /api/admin/feeds/{id}/secrets[/{ref…}]`
+  (requireAdmin, write-only, `{ref…}`-Wildcard für Slash-Refs, 503 ohne Schlüssel),
+  `WAYFINDER_SECRET_KEY` in den Server verdrahtet, Secret-Bedienung im Quellen-Dialog.
+  Davor in main gemergt: **ORCH-1** (PR #77) + **ORCH-2a/2b/2c-1-3a + ORCH-3** (PR #78).
+- **Nächster Schritt:** **ORCH-2c (3b)** — Postgres `LISTEN/NOTIFY`-Änderungs-Trigger
+  (sofortiger Reconcile); danach **Container-Injection** des aufgelösten Secrets
+  (`cred_ref` → Firefly-Quell-Env, braucht ORCH-5-Contract). Ankündigung & „Go" je Schritt.
 
 ---
 
@@ -53,13 +53,14 @@
 | **ORCH-2a/3 (ADR 0012)** | `Backend`-Interface + `MemoryBackend` + Reconciler (Operator-Muster) | ✅ |
 | **ORCH-2b (ADR 0012)** | Docker-Backend-Adapter (`ContainerClient`, Spec-Hash, Labels) | ✅ |
 | **ORCH-2c 1–3a (ADR 0012)** | `StoreDesiredState`, `wayfinder-orchestrator`-Binary (Least-Privilege), AES-256-GCM Secret-Store + Resolver | ✅ |
+| **ORCH-2c 3a-API (ADR 0012 §6)** | Write-only Secret-Admin-API + `SecretSealer` + `WAYFINDER_SECRET_KEY` + Frontend-Bedienung | ✅ |
 | **ADR 0013** | Modular CWP & Enterprise ATC Integration ratifiziert (Prio 2, Planung) | ✅ |
 
 ### 🚧 Offen
 
 Siehe zentrale **`docs/ROADMAP.md`** für aktuelle Priorisierung (Prio 1 / Prio 2):
 
-- **Prio 1 (jetzt):** ORCH-2c (3a-API) → ORCH-2c (3b LISTEN/NOTIFY) → ORCH-4 (Multicast-Allokation) → ORCH-5 (Container-Injection, cross-project) → ORCH-6
+- **Prio 1 (jetzt):** ORCH-2c (3b LISTEN/NOTIFY) → ORCH-4 (Multicast-Allokation) → ORCH-5 (Container-Injection + Firefly-Quell-Env, cross-project) → ORCH-6 (ORCH-1, ORCH-2/3, ORCH-2c 3a+3a-API ✅)
 - **Prio 2 (nach Prio 1):** Modular CWP / EFS / IMS (ADR 0013, Epic CWP-0…IMS-3)
 - **ADR 0009 AP7:** Session-Registry, DB-gestützt (S4, offen)
 

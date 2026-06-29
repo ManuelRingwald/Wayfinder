@@ -56,6 +56,20 @@ type FeedStore interface {
 	SetSourceConfig(ctx context.Context, id int64, sources store.SourceConfig, coverage *store.BBox) error
 }
 
+// SecretService is the write-only credential surface for a feed's source
+// configuration (ORCH-2c 3a, ADR 0012 §6). The admin API accepts a plaintext
+// credential for a cred_ref and hands it to SetSecret, which seals it with the
+// deployment key before it is stored; the value is never read back to the browser
+// (ListSecretRefs reports only which refs are configured). Satisfied in production
+// by *orchestrator.SecretSealer. The interface keeps the admin API crypto-agnostic
+// (it never holds the key). A nil service disables the secret routes (503) — the
+// degenerate case when WAYFINDER_SECRET_KEY is unset (dev/single-tenant).
+type SecretService interface {
+	SetSecret(ctx context.Context, feedID int64, credRef, plaintext string) error
+	DeleteSecret(ctx context.Context, feedID int64, credRef string) error
+	ListSecretRefs(ctx context.Context, feedID int64) ([]string, error)
+}
+
 // FeedLifecycle starts and stops the live multicast receiver for a feed so a
 // catalogue change takes effect without a process restart (ONB-5, ADR 0011).
 // Satisfied in production by an adapter over the feed manager + health registry
@@ -142,6 +156,7 @@ type Handler struct {
 	feedHealth FeedHealthSource    // may be nil; AP4 health endpoint returns empty list
 	feedLife   FeedLifecycle       // may be nil; disables live receiver join/leave (ONB-5)
 	aeroLife   TenantAeroLifecycle // may be nil; disables live per-tenant OpenAIP apply (ONB-6)
+	secrets    SecretService       // may be nil; disables the per-feed secret routes (503) when no key is configured (ORCH-2c 3a)
 	rescope    RescopeFunc
 	logger     *slog.Logger
 	mux        *http.ServeMux
@@ -151,8 +166,8 @@ type Handler struct {
 // the wrong method. The cross-tenant provisioning routes (/api/admin/tenants/…)
 // are additionally guarded by requireAdmin (defence-in-depth). rescope (may be
 // nil) re-scopes a tenant's live streams after a mutation (WF2-33).
-func New(views ViewStore, subs SubscriptionStore, feeds FeedStore, tenants TenantStore, users UserStore, creds CredentialStore, feats EntitlementService, feedHealth FeedHealthSource, feedLife FeedLifecycle, aeroLife TenantAeroLifecycle, logger *slog.Logger, rescope RescopeFunc) *Handler {
-	h := &Handler{views: views, subs: subs, feeds: feeds, tenants: tenants, users: users, creds: creds, feats: feats, feedHealth: feedHealth, feedLife: feedLife, aeroLife: aeroLife, rescope: rescope, logger: logger}
+func New(views ViewStore, subs SubscriptionStore, feeds FeedStore, tenants TenantStore, users UserStore, creds CredentialStore, feats EntitlementService, feedHealth FeedHealthSource, feedLife FeedLifecycle, aeroLife TenantAeroLifecycle, secrets SecretService, logger *slog.Logger, rescope RescopeFunc) *Handler {
+	h := &Handler{views: views, subs: subs, feeds: feeds, tenants: tenants, users: users, creds: creds, feats: feats, feedHealth: feedHealth, feedLife: feedLife, aeroLife: aeroLife, secrets: secrets, rescope: rescope, logger: logger}
 	mux := http.NewServeMux()
 	// whoami: the SPA's role probe (WF2-32). It sits behind the same admin gate, so
 	// a 200 here both confirms access and tells the client which panels to render.
@@ -181,6 +196,14 @@ func New(views ViewStore, subs SubscriptionStore, feeds FeedStore, tenants Tenan
 	// distinct from the {feedID} delete and the feeds/health route.
 	mux.HandleFunc("GET /api/admin/feeds/{feedID}/sources", h.requireAdmin(h.getFeedSources))
 	mux.HandleFunc("PUT /api/admin/feeds/{feedID}/sources", h.requireAdmin(h.putFeedSources))
+	// Per-feed source credentials (ORCH-2c 3a, ADR 0012 §6): write-only secret
+	// management. The value referenced by a source's cred_ref is set/cleared here
+	// and sealed at rest; the GET reports only which refs are configured, never a
+	// value (mirrors the OpenAIP key isolation, ONB-6). The {ref...} trailing
+	// wildcard lets a cred_ref carry slashes (e.g. "secret/opensky").
+	mux.HandleFunc("GET /api/admin/feeds/{feedID}/secrets", h.requireAdmin(h.getFeedSecrets))
+	mux.HandleFunc("PUT /api/admin/feeds/{feedID}/secrets/{ref...}", h.requireAdmin(h.putFeedSecret))
+	mux.HandleFunc("DELETE /api/admin/feeds/{feedID}/secrets/{ref...}", h.requireAdmin(h.deleteFeedSecret))
 	// Read-only reference: the sensor-class catalogue (WF2-41).
 	mux.HandleFunc("GET /api/admin/sensor-classes", h.getSensorClasses)
 	// Cross-tenant provisioning (target tenant from the path).

@@ -424,6 +424,11 @@ services:
       # Session-Schlüssel: leer = flüchtiger Zufalls-Schlüssel (Warn-Log).
       # Für Produktion: export WAYFINDER_SESSION_KEY=$(openssl rand -hex 32)
       WAYFINDER_SESSION_KEY: ${WAYFINDER_SESSION_KEY:-}
+      # Optional (ORCH-2c, ADR 0012 §6): AES-256-Schlüssel, der Pro-Feed-Quell-
+      # Credentials verschlüsselt. Leer = die Secret-Verwaltung im Admin
+      # (Feed → Quellen → „Secret hinterlegen") bleibt deaktiviert (503).
+      # Erzeugen: export WAYFINDER_SECRET_KEY=$(openssl rand -base64 32)
+      WAYFINDER_SECRET_KEY: ${WAYFINDER_SECRET_KEY:-}
       WAYFINDER_MAP_CENTER_LAT: "50.0379"   # Frankfurt
       WAYFINDER_MAP_CENTER_LON: "8.5622"
       WAYFINDER_MAP_ZOOM: "8"

@@ -29,7 +29,7 @@ func meReq(method, path, body string, role store.Role, mustChange bool) *http.Re
 
 func handlerForMe(us UserStore, cs CredentialStore) *Handler {
 	return New(&fakeVS{}, &fakeVS{}, fakeFeeds{}, fakeTenants{}, us, cs, &fakeEntitlements{},
-		nil, nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+		nil, nil, nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
 }
 
 // --- must_change_password gate (ONB-1) --------------------------------------

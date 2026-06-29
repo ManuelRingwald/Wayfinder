@@ -38,7 +38,7 @@ func (l *fakeLifecycle) Stop(id int64) bool {
 // for the ONB-5 feed-lifecycle tests.
 func handlerForFeeds(ff fakeFeeds, life FeedLifecycle) *Handler {
 	return New(&fakeVS{}, &fakeVS{}, ff, fakeTenants{}, &fakeUserStore{}, &fakeCredStore{},
-		&fakeEntitlements{}, nil, life, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+		&fakeEntitlements{}, nil, life, nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
 }
 
 func TestCreateFeed(t *testing.T) {
@@ -222,7 +222,7 @@ func TestFeedLifecycleRoutesForbidNonAdmin(t *testing.T) {
 func TestCreateFeedWithoutLifecycle(t *testing.T) {
 	ff := fakeFeeds{byName: map[string]store.Feed{}, created: map[string]store.Feed{}, nextID: 1}
 	h := New(&fakeVS{}, &fakeVS{}, ff, fakeTenants{}, &fakeUserStore{}, &fakeCredStore{},
-		&fakeEntitlements{}, nil, nil /* no feed lifecycle */, nil /* no aero lifecycle */, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+		&fakeEntitlements{}, nil, nil /* no feed lifecycle */, nil /* no aero lifecycle */, nil /* no secret service */, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, adminReq(http.MethodPost, "/api/admin/feeds",
 		`{"name":"north","multicast_group":"239.255.0.70","port":8600}`, 99, store.RoleAdmin))

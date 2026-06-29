@@ -29,7 +29,7 @@ func (l *fakeAeroLife) Stop(tenantID int64) { l.stopped = append(l.stopped, tena
 
 func handlerForOpenAIP(ft fakeTenants, aero TenantAeroLifecycle) *Handler {
 	return New(&fakeVS{}, &fakeVS{}, fakeFeeds{}, ft, &fakeUserStore{}, &fakeCredStore{},
-		&fakeEntitlements{}, nil, nil, aero, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+		&fakeEntitlements{}, nil, nil, aero, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
 }
 
 func TestGetTenantOpenAIPReportsConfigured(t *testing.T) {

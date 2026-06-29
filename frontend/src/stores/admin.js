@@ -302,6 +302,42 @@ export const useAdminStore = defineStore('admin', () => {
     return r
   }
 
+  // --- per-feed source credentials (ORCH-2c 3a, ADR 0012 §6) ----------------
+  // A source's cred_ref points at a per-feed secret whose value is set here. The
+  // route is write-only: loadFeedSecrets reports only which refs are configured
+  // (never a value); a 503 means no encryption key is configured server-side
+  // (WAYFINDER_SECRET_KEY) and the secret controls stay disabled. setFeedSecret
+  // sends the value (sealed at rest by the server); deleteFeedSecret clears it.
+  // The cred_ref may contain slashes (e.g. secret/opensky); encodeURI keeps them
+  // so the server's {ref...} wildcard captures the full handle.
+
+  async function loadFeedSecrets(feedId) {
+    return apiFetch(`/api/admin/feeds/${feedId}/secrets`)
+  }
+
+  async function setFeedSecret(feedId, ref, value) {
+    error.value = null
+    notice.value = null
+    const r = await apiFetch(`/api/admin/feeds/${feedId}/secrets/${encodeURI(ref)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ value }),
+    })
+    if (r.ok) notice.value = 'Secret gespeichert.'
+    else error.value = r.error
+    return r
+  }
+
+  async function deleteFeedSecret(feedId, ref) {
+    error.value = null
+    notice.value = null
+    const r = await apiFetch(`/api/admin/feeds/${feedId}/secrets/${encodeURI(ref)}`, {
+      method: 'DELETE',
+    })
+    if (r.ok) notice.value = 'Secret entfernt.'
+    else error.value = r.error
+    return r
+  }
+
   // --- OpenAIP per tenant (ONB-6, ADR 0011) ---------------------------------
   // Each tenant may carry its own OpenAIP key. loadTenantOpenAIP reports only
   // whether a key is set (the server never returns the key itself); the caller
@@ -501,6 +537,7 @@ export const useAdminStore = defineStore('admin', () => {
     createTenant, deleteTenant,
     createFeed, deleteFeed,
     loadFeedSources, saveFeedSources,
+    loadFeedSecrets, setFeedSecret, deleteFeedSecret,
     loadTenantOpenAIP, setTenantOpenAIPKey,
     changeOwnPassword, deleteOwnAccount,
     loadAdmins, createAdmin, setAdminStatus, deleteAdmin, setAdminPassword,
