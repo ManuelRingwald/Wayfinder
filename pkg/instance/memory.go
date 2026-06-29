@@ -102,12 +102,13 @@ func (b *MemoryBackend) RunningSpec(feedID int64) (Spec, bool) {
 }
 
 // RunningFeeds returns the ids of feeds with a running instance, in no order.
-func (b *MemoryBackend) RunningFeeds() []int64 {
+// Implements instance.Backend (the reconciler's orphan-detection input).
+func (b *MemoryBackend) RunningFeeds(_ context.Context) ([]int64, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	ids := make([]int64, 0, len(b.running))
 	for id := range b.running {
 		ids = append(ids, id)
 	}
-	return ids
+	return ids, nil
 }

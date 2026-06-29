@@ -163,4 +163,9 @@ type Backend interface {
 	Start(ctx context.Context, spec Spec) error
 	Stop(ctx context.Context, feedID int64) error
 	Status(ctx context.Context, feedID int64) (Status, error)
+	// RunningFeeds returns the ids of feeds the backend currently has a live
+	// instance for. The reconciler (ORCH-3) compares this actual set against the
+	// desired set to tear down orphans — observing real state rather than trusting
+	// remembered state is what makes the operator loop crash-safe.
+	RunningFeeds(ctx context.Context) ([]int64, error)
 }

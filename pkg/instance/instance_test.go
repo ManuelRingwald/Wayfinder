@@ -114,7 +114,7 @@ func TestMemoryBackendLifecycle(t *testing.T) {
 	if err := b.Start(ctx, spec); err != nil {
 		t.Fatalf("re-start: %v", err)
 	}
-	if feeds := b.RunningFeeds(); len(feeds) != 1 {
+	if feeds, _ := b.RunningFeeds(ctx); len(feeds) != 1 {
 		t.Fatalf("running feeds = %v, want exactly one", feeds)
 	}
 
@@ -145,7 +145,7 @@ func TestMemoryBackendRejectsInvalidSpec(t *testing.T) {
 	if err := b.Start(context.Background(), Spec{FeedID: 0}); err == nil {
 		t.Fatal("Start accepted an invalid spec")
 	}
-	if feeds := b.RunningFeeds(); len(feeds) != 0 {
+	if feeds, _ := b.RunningFeeds(context.Background()); len(feeds) != 0 {
 		t.Fatalf("an invalid spec must not be recorded as running: %v", feeds)
 	}
 }
