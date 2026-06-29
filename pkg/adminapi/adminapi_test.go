@@ -106,6 +106,15 @@ func (f fakeFeeds) Create(_ context.Context, name, group string, port int, regio
 	return feed, nil
 }
 
+func (f fakeFeeds) CreateAutoAllocated(ctx context.Context, name string, region *string, mix []string) (store.Feed, error) {
+	if f.createErr != nil {
+		return store.Feed{}, f.createErr
+	}
+	// Synthesise a deterministic pool endpoint so handler tests can assert the
+	// auto-allocated feed carries one without a real allocator.
+	return f.Create(ctx, name, "239.255.0.7", 8600, region, mix)
+}
+
 func (f fakeFeeds) Delete(_ context.Context, id int64) error {
 	if f.deleted != nil {
 		f.deleted[id] = true

@@ -46,9 +46,20 @@ func (h *Handler) createFeed(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "name too long")
 		return
 	}
-	if err := validateMulticast(group, body.Port); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
+
+	// Endpoint is optional (ORCH-4): omit both group and port to have the server
+	// auto-allocate a collision-free multicast endpoint from the pool; supply both
+	// for a manual override. Supplying only one is a client error.
+	auto := group == "" && body.Port == 0
+	if !auto {
+		if group == "" || body.Port == 0 {
+			writeError(w, http.StatusBadRequest, "provide both multicast_group and port, or neither (to auto-allocate)")
+			return
+		}
+		if err := validateMulticast(group, body.Port); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 	}
 
 	// Duplicate-name pre-check for a clean 409 instead of surfacing the UNIQUE
@@ -75,14 +86,25 @@ func (h *Handler) createFeed(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	f, err := h.feeds.Create(r.Context(), name, group, body.Port, regionPtr, mix)
+	var f store.Feed
+	var err error
+	if auto {
+		f, err = h.feeds.CreateAutoAllocated(r.Context(), name, regionPtr, mix)
+	} else {
+		f, err = h.feeds.Create(r.Context(), name, group, body.Port, regionPtr, mix)
+	}
 	if err != nil {
 		var unknown *sensorclass.UnknownClassError
-		if errors.As(err, &unknown) {
+		switch {
+		case errors.As(err, &unknown):
 			writeError(w, http.StatusBadRequest, "invalid sensor_mix: "+err.Error())
-			return
+		case errors.Is(err, store.ErrEndpointTaken):
+			writeError(w, http.StatusConflict, "multicast endpoint already in use")
+		case errors.Is(err, store.ErrPoolExhausted):
+			writeError(w, http.StatusInsufficientStorage, "no free multicast endpoint available (pool exhausted)")
+		default:
+			h.internalError(w, "create feed", err)
 		}
-		h.internalError(w, "create feed", err)
 		return
 	}
 

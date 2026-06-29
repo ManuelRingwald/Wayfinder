@@ -28,6 +28,9 @@ const feedColumns = `id, name, multicast_group, port, region, sensor_mix, create
 // FeedRepo provides access to the feeds catalogue.
 type FeedRepo struct {
 	db *pgxpool.Pool
+	// pool is the multicast endpoint pool CreateAutoAllocated draws from (ORCH-4);
+	// the zero value falls back to DefaultMulticastPool. Set via WithMulticastPool.
+	pool MulticastPool
 }
 
 // NewFeedRepo returns a FeedRepo backed by the given pool.
@@ -50,6 +53,9 @@ func (r *FeedRepo) Create(ctx context.Context, name, multicastGroup string, port
 		VALUES ($1, $2, $3, $4, $5::jsonb) RETURNING ` + feedColumns
 	f, err := scanFeed(r.db.QueryRow(ctx, q, name, multicastGroup, port, region, mix))
 	if err != nil {
+		if isEndpointUnique(err) {
+			return Feed{}, ErrEndpointTaken
+		}
 		return Feed{}, wrap("create feed", err)
 	}
 	return f, nil
