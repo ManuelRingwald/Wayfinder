@@ -62,6 +62,82 @@ func TestIntegrationFeedRepo(t *testing.T) {
 	}
 }
 
+func TestIntegrationFeedSourceConfig(t *testing.T) {
+	pool := testPool(t)
+	ctx := context.Background()
+	repo := NewFeedRepo(pool)
+
+	f, err := repo.Create(ctx, "Speyer", "239.255.0.70", 8700, nil, []string{"ADS-B"})
+	if err != nil {
+		t.Fatalf("create feed: %v", err)
+	}
+
+	// A fresh feed defaults to an empty source config and no coverage (migration
+	// 00010 default '[]' / NULL).
+	sources, coverage, err := repo.GetSourceConfig(ctx, f.ID)
+	if err != nil {
+		t.Fatalf("get default source config: %v", err)
+	}
+	if len(sources) != 0 || coverage != nil {
+		t.Fatalf("default config = %+v / %+v, want empty / nil", sources, coverage)
+	}
+
+	// Round-trip a mixed config with a derived coverage bbox.
+	cfg := SourceConfig{
+		{Type: SourceADSBOpenSky, BBox: bbox(48, 7, 50, 9), CredRef: ptrStr("secret/speyer-opensky")},
+		{Type: SourceRadarASTERIX, SAC: ptrInt(1), SIC: ptrInt(4)},
+	}
+	cov := cfg.CoverageBBox(50)
+	if err := repo.SetSourceConfig(ctx, f.ID, cfg, cov); err != nil {
+		t.Fatalf("set source config: %v", err)
+	}
+	gotSources, gotCov, err := repo.GetSourceConfig(ctx, f.ID)
+	if err != nil {
+		t.Fatalf("get source config: %v", err)
+	}
+	if len(gotSources) != 2 || gotSources[0].Type != SourceADSBOpenSky || gotSources[1].Type != SourceRadarASTERIX {
+		t.Fatalf("sources did not round-trip: %+v", gotSources)
+	}
+	if gotSources[0].CredRef == nil || *gotSources[0].CredRef != "secret/speyer-opensky" {
+		t.Fatalf("cred_ref did not round-trip: %+v", gotSources[0])
+	}
+	if gotSources[1].SAC == nil || *gotSources[1].SAC != 1 || gotSources[1].SIC == nil || *gotSources[1].SIC != 4 {
+		t.Fatalf("sac/sic did not round-trip: %+v", gotSources[1])
+	}
+	if gotCov == nil || *gotCov != *cov {
+		t.Fatalf("coverage = %+v, want %+v", gotCov, cov)
+	}
+
+	// An invalid config is rejected before any write (no partial update).
+	bad := SourceConfig{{Type: SourceADSBOpenSky}} // missing bbox
+	var ise *InvalidSourceError
+	if err := repo.SetSourceConfig(ctx, f.ID, bad, nil); !errors.As(err, &ise) {
+		t.Fatalf("set invalid config = %v, want *InvalidSourceError", err)
+	}
+	// The previous good config is untouched.
+	stillSources, _, err := repo.GetSourceConfig(ctx, f.ID)
+	if err != nil || len(stillSources) != 2 {
+		t.Fatalf("config after rejected write = %+v, %v, want 2 sources preserved", stillSources, err)
+	}
+
+	// Setting an empty config clears sources and coverage.
+	if err := repo.SetSourceConfig(ctx, f.ID, nil, nil); err != nil {
+		t.Fatalf("clear source config: %v", err)
+	}
+	clearedSources, clearedCov, err := repo.GetSourceConfig(ctx, f.ID)
+	if err != nil || len(clearedSources) != 0 || clearedCov != nil {
+		t.Fatalf("cleared config = %+v / %+v, %v", clearedSources, clearedCov, err)
+	}
+
+	// A missing feed yields ErrNotFound for both accessors.
+	if _, _, err := repo.GetSourceConfig(ctx, 999999); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("GetSourceConfig(missing) = %v, want ErrNotFound", err)
+	}
+	if err := repo.SetSourceConfig(ctx, 999999, nil, nil); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("SetSourceConfig(missing) = %v, want ErrNotFound", err)
+	}
+}
+
 func TestIntegrationSubscriptionRepoIsolation(t *testing.T) {
 	pool := testPool(t)
 	ctx := context.Background()

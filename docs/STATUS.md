@@ -13,8 +13,8 @@
 ## 🎯 Stand 2026-06-28
 
 - **Zuletzt aktualisiert:** 2026-06-28
-- **Letzte Arbeit:** Strategischer Prio-Rahmen in ROADMAP.md verankert (Prio 1 / Prio 2) + ADR 0013 „Modular CWP & Enterprise ATC Integration" ratifiziert (Planung, kein Produktivcode)
-- **Nächster Schritt:** **ORCH-1 (Feed-Quell-Datenmodell)** — `source_config`/`coverage_bbox`, Migration, Admin-API, UI-Quell-Builder; nach Ankündigung & „Go" (S3–S4 · Sonnet/Opus)
+- **Letzte Arbeit:** **ORCH-1 komplett** (Feed-Quell-Datenmodell) — 1a Schema + Store (`source_config`/`coverage_bbox`, Migration 00010, Validierung, Coverage-Ableitung), 1b Admin-API (`GET/PUT /api/admin/feeds/{id}/sources`), 1c Frontend-Quell-Builder (`AdminFeeds.vue`). Alle Gates grün (go test, vet, gofmt, 164 Frontend-Tests, Build).
+- **Nächster Schritt:** **ORCH-2** (`InstanceBackend`-Abstraktion + Docker-Adapter, getrennte Control-Plane, Multicast-Allokation, Secret-Handling je Feed); nach Ankündigung & „Go" (S4–S5 · Opus/Fable)
 
 ---
 
@@ -42,13 +42,14 @@
 |---|---|---|
 | **ONB (ADR 0011)** | Zero-Touch-Onboarding: ONB-0…ONB-6 (Auto-Seed, Pflichtwechsel, Admin-CRUD, Mandanten-CRUD, Feed-CRUD, OpenAIP pro Mandant) | ✅ ICD 2.5.0 |
 | **ORCH-0 (ADR 0012)** | Architektur-Entscheidung: 1 Firefly-Instanz pro Mandant, Reconciler-Konzept | ✅ |
+| **ORCH-1 (ADR 0012)** | Feed-Quell-Datenmodell: `source_config`/`coverage_bbox`, Admin-API, UI-Quell-Builder (1a/1b/1c) | ✅ |
 | **ADR 0013** | Modular CWP & Enterprise ATC Integration ratifiziert (Prio 2, Planung) | ✅ |
 
 ### 🚧 Offen
 
 Siehe zentrale **`docs/ROADMAP.md`** für aktuelle Priorisierung (Prio 1 / Prio 2):
 
-- **Prio 1 (jetzt):** ORCH-1…6 (Feed-Quell-Datenmodell → Auto-Orchestrierung)
+- **Prio 1 (jetzt):** ORCH-2…6 (Control-Plane/Reconciler → Auto-Orchestrierung; ORCH-1 ✅)
 - **Prio 2 (nach Prio 1):** Modular CWP / EFS / IMS (ADR 0013, Epic CWP-0…IMS-3)
 - **ADR 0009 AP7:** Session-Registry, DB-gestützt (S4, offen)
 

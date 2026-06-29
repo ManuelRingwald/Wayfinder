@@ -208,6 +208,8 @@ Durch `authMiddleware` geschützt (wenn `WAYFINDER_AUTH_TOKEN` gesetzt).
 | `/api/admin/feeds/health` | GET | **AP4:** Gesundheitszustand aller Feeds — je Feed `{feed_id, color, stale, ever_seen, last_heartbeat_ago_s, track_count_recent, sensors_active, sensors_total}` aus der In-Memory-Health-Registry; `color` ist **grün** (Heartbeat frisch, unabhängig vom Verkehr — leerer Himmel ist kein Fehler) / **gelb** (Sensor-Teilausfall: `sensors_active < sensors_total > 0`; CAT063, ADR 0010) / **rot** (kein Heartbeat = toter Feed oder nie gesehen); **admin** |
 | `/api/admin/feeds` | POST | **ONB-5 (ADR 0011):** neuen Feed anlegen (`{name, multicast_group, port, region?, sensor_mix?}`) → 201; `multicast_group` muss IPv4-Multicast sein (224.0.0.0–239.255.255.255), `port` 1..65535, `sensor_mix` gegen das Sensorklassen-Vokabular validiert (unbekannt → 400); doppelter Name → 409; **der Live-Receiver tritt der Multicast-Gruppe sofort bei** (kein Neustart); scheitert der Beitritt, wird die Katalogzeile zurückgerollt; **admin** |
 | `/api/admin/feeds/{id}` | DELETE | **ONB-5:** Feed löschen → 204; **der Live-Receiver verlässt die Multicast-Gruppe sofort**; kaskadiert (ON DELETE CASCADE) auf die Abos, die ihn referenzierten (Guard C: kein Blockieren bei bestehenden Abos — Grants kaskadieren); unbekannter Feed → 404; **admin** |
+| `/api/admin/feeds/{id}/sources` | GET | **ORCH-1b (ADR 0012):** Quell-Konfiguration des Feeds — `{sources:[{type, bbox?, sac?, sic?, cred_ref?}], coverage_bbox}`; `sources` serialisiert als `[]` (nie `null`); unbekannter Feed → 404; **admin** |
+| `/api/admin/feeds/{id}/sources` | PUT | **ORCH-1b:** Quell-Konfiguration setzen → 200 (kanonisch zurückgelesen). Server-validiert: geschlossenes Quell-Vokabular (`adsb_opensky`/`flarm_aprs` erfordern `bbox`, keine `sac`/`sic`; `radar_asterix` erfordert `sac`/`sic` 0..255), WGS84-`bbox`, `cred_ref` als Verweis (non-blank, ≤200) — Verstoß → **400 mit Quell-Index**, **kein** Teil-Write. Fehlt `coverage_bbox`, leitet der Server die **grobe äußere** BBox aus den Quell-BBoxen + Default-Marge (50 km) ab; eine explizit gesetzte `coverage_bbox` (WGS84-validiert) gewinnt (Operator-Override). Unbekannter Feed → 404; **admin** |
 | `/api/admin/tenants/{id}/view` | GET/PUT | **AP3:** Standard-Sicht **eines beliebigen** Mandanten lesen/schreiben (cross-tenant Editor; gleiche `validateView` wie `/api/admin/view`); **admin** |
 | `/api/admin/tenants/{id}/entitlements[/{key}]` | GET/PUT | Feature-Entitlements pro Mandant; **admin** (WF2-50) |
 | `/api/admin/tenants/{id}/openaip` | GET | **ONB-6 (ADR 0011):** meldet `{configured: bool}` — ob der Mandant einen **eigenen** OpenAIP-Schlüssel hat. **Nie der Schlüssel selbst.** **admin** |
@@ -562,6 +564,23 @@ bleibt **global** (per-Feed später, WF2-23). **Feed-CLI** (`cmd/wayfinder/
 feedcmd.go`): `wayfinder feed add -name -group [-port] [-region] [-sensor-mix]`
 und `wayfinder feed list` pflegen den Katalog, bis die Admin-API existiert
 (WF2-31). NATS-/Stream-Feed-Source folgt WF2-53.
+
+**Feed-Quell-Datenmodell (ORCH-1a, ADR 0012):** Vorbereitung der Auto-
+Orchestrierung. Migration `00010_feed_source_config.sql` ergänzt `feeds` um
+`source_config` (JSONB-Array, Default `'[]'`) — die generische, Firefly-agnostische
+Liste der Live-Quellen, aus denen die dem Feed gewidmete Firefly-Instanz später
+ihre Tracks rechnen soll (`adsb_opensky`/`flarm_aprs` mit WGS84-`bbox`,
+`radar_asterix` mit `sac`/`sic`; optional `cred_ref` als **Verweis** auf ein
+Pro-Feed-Secret, nie Klartext) — und `coverage_bbox` (JSONB, nullable), die daraus
+abgeleitete **grobe äußere** Geo-Grenze (Union der Quell-BBoxen + Marge), getrennt
+von der präzisen inneren Mandanten-AOI (WF2-21.2). `pkg/store/feed_sources.go`:
+`SourceConfig.Validate` (geschlossenes Vokabular, Per-Art-Regeln am Schreib-Rand),
+`CoverageBBox(marginKm)` (reine Ableitung, lat/lon-geklemmt) und dedizierte
+Accessoren `FeedRepo.GetSourceConfig`/`SetSourceConfig` (nicht in der schlanken
+`Feed`-Zeile, analog OpenAIP-Key-Isolation). **Rein Wayfinder-intern**, keine
+CAT062-Schnittstellen-Wirkung. Bedienbar über `GET/PUT /api/admin/feeds/{id}/sources`
+(ORCH-1b) und den Quell-Builder im „Feeds"-Tab (ORCH-1c, `AdminFeeds.vue`). Der
+Reconciler (ORCH-3) übersetzt `coverage_bbox` später nach `FIREFLY_COVERAGE_BBOX`.
 
 **Scoped Fan-out (WF2-21.1, 🔒 NFR-SEC-003):** der Broadcaster stellt einem
 `/ws`-Client einen Track **nur** zu, wenn dessen Mandant den Feed abonniert hat.

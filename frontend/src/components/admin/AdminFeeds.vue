@@ -59,6 +59,9 @@
               </v-chip>
             </td>
             <td class="text-right">
+              <v-btn size="small" variant="text" prepend-icon="mdi-tune-variant" @click="openSources(f)">
+                Quellen
+              </v-btn>
               <v-btn size="small" color="error" variant="text" :loading="busy" @click="openDelete(f)">
                 Löschen
               </v-btn>
@@ -102,6 +105,94 @@
         <v-spacer />
         <v-btn variant="text" @click="createDialog = false">Abbrechen</v-btn>
         <v-btn color="primary" :loading="busy" :disabled="!canCreate" @click="submitCreate">Anlegen</v-btn>
+      </v-card-actions>
+    </v-card>
+  </v-dialog>
+
+  <!-- Source configuration dialog (ORCH-1c, ADR 0012). The platform admin
+       configures the generic live sources the orchestrator will turn into a
+       dedicated Firefly instance for this feed, plus the coarse coverage bbox.
+       The server validates every entry (closed vocabulary, per-kind rules) and
+       derives coverage when omitted, so this builder is convenience, not the
+       boundary. cred_ref is only a reference to a per-feed secret, never the
+       secret value (the secret store follows ORCH-2). -->
+  <v-dialog v-model="sourcesDialog" max-width="720">
+    <v-card>
+      <v-card-title class="text-subtitle-1">
+        Quellen — {{ sourcesTarget?.name }}
+      </v-card-title>
+      <v-card-text>
+        <p class="text-body-2 text-medium-emphasis mb-3">
+          Die Quellen bestimmen, woraus die diesem Feed gewidmete Firefly-Instanz
+          ihre Tracks rechnet. Flächenquellen (ADS-B/FLARM) brauchen eine
+          BBox; ein echter Radar braucht SAC/SIC. Die grobe Coverage-BBox wird
+          beim Speichern aus den Quell-BBoxen abgeleitet.
+        </p>
+
+        <div v-if="!sources.length" class="text-medium-emphasis mb-3">
+          Noch keine Quelle konfiguriert (Platzhalter-/Szenen-Tracker).
+        </div>
+
+        <v-card
+          v-for="(s, i) in sources"
+          :key="i"
+          variant="outlined"
+          class="mb-3 pa-3"
+        >
+          <div class="d-flex align-center ga-3 mb-2">
+            <v-select
+              v-model="s.type"
+              :items="SOURCE_TYPES"
+              item-title="label"
+              item-value="value"
+              label="Quell-Typ"
+              density="compact"
+              hide-details
+              style="max-width: 260px"
+            />
+            <v-spacer />
+            <v-btn size="small" color="error" variant="text" icon="mdi-delete" @click="removeSource(i)" />
+          </div>
+
+          <!-- Area-bounded sources: query bbox -->
+          <div v-if="isAreaType(s.type)" class="d-flex flex-wrap ga-2">
+            <v-text-field v-model.number="s.bbox.min_lat" type="number" label="min lat" density="compact" hide-details style="max-width: 120px" />
+            <v-text-field v-model.number="s.bbox.min_lon" type="number" label="min lon" density="compact" hide-details style="max-width: 120px" />
+            <v-text-field v-model.number="s.bbox.max_lat" type="number" label="max lat" density="compact" hide-details style="max-width: 120px" />
+            <v-text-field v-model.number="s.bbox.max_lon" type="number" label="max lon" density="compact" hide-details style="max-width: 120px" />
+          </div>
+
+          <!-- Real radar: SAC/SIC sensor identity -->
+          <div v-else class="d-flex ga-2">
+            <v-text-field v-model.number="s.sac" type="number" label="SAC (0–255)" density="compact" hide-details style="max-width: 150px" />
+            <v-text-field v-model.number="s.sic" type="number" label="SIC (0–255)" density="compact" hide-details style="max-width: 150px" />
+          </div>
+
+          <v-text-field
+            v-model="s.cred_ref"
+            label="Credential-Referenz (optional)"
+            hint="Verweis auf ein Pro-Feed-Secret, z. B. secret/speyer-opensky — nie der Schlüssel selbst."
+            persistent-hint
+            density="compact"
+            class="mt-2"
+          />
+        </v-card>
+
+        <v-btn size="small" variant="tonal" prepend-icon="mdi-plus" @click="addSource">
+          Quelle hinzufügen
+        </v-btn>
+
+        <v-alert v-if="sourcesError" type="error" variant="tonal" density="compact" class="mt-3">
+          {{ sourcesError }}
+        </v-alert>
+        <v-alert v-else-if="coveragePreview" type="info" variant="tonal" density="compact" class="mt-3">
+          Gespeicherte Coverage-BBox: <code>{{ coveragePreview }}</code>
+        </v-alert>
+      </v-card-text>
+      <v-card-actions>
+        <v-spacer />
+        <v-btn variant="text" @click="sourcesDialog = false">Schließen</v-btn>
+        <v-btn color="primary" :loading="busy" @click="submitSources">Speichern</v-btn>
       </v-card-actions>
     </v-card>
   </v-dialog>
@@ -179,6 +270,110 @@ async function submitCreate() {
 function openDelete(f) {
   target.value = f
   deleteDialog.value = true
+}
+
+// --- source configuration (ORCH-1c) ----------------------------------------
+// The closed source vocabulary mirrors the server (store.SourceType). Area types
+// carry a query bbox; radar carries a SAC/SIC identity.
+const SOURCE_TYPES = [
+  { value: 'adsb_opensky', label: 'ADS-B (OpenSky)' },
+  { value: 'flarm_aprs', label: 'FLARM (OGN/APRS)' },
+  { value: 'radar_asterix', label: 'Radar (ASTERIX CAT048/001)' },
+]
+const AREA_TYPES = new Set(['adsb_opensky', 'flarm_aprs'])
+function isAreaType(t) {
+  return AREA_TYPES.has(t)
+}
+
+const sourcesDialog = ref(false)
+const sourcesTarget = ref(null)
+const sources = ref([])
+const sourcesError = ref('')
+const coveragePreview = ref('')
+
+// blankSource returns a fresh form entry of the given type with the shape the
+// per-type inputs bind to (bbox always present so v-model has a target; unused
+// fields are stripped on submit).
+function blankSource(type = 'adsb_opensky') {
+  return { type, bbox: { min_lat: null, min_lon: null, max_lat: null, max_lon: null }, sac: null, sic: null, cred_ref: '' }
+}
+
+// toFormSource maps a stored source (wire shape) into the form model, ensuring a
+// bbox object exists for the inputs even when the stored source had none.
+function toFormSource(s) {
+  return {
+    type: s.type,
+    bbox: s.bbox ? { ...s.bbox } : { min_lat: null, min_lon: null, max_lat: null, max_lon: null },
+    sac: s.sac ?? null,
+    sic: s.sic ?? null,
+    cred_ref: s.cred_ref ?? '',
+  }
+}
+
+async function openSources(f) {
+  sourcesTarget.value = f
+  sources.value = []
+  sourcesError.value = ''
+  coveragePreview.value = ''
+  sourcesDialog.value = true
+  busy.value = true
+  const r = await admin.loadFeedSources(f.id)
+  busy.value = false
+  if (r.ok) {
+    sources.value = (r.data.sources || []).map(toFormSource)
+    coveragePreview.value = formatBBox(r.data.coverage_bbox)
+  } else {
+    sourcesError.value = r.error || 'Quellen konnten nicht geladen werden.'
+  }
+}
+
+function addSource() {
+  sources.value.push(blankSource())
+}
+
+function removeSource(i) {
+  sources.value.splice(i, 1)
+}
+
+function formatBBox(b) {
+  if (!b) return ''
+  const r = (n) => Number(n).toFixed(2)
+  return `${r(b.min_lat)},${r(b.min_lon)} → ${r(b.max_lat)},${r(b.max_lon)}`
+}
+
+// buildSourcesPayload strips each form entry down to the fields its type uses, so
+// the server never sees an area source carrying sac/sic (which it would reject).
+function buildSourcesPayload() {
+  return {
+    sources: sources.value.map((s) => {
+      const out = { type: s.type }
+      if (isAreaType(s.type)) {
+        out.bbox = {
+          min_lat: s.bbox.min_lat, min_lon: s.bbox.min_lon,
+          max_lat: s.bbox.max_lat, max_lon: s.bbox.max_lon,
+        }
+      } else {
+        out.sac = s.sac
+        out.sic = s.sic
+      }
+      const ref = (s.cred_ref || '').trim()
+      if (ref) out.cred_ref = ref
+      return out
+    }),
+  }
+}
+
+async function submitSources() {
+  sourcesError.value = ''
+  busy.value = true
+  const r = await admin.saveFeedSources(sourcesTarget.value.id, buildSourcesPayload())
+  busy.value = false
+  if (r.ok) {
+    sources.value = (r.data.sources || []).map(toFormSource)
+    coveragePreview.value = formatBBox(r.data.coverage_bbox)
+  } else {
+    sourcesError.value = r.error || 'Speichern fehlgeschlagen.'
+  }
 }
 
 async function submitDelete() {

@@ -49,6 +49,11 @@ type FeedStore interface {
 	GetByName(ctx context.Context, name string) (store.Feed, error)
 	Create(ctx context.Context, name, multicastGroup string, port int, region *string, sensorMix []string) (store.Feed, error)
 	Delete(ctx context.Context, id int64) error
+	// GetSourceConfig/SetSourceConfig back the feed's generic source configuration
+	// and derived coverage bbox (ORCH-1, ADR 0012); a missing feed yields
+	// ErrNotFound. SetSourceConfig validates the config (errors.As *InvalidSourceError).
+	GetSourceConfig(ctx context.Context, id int64) (store.SourceConfig, *store.BBox, error)
+	SetSourceConfig(ctx context.Context, id int64, sources store.SourceConfig, coverage *store.BBox) error
 }
 
 // FeedLifecycle starts and stops the live multicast receiver for a feed so a
@@ -170,6 +175,12 @@ func New(views ViewStore, subs SubscriptionStore, feeds FeedStore, tenants Tenan
 	// is distinct from the GET /api/admin/feeds/health route registered below.
 	mux.HandleFunc("POST /api/admin/feeds", h.requireAdmin(h.createFeed))
 	mux.HandleFunc("DELETE /api/admin/feeds/{feedID}", h.requireAdmin(h.deleteFeed))
+	// Feed source configuration (ORCH-1b, ADR 0012): read/write the generic source
+	// list + derived coverage bbox that the orchestrator will turn into a Firefly
+	// instance. Platform operation → requireAdmin. The {feedID}/sources pattern is
+	// distinct from the {feedID} delete and the feeds/health route.
+	mux.HandleFunc("GET /api/admin/feeds/{feedID}/sources", h.requireAdmin(h.getFeedSources))
+	mux.HandleFunc("PUT /api/admin/feeds/{feedID}/sources", h.requireAdmin(h.putFeedSources))
 	// Read-only reference: the sensor-class catalogue (WF2-41).
 	mux.HandleFunc("GET /api/admin/sensor-classes", h.getSensorClasses)
 	// Cross-tenant provisioning (target tenant from the path).
