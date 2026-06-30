@@ -212,6 +212,13 @@ funktioniert Multicast zwischen den Containern. Das fertige Master-Compose steht
 in **`DOCKER.md`** (Abschnitt „macOS/Windows") — es um den `db`-Service erweitert
 und multi-tenant (`WAYFINDER_DB_URL` + `WAYFINDER_AUTH_MODE: builtin`).
 
+> **Produktiv ≠ dieser Test.** Im Produktivbetrieb (Linux, E-1) vergibt Wayfinder
+> die Feed-Multicast-Gruppe **automatisch** und der Orchestrator startet Firefly
+> genau auf dieser Gruppe — man legt nur den Feed an, sonst nichts. Der manuelle
+> explizite Endpoint unten ist **allein** ein Docker-Desktop-Behelf (dort läuft
+> der Host-Netz-Orchestrator nicht): eine Grenze der Mac-Test-Umgebung, **keine**
+> Produkteigenschaft.
+
 **Zwei Unterschiede zu Teil C/E-1** (es gibt hier **keinen** Orchestrator —
 Firefly ist ein **fester externer Sender**):
 
