@@ -4,95 +4,106 @@ Wayfinder läuft in Containern — ideal für reproduzierbare Umgebungen,
 Cloud-Deployment und das Zusammenspiel mit Firefly ohne lokale
 Go-Installation.
 
-## Schnellstart (Standalone)
+> **Multi-Tenant ist der einzige Betriebsmodus (ADR 0014).** Jeder Start
+> braucht eine PostgreSQL-Datenbank (`WAYFINDER_DB_URL`) und hat die Anmeldung
+> aktiv (`builtin` oder `proxy`). Einen DB-losen „Standalone ohne Login" gibt
+> es nicht mehr — die mitgelieferten Compose-Stacks bringen Postgres direkt mit.
+
+## Schnellstart — Multi-Tenant-Plattform
+
+Der Standard-Stack (`docker-compose.onboarding.yml`) fährt Postgres **und** den
+Wayfinder-Server im `builtin`-Login-Modus mit einem Befehl hoch:
 
 ```bash
-docker-compose up
+docker compose -f docker-compose.onboarding.yml up --build
 ```
 
-Dann im Browser: **http://localhost:8081**
+Dann im Browser: **http://localhost:8081/admin**. Beim ersten Start werden ein
+Default-Mandant und ein Default-Admin (`admin` / `admin`) automatisch angelegt
+(Zero-Touch, ADR 0011); der erzwungene Passwortwechsel kommt sofort. Kein
+`bootstrap`- oder `feed add`-Schritt im Terminal nötig.
 
-Standalone empfängt Wayfinder nichts (keine Tracks), bis ein CAT062/UDP-
-Multicast-Sender (z. B. Firefly) läuft — die Karte bleibt leer, aber leer und
-betriebsbereit. `/health` und `/ready` (Port 8080) zeigen den Status.
+Der Stack nutzt **Bridge-Networking** und funktioniert daher auf **Linux, macOS
+und Windows** gleichermaßen. `/health` und `/ready` (Port 8080) zeigen den
+Status.
 
-## Zusammen mit Firefly testen (End-to-End)
+> **Karte bleibt zunächst leer.** Bridge-Netze transportieren kein UDP-Multicast,
+> der Onboarding-Stack empfängt also ohne weitere Konfiguration noch keine
+> Tracks. Für Live-Tracks siehe den nächsten Abschnitt.
 
-Das ist der eigentliche Anwendungsfall: Firefly rechnet Tracks und sendet sie
-als CAT062 (+ CAT065-Heartbeat) über UDP-Multicast, Wayfinder empfängt,
-dekodiert und zeigt sie live auf der Karte (CAT062-Draht-Vertrag, `CLAUDE.md`
-Abschnitt 2). Empfohlen wird das **Frankfurt-Szenario** (drei Radare, acht
-Flugzeuge, JPDA/IMM-Manöver) — die kleine Demo-Szene ist für den E2E-Test zu
-unauffällig, um wirklich etwas zu sehen.
+## Live-Tracks End-to-End (mit Firefly)
 
-### Linux — zwei Container, Host-Netzwerk
+Firefly rechnet Tracks und sendet sie als CAT062 (+ CAT065-Heartbeat) über
+UDP-Multicast; Wayfinder empfängt, dekodiert und zeigt sie live auf der Karte
+(CAT062-Draht-Vertrag, `CLAUDE.md` Abschnitt 2). Empfohlen wird das
+**Frankfurt-Szenario** (drei Radare, acht Flugzeuge, JPDA/IMM-Manöver) — die
+kleine Demo-Szene ist für den E2E-Test zu unauffällig, um wirklich etwas zu
+sehen.
 
-**Terminal 1 — Firefly** (eigenes Repo; CAT062-Multicast ist standardmäßig
-**aus**, damit ein einfacher `cargo run`/`docker-compose up` keinen
-Netzwerkverkehr erzeugt):
+### Linux — orchestrierter Stack (empfohlen)
+
+`docker-compose.orchestrated.yml` vereint Postgres, den Wayfinder-Server
+(`builtin`-Auth) und die **Orchestrator-Steuerebene** in einem Stack. Der
+Orchestrator startet je abonniertem Feed automatisch einen Firefly-Tracker;
+über `network_mode: host` trifft der Multicast direkt beim Server ein:
 
 ```bash
-FIREFLY_SCENE=frankfurt FIREFLY_CAT062_ENABLED=true docker-compose up
+docker compose -f docker-compose.orchestrated.yml up --build
 ```
 
-(oder lokal: `FIREFLY_SCENE=frankfurt FIREFLY_CAT062_ENABLED=true cargo run -p firefly-server`)
-
-**Terminal 2 — Wayfinder:**
-
-```bash
-docker-compose up
-```
-
-Dann im Browser: **http://localhost:8081** — nach wenigen Sekunden erscheinen
-die ersten Tracks über dem Rhein-Main-Gebiet.
+Die vollständige Abnahme (Feed zuweisen → Spawn → Tracks → Aufräumen) ist in
+`docs/E2E-ABNAHME.md` beschrieben; `scripts/e2e-orchestrated.sh` automatisiert
+den Großteil.
 
 > ⚠️ **Multicast & Docker:** UDP-Multicast (`239.255.0.62:8600`) traversiert
-> Docker's Standard-Bridge-Netz nicht. Beide `docker-compose.yml`-Dateien
-> nutzen daher `network_mode: host` — funktioniert direkt unter **Linux**.
+> Docker's Standard-Bridge-Netz nicht. Der orchestrierte Stack nutzt daher
+> `network_mode: host` und braucht damit **Linux**.
+>
+> ⚠️ **Docker-Socket:** Nur der Orchestrator-Container bindet
+> `/var/run/docker.sock` (root-äquivalent, ADR 0012 §6). Der browser-zugewandte
+> Server bekommt diese Privilegierung nie. Den Orchestrator-Host als
+> hochwertige Vertrauensgrenze behandeln (Netz-Isolation, restriktiver Zugang).
 
 ### macOS/Windows (Docker Desktop) — gemeinsames Bridge-Netzwerk
 
-Unter Docker Desktop bindet `network_mode: host` nur an die interne
-Linux-VM, nicht an den eigentlichen Rechner — zwei separat gestartete
-`docker-compose up`-Stacks sehen sich dann nicht, die Karte bleibt leer.
+Unter Docker Desktop bindet `network_mode: host` nur an die interne Linux-VM,
+nicht an den eigentlichen Rechner — der host-net-Orchestrator-Stack ist dort
+also nicht das richtige Werkzeug. Stattdessen Firefly und Wayfinder (samt
+Postgres) in **einem** Bridge-Compose zusammenführen; im selben Netz
+funktioniert das Multicast-Routing zwischen den Containern problemlos.
 
-Lösung: beide Repos als Geschwister-Ordner anlegen und über ein
-**gemeinsames, übergeordnetes `docker-compose.yml`** mit eigenem
-Bridge-Netzwerk starten:
-
-```
-radar-workspace/
-├── firefly/              # Firefly-Repo (geklont)
-├── wayfinder/             # Wayfinder-Repo (geklont)
-└── docker-compose.yml     # Master-Compose, siehe unten
-```
-
-`radar-workspace/docker-compose.yml`:
+Beide Repos als Geschwister-Ordner ablegen (`./firefly`, `./wayfinder`) und ein
+übergeordnetes `docker-compose.yml` anlegen:
 
 ```yaml
-version: '3.8'
-
 networks:
   radar-net:
     driver: bridge
 
 services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: wayfinder
+      POSTGRES_PASSWORD: wayfinder
+      POSTGRES_DB: wayfinder
+    networks:
+      - radar-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wayfinder -d wayfinder"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
   firefly-server:
     build:
       context: ./firefly
       dockerfile: Dockerfile
-    ports:
-      - "8080:8080"
     environment:
       FIREFLY_SCENE: frankfurt
       FIREFLY_CAT062_ENABLED: "true"
       RUST_LOG: info
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
-      interval: 10s
-      timeout: 3s
-      retries: 3
-      start_period: 5s
     networks:
       - radar-net
     restart: unless-stopped
@@ -102,78 +113,80 @@ services:
       context: ./wayfinder
       dockerfile: Dockerfile
     ports:
-      - "8081:8081"
+      - "8081:8081"   # ASD-Frontend / Admin-UI
+      - "8080:8080"   # Health / Readiness / Metrics
     environment:
+      # Multi-Tenant ist Pflicht: Postgres über die Bridge-DNS "db" erreichbar.
+      WAYFINDER_DB_URL: "postgres://wayfinder:wayfinder@db:5432/wayfinder?sslmode=disable"
+      WAYFINDER_AUTH_MODE: builtin
       FIREFLY_CAT062_GROUP: 239.255.0.62
       FIREFLY_CAT062_PORT: 8600
       WAYFINDER_MAP_CENTER_LAT: 50.0379
       WAYFINDER_MAP_CENTER_LON: 8.5622
       WAYFINDER_MAP_ZOOM: 8
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
-      interval: 10s
-      timeout: 3s
-      retries: 3
-      start_period: 5s
     networks:
       - radar-net
     depends_on:
-      - firefly-server
+      db:
+        condition: service_healthy
+      firefly-server:
+        condition: service_started
     restart: unless-stopped
 ```
 
 Starten:
 
 ```bash
-cd radar-workspace
-docker-compose up --build
+docker compose up --build
 ```
 
-Dann im Browser:
-- **Firefly (Tracker-Status):** http://localhost:8080
-- **Wayfinder (Live-Karte mit Tracks):** http://localhost:8081
-
-Innerhalb von `radar-net` funktioniert das Multicast-Routing zwischen den
-Containern problemlos; `network_mode: host` wird nicht benötigt. Nach wenigen
-Sekunden erscheinen die ersten Tracks über dem Rhein-Main-Gebiet.
-
-> Dieses Master-Compose ist eine **Ergänzung** für den E2E-Fall — für
-> Einzelbetrieb (z. B. nur Firefly mit der Demo-Szene) weiterhin die
-> jeweilige Standalone-`docker-compose.yml` im eigenen Repo verwenden.
+Dann im Browser: **http://localhost:8081/admin** (Login `admin`/`admin`,
+Passwortwechsel). Nach wenigen Sekunden erscheinen die ersten Tracks über dem
+Rhein-Main-Gebiet.
 
 ## Details
+
+### Compose-Stacks
+
+| Datei | Zweck | Netz | Plattform |
+|-------|-------|------|-----------|
+| `docker-compose.onboarding.yml` | Standard-Plattform (Postgres + Server, `builtin`) | Bridge | alle |
+| `docker-compose.orchestrated.yml` | E2E-Harness mit Firefly-Auto-Spawn (+ Orchestrator) | Host | Linux |
+
+Beide setzen `WAYFINDER_DB_URL` und `WAYFINDER_AUTH_MODE: builtin`; der
+Default-Admin wird beim ersten Start auto-seeded (ADR 0011). Eine fixe
+`WAYFINDER_SESSION_KEY` (z. B. `openssl rand -hex 32`) macht Sessions neustart-
+und replica-stabil; unset → ephemerer Schlüssel + Warn-Log.
 
 ### Dockerfile
 
 **Multi-stage build:**
-1. **Builder-Stage** (`golang:1.23-bookworm`): Lädt Module, kompiliert
+1. **Builder-Stage** (`golang:1.25-bookworm`): Lädt Module, kompiliert
    `cmd/wayfinder` statisch (`CGO_ENABLED=0`).
-2. **Runtime-Stage** (`debian:bookworm-slim`): Minimal-Image mit nur dem
-   Binary.
+2. **Runtime-Stage** (`debian:bookworm-slim`): Minimal-Image mit nur dem Binary
+   (+ `curl` für den Healthcheck).
+
+`Dockerfile.orchestrator` baut analog die least-privilege
+Orchestrator-Steuerebene (`cmd/wayfinder-orchestrator`).
 
 **Healthcheck:** Der Container prüft, ob der Server auf `/health` (Port 8080)
 antwortet.
 
-### docker-compose.yml
+## Lokaler Build (ohne Compose)
 
-**Service `wayfinder`:**
-- Netzwerk: `network_mode: host` (Multicast-Empfang, siehe oben)
-- Ports (im Host-Netzwerk direkt erreichbar): `8080` (Health/Readiness),
-  `8081` (WebSocket + ASD-Frontend)
-- Umgebungsvariablen:
-  - `FIREFLY_CAT062_GROUP` / `FIREFLY_CAT062_PORT`: Multicast-Quelle
-    (Default: `239.255.0.62:8600`, Fireflys Default)
-  - `WAYFINDER_MAP_CENTER_LAT/LON`, `WAYFINDER_MAP_ZOOM`: Karten-Ausschnitt
-    (Default: Frankfurt, passend zu Fireflys Demo-Szene)
-- Healthcheck: prüft alle 10 Sekunden
-- Restart-Policy: `unless-stopped`
-
-## Lokaler Build (ohne docker-compose)
+Auch der manuelle Lauf braucht eine erreichbare PostgreSQL-Datenbank und die
+Pflicht-Env:
 
 ```bash
 docker build -t wayfinder:latest .
-docker run --network host wayfinder:latest
+docker run --network host \
+  -e WAYFINDER_DB_URL="postgres://wayfinder:wayfinder@127.0.0.1:5432/wayfinder?sslmode=disable" \
+  -e WAYFINDER_AUTH_MODE=builtin \
+  wayfinder:latest
 ```
+
+Ohne erreichbare `WAYFINDER_DB_URL` bricht der Start mit klarer Meldung ab
+(ADR 0014) — es gibt keinen DB-losen Rückfall mehr.
 
 ## Cloud-Deployment
 
@@ -183,21 +196,38 @@ docker run --network host wayfinder:latest
 - Strukturiertes JSON-Logging (stderr)
 - `/health` (Liveness) und `/ready` (Readiness) für Kubernetes-Probes
 
+`WAYFINDER_DB_URL` zeigt auf einen verwalteten/geclusterten Postgres;
+`WAYFINDER_AUTH_MODE: proxy` (OIDC/oauth2-proxy am Ingress) ist der empfohlene
+Produktiv-Pfad, `builtin` der Standalone-/Onboarding-Pfad.
+
 In einer Cloud-Umgebung (Kubernetes etc.) ist `network_mode: host` meist nicht
 verfügbar — dort empfängt Wayfinder den CAT062-Strom stattdessen z. B. über
-einen Multicast-fähigen CNI/Underlay oder eine Unicast-Relay-Lösung
-(offener Punkt, siehe Abschnitt 7 in `CLAUDE.md`: Feed-Authentizität/
-Netz-Isolation ist ohnehin ein eigenes Thema).
+einen Multicast-fähigen CNI/Underlay oder eine Unicast-Relay-Lösung. Die
+Feed-Topologie (Host/Bridge/Orchestrierung) ist von der Mandantenfähigkeit
+unabhängig (Feed-Authentizität/Netz-Isolation: eigenes Thema, `CLAUDE.md`
+Abschnitt 7).
 
 ## Troubleshooting
 
+**„WAYFINDER_DB_URL is required" beim Start:**
+- Multi-Tenant ist Pflicht (ADR 0014): `WAYFINDER_DB_URL` setzen und auf eine
+  erreichbare Postgres-Instanz zeigen lassen. Die Compose-Stacks bringen die DB
+  mit; bei manuellem Lauf eine eigene Instanz bereitstellen.
+
+**Login klappt nicht / kein Admin:**
+- Beim ersten Start gegen eine frische DB wird `admin`/`admin` (builtin)
+  auto-seeded; der erzwungene Passwortwechsel kommt sofort. Läuft der Container
+  gegen eine bereits initialisierte DB, gilt das dort gesetzte Passwort.
+
 **Karte bleibt leer:**
-- Läuft Firefly mit `FIREFLY_CAT062_ENABLED=true`?
-- Linux: Sind beide Container im selben Host-Netzwerk (`network_mode: host`)?
-- macOS/Windows: Läuft das Master-Compose mit `radar-net` (siehe oben) statt
-  zwei separater Standalone-Stacks?
-- Logs prüfen: `docker-compose logs wayfinder` — wird der Multicast-Socket
-  erfolgreich geöffnet?
+- Onboarding-Stack: erwartet — das Bridge-Netz transportiert kein Multicast,
+  ohne konfigurierten Feed kommen keine Tracks. Für Live-Tracks den
+  orchestrierten Stack (Linux) oder das Bridge-Master-Compose (macOS/Windows)
+  nutzen.
+- Orchestrierter Stack: Läuft Firefly mit `FIREFLY_CAT062_ENABLED=true`? Ist ein
+  Feed abonniert (sonst spawnt der Orchestrator nichts)? Logs prüfen:
+  `docker compose -f docker-compose.orchestrated.yml logs wayfinder` — wird der
+  Multicast-Socket erfolgreich geöffnet?
 
 **Build schlägt fehl:**
 - Docker-Daemon läuft? (`docker ps`)

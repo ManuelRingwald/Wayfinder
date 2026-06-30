@@ -3,8 +3,9 @@
 # tracker for it → CAT062/UDP-multicast → the ASD shows tracks.
 #
 # This is NOT the production deployment topology — it is a single-host acceptance
-# harness. It complements the plain docker-compose.yml (server only, external
-# feed) by adding Postgres and the least-privilege orchestrator control plane.
+# harness. It builds on the multi-tenant core stack (Postgres + the Wayfinder
+# server in builtin-auth mode, like docker-compose.onboarding.yml) and adds the
+# least-privilege orchestrator control plane for per-feed Firefly auto-spawn.
 #
 # Run the acceptance walk-through with docs/E2E-ABNAHME.md (or scripts/e2e-orchestrated.sh).
 #
@@ -44,10 +45,13 @@ services:
         condition: service_healthy
     environment:
       WAYFINDER_DB_URL: "postgres://wayfinder:wayfinder@127.0.0.1:5432/wayfinder?sslmode=disable"
-      # Single-tenant/no-auth keeps the harness focused on the orchestration chain
-      # (the auth edge is exercised by its own tests). Do NOT use AUTH_MODE=none in
-      # production.
-      WAYFINDER_AUTH_MODE: "none"
+      # Multi-tenant builtin auth (ADR 0014 — the only mode). On first boot a
+      # default admin (admin/admin, forced password change) is auto-seeded
+      # (ONB-1, ADR 0011). The orchestrator is feed-driven and tenant-agnostic,
+      # so auto-spawn works independently of the auth mode. The session key is
+      # left unset (ephemeral key + warning); set WAYFINDER_SESSION_KEY for a
+      # restart-stable, multi-replica deployment.
+      WAYFINDER_AUTH_MODE: "builtin"
       FIREFLY_CAT062_GROUP: ${FIREFLY_CAT062_GROUP:-239.255.0.62}
       FIREFLY_CAT062_PORT: ${FIREFLY_CAT062_PORT:-8600}
       # Same key as the orchestrator — only needed for the authenticated-source
