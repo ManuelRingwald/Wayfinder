@@ -8,10 +8,13 @@
 > im Konzept `docs/design/wayfinder-2.0-konzept.md` (§7 Ausbaustufen, §8
 > Modell-Tabelle). Bei Status-Abweichungen gilt **diese** Datei.
 >
-> **Stand: 2026-06-19** — Roadmap zentral auf **Wayfinder 2.0** ausgerichtet
-> (Multi-Mandanten-Plattform). Die bisherigen ASD-Kern-Pakete sind eingeordnet,
-> der geteilte Firefly-Backlog mit 2.0-Bezug annotiert. Widersprüche zu
-> `docs/STATUS.md` aufgelöst (nächster Schritt = WF2-00 / ADR 0005).
+> **Stand: 2026-06-30** — **Prio 1 ist fertig:** ONB (Zero-Touch) ✅ **und** ORCH
+> (Auto-Orchestrierung) ✅ Kern komplett (ORCH-0…5c + E2E-Harness, alles auf `main`,
+> gehärtet/reviewed). **Nächster konkreter Schritt:** der reale E2E-Abnahme-Lauf auf
+> einem Linux-Docker-Host (`scripts/e2e-orchestrated.sh`, `docs/E2E-ABNAHME.md`).
+> Danach steht die Wahl zwischen **Prio 2 (Epic CWP/EFS/IMS, ADR 0013)** und den
+> Rest-Punkten (ORCH-6 K8s/HA; Firefly-FLARM/Radar #35; Wayfinder-Issues #57/#64/#68).
+> Tagesgenauer IST-Stand: `docs/STATUS.md` (bei Abweichung gilt STATUS).
 >
 > **Geltungsbereich (wichtig):** Die Abschnitte **§0–§2** sind
 > **Wayfinder-spezifisch**. Abschnitt **§3** (Firefly-/Cross-Project-Backlog)

@@ -10,22 +10,43 @@
 
 ---
 
-## 🎯 Stand 2026-06-29
+## 🎯 Stand 2026-06-30
 
-- **Zuletzt aktualisiert:** 2026-06-29
-- **Letzte Arbeit:** **Schritt 3 — AES-GCM-AAD-Identitäts-Bindung** (Hardening aus
-  dem Sicherheits-Review). `secret.Cipher.Seal/Open` reichen jetzt AAD durch; der
-  Orchestrator bindet jeden Blob via `credAAD(feed_id, cred_ref)` — ein in der DB
-  verschobener/replayter Blob scheitert unter fremder Identität beim Open
-  (fail-closed). Tests (`TestAADMustMatch`, `…AADBindsToFeedIdentity`) + Doku
-  (NFR-SEC-004, TECHNICAL, Milestone, secret.go-Paketdoc). Migrations-Hinweis: bricht
-  alt-versiegelte Blobs — aktuell keine Prod-Secrets, also kostenlos. Alle Gates grün.
-  Davor: Konsolidierung (broadcast-`time_ms`-Fix, ROADMAP-Drift), Review (keine
-  kritischen Befunde), **ORCH komplett** (1…5c + E2E-Harness), Firefly OAuth2 (ADR 0024).
-- **Nächster Schritt:** **realer Abnahme-Lauf** auf einem Linux-Docker-Host
-  (`scripts/e2e-orchestrated.sh` + authentifizierter Lauf mit echten OpenSky-OAuth2-
-  Credentials). Separat (eigene ADRs): Fireflys FLARM/APRS- und Radar-ASTERIX-Live-
-  Adapter (#35 bleibt dafür offen).
+- **Zuletzt aktualisiert:** 2026-06-30
+- **Großes Bild:** Das **Prio-1-Go-to-Market-Fundament ist fertig** — ONB
+  (Zero-Touch-Onboarding) ✅ und **ORCH (Auto-Orchestrierung) ✅ Kern komplett**
+  (1…5c). „Feed zuweisen ⇒ passende Firefly-Instanz startet automatisch" ist
+  gebaut, getestet, sicherheits-reviewed und gehärtet. Alles auf `main`,
+  alle Gates grün (Go: build/test/vet/gofmt/golangci-lint; Frontend: 180 vitest).
+
+- **Diese Sitzung (2026-06-29/30):** ORCH-5b-1 (Cred-Auflösung in der
+  Control-Plane, Variante A) · 5b-2 (UI-Zwei-Felder) · 5c (E2E-Abnahme-Harness:
+  `docker-compose.orchestrated.yml` + `Dockerfile.orchestrator` +
+  `scripts/e2e-orchestrated.sh` + `docs/E2E-ABNAHME.md`) · UI-Relabel
+  Client-ID/Client-Secret (OpenSky OAuth2) · **Konsolidierung** (Sicherheits-Review
+  ohne kritische Befunde, `broadcast.time_ms`-Fix, ROADMAP-Drift bereinigt) ·
+  **Secret-Hardening** (AES-GCM-AAD-Bindung an `(feed_id, cred_ref)`).
+  Cross-Repo: Firefly OpenSky **OAuth2 Client-Credentials** (ADR 0024).
+
+- **Nächste Schritte (für die frische Session — priorisiert):**
+  1. **Realer E2E-Abnahme-Lauf** auf einem **Linux-Docker-Host** (hier nicht
+     möglich, kein Daemon): `scripts/e2e-orchestrated.sh` (Prüfpunkte 1/2/5/8) +
+     authentifizierter Lauf mit echten OpenSky-`client_id`/`client_secret`
+     (Prüfpunkte 3/4/6/7), Runbook `docs/E2E-ABNAHME.md`. **Einzige offene
+     Validierungs-Lücke.**
+  2. **Offene Wayfinder-Issues:** #57 (Admin-UI View-Config-Captions, S2) ·
+     #64 (Session-Registry/-Limit, S4) · #68 (Impersonation auf `admin`-Rolle, S4).
+  3. **Firefly-Cross-Project (Issue #35):** die übrigen Live-Adapter
+     `flarm_aprs` + `radar_asterix` (je eigener ADR; Vokabular im Kontrakt
+     reserviert, Wayfinder-Rendering steht schon).
+  4. **Prio 2 — Epic CWP/EFS/IMS** (ADR 0013, modulare Controller Working
+     Position) — großes Folge-Epic, erst nach Prio 1.
+  5. **ORCH-6** (K8s-`InstanceBackend` + HA) — Skalierung; Secret-Management je
+     Feed ist via ORCH-2c/5b bereits vorgezogen.
+
+> 🧭 **Maßgeblich für „was als Nächstes":** `docs/ROADMAP.md` (Prioritäts-Rahmen)
+> + dieses STATUS. Anforderungs-/Test-Rückverfolgung: `docs/requirements/README.md`
+> (FR-ORCH-001…007, NFR-SEC-004).
 
 ---
 
