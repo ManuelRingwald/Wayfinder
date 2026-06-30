@@ -6,6 +6,7 @@ import (
 	"sort"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/manuelringwald/wayfinder/pkg/cat062"
 )
@@ -605,7 +606,12 @@ func (b *Broadcaster) clientCount() int {
 	return count
 }
 
-// timeNowMs returns current time in milliseconds since Unix epoch.
+// timeNowMs is the wall-clock send time (Unix epoch milliseconds) stamped on a
+// broadcast envelope as Message.TimeMs. It is the *envelope* time — when the server
+// pushed this batch to clients, for client-side latency/diagnostics — deliberately
+// distinct from each track's *data* time (CAT062 Time-of-Day), which travels in the
+// per-track fields. Wall-clock is correct here precisely because this is not the
+// deterministic data-time path (CLAUDE.md §7).
 func timeNowMs() int64 {
-	return 0 // TODO: Use CAT062 Time-of-Day instead
+	return time.Now().UnixMilli()
 }

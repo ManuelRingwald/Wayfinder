@@ -72,6 +72,12 @@ services:
     volumes:
       # The container-runtime privilege (ADR 0012 §6). Read-write: the orchestrator
       # creates/starts/stops/removes the per-feed Firefly containers.
+      #
+      # ⚠️ SECURITY: mounting the Docker socket grants this container root-equivalent
+      # control of the host. That is exactly why the orchestrator is a SEPARATE,
+      # least-privilege process and the browser-facing server never gets the socket.
+      # In production, treat the orchestrator host/node as a high-value trust
+      # boundary (network isolation, restricted access) — see docs/E2E-ABNAHME.md.
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       WAYFINDER_DB_URL: "postgres://wayfinder:wayfinder@127.0.0.1:5432/wayfinder?sslmode=disable"

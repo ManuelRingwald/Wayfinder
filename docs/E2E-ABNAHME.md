@@ -99,6 +99,15 @@ docker compose -f docker-compose.orchestrated.yml down -v --remove-orphans
 
 Das Skript räumt am Ende selbst auf (außer mit `--keep`).
 
+## Sicherheits-Hinweis (Docker-Socket)
+
+Der Orchestrator mountet `/var/run/docker.sock` — das gibt ihm **root-äquivalente**
+Kontrolle über den Host (er startet/stoppt Container). Genau deshalb ist der
+Orchestrator ein **getrennter, Least-Privilege-Prozess** und der browser-zugewandte
+Server bekommt den Socket **nie** (ADR 0012 §6). Im Produktivbetrieb ist der
+Orchestrator-Host/-Node eine **hochwertige Vertrauensgrenze**: Netz-Isolation,
+restriktiver Zugang, keine Co-Location mit dem Browser-Rand.
+
 ## Bekannte Grenzen
 
 - **Docker Desktop (macOS/Windows):** Host-Networking-Multicast funktioniert dort
