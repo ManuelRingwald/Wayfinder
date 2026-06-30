@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/manuelringwald/wayfinder/pkg/auth"
 	"github.com/manuelringwald/wayfinder/pkg/store"
@@ -29,31 +30,38 @@ func TestLoadConfigTenancyEnvVars(t *testing.T) {
 		t.Fatalf("tenancy config not parsed: %+v", cfg)
 	}
 
-	// Unset/invalid auth mode falls back to none.
+	// Unset/invalid auth mode falls back to builtin (ADR 0014: zero-touch default).
 	t.Setenv("WAYFINDER_AUTH_MODE", "")
-	if got := loadConfig(); got.AuthMode != auth.ModeNone {
-		t.Fatalf("default auth mode = %q, want none", got.AuthMode)
+	if got := loadConfig(); got.AuthMode != auth.ModeBuiltin {
+		t.Fatalf("default auth mode = %q, want builtin", got.AuthMode)
 	}
 }
 
-func TestSetupTenancyDisabledWithoutDB(t *testing.T) {
+func TestSetupTenancyRequiresDB(t *testing.T) {
+	// Multi-tenant is the only mode (ADR 0014): a missing WAYFINDER_DB_URL fails
+	// the start instead of degrading to an unauthenticated, unscoped ASD.
 	mw, pool, err := setupTenancy(context.Background(), Config{}, discardLogger())
-	if err != nil || mw != nil || pool != nil {
-		t.Fatalf("no DB → want (nil,nil,nil); got mw=%v pool=%v err=%v", mw != nil, pool != nil, err)
+	if err == nil {
+		t.Fatal("no DB → want an error; got nil")
+	}
+	if mw != nil || pool != nil {
+		t.Fatalf("no DB → want (nil,nil,err); got mw=%v pool=%v", mw != nil, pool != nil)
 	}
 }
 
 // TestSetupTenancyEnabled exercises the full wiring against a real Postgres:
-// setupTenancy opens the DB, migrates, builds the (none-mode) authenticator and
-// the tenant middleware; the middleware then denies until a matching user exists
-// and resolves the tenant once it does. Skips without WAYFINDER_TEST_DB_URL.
+// setupTenancy opens the DB, migrates, builds the builtin authenticator and the
+// tenant middleware; the middleware then denies until a matching user exists and
+// a valid session cookie is presented, and resolves the tenant once both hold.
+// Skips without WAYFINDER_TEST_DB_URL.
 func TestSetupTenancyEnabled(t *testing.T) {
 	dsn := os.Getenv("WAYFINDER_TEST_DB_URL")
 	if dsn == "" {
 		t.Skip("set WAYFINDER_TEST_DB_URL to run the tenancy wiring integration test")
 	}
 
-	cfg := Config{DBURL: dsn, AuthMode: auth.ModeNone, NoneSubject: "default"}
+	key := []byte("test-session-key-test-session-key")
+	cfg := Config{DBURL: dsn, AuthMode: auth.ModeBuiltin, SessionKey: key}
 	mw, pool, err := setupTenancy(context.Background(), cfg, discardLogger())
 	if err != nil {
 		t.Fatalf("setup: %v", err)
@@ -72,14 +80,15 @@ func TestSetupTenancyEnabled(t *testing.T) {
 
 	ok := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 
-	// Fail-closed: with no "default" user, the request is denied.
+	// Fail-closed: with no session cookie, the request is denied.
 	rec := httptest.NewRecorder()
 	mw(ok).ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
 	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("no user → status %d, want 401", rec.Code)
+		t.Fatalf("no session → status %d, want 401", rec.Code)
 	}
 
-	// Seed a tenant + the "default" user; now the middleware resolves the tenant.
+	// Seed a tenant + the "default" user; a request carrying a valid session
+	// cookie for that subject now resolves the tenant.
 	ten, err := store.NewTenantRepo(pool).Create(ctx, "demo", "Demo")
 	if err != nil {
 		t.Fatalf("create tenant: %v", err)
@@ -95,8 +104,10 @@ func TestSetupTenancyEnabled(t *testing.T) {
 		}
 		w.WriteHeader(http.StatusOK)
 	})
+	req := httptest.NewRequest("GET", "/", nil)
+	req.AddCookie(&http.Cookie{Name: "wf_session", Value: auth.MintSession("default", time.Hour, key)})
 	rec = httptest.NewRecorder()
-	mw(resolved).ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
+	mw(resolved).ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK || seenTenant != ten.ID {
 		t.Fatalf("with user → status %d, tenant %d (want 200, %d)", rec.Code, seenTenant, ten.ID)
 	}

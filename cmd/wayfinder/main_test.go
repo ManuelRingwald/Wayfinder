@@ -79,106 +79,9 @@ func TestMapConfigHandlerCustomStyleURL(t *testing.T) {
 	}
 }
 
-func TestAuthMiddlewareDisabledWithoutToken(t *testing.T) {
-	called := false
-	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		called = true
-		w.WriteHeader(http.StatusOK)
-	})
-
-	handler := authMiddleware("", next)
-
-	req := httptest.NewRequest(http.MethodGet, "/ws", nil)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-
-	if !called {
-		t.Error("expected request to pass through when no token is configured")
-	}
-	if rec.Code != http.StatusOK {
-		t.Errorf("expected status 200, got %d", rec.Code)
-	}
-}
-
-func TestAuthMiddlewareRejectsMissingToken(t *testing.T) {
-	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Error("handler should not be called for an unauthenticated request")
-	})
-
-	handler := authMiddleware("secret", next)
-
-	req := httptest.NewRequest(http.MethodGet, "/ws", nil)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusUnauthorized {
-		t.Errorf("expected status 401, got %d", rec.Code)
-	}
-}
-
-func TestAuthMiddlewareRejectsWrongToken(t *testing.T) {
-	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Error("handler should not be called for a wrong token")
-	})
-
-	handler := authMiddleware("secret", next)
-
-	req := httptest.NewRequest(http.MethodGet, "/ws?token=wrong", nil)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusUnauthorized {
-		t.Errorf("expected status 401, got %d", rec.Code)
-	}
-}
-
-func TestAuthMiddlewareAcceptsTokenViaQueryParam(t *testing.T) {
-	called := false
-	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		called = true
-		w.WriteHeader(http.StatusOK)
-	})
-
-	handler := authMiddleware("secret", next)
-
-	req := httptest.NewRequest(http.MethodGet, "/ws?token=secret", nil)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-
-	if !called {
-		t.Error("expected request with correct token to pass through")
-	}
-	if rec.Code != http.StatusOK {
-		t.Errorf("expected status 200, got %d", rec.Code)
-	}
-}
-
-func TestAuthMiddlewareAcceptsBearerHeader(t *testing.T) {
-	called := false
-	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		called = true
-		w.WriteHeader(http.StatusOK)
-	})
-
-	handler := authMiddleware("secret", next)
-
-	req := httptest.NewRequest(http.MethodGet, "/api/map-config", nil)
-	req.Header.Set("Authorization", "Bearer secret")
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-
-	if !called {
-		t.Error("expected request with correct bearer token to pass through")
-	}
-	if rec.Code != http.StatusOK {
-		t.Errorf("expected status 200, got %d", rec.Code)
-	}
-}
-
 func TestLoadConfigParsesSecurityEnvVars(t *testing.T) {
 	for _, env := range []struct{ key, value string }{
 		{"WAYFINDER_ALLOWED_ORIGINS", "https://a.example, https://b.example"},
-		{"WAYFINDER_AUTH_TOKEN", "topsecret"},
 		{"WAYFINDER_TLS_CERT", "/tmp/cert.pem"},
 		{"WAYFINDER_TLS_KEY", "/tmp/key.pem"},
 	} {
@@ -197,9 +100,6 @@ func TestLoadConfigParsesSecurityEnvVars(t *testing.T) {
 		}
 	}
 
-	if cfg.AuthToken != "topsecret" {
-		t.Errorf("expected AuthToken %q, got %q", "topsecret", cfg.AuthToken)
-	}
 	if cfg.TLSCertFile != "/tmp/cert.pem" {
 		t.Errorf("expected TLSCertFile %q, got %q", "/tmp/cert.pem", cfg.TLSCertFile)
 	}
@@ -463,7 +363,7 @@ map:
 }
 
 func TestLoadConfigSecurityEnvVarsDefaultEmpty(t *testing.T) {
-	for _, key := range []string{"WAYFINDER_ALLOWED_ORIGINS", "WAYFINDER_AUTH_TOKEN", "WAYFINDER_TLS_CERT", "WAYFINDER_TLS_KEY"} {
+	for _, key := range []string{"WAYFINDER_ALLOWED_ORIGINS", "WAYFINDER_TLS_CERT", "WAYFINDER_TLS_KEY"} {
 		os.Unsetenv(key)
 	}
 
@@ -471,9 +371,6 @@ func TestLoadConfigSecurityEnvVarsDefaultEmpty(t *testing.T) {
 
 	if len(cfg.AllowedOrigins) != 0 {
 		t.Errorf("expected no allowed origins by default, got %v", cfg.AllowedOrigins)
-	}
-	if cfg.AuthToken != "" {
-		t.Errorf("expected empty AuthToken by default, got %q", cfg.AuthToken)
 	}
 	if cfg.TLSCertFile != "" || cfg.TLSKeyFile != "" {
 		t.Errorf("expected empty TLS config by default, got cert=%q key=%q", cfg.TLSCertFile, cfg.TLSKeyFile)

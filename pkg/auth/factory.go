@@ -9,9 +9,6 @@ import (
 type Config struct {
 	Mode Mode
 
-	// NoneSubject is the fixed identity in ModeNone (default "default").
-	NoneSubject string
-
 	// CookieName and SessionKey configure ModeBuiltin. SessionKey is required.
 	CookieName string
 	SessionKey []byte
@@ -27,13 +24,6 @@ type Config struct {
 // endpoint, so it needs network access and a live ctx.
 func NewAuthenticator(ctx context.Context, cfg Config) (Authenticator, error) {
 	switch cfg.Mode {
-	case ModeNone:
-		subject := cfg.NoneSubject
-		if subject == "" {
-			subject = "default"
-		}
-		return NoneAuthenticator{Subject: subject}, nil
-
 	case ModeBuiltin:
 		if len(cfg.SessionKey) == 0 {
 			return nil, fmt.Errorf("auth: builtin mode requires a session key")
