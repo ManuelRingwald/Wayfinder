@@ -8,6 +8,13 @@
 >
 > **Betriebsmodus.** Multi-Tenant ist der einzige Modus (ADR 0014): Postgres ist
 > Pflicht, die Anmeldung ist immer aktiv. Es gibt keinen DB-losen „Standalone".
+>
+> **Plattform (wichtig für macOS/Windows, z. B. Mac mini).** Teil A–D (Start +
+> Kunden-Einrichtung) laufen **überall** gleich — der Onboarding-Stack nutzt ein
+> Bridge-Netz. Nur die **Live-Tracks** (Teil E) sind plattform-abhängig:
+> Host-Networking-Multicast funktioniert auf **Docker Desktop (macOS/Windows)
+> nicht**. Dort den **Bridge-Weg E-2** nehmen, **nicht** den orchestrierten
+> Host-Netz-Stack (E-1, nur Linux).
 
 ## Was hier nachgewiesen wird
 
@@ -171,30 +178,69 @@ curl -s -o /dev/null -w "C6 -> %{http_code}\n" -b cookies.txt \
 
 ## Teil E — (optional) Live-Tracks mit Firefly
 
-Für echte Tracks braucht es einen CAT062-Sender auf der Feed-Multicast-Gruppe.
-Zwei Wege:
+Für echte Tracks braucht es einen CAT062-Sender auf der Multicast-Gruppe des
+**abonnierten** Feeds. Der Weg hängt von der Plattform ab.
 
-1. **Orchestrierter Stack (Linux, empfohlen):**
-   `docker compose -f docker-compose.orchestrated.yml up --build` — Postgres +
-   Wayfinder (`builtin`) + **Orchestrator** in Host-Netz. Der Orchestrator startet
-   je abonniertem Feed automatisch eine Firefly-Instanz; Multicast trifft direkt
-   beim Server ein. Den Kunden wie in Teil C einrichten (oder das Skript nutzen).
-2. **Skript-Abnahme der Orchestrierungs-Kette:** `scripts/e2e-orchestrated.sh`
-   seedet einen Feed direkt und prüft automatisiert: Container-Spawn (Label
-   `wayfinder.feed_id`), korrekte Env, `wayfinder_cat062_tracks_received_total > 0`
-   und Orphan-Cleanup beim Abbestellen. Modi `--mode scene` (offline) und
-   `--mode opensky-anon` (Live-ADS-B).
+### E-1 — Linux: orchestrierter Stack (Auto-Spawn, empfohlen)
+
+`docker compose -f docker-compose.orchestrated.yml up --build` — Postgres +
+Wayfinder (`builtin`) + **Orchestrator** in Host-Netz. Der Orchestrator startet je
+abonniertem Feed automatisch eine Firefly-Instanz **auf der Feed-Gruppe**;
+Multicast trifft direkt beim Server ein. Den Kunden wie in Teil C einrichten
+(Feed-Endpoint ruhig **auto-allokieren** — der Orchestrator trifft die Gruppe
+selbst). `scripts/e2e-orchestrated.sh` automatisiert das (Modi `--mode scene`
+offline / `--mode opensky-anon` Live-ADS-B).
 
 | # | Aktion | Erwartetes Ergebnis | Prüfschritt |
 |---|--------|---------------------|-------------|
-| E1 | Orchestrierten Stack starten (Linux). | Postgres + Server + Orchestrator laufen; nur der Orchestrator mountet den Docker-Socket. | `docker ps` zeigt alle drei; `docker inspect` bestätigt den Socket nur am Orchestrator. |
-| E2 | Feed abonnieren (Teil C bzw. Skript-Seed). | Orchestrator spawnt `wayfinder-firefly-feed-<id>`. | `docker ps` zeigt den gespawnten Tracker mit Label `wayfinder.feed_id`. |
-| E3 | Tracks prüfen. | `wayfinder_cat062_tracks_received_total > 0`; Karte zeigt Tracks über dem EDLV-Gebiet. | `curl -s localhost:8080/metrics | grep cat062_tracks_received_total`. |
-| E4 | Abo entfernen. | Der Tracker-Container wird gestoppt/entfernt (Orphan-Cleanup). | `docker ps` zeigt den Tracker nicht mehr. |
+| E1.1 | Orchestrierten Stack starten (Linux). | Postgres + Server + Orchestrator laufen; nur der Orchestrator mountet den Docker-Socket. | `docker ps` zeigt alle drei; `docker inspect` bestätigt den Socket nur am Orchestrator. |
+| E1.2 | Feed abonnieren (Teil C bzw. Skript-Seed). | Orchestrator spawnt `wayfinder-firefly-feed-<id>`. | `docker ps` zeigt den Tracker mit Label `wayfinder.feed_id`. |
+| E1.3 | Tracks prüfen. | `wayfinder_cat062_tracks_received_total > 0`; der abonnierte Kunde sieht Tracks. | `curl -s localhost:8080/metrics \| grep cat062_tracks_received_total`. |
+| E1.4 | Abo entfernen. | Tracker-Container gestoppt/entfernt (Orphan-Cleanup). | `docker ps` zeigt den Tracker nicht mehr. |
 
 > ⚠️ **Docker-Socket = root-äquivalent (ADR 0012 §6).** Nur der Orchestrator
 > bekommt ihn; der browser-zugewandte Server nie. Den Orchestrator-Host als
 > hochwertige Vertrauensgrenze behandeln (Netz-Isolation, restriktiver Zugang).
+
+### E-2 — macOS / Windows (Docker Desktop, z. B. Mac mini): Bridge-Master-Compose
+
+Auf Docker Desktop bindet `network_mode: host` nur an die interne Linux-VM — der
+orchestrierte Stack (E-1) und ein separat laufendes Firefly sehen sich **nicht**,
+Multicast „nach außen" scheitert. **Lösung:** Firefly, Postgres und Wayfinder in
+**einem** benutzerdefinierten Bridge-Netz; **innerhalb** desselben Docker-Netzes
+funktioniert Multicast zwischen den Containern. Das fertige Master-Compose steht
+in **`DOCKER.md`** (Abschnitt „macOS/Windows") — es um den `db`-Service erweitert
+und multi-tenant (`WAYFINDER_DB_URL` + `WAYFINDER_AUTH_MODE: builtin`).
+
+**Zwei Unterschiede zu Teil C/E-1** (es gibt hier **keinen** Orchestrator —
+Firefly ist ein **fester externer Sender**):
+
+1. **Feed mit explizitem Endpoint anlegen** (statt auto-allokieren), passend zu
+   Fireflys Sender (Default `239.255.0.62:8600`):
+   ```bash
+   curl -s -b cookies.txt -X POST localhost:8081/api/admin/feeds \
+     -H 'Content-Type: application/json' \
+     -d '{"name":"edlv-weeze","multicast_group":"239.255.0.62","port":8600,
+          "region":"Europe","sensor_mix":["SSR","ADS-B"]}'
+   ```
+2. **Firefly im selben Compose** mit `FIREFLY_CAT062_ENABLED=true` (sendet auf
+   `FIREFLY_CAT062_GROUP`, Default `239.255.0.62:8600`).
+
+| # | Aktion | Erwartetes Ergebnis | Prüfschritt |
+|---|--------|---------------------|-------------|
+| E2.1 | Master-Compose starten: `db` + `firefly-server` + `wayfinder` in `radar-net`. | Alle drei laufen; Wayfinder erreicht Postgres über DNS-Name `db`. | `docker compose ps` → alle `Up`. |
+| E2.2 | Teil B (Passwortwechsel) + Teil C, **Feed mit explizitem `239.255.0.62:8600`**, Kunde abonniert. | Feed auf Fireflys Gruppe; Mandant gescopt. | Feed-Antwort trägt `239.255.0.62:8600`. |
+| E2.3 | Tracks prüfen. | `wayfinder_cat062_tracks_received_total > 0`. | `curl -s localhost:8080/metrics \| grep cat062_tracks_received_total`. |
+
+> ⚠️ **Demo-Szene ≠ EDLV.** Fireflys eingebaute Szene ist **Frankfurt** (kein
+> Weeze). Mit `FIREFLY_SCENE=frankfurt` liegen die Tracks ~150 km südöstlich von
+> EDLV — **außerhalb** der 30-NM-AOI aus Teil C; der View-Filter blendet sie aus
+> (Tracks fließen, Karte bleibt leer). Zwei Wege zu sichtbaren Tracks:
+> **(a) Schnelltest:** die Sicht (C5) testweise auf Frankfurt (`50.0379/8.5622`)
+> setzen **oder** die `aoi` weglassen — dann erscheinen die Demo-Tracks.
+> **(b) Echter EDLV-Verkehr:** Firefly mit `FIREFLY_MODE=live` + `FIREFLY_SOURCES`
+> (eine `adsb_opensky`-Quelle mit der EDLV-BBox `50.90…51.90 / 5.34…6.96`) statt
+> der Szene fahren — liefert echten ADS-B-Verkehr rund um Weeze (Netz-Egress nötig).
 
 ---
 

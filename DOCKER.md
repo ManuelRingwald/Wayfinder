@@ -141,8 +141,15 @@ docker compose up --build
 ```
 
 Dann im Browser: **http://localhost:8081/admin** (Login `admin`/`admin`,
-Passwortwechsel). Nach wenigen Sekunden erscheinen die ersten Tracks über dem
-Rhein-Main-Gebiet.
+Passwortwechsel).
+
+> **Tracks sichtbar machen (Multi-Tenant).** Da es hier **keinen Orchestrator**
+> gibt, ist Firefly ein fester externer Sender auf `239.255.0.62:8600`. Damit ein
+> angemeldeter Mandant Tracks sieht, einen **Feed mit genau diesem Endpoint**
+> anlegen (`multicast_group: 239.255.0.62`, `port: 8600` — **nicht**
+> auto-allokieren) und einen Mandanten darauf abonnieren. Der vollständige
+> Ablauf (inkl. EDLV-Sicht/AOI und der Frankfurt-Szene-Einschränkung) steht im
+> Runbook `docs/E2E-ABNAHME.md`, **Teil E-2**.
 
 ## Details
 
