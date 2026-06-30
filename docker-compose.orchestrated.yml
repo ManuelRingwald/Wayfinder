@@ -1,0 +1,95 @@
+# End-to-end orchestration harness (ORCH-5c, ADR 0012) — the auto-spawning chain
+# wired into one runnable stack: assign a feed → the orchestrator spawns a Firefly
+# tracker for it → CAT062/UDP-multicast → the ASD shows tracks.
+#
+# This is NOT the production deployment topology — it is a single-host acceptance
+# harness. It complements the plain docker-compose.yml (server only, external
+# feed) by adding Postgres and the least-privilege orchestrator control plane.
+#
+# Run the acceptance walk-through with docs/E2E-ABNAHME.md (or scripts/e2e-orchestrated.sh).
+#
+# Networking: server, orchestrator and the spawned Firefly containers all use host
+# networking so CAT062/UDP-multicast (239.255.0.62:8600) reaches the receiver —
+# multicast does not traverse Docker's default bridge. Postgres publishes 5432 to
+# the host, so the host-networked processes reach it at 127.0.0.1:5432.
+#
+# Security (ADR 0012 §6): ONLY the orchestrator mounts the Docker socket. The
+# browser-facing server never gets that privilege.
+
+services:
+  db:
+    image: postgres:16-bookworm
+    environment:
+      POSTGRES_USER: wayfinder
+      POSTGRES_PASSWORD: wayfinder
+      POSTGRES_DB: wayfinder
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "wayfinder"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  # Browser-facing ASD server. Owns the schema (runs migrations on start), serves
+  # the admin UI + WebSocket, and receives the CAT062 feed off the multicast group.
+  wayfinder:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    network_mode: host
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      WAYFINDER_DB_URL: "postgres://wayfinder:wayfinder@127.0.0.1:5432/wayfinder?sslmode=disable"
+      # Single-tenant/no-auth keeps the harness focused on the orchestration chain
+      # (the auth edge is exercised by its own tests). Do NOT use AUTH_MODE=none in
+      # production.
+      WAYFINDER_AUTH_MODE: "none"
+      FIREFLY_CAT062_GROUP: ${FIREFLY_CAT062_GROUP:-239.255.0.62}
+      FIREFLY_CAT062_PORT: ${FIREFLY_CAT062_PORT:-8600}
+      # Same key as the orchestrator — only needed for the authenticated-source
+      # walk-through (credentialled OpenSky); empty is fine for the anonymous/scene run.
+      WAYFINDER_SECRET_KEY: ${WAYFINDER_SECRET_KEY:-}
+      WAYFINDER_MAP_CENTER_LAT: ${WAYFINDER_MAP_CENTER_LAT:-50.0379}
+      WAYFINDER_MAP_CENTER_LON: ${WAYFINDER_MAP_CENTER_LON:-8.5622}
+      WAYFINDER_MAP_ZOOM: ${WAYFINDER_MAP_ZOOM:-8}
+    restart: unless-stopped
+
+  # Least-privilege control plane. Reads the desired state (subscribed feeds +
+  # source config) and converges the running Firefly set toward it via the Docker
+  # backend. The ONLY service with the Docker socket.
+  orchestrator:
+    build:
+      context: .
+      dockerfile: Dockerfile.orchestrator
+    network_mode: host
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      # The container-runtime privilege (ADR 0012 §6). Read-write: the orchestrator
+      # creates/starts/stops/removes the per-feed Firefly containers.
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      WAYFINDER_DB_URL: "postgres://wayfinder:wayfinder@127.0.0.1:5432/wayfinder?sslmode=disable"
+      WAYFINDER_ORCHESTRATOR_BACKEND: "docker"
+      # The Firefly image the orchestrator runs per feed. Build it from the Firefly
+      # repo (docker build -t firefly:latest .) or set this to a published tag.
+      WAYFINDER_FIREFLY_IMAGE: ${WAYFINDER_FIREFLY_IMAGE:-firefly:latest}
+      # Host networking for the spawned trackers so their multicast reaches the
+      # server (matches this compose's host-net topology).
+      WAYFINDER_FIREFLY_NETWORK: "host"
+      # Placeholder scene for feeds WITHOUT live sources → the spawned Firefly
+      # replays a demo scenario and emits tracks with no external network. Drives
+      # the offline acceptance run.
+      WAYFINDER_FIREFLY_SCENE: ${WAYFINDER_FIREFLY_SCENE:-frankfurt}
+      # Same key as the server (only needed for credentialled sources, ORCH-5b).
+      WAYFINDER_SECRET_KEY: ${WAYFINDER_SECRET_KEY:-}
+      # Tighten the reconcile period so the harness converges quickly; the
+      # change-driven trigger (LISTEN/NOTIFY) usually fires first.
+      WAYFINDER_ORCHESTRATOR_INTERVAL: ${WAYFINDER_ORCHESTRATOR_INTERVAL:-10s}
+      WAYFINDER_LOG_LEVEL: ${WAYFINDER_LOG_LEVEL:-info}
+    restart: unless-stopped

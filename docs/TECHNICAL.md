@@ -664,13 +664,23 @@ Signal-Senden ist nicht-blockierend auf einen Size-1-Channel → ein Burst
 Payload (der Reconciler liest das volle Soll). `feed_secrets` ist noch **nicht**
 abgedeckt (erst mit der Container-Injection spec-relevant, ORCH-5).
 
+**End-to-End-Harness (ORCH-5c):** Die ganze Kette ist in einem lauffähigen
+Single-Host-Stack zusammengesteckt: `Dockerfile.orchestrator` baut das
+Control-Plane-Binary getrennt vom Server; `docker-compose.orchestrated.yml` fährt
+`db` + `wayfinder` + `orchestrator` (**nur** der Orchestrator mountet
+`/var/run/docker.sock`, ADR 0012 §6), alle host-vernetzt für CAT062-Multicast.
+`scripts/e2e-orchestrated.sh` seedet Tenant+Feed+Subscription direkt in Postgres und
+assertet Spawn (Label `wayfinder.feed_id`), Container-Env, ASD-Empfang
+(`wayfinder_cat062_tracks_received_total`) und Orphan-Cleanup (Modi `scene` offline
+/ `opensky-anon`). Abnahme-Runbook: `docs/E2E-ABNAHME.md` (8 Prüfpunkte; die
+credential-bezogenen 3/4/6/7 als manueller authentifizierter Lauf).
+
 **Stand:** Reconciler-Kern + Store-Soll + getrenntes Binary + Docker-Adapter +
 verschlüsselter Secret-Speicher/-Resolver + write-only Secret-API + änderungs-
-getriebener Reconcile (`LISTEN/NOTIFY`) verdrahtet; offen bleibt die
-**Container-Injection** des aufgelösten Werts (`cred_ref` → Firefly-Quell-Env,
-ORCH-5, cross-project). Der Orchestrator ist noch **nicht** im nutzer-orientierten
-Standard-Deployment (`INSTALLATION.md`) verdrahtet — die volle Integration
-(Compose-Service + Socket-Mount + Secret-Key) kommt mit ORCH-5.
+getriebener Reconcile (`LISTEN/NOTIFY`) + Quell-Eingangs-Übersetzung inkl.
+Container-Injection (ORCH-5) + E2E-Harness (ORCH-5c) verdrahtet. Der orchestrierte
+Stack ist als eigenes Compose-Profil (`docker-compose.orchestrated.yml`) abnehmbar;
+der reale DinD-Lauf gehört auf einen Linux-Docker-Host (`docs/E2E-ABNAHME.md`).
 
 **Scoped Fan-out (WF2-21.1, 🔒 NFR-SEC-003):** der Broadcaster stellt einem
 `/ws`-Client einen Track **nur** zu, wenn dessen Mandant den Feed abonniert hat.
