@@ -23,14 +23,14 @@ func TestSealOpenRoundTrip(t *testing.T) {
 		t.Fatalf("new cipher: %v", err)
 	}
 	plain := "opensky-client-secret-xyz"
-	blob, err := c.Seal(plain)
+	blob, err := c.Seal(plain, nil)
 	if err != nil {
 		t.Fatalf("seal: %v", err)
 	}
 	if blob == plain {
 		t.Fatal("sealed blob must not equal plaintext")
 	}
-	got, err := c.Open(blob)
+	got, err := c.Open(blob, nil)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
@@ -39,10 +39,29 @@ func TestSealOpenRoundTrip(t *testing.T) {
 	}
 }
 
+// A blob sealed under one aad opens only under the byte-identical aad; a different
+// (or absent) aad fails exactly like a wrong key. This is what binds a stored
+// secret to its (feed_id, cred_ref) identity (NFR-SEC-004).
+func TestAADMustMatch(t *testing.T) {
+	c, _ := NewCipher(newKey(t))
+	blob, err := c.Seal("secret", []byte("feed-1"))
+	if err != nil {
+		t.Fatalf("seal: %v", err)
+	}
+	if got, err := c.Open(blob, []byte("feed-1")); err != nil || got != "secret" {
+		t.Fatalf("open with matching aad = (%q, %v), want (secret, nil)", got, err)
+	}
+	for _, aad := range [][]byte{nil, []byte("feed-2"), []byte("feed-1 ")} {
+		if _, err := c.Open(blob, aad); !errors.Is(err, ErrDecrypt) {
+			t.Errorf("open with non-matching aad %q = %v, want ErrDecrypt", aad, err)
+		}
+	}
+}
+
 func TestSealIsNonDeterministic(t *testing.T) {
 	c, _ := NewCipher(newKey(t))
-	a, _ := c.Seal("same")
-	b, _ := c.Seal("same")
+	a, _ := c.Seal("same", nil)
+	b, _ := c.Seal("same", nil)
 	if a == b {
 		t.Fatal("two seals of the same plaintext must differ (random nonce)")
 	}
@@ -51,19 +70,19 @@ func TestSealIsNonDeterministic(t *testing.T) {
 func TestOpenWithWrongKeyFails(t *testing.T) {
 	c1, _ := NewCipher(newKey(t))
 	c2, _ := NewCipher(newKey(t))
-	blob, _ := c1.Seal("secret")
-	if _, err := c2.Open(blob); !errors.Is(err, ErrDecrypt) {
+	blob, _ := c1.Seal("secret", nil)
+	if _, err := c2.Open(blob, nil); !errors.Is(err, ErrDecrypt) {
 		t.Fatalf("open with wrong key = %v, want ErrDecrypt", err)
 	}
 }
 
 func TestOpenTamperedFails(t *testing.T) {
 	c, _ := NewCipher(newKey(t))
-	blob, _ := c.Seal("secret")
+	blob, _ := c.Seal("secret", nil)
 	raw, _ := base64.StdEncoding.DecodeString(blob)
 	raw[len(raw)-1] ^= 0xFF // flip a tag bit
 	tampered := base64.StdEncoding.EncodeToString(raw)
-	if _, err := c.Open(tampered); !errors.Is(err, ErrDecrypt) {
+	if _, err := c.Open(tampered, nil); !errors.Is(err, ErrDecrypt) {
 		t.Fatalf("open tampered = %v, want ErrDecrypt", err)
 	}
 }
@@ -71,7 +90,7 @@ func TestOpenTamperedFails(t *testing.T) {
 func TestOpenGarbageFails(t *testing.T) {
 	c, _ := NewCipher(newKey(t))
 	for _, blob := range []string{"", "not-base64!!", "AAAA"} {
-		if _, err := c.Open(blob); !errors.Is(err, ErrDecrypt) {
+		if _, err := c.Open(blob, nil); !errors.Is(err, ErrDecrypt) {
 			t.Errorf("open(%q) = %v, want ErrDecrypt", blob, err)
 		}
 	}

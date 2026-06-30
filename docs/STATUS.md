@@ -13,18 +13,15 @@
 ## 🎯 Stand 2026-06-29
 
 - **Zuletzt aktualisiert:** 2026-06-29
-- **Letzte Arbeit:** **Konsolidierung nach dem ORCH-Sprint** (Review + Doku-Abgleich).
-  Sicherheits-Review der jungen ORCH/OAuth2-Fläche → keine kritischen Befunde;
-  ein Hardening nachgezogen (Docker-Socket = root-äquivalent jetzt explizit in
-  Compose + Runbook). Code-Pflege: `pkg/broadcast` `Message.TimeMs` stempelte hart
-  `0` (totes Envelope-Feld) → jetzt echte Wall-Clock-Sendezeit (≠ Daten-Zeit,
-  dokumentiert). Doku-Drift: `docs/ROADMAP.md` ORCH-Status auf „Kern vollständig"
-  korrigiert (Tabelle ORCH-2…6 + Nummerierungs-Hinweis). Davor: **ORCH komplett**
-  (1…5c + E2E-Harness), OAuth2-UI-Relabel, Firefly OpenSky-OAuth2 (ADR 0024).
-- **Empfehlung Schritt 3 (offen):** AES-GCM-Secret-Speicher ohne AAD-Bindung an
-  `(feed_id, cred_ref)` — ein DB-Schreib-Angreifer könnte einen Secret-Blob zwischen
-  Feeds verschieben. Defense-in-depth, **eigener** kleiner Schritt (ändert das
-  Verschlüsselungsformat; aktuell ohne Migrationslast, da keine Prod-Secrets).
+- **Letzte Arbeit:** **Schritt 3 — AES-GCM-AAD-Identitäts-Bindung** (Hardening aus
+  dem Sicherheits-Review). `secret.Cipher.Seal/Open` reichen jetzt AAD durch; der
+  Orchestrator bindet jeden Blob via `credAAD(feed_id, cred_ref)` — ein in der DB
+  verschobener/replayter Blob scheitert unter fremder Identität beim Open
+  (fail-closed). Tests (`TestAADMustMatch`, `…AADBindsToFeedIdentity`) + Doku
+  (NFR-SEC-004, TECHNICAL, Milestone, secret.go-Paketdoc). Migrations-Hinweis: bricht
+  alt-versiegelte Blobs — aktuell keine Prod-Secrets, also kostenlos. Alle Gates grün.
+  Davor: Konsolidierung (broadcast-`time_ms`-Fix, ROADMAP-Drift), Review (keine
+  kritischen Befunde), **ORCH komplett** (1…5c + E2E-Harness), Firefly OAuth2 (ADR 0024).
 - **Nächster Schritt:** **realer Abnahme-Lauf** auf einem Linux-Docker-Host
   (`scripts/e2e-orchestrated.sh` + authentifizierter Lauf mit echten OpenSky-OAuth2-
   Credentials). Separat (eigene ADRs): Fireflys FLARM/APRS- und Radar-ASTERIX-Live-
