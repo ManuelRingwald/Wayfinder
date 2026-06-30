@@ -110,31 +110,43 @@
           style="max-width: 120px"
         />
       </div>
+      <p class="text-caption text-medium-emphasis mt-2">
+        <strong>Zentrum &amp; Zoom</strong> legen den Start-Kartenausschnitt der
+        ASD-Karte (Mittelpunkt und Zoomstufe) für alle Clients dieses Mandanten fest.
+        Zentrum + <strong>Radius</strong> werden clientseitig in eine rechteckige
+        AOI-Bounding-Box umgerechnet (das Backend filtert AOI-basiert). Die AOI ist
+        eine <strong>harte serverseitige Daten-Minimierungsgrenze</strong>: Tracks
+        außerhalb werden verworfen und erreichen den Client nie — keine reine
+        Anzeigepräferenz. Ein Radius von 0 oder leer speichert keine AOI (kein
+        geografischer Filter).
+      </p>
       <div class="d-flex flex-wrap ga-3 mt-3">
         <v-text-field
           v-model.number="form.flMin"
           type="number"
-          label="FL min"
+          label="FL min (× 100 ft)"
           variant="outlined"
           density="compact"
           hide-details
           clearable
-          style="max-width: 140px"
+          style="max-width: 180px"
         />
         <v-text-field
           v-model.number="form.flMax"
           type="number"
-          label="FL max"
+          label="FL max (× 100 ft)"
           variant="outlined"
           density="compact"
           hide-details
           clearable
-          style="max-width: 140px"
+          style="max-width: 180px"
         />
       </div>
       <p class="text-caption text-medium-emphasis mt-2">
-        Radius und Zentrum werden clientseitig in eine AOI-Bounding-Box umgerechnet
-        (das Backend bleibt AOI-basiert). Ein Radius von 0 oder leer speichert keine AOI.
+        <strong>FL-Band</strong> in Flight-Level-Einheiten (× 100 ft): FL100 =
+        10 000 ft. Tracks außerhalb des Bands werden serverseitig verworfen.
+        <strong>Fail-open:</strong> Tracks ohne gemeldete Flugfläche (keine
+        Mode-C-Höhe) werden immer zugestellt.
       </p>
       <div class="mt-3">
         <v-btn color="primary" :loading="busy" @click="save">Ansicht speichern</v-btn>
