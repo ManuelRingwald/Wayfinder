@@ -213,15 +213,15 @@
                 v-model="secretUser[i]"
                 type="text"
                 autocomplete="off"
-                label="Benutzername"
-                hint="z. B. OpenSky-Client-ID — kein Doppelpunkt"
+                label="Client-ID"
+                hint="z. B. OpenSky-Client-ID (OAuth2) — kein Doppelpunkt"
                 density="compact"
               />
               <v-text-field
                 v-model="secretPass[i]"
                 type="password"
                 autocomplete="new-password"
-                :label="isSecretConfigured(s.cred_ref) ? 'Passwort (ersetzt)' : 'Passwort'"
+                :label="isSecretConfigured(s.cred_ref) ? 'Client-Secret (ersetzt)' : 'Client-Secret'"
                 density="compact"
                 hide-details
               />
@@ -383,9 +383,10 @@ const coveragePreview = ref('')
 // return 503), so the controls stay hidden rather than pretending to work.
 // secretRefs holds the cred_refs that already have a stored value (the server
 // never returns the value itself). The admin enters a credential as two fields —
-// secretUser and secretPass, keyed by source row index — which are combined into a
-// single "user:pass" value before storing (UX-2; Firefly splits at the first
-// colon). secretBusy is the row currently saving.
+// secretUser (client id) and secretPass (client secret), keyed by source row index
+// — which are combined into a single "client_id:client_secret" value before storing
+// (UX-2; Firefly splits at the first colon and runs the OAuth2 client-credentials
+// flow, ADR 0024). secretBusy is the row currently saving.
 const secretStoreEnabled = ref(false)
 const secretRefs = ref(new Set())
 const secretUser = ref({})

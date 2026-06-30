@@ -1,10 +1,17 @@
-# ORCH-5b-2 — Quell-Credential-UI (Benutzername/Passwort, UX-2)
+# ORCH-5b-2 — Quell-Credential-UI (Client-ID/Client-Secret, UX-2)
 
 > Abschluss von ORCH-5b: Der Admin gibt eine Quell-Credential als **zwei**
-> Felder ein — Benutzername und Passwort — die zu **einem** verschlüsselten
-> `user:pass`-Secret kombiniert werden. Reine UI-/Frontend-Arbeit auf der
-> bestehenden write-only Secret-API (ORCH-2c 3a-API); der Secret-Fluss in den
+> Felder ein — Client-ID und Client-Secret — die zu **einem** verschlüsselten
+> `client_id:client_secret`-Secret kombiniert werden. Reine UI-/Frontend-Arbeit auf
+> der bestehenden write-only Secret-API (ORCH-2c 3a-API); der Secret-Fluss in den
 > Container ist ORCH-5b-1.
+
+> **Aktualisierung (Firefly ADR 0024):** OpenSky hat Basic Auth abgeschaltet und
+> nutzt jetzt OAuth2 Client-Credentials. Die zwei Felder hießen ursprünglich
+> „Benutzername/Passwort"; sie heißen jetzt **„Client-ID/Client-Secret"** und der
+> kombinierte Wert ist `client_id:client_secret`. Der **Wire-Vertrag** (ein String,
+> ein `:`, Split am ersten `:`) und die gesamte Logik bleiben unverändert — reiner
+> Label-/Semantik-Wechsel.
 
 ## Fachlicher Hintergrund
 
