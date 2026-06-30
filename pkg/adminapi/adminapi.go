@@ -301,6 +301,14 @@ type whoamiDTO struct {
 	Features           map[string]bool `json:"features"`
 }
 
+// WhoamiHandler exposes the identity probe for mounting OUTSIDE the requireAdmin
+// gate — at GET /api/whoami, behind the tenant middleware only. It lets ANY
+// authenticated principal (including a plain tenant user) resolve its own session
+// and role, which the ASD map needs to decide between its login screen and the
+// live picture. 401 when no Identity is present. The admin SPA keeps using the
+// admin-gated GET /api/admin/whoami; both share the same handler/DTO.
+func (h *Handler) WhoamiHandler() http.HandlerFunc { return h.whoami }
+
 func (h *Handler) whoami(w http.ResponseWriter, r *http.Request) {
 	id, ok := tenant.FromContext(r.Context())
 	if !ok {

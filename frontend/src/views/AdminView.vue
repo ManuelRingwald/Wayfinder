@@ -37,6 +37,13 @@
       {{ admin.identity.subject || 'admin' }} · {{ admin.role }}
     </v-chip>
     <v-btn prepend-icon="mdi-radar" :to="{ name: 'asd' }">Zur Lage</v-btn>
+    <v-btn
+      v-if="admin.isAuthorized"
+      prepend-icon="mdi-logout"
+      variant="text"
+      class="ml-1"
+      @click="onLogout"
+    >Abmelden</v-btn>
   </v-app-bar>
 
   <MyAccountPanel v-model="myAccountOpen" />
@@ -270,5 +277,12 @@ async function submitPasswordChange() {
   }
   // Success: identity reloaded (flag now false); clear the form fields.
   pwCurrent.value = pwNew.value = pwConfirm.value = ''
+}
+
+// Logout clears the server session; the store drops to accessStatus 401, so the
+// view falls back to its login form.
+async function onLogout() {
+  await admin.logout()
+  section.value = 'tenants'
 }
 </script>

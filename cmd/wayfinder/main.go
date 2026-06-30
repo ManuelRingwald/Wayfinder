@@ -412,6 +412,12 @@ func main() {
 		store.NewUserRepo(dbPool), store.NewCredentialRepo(dbPool), featSvc, feedRegistry, feedLife, aeroLife, secretSvc, logger, rescope)
 	mux.Handle("/api/admin/", tenantMW(requireAdmin(adminAPI)))
 
+	// Role-agnostic identity probe for the ASD map (any authenticated principal,
+	// not just admins): the map reads it to decide between its login screen and
+	// the live picture. Behind the tenant middleware (sets the Identity) but NOT
+	// requireAdmin — a plain tenant user must be able to resolve its own session.
+	mux.Handle("GET /api/whoami", tenantMW(adminAPI.WhoamiHandler()))
+
 	// Cross-tenant read-only impersonation (ADR 0008, WF2-34): mint and clear
 	// the grant cookie. The more-specific method+path patterns take precedence
 	// over the /api/admin/ subtree. Only wired when a signing key is configured;
