@@ -13,18 +13,18 @@
 ## 🎯 Stand 2026-06-29
 
 - **Zuletzt aktualisiert:** 2026-06-29
-- **Letzte Arbeit:** **ORCH-5c — End-to-End-Abnahme-Harness.** Die Auto-
-  Orchestrierung ist jetzt in einem lauffähigen Single-Host-Stack zusammengesteckt
-  und abnehmbar: `Dockerfile.orchestrator` (Control-Plane-Binary getrennt),
-  `docker-compose.orchestrated.yml` (db + server + orchestrator; nur der
-  Orchestrator mountet den Docker-Socket), `scripts/e2e-orchestrated.sh` (seedet
-  Tenant+Feed+Subscription in PG, assertet Spawn/Env/ASD-Tracks/Orphan-Cleanup;
-  Modi `scene` offline + `opensky-anon`), Runbook `docs/E2E-ABNAHME.md` (8
-  Prüfpunkte, inkl. manueller authentifizierter Lauf für 3/4/6/7). Sandbox-
-  verifiziert: `docker compose config`, `go build`, `bash -n` (kein Docker-Daemon
-  hier). Davor: OAuth2-UI-Relabel (Client-ID/Client-Secret), **ORCH-5 komplett**
-  (5a→5b-1→5b-2), ORCH-1…4, Firefly #35 (ADR 0023) + OpenSky OAuth2 (ADR 0024,
-  Firefly PR #39).
+- **Letzte Arbeit:** **Konsolidierung nach dem ORCH-Sprint** (Review + Doku-Abgleich).
+  Sicherheits-Review der jungen ORCH/OAuth2-Fläche → keine kritischen Befunde;
+  ein Hardening nachgezogen (Docker-Socket = root-äquivalent jetzt explizit in
+  Compose + Runbook). Code-Pflege: `pkg/broadcast` `Message.TimeMs` stempelte hart
+  `0` (totes Envelope-Feld) → jetzt echte Wall-Clock-Sendezeit (≠ Daten-Zeit,
+  dokumentiert). Doku-Drift: `docs/ROADMAP.md` ORCH-Status auf „Kern vollständig"
+  korrigiert (Tabelle ORCH-2…6 + Nummerierungs-Hinweis). Davor: **ORCH komplett**
+  (1…5c + E2E-Harness), OAuth2-UI-Relabel, Firefly OpenSky-OAuth2 (ADR 0024).
+- **Empfehlung Schritt 3 (offen):** AES-GCM-Secret-Speicher ohne AAD-Bindung an
+  `(feed_id, cred_ref)` — ein DB-Schreib-Angreifer könnte einen Secret-Blob zwischen
+  Feeds verschieben. Defense-in-depth, **eigener** kleiner Schritt (ändert das
+  Verschlüsselungsformat; aktuell ohne Migrationslast, da keine Prod-Secrets).
 - **Nächster Schritt:** **realer Abnahme-Lauf** auf einem Linux-Docker-Host
   (`scripts/e2e-orchestrated.sh` + authentifizierter Lauf mit echten OpenSky-OAuth2-
   Credentials). Separat (eigene ADRs): Fireflys FLARM/APRS- und Radar-ASTERIX-Live-
