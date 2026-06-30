@@ -38,6 +38,17 @@
   **EDLV-Zero-Touch-Runbook** neu). B–D in **PR #95**. Firefly-Doku quergeprüft —
   keine Änderung nötig (CAT062-Wire-Vertrag unverändert).
 
+- **UI-getriebener E2E + Auth-UX-Lücken (diese Sitzung, PR #95):** UI-Audit über
+  beide Repos. Admin-Konfig ist bereits vollständig per UI (Mandant/Nutzer/Feed/
+  Quellen ADS-B+FLARM/Features/View/Abo). Geschlossene Lücken: **rollen-agnostischer
+  `GET /api/whoami`**, **Mandanten-Login + Auth-Gate auf der Karte (`/`)**,
+  **Logout** (Karte + Admin-Header), gemeinsamer `apiFetch`. `docs/E2E-ABNAHME.md`
+  als **UI-only-Ablaufplan** neu (genau ein Terminal-Befehl zum Start, Rest per UI,
+  Terminal nur zur Hinter-den-Kulissen-Prüfung: Firefly-Output Gruppe:Port +
+  ADS-B/FLARM). Firefly-Audit: **ADS-B (`adsb_opensky`) und FLARM (`flarm_aprs`)
+  beide produktionsreif** und live verdrahtet. Offen: Inline-Re-Login bei
+  WS-Sitzungsablauf; kundenseitiger Default-Landing-Login.
+
 - **Nächste Schritte (für die frische Session — priorisiert):**
   1. **Realer E2E-Abnahme-Lauf** auf einem **Linux-Docker-Host** (hier nicht
      möglich, kein Daemon): `scripts/e2e-orchestrated.sh` (Prüfpunkte 1/2/5/8) +
