@@ -638,6 +638,10 @@ AES-256-GCM-verschlüsselt in `feed_secrets`; der Server hält den Schlüssel
 getrennte Control-Plane zum **Open beim Start** (`SecretResolver`). Ohne Schlüssel
 sind die Secret-Routen deaktiviert (503), nie unverschlüsselt speichernd. Der Wert
 verlässt den Server **nie** Richtung Browser (`GET` meldet nur `configured`).
+**AAD-Identitäts-Bindung (Hardening):** Jeder Blob wird per AES-GCM-**AAD** an seine
+`(feed_id, cred_ref)`-Identität gebunden (`orchestrator.credAAD`); ein in der DB
+verschobener/replayter Blob scheitert unter einer fremden Identität beim Open
+(fail-closed) — Defense-in-depth gegen einen Angreifer mit DB-Schreibzugriff.
 
 **Cred-Auflösung beim Start (ORCH-5b-1, Variante A):** Ist am Orchestrator
 **derselbe** `WAYFINDER_SECRET_KEY` gesetzt, baut `cmd/wayfinder-orchestrator`

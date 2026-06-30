@@ -2,9 +2,20 @@ package orchestrator
 
 import (
 	"context"
+	"strconv"
 
 	"github.com/manuelringwald/wayfinder/pkg/secret"
 )
+
+// credAAD binds a sealed secret to its (feed_id, cred_ref) identity via AES-GCM
+// Additional Authenticated Data (NFR-SEC-004, defense-in-depth). The encoding is
+// unambiguous: the feed id is decimal (never contains the NUL separator), so no
+// cred_ref can collide with a different (feed_id, cred_ref) pair. Seal and Open
+// must derive it identically; a relocated/replayed blob under a different identity
+// fails to decrypt.
+func credAAD(feedID int64, credRef string) []byte {
+	return []byte(strconv.FormatInt(feedID, 10) + "\x00" + credRef)
+}
 
 // SecretReader reads a feed's stored (encrypted) credential blob by reference
 // (satisfied by *store.SecretRepo). It returns store.ErrNotFound when the ref has
@@ -37,7 +48,7 @@ func (r *SecretResolver) Resolve(ctx context.Context, feedID int64, credRef stri
 	if err != nil {
 		return "", err
 	}
-	return r.cipher.Open(ciphertext)
+	return r.cipher.Open(ciphertext, credAAD(feedID, credRef))
 }
 
 // SecretWriter persists (and removes) a feed's encrypted credential blobs by
@@ -68,7 +79,7 @@ func NewSecretSealer(secrets SecretWriter, cipher *secret.Cipher) *SecretSealer 
 // SetSecret seals the plaintext credential for a feed's cred_ref and stores it
 // (idempotent upsert).
 func (s *SecretSealer) SetSecret(ctx context.Context, feedID int64, credRef, plaintext string) error {
-	blob, err := s.cipher.Seal(plaintext)
+	blob, err := s.cipher.Seal(plaintext, credAAD(feedID, credRef))
 	if err != nil {
 		return err
 	}

@@ -39,7 +39,7 @@ func newCipher(t *testing.T) *secret.Cipher {
 func TestSecretResolverResolves(t *testing.T) {
 	ctx := context.Background()
 	c := newCipher(t)
-	blob, _ := c.Seal("opensky-secret")
+	blob, _ := c.Seal("opensky-secret", credAAD(1, "secret/sky"))
 	store := fakeSecretStore{blobs: map[string]string{"secret/sky": blob}}
 	r := NewSecretResolver(store, c)
 
@@ -62,10 +62,34 @@ func TestSecretResolverMissingRef(t *testing.T) {
 func TestSecretResolverWrongKeyFails(t *testing.T) {
 	// A blob sealed with a different key cannot be opened → ErrDecrypt.
 	other := newCipher(t)
-	blob, _ := other.Seal("x")
+	blob, _ := other.Seal("x", credAAD(1, "r"))
 	r := NewSecretResolver(fakeSecretStore{blobs: map[string]string{"r": blob}}, newCipher(t))
 	if _, err := r.Resolve(context.Background(), 1, "r"); !errors.Is(err, secret.ErrDecrypt) {
 		t.Fatalf("resolve(wrong key) = %v, want ErrDecrypt", err)
+	}
+}
+
+// A blob sealed for one feed must NOT decrypt when read under a different feed id
+// (a relocated/replayed ciphertext at the storage layer) — the (feed_id, cred_ref)
+// AAD binding fails closed (NFR-SEC-004, defense-in-depth).
+func TestSecretAADBindsToFeedIdentity(t *testing.T) {
+	ctx := context.Background()
+	c := newCipher(t)
+	w := &fakeSecretWriter{blobs: map[string]string{}}
+	sealer := NewSecretSealer(w, c)
+	if err := sealer.SetSecret(ctx, 1, "secret/sky", "opensky-secret"); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	// The fake store ignores the feed id (keys on ref only), so reading under feed 2
+	// returns the very blob sealed for feed 1 — exactly the relocate an attacker with
+	// DB write access could attempt. The open must fail.
+	r := NewSecretResolver(fakeSecretStore{blobs: w.blobs}, c)
+	if _, err := r.Resolve(ctx, 2, "secret/sky"); !errors.Is(err, secret.ErrDecrypt) {
+		t.Fatalf("resolve under wrong feed = %v, want ErrDecrypt", err)
+	}
+	// Under the correct feed id it still round-trips.
+	if got, err := r.Resolve(ctx, 1, "secret/sky"); err != nil || got != "opensky-secret" {
+		t.Fatalf("resolve under correct feed = %q, %v, want opensky-secret", got, err)
 	}
 }
 

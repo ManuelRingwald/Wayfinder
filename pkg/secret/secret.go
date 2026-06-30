@@ -8,6 +8,13 @@
 // The key itself is deployment-managed (WAYFINDER_SECRET_KEY, base64) — it is
 // never stored in the database; encryption defends the data-at-rest boundary, not
 // a full process compromise.
+//
+// Seal/Open take Additional Authenticated Data (AAD): bytes that are authenticated
+// (covered by the GCM tag) but not encrypted and not stored. Callers bind a blob to
+// its context with it — the orchestrator binds each per-feed secret to its
+// (feed_id, cred_ref) identity (NFR-SEC-004) — so a ciphertext relocated or replayed
+// onto a different identity at the storage layer fails to decrypt (defense-in-depth
+// against a DB-write attacker, beyond the at-rest confidentiality the key provides).
 package secret
 
 import (
@@ -61,12 +68,19 @@ func KeyFromBase64(s string) ([]byte, error) {
 // Seal encrypts plaintext and returns base64(nonce || ciphertext+tag). Each call
 // uses a fresh random nonce, so sealing the same plaintext twice yields different
 // blobs (no deterministic-encryption leakage).
-func (c *Cipher) Seal(plaintext string) (string, error) {
+//
+// aad is Additional Authenticated Data: it is authenticated (its integrity is
+// covered by the tag) but NOT encrypted, and it is not stored in the blob. Open
+// must be given the byte-identical aad or it fails. Callers use it to bind a blob
+// to its context (e.g. a per-feed secret's (feed_id, cred_ref) identity), so a
+// blob cannot be authenticated under a different context — defense-in-depth against
+// a relocate/replay of ciphertext at the storage layer. Pass nil for no binding.
+func (c *Cipher) Seal(plaintext string, aad []byte) (string, error) {
 	nonce := make([]byte, c.aead.NonceSize())
 	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
 		return "", fmt.Errorf("secret: read nonce: %w", err)
 	}
-	sealed := c.aead.Seal(nonce, nonce, []byte(plaintext), nil)
+	sealed := c.aead.Seal(nonce, nonce, []byte(plaintext), aad)
 	return base64.StdEncoding.EncodeToString(sealed), nil
 }
 
@@ -74,9 +88,11 @@ func (c *Cipher) Seal(plaintext string) (string, error) {
 // key, tampered ciphertext, or corrupt input).
 var ErrDecrypt = errors.New("secret: decryption failed")
 
-// Open reverses Seal. It returns ErrDecrypt for any malformed, tampered or
-// wrong-key input (never a partial/garbage plaintext — GCM authenticates first).
-func (c *Cipher) Open(blob string) (string, error) {
+// Open reverses Seal. aad must be byte-identical to the value passed to Seal (it
+// is part of what the tag authenticates); a different aad fails exactly like a
+// wrong key. It returns ErrDecrypt for any malformed, tampered, wrong-key or
+// wrong-aad input (never a partial/garbage plaintext — GCM authenticates first).
+func (c *Cipher) Open(blob string, aad []byte) (string, error) {
 	raw, err := base64.StdEncoding.DecodeString(blob)
 	if err != nil {
 		return "", ErrDecrypt
@@ -86,7 +102,7 @@ func (c *Cipher) Open(blob string) (string, error) {
 		return "", ErrDecrypt
 	}
 	nonce, ct := raw[:ns], raw[ns:]
-	pt, err := c.aead.Open(nil, nonce, ct, nil)
+	pt, err := c.aead.Open(nil, nonce, ct, aad)
 	if err != nil {
 		return "", ErrDecrypt
 	}
