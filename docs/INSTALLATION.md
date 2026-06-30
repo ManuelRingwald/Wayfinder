@@ -456,6 +456,14 @@ Firefly). Danach erscheinen Zeilen wie `feed joined` und `listening on :8081`.
 Sie fertig. **Weiter mit Schritt 5.5**, um den Firefly-Feed dem Admin zuzuordnen
 und ihn einem Mandanten zuzuweisen.
 
+> **Auto-Orchestrierung (ORCH, ADR 0012).** Das obige `docker-compose.yml` fährt
+> den ASD-Server gegen einen **externen** Firefly-Feed. Für den Modus „Feed
+> zuweisen ⇒ Tracker startet automatisch" gibt es ein eigenes Compose-Profil
+> `docker-compose.orchestrated.yml` (Postgres + Server + Least-Privilege-
+> Orchestrator, der pro Feed eine Firefly-Instanz spawnt). Ein Linux-Docker-Host
+> ist nötig (Host-Networking-Multicast). Die End-to-End-Abnahme inkl. Skript
+> (`scripts/e2e-orchestrated.sh`) und Prüfpunkten steht in **`docs/E2E-ABNAHME.md`**.
+
 ---
 
 ### Schritt 5.1 — Steuerungsordner anlegen

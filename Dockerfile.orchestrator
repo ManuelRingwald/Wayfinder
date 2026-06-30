@@ -1,0 +1,37 @@
+# Multi-stage build for the wayfinder-orchestrator control-plane process.
+#
+# This is the SEPARATE, least-privilege binary that auto-spawns one Firefly
+# tracker per subscribed feed (ORCH-2c, ADR 0012 §6). It is built and shipped
+# apart from the browser-facing `wayfinder` server (Dockerfile) precisely because
+# only this process is granted the container-runtime privilege (the Docker socket).
+#
+# Stage 1: build the static binary.
+FROM golang:1.25-bookworm AS builder
+
+WORKDIR /build
+
+# Cache module downloads separately from source changes.
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+
+RUN CGO_ENABLED=0 go build -o /build/wayfinder-orchestrator ./cmd/wayfinder-orchestrator
+
+# Stage 2: runtime image with only the binary. No HTTP server, so no healthcheck
+# and no exposed port — the orchestrator is a reconcile loop, observed via logs.
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY --from=builder /build/wayfinder-orchestrator /app/
+
+# Configuration is read from the environment (12-Factor). The Docker backend and
+# its Firefly image are selected via WAYFINDER_ORCHESTRATOR_BACKEND=docker and
+# WAYFINDER_FIREFLY_IMAGE; the deployment secret key (WAYFINDER_SECRET_KEY) — when
+# set — decrypts per-feed source credentials at launch (ORCH-5b).
+ENTRYPOINT ["/app/wayfinder-orchestrator"]

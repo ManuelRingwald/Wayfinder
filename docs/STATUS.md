@@ -13,19 +13,22 @@
 ## 🎯 Stand 2026-06-29
 
 - **Zuletzt aktualisiert:** 2026-06-29
-- **Letzte Arbeit:** **OAuth2-UI-Relabel (Firefly ADR 0024).** Die zwei
-  Secret-Felder im Admin heißen jetzt **Client-ID/Client-Secret** (OpenSky nutzt
-  OAuth2 Client-Credentials, Basic Auth abgeschaltet); kombinierter Wert
-  `client_id:client_secret`. `frontend/src/admin/credential.js` + `AdminFeeds.vue`
-  + Tests/Doku nachgezogen; Wire-Vertrag und Logik unverändert. Vitest (180) +
-  Build + `go build` grün. Davor: **ORCH-5 komplett** — 5a (Rendering) → 5b-1
-  (Control-Plane-Auflösung/-Injection, Variante A) → 5b-2 (UI, UX-2);
-  ORCH-1…4 (#77–#81); Firefly-Seite von #35 (ADR 0023) + OpenSky OAuth2 (ADR 0024,
+- **Letzte Arbeit:** **ORCH-5c — End-to-End-Abnahme-Harness.** Die Auto-
+  Orchestrierung ist jetzt in einem lauffähigen Single-Host-Stack zusammengesteckt
+  und abnehmbar: `Dockerfile.orchestrator` (Control-Plane-Binary getrennt),
+  `docker-compose.orchestrated.yml` (db + server + orchestrator; nur der
+  Orchestrator mountet den Docker-Socket), `scripts/e2e-orchestrated.sh` (seedet
+  Tenant+Feed+Subscription in PG, assertet Spawn/Env/ASD-Tracks/Orphan-Cleanup;
+  Modi `scene` offline + `opensky-anon`), Runbook `docs/E2E-ABNAHME.md` (8
+  Prüfpunkte, inkl. manueller authentifizierter Lauf für 3/4/6/7). Sandbox-
+  verifiziert: `docker compose config`, `go build`, `bash -n` (kein Docker-Daemon
+  hier). Davor: OAuth2-UI-Relabel (Client-ID/Client-Secret), **ORCH-5 komplett**
+  (5a→5b-1→5b-2), ORCH-1…4, Firefly #35 (ADR 0023) + OpenSky OAuth2 (ADR 0024,
   Firefly PR #39).
-- **Nächster Schritt:** **End-to-End-Abnahme** mit echtem authentifiziertem OpenSky
-  (Feed → Quelle adsb_opensky + Credential → Orchestrator spawnt Firefly live →
-  Tracks im ASD). Separat (eigene ADRs): Fireflys FLARM/APRS- und
-  Radar-ASTERIX-Live-Adapter (#35 bleibt dafür offen).
+- **Nächster Schritt:** **realer Abnahme-Lauf** auf einem Linux-Docker-Host
+  (`scripts/e2e-orchestrated.sh` + authentifizierter Lauf mit echten OpenSky-OAuth2-
+  Credentials). Separat (eigene ADRs): Fireflys FLARM/APRS- und Radar-ASTERIX-Live-
+  Adapter (#35 bleibt dafür offen).
 
 ---
 
