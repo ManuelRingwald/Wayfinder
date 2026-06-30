@@ -222,6 +222,14 @@ sinngemäß):
 
 ## 7. Querschnitts-Prinzipien (gelten in *jedem* Schritt)
 
+### Multi-Tenant ist der einzige Betriebsmodus (ADR 0014)
+- **Alles, was wir entwickeln, läuft multi-tenant.** Es gibt **keinen**
+  Single-Tenant-Modus mehr: `WAYFINDER_AUTH_MODE ∈ {builtin, proxy}` (kein `none`),
+  `WAYFINDER_DB_URL` ist **Pflicht**, jeder WebSocket-Client ist **immer**
+  mandanten-gescopt. Unset `AUTH_MODE` ⇒ `builtin` (zero-touch, Auto-Seed).
+- Kein neuer Codepfad darf einen „ohne DB / ohne Auth / ungescopt"-Sonderfall
+  einführen. Auth ist **immer** an (Browser-Rand, ADR 0003).
+
 ### Sicherheit (kritisch — ASD ist sicherheitsrelevant)
 - **Robuster Decoder:** Niemals einem Datagramm vertrauen. Längen prüfen,
   Grenzen einhalten, fehlerhafte Records verwerfen statt abstürzen
