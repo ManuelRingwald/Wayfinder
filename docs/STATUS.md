@@ -28,6 +28,16 @@
   **Secret-Hardening** (AES-GCM-AAD-Bindung an `(feed_id, cred_ref)`).
   Cross-Repo: Firefly OpenSky **OAuth2 Client-Credentials** (ADR 0024).
 
+- **ADR 0014 — Multi-Tenant als einziger Betriebsmodus (diese Sitzung):**
+  Single-Tenant vollständig entfernt. **A** (ADR + Charta-Prinzip, PR #94 gemergt) ·
+  **B** (Code: `none`-Modus/No-DB-Fallback/nil-Scope raus, DB **+** Auth Pflicht,
+  unset `AUTH_MODE`→`builtin`, Legacy-`AUTH_TOKEN`-Gate weg) · **C** (ein
+  Multi-Tenant-Deployment-Stack: `orchestrated.yml`→`builtin`, Single-Tenant-
+  `docker-compose.yml` gelöscht, `DOCKER.md` aufgeräumt) · **D** (Doku:
+  INSTALLATION/TECHNICAL/Anforderungen NFR-SEC-004/BETRIEB; `E2E-ABNAHME.md` als
+  **EDLV-Zero-Touch-Runbook** neu). B–D in **PR #95**. Firefly-Doku quergeprüft —
+  keine Änderung nötig (CAT062-Wire-Vertrag unverändert).
+
 - **Nächste Schritte (für die frische Session — priorisiert):**
   1. **Realer E2E-Abnahme-Lauf** auf einem **Linux-Docker-Host** (hier nicht
      möglich, kein Daemon): `scripts/e2e-orchestrated.sh` (Prüfpunkte 1/2/5/8) +

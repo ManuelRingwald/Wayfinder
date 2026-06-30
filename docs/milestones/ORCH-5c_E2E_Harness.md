@@ -7,8 +7,8 @@
 
 ## Fachlicher Hintergrund
 
-Das heutige `docker-compose.yml` fährt nur den ASD-Server gegen einen **externen**
-Feed. Der Beweis „Feed zuweisen ⇒ Tracker startet ⇒ Tracks im ASD" fehlte als
+Das damalige Repo-`docker-compose.yml` (Single-Tenant, inzwischen entfernt —
+ADR 0014) fuhr nur den ASD-Server gegen einen **externen** Feed. Der Beweis „Feed zuweisen ⇒ Tracker startet ⇒ Tracks im ASD" fehlte als
 zusammengesteckter, abnehmbarer Lauf. Das Harness schließt diese Lücke und ist das
 Abnahme-Tor für ORCH.
 
@@ -49,9 +49,10 @@ sind im Runbook als manueller authentifizierter Lauf beschrieben.
 
 - **Least-Privilege bleibt sichtbar:** nur der `orchestrator`-Service mountet den
   Docker-Socket; der Server nie.
-- **`AUTH_MODE=none`** ist bewusst nur für das Harness (Fokus auf die
-  Orchestrierungs-Kette; der Auth-Rand hat eigene Tests) — im Runbook als
-  „nicht für Produktion" markiert.
+- **Auth-Modus:** Das Harness lief ursprünglich mit `AUTH_MODE=none` (Fokus auf
+  die Orchestrierungs-Kette). Seit ADR 0014 (Multi-Tenant-only) fährt der
+  orchestrierte Stack `builtin` (Auto-Seed `admin`/`admin`); ein `none`-Modus
+  existiert nicht mehr.
 - **Kein-Leak** ist im `opensky-anon`-Lauf maschinell geprüft (kein Secret-Env);
   der vollständige Klartext-Nachweis (Prüfpunkt 4) gehört in den authentifizierten
   Lauf.

@@ -14,6 +14,9 @@
 > einem Linux-Docker-Host (`scripts/e2e-orchestrated.sh`, `docs/E2E-ABNAHME.md`).
 > Danach steht die Wahl zwischen **Prio 2 (Epic CWP/EFS/IMS, ADR 0013)** und den
 > Rest-Punkten (ORCH-6 K8s/HA; Firefly-FLARM/Radar #35; Wayfinder-Issues #57/#64/#68).
+> **Architektur-Schärfung (ADR 0014):** Single-Tenant ist vollständig entfernt —
+> Multi-Tenant ist der einzige Betriebsmodus (Auth immer an, `WAYFINDER_DB_URL`
+> Pflicht). Häppchen A–D umgesetzt (PR #94 + #95).
 > Tagesgenauer IST-Stand: `docs/STATUS.md` (bei Abweichung gilt STATUS).
 >
 > **Geltungsbereich (wichtig):** Die Abschnitte **§0–§2** sind
