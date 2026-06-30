@@ -157,18 +157,37 @@ curl -s -o /dev/null -w "C6 -> %{http_code}\n" -b cookies.txt \
 > eine `bbox`; echte Radar-Quellen (`radar_asterix`) brauchen `sac`/`sic`. Ohne
 > das `multi_feed`-Entitlement darf ein Mandant **höchstens einen** Feed
 > abonnieren (zweiter → `409`).
+>
+> **Echte Live-Daten** (kein Demo): **`adsb_opensky`** (ADS-B über das
+> OpenSky-Netz, anonym oder mit OAuth2-Client-Credentials) **und**
+> **`flarm_aprs`** (FLARM/Segelflug über das Open Glider Network, OGN/APRS) sind
+> in Firefly **produktiv** nutzbar — beide liefern echten Verkehr rund um EDLV;
+> mehrere Quellen pro Feed sind erlaubt. (Ingestion läuft auf der Firefly-Seite,
+> vom Orchestrator je Feed gestartet.)
 
 ---
 
 ## Teil D — Verifikation aus Kundensicht
 
+Aus Kundensicht ist das ein **Browser-Vorgang**: URL öffnen, anmelden, Karte
+sehen. Die `curl`-Befehle hier sind nur das **automatisierbare Äquivalent**
+desselben `/api/login`-Endpunkts (für den Skript-Durchlauf der Abnahme).
+
 | # | Aktion | Erwartetes Ergebnis | Prüfschritt |
 |---|--------|---------------------|-------------|
-| D1 | Als Kunde anmelden: `POST /api/login` `{"subject":"edlv-lotse","password":"Weeze-30nm!"}` (eigener Cookie-Jar). | HTTP `204` + Session-Cookie. | Kein erzwungener Passwortwechsel (nur der Auto-Seed-Admin hat das Flag). |
-| D2 | Karte öffnen: **http://localhost:8081/** (als Kunde). | Karte zentriert auf EDLV (51,40/6,15), Zoom 9. | Sichtbarer Ausschnitt = Weeze. |
+| D1 | **Im Browser anmelden:** **http://localhost:8081/admin** öffnen → Login-Maske „Anmelden" (Benutzername/Passwort) → `edlv-lotse` + Passwort. | Anmeldung erfolgreich, Session-Cookie `wf_session` gesetzt. | Ein reiner Kunden-Nutzer (Rolle `user`) sieht danach „Kein Zugriff auf die Administration" — **erwartet**; der Login (Cookie) hat trotzdem geklappt. |
+| D1-alt | **Headless** statt Browser (Skript): `POST /api/login` `{"subject":"edlv-lotse","password":"Weeze-30nm!"}`. | HTTP `204` + Cookie `wf_session`. | Genau der Aufruf, den die Login-Maske intern macht. |
+| D2 | **Karte öffnen:** **http://localhost:8081/** (mit bestehender Sitzung). | Karte zentriert auf EDLV (51,40/6,15), Zoom 9; der Kunde sieht **nur** seinen gescopten Strom. | Sichtbarer Ausschnitt = Weeze. |
 | D3 | `GET /api/map-config` (als Kunde). | JSON mit `center_lat 51.40`, `center_lon 6.15`. | Werte stimmen mit C5 überein. |
 | D4 | Feed-Gesundheit (Admin): `GET /api/admin/feeds/health`. | Eintrag für `FEED_ID`; `color:"red"`/`ever_seen:false`, solange kein CAT065-Heartbeat ankommt. | Ohne Live-Sender ist „rot/never seen" **erwartet** (siehe Teil E). |
 | D5 | Readiness: `curl -s localhost:8080/ready`. | Bleibt `503`, solange weder Tracks noch Clients da sind. | Erst mit Live-Feed **oder** verbundenem `/ws`-Client wird `200` möglich. |
+
+> **Offener UX-Punkt (Stand heute).** Die Login-Maske liegt in der
+> **`/admin`**-Ansicht; die Karte unter **`/`** hat noch **keinen** eigenen
+> Login-Bildschirm — sie setzt eine bestehende Sitzung voraus. Ein
+> kundenseitiger Login direkt unter `/` (Lotse öffnet `localhost:8081`, bekommt
+> sofort eine Login-Maske, dann die Karte) ist ein sinnvoller nächster Schritt
+> (eigenes Wayfinder-Issue).
 
 > **Warum bleibt die Karte leer?** Der Onboarding-Stack nutzt **Bridge-Netz** —
 > UDP-Multicast (CAT062) traversiert es nicht. Der Feed ist katalogisiert und der
