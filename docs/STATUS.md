@@ -28,6 +28,18 @@
   **Secret-Hardening** (AES-GCM-AAD-Bindung an `(feed_id, cred_ref)`).
   Cross-Repo: Firefly OpenSky **OAuth2 Client-Credentials** (ADR 0024).
 
+- **Mac-mini-E2E über Bridge-Netz (Sitzung 2026-07-01):** Der orchestrierte
+  E2E-Stack braucht Host-Net-Multicast und damit Linux; auf Docker Desktop
+  (Mac mini/Windows) geht das nicht. Neu: eingecheckte **`docker-compose.bridge.yml`**
+  (Firefly + Postgres + Wayfinder in **einem** Bridge-Netz; Container↔Container-
+  Multicast funktioniert dort). Runbook `docs/E2E-ABNAHME.md` um **Anhang E**
+  (E-1 Abgrenzung zum Auto-Spawn, E-2 Ablauf mit **festem** Feed-Endpoint statt
+  Auto-Allokation) erweitert; `DOCKER.md` (Inline-YAML → Verweis auf die Datei,
+  tote „Teil E-2"-Referenz aufgelöst, Stack-Tabelle), `INSTALLATION.md` (Schritt 4.A
+  Kurzweg) und `TECHNICAL.md` (Einschränkungs-Tabelle) nachgezogen. Gates grün
+  (gofmt/build/vet + 28 Test-Pakete; `docker compose config` valide). Kein
+  Go-/ICD-Change — reine Betriebs-/Abnahme-Ergänzung.
+
 - **ADR 0014 — Multi-Tenant als einziger Betriebsmodus (diese Sitzung):**
   Single-Tenant vollständig entfernt. **A** (ADR + Charta-Prinzip, PR #94 gemergt) ·
   **B** (Code: `none`-Modus/No-DB-Fallback/nil-Scope raus, DB **+** Auth Pflicht,
@@ -72,11 +84,13 @@
   (Checkliste beim Testen ins Runbook). **Probelauf:** `WAYFINDER_SESSION_MAX_LIFETIME=30m`.
 
 - **Nächste Schritte (für die frische Session — priorisiert):**
-  1. **Realer E2E-Abnahme-Lauf** auf einem **Linux-Docker-Host** (hier nicht
-     möglich, kein Daemon): `scripts/e2e-orchestrated.sh` (Prüfpunkte 1/2/5/8) +
-     authentifizierter Lauf mit echten OpenSky-`client_id`/`client_secret`
-     (Prüfpunkte 3/4/6/7), Runbook `docs/E2E-ABNAHME.md`. **Einzige offene
-     Validierungs-Lücke.**
+  1. **Realer E2E-Abnahme-Lauf.** Zwei Wege: (a) **Mac mini / Docker Desktop**
+     über `docker-compose.bridge.yml` — voller UI-Durchlauf **+ Live-Tracks**,
+     aber **ohne** Orchestrator-Auto-Spawn (Runbook Anhang E). (b) **Linux-Docker-
+     Host** für den orchestrierten Kern: `scripts/e2e-orchestrated.sh`
+     (Prüfpunkte 1/2/5/8) + authentifizierter Lauf mit echten OpenSky-
+     `client_id`/`client_secret` (Prüfpunkte 3/4/6/7). Der Auto-Spawn-Nachweis
+     (1/2/8) bleibt **Linux-Sache**.
   2. **Offene Wayfinder-Issues:** #57 (Admin-UI View-Config-Captions, S2) ·
      #64 (Session-Registry/-Limit, S4) · #68 (Impersonation auf `admin`-Rolle, S4).
   3. **Firefly-Cross-Project (Issue #35):** die übrigen Live-Adapter
