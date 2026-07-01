@@ -16,6 +16,8 @@ describe('AsdView auth gate (ADR 0014)', () => {
     expect(sfc).toContain("session.status === 'loading'")
     expect(sfc).toContain("session.status === 'anon'")
     expect(sfc).toContain('<LoginCard')
+    // minimal product branding on the landing login (Punkt 1)
+    expect(sfc).toContain('title="Wayfinder — Anmelden"')
     expect(sfc).toContain('@submit="onLogin"')
   })
 

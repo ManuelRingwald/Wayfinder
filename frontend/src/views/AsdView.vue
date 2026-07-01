@@ -17,6 +17,7 @@
 
   <LoginCard
     v-else-if="session.status === 'anon'"
+    title="Wayfinder — Anmelden"
     :error="loginNotice"
     :loading="loginLoading"
     @submit="onLogin"
