@@ -201,6 +201,8 @@ immer aktiv — ADR 0014); statische Frontend-Routen werden ausgeliefert.
 | `/api/airspace` | GET | Luftraumstrukturen (GeoJSON, best-effort). **ONB-6 (ADR 0011):** hinter der Tenant-Middleware; liefert den **Cache des Request-Mandanten** (eigener Schlüssel/AOI, Fallback auf den globalen Cache) |
 | `/api/navaids` | GET | VOR/NDB-Beacons (GeoJSON, best-effort). **ONB-6:** mandanten-aufgelöst wie `/api/airspace` |
 | `/api/waypoints` | GET | Wegpunkte (GeoJSON, best-effort). **ONB-6:** mandanten-aufgelöst wie `/api/airspace` |
+| `/api/whoami` | GET | **WF2-12.4:** rollen-agnostische Identitäts-Probe (`{subject, tenant_id, user_id, role, must_change_password, features}`); hinter der Tenant-Middleware, **nicht** `requireAdmin` — die ASD-Karte entscheidet damit Login-Schirm vs. Live-Bild; `401` ohne Sitzung |
+| `/api/session/renew` | POST | **WF2-12.5:** Sliding-Session — mintet das Session-Cookie mit frischer TTL neu (builtin); hinter der Tenant-Middleware, `401` ohne Sitzung. Die Karte ruft es periodisch (alle 10 min) + bei WS-Reconnect + Tab-Fokus auf, damit eine aktive Konsole nie ausgeloggt wird |
 | `/api/admin/whoami` | GET | Rollen-Probe + **effektive Feature-Flags** (`features`) als JSON; enthält seit ONB-1 `must_change_password`; rollen-gegated (WF2-32/50) |
 | `/api/admin/me` | GET | **ONB-1 (ADR 0011):** eigenes Konto (`{user_id, tenant_id, subject, role, must_change_password}`); **rollen-unabhängig** (kein `requireAdmin`) |
 | `/api/admin/me/password` | PUT | **ONB-1:** eigenes Passwort ändern (`{current_password, new_password}`, neu min. 8); aktuelles Passwort falsch → 401; setzt `must_change_password=false`; **auch im Pflichtwechsel-Zustand erreichbar** |
@@ -475,7 +477,7 @@ Mandanten-Nutzer). Identitäts-Modell siehe ADR 0006 §5.
 | `WAYFINDER_OIDC_AUDIENCE` | *(leer)* | string | proxy: erwartete Audience, Pflicht. |
 | `WAYFINDER_SESSION_KEY` | *(leer)* | string | builtin: HMAC-Schlüssel für Session-Cookies. Leer in builtin → Wayfinder erzeugt einen **flüchtigen** Zufalls-Schlüssel und warnt (Sessions überleben keinen Neustart, nicht multi-Replica-fähig; ONB-1, ADR 0011). Für Produktion festen Schlüssel setzen (`openssl rand -hex 32`). |
 | `WAYFINDER_SESSION_COOKIE` | `wf_session` | string | builtin: Cookie-Name. |
-| `WAYFINDER_SESSION_TTL` | `12h` | duration | builtin: Session-Lebensdauer. |
+| `WAYFINDER_SESSION_TTL` | `12h` | duration | builtin: Session-Lebensdauer = **Sliding-Idle-Fenster** (WF2-12.5). Bei aktiver ASD-Nutzung wird das Cookie periodisch neu gemintet (`POST /api/session/renew`) → aktive Konsole nie ausgeloggt; eine **verlassene** Sitzung läuft nach dieser Zeit ohne Erneuerung ab. Kürzer = strenger, länger = mehr Karenz nach Pausen. |
 | `WAYFINDER_BOOTSTRAP_PASSWORD` | *(leer)* | string | Nur vom `bootstrap`-Subcommand gelesen: builtin-Passwort des ersten Admins. |
 | `WAYFINDER_SECRET_KEY` | *(leer)* | string (base64-32-Byte) | **ORCH-2c (ADR 0012 §6):** AES-256-Schlüssel, der Pro-Feed-Quell-Credentials (`feed_secrets`) verschlüsselt. **Am Server (`cmd/wayfinder`):** leer/ungültig → die write-only Secret-Routen (`…/feeds/{id}/secrets`) sind **deaktiviert** (503), nie unverschlüsselt speichernd. **Am Orchestrator (`cmd/wayfinder-orchestrator`, ORCH-5b-1):** **derselbe** Schlüssel muss gesetzt sein, damit die Control-Plane die Werte beim Container-Start entschlüsselt und als `FIREFLY_SOURCE_<i>_SECRET` injiziert; leer/ungültig → credentialled Quellen laufen **anonym** (WARN, kein Abbruch). Erzeugen: `openssl rand -base64 32`. |
 | `WAYFINDER_FEED_GROUP_BASE` | `239.255.0` | string (3 Oktette) | **ORCH-4 (ADR 0012):** /24-Basis für die automatische Multicast-Endpoint-Vergabe beim Feed-Anlegen (eine Gruppe je Feed). Ungültige Kombi → Fallback auf den Default-Pool. |
@@ -484,8 +486,9 @@ Mandanten-Nutzer). Identitäts-Modell siehe ADR 0006 §5.
 
 **builtin-Login-Endpoints:** `POST /api/login` (`{"subject","password"}` →
 HttpOnly-Cookie via `auth.MintSession`, sonst `401` mit Timing-Angleich gegen
-User-Enumeration), `POST /api/logout` (Cookie löschen). Nur im builtin-Modus
-registriert.
+User-Enumeration), `POST /api/logout` (Cookie löschen) und `POST /api/session/renew`
+(Sliding-Refresh: Cookie mit frischer TTL neu minten, hinter der Tenant-Middleware,
+WF2-12.5). Nur im builtin-Modus registriert.
 
 **Admin-Bootstrap (WF2-13):** Subcommand `wayfinder bootstrap` (`cmd/wayfinder/
 bootstrap.go`) legt **idempotent** ersten Mandanten + Admin-Nutzer (+ builtin-

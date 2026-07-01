@@ -22,14 +22,19 @@ import MapControls from './MapControls.vue'
 import TrackFilterChips from './TrackFilterChips.vue'
 import ImpersonationBar from './ImpersonationBar.vue'
 
-const emit = defineEmits(['track-click'])
+const emit = defineEmits(['track-click', 'connection-change'])
 const store = useAsdStore()
 const imp = useImpersonationStore()
 const mapEl = ref(null)
 let mapEngine = null
 
 onMounted(async () => {
-  mapEngine = await initMap(mapEl.value, store, (track) => emit('track-click', track))
+  mapEngine = await initMap(
+    mapEl.value,
+    store,
+    (track) => emit('track-click', track),
+    (state) => emit('connection-change', state),
+  )
 })
 
 onUnmounted(() => {

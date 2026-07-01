@@ -46,8 +46,18 @@
   als **UI-only-Ablaufplan** neu (genau ein Terminal-Befehl zum Start, Rest per UI,
   Terminal nur zur Hinter-den-Kulissen-Prüfung: Firefly-Output Gruppe:Port +
   ADS-B/FLARM). Firefly-Audit: **ADS-B (`adsb_opensky`) und FLARM (`flarm_aprs`)
-  beide produktionsreif** und live verdrahtet. Offen: Inline-Re-Login bei
-  WS-Sitzungsablauf; kundenseitiger Default-Landing-Login.
+  beide produktionsreif** und live verdrahtet. Offen: kundenseitiger
+  Default-Landing-Login.
+
+- **Sliding-Session + Login-Overlay (WF2-12.5, diese Sitzung, PR #95):** Der Lotse
+  wird bei **aktiver** Nutzung nie ausgeloggt (ASD offen + lebende WS = aktiv, nicht
+  Maus/Tastatur); eine verlassene Konsole läuft nach dem Idle-Fenster ab; ein Ablauf
+  ist **sichtbar** (Login-Overlay „Sitzung abgelaufen") statt stillem Freeze. Server:
+  `POST /api/session/renew`; Client: Renew alle 10 min + Tab-Fokus + WS-Reconnect;
+  WS-Close → `/api/whoami`-Probe → ggf. Overlay. Standardwerte: `WAYFINDER_SESSION_TTL`
+  = 12h (Sliding-Idle-Fenster), Renew-Takt 10 min. Doku: WF2-12.5, FR-UI-015, TECHNICAL.
+  Gates grün (go+205 vitest+build). Offen: absolutes Sitzungs-Maximum; manueller
+  Browser-Durchlauf im echten Stack.
 
 - **Nächste Schritte (für die frische Session — priorisiert):**
   1. **Realer E2E-Abnahme-Lauf** auf einem **Linux-Docker-Host** (hier nicht

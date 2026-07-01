@@ -49,7 +49,11 @@ import {
 //   store        — Pinia ASD store (setFeedStatus, setMapLoaded, palette,
 //                  flFilter, layerVisibility, labelPins)
 //   onTrackClick — callback(track) fired when the user clicks a track symbol
-export async function initMap(container, store, onTrackClick) {
+//   onConnectionChange — optional callback(state) fired on WebSocket lifecycle:
+//                  'open' when the /ws stream connects, 'closed' when it drops.
+//                  The ASD uses it to slide the session on connect and to probe
+//                  the session on a drop (auth loss → login overlay, WF2-12.5).
+export async function initMap(container, store, onTrackClick, onConnectionChange) {
   // Fetch map config from the backend.
   const res = await fetch('/api/map-config')
   const cfg = await res.json()
@@ -152,6 +156,7 @@ export async function initMap(container, store, onTrackClick) {
         clearTimeout(reconnectTimer)
         reconnectTimer = null
       }
+      onConnectionChange?.('open')
     })
 
     socket.addEventListener('message', (event) => {
@@ -182,6 +187,7 @@ export async function initMap(container, store, onTrackClick) {
       if (ws !== socket) return
       console.warn('WebSocket disconnected, reconnecting in', reconnectDelay, 'ms')
       ws = null
+      onConnectionChange?.('closed')
       reconnectTimer = setTimeout(connectWebSocket, reconnectDelay)
     })
 

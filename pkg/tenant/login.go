@@ -116,6 +116,34 @@ func LoginHandler(users UserLookup, creds CredentialLookup, tenants TenantLookup
 	}
 }
 
+// RenewHandler re-issues the session cookie with a fresh TTL for the
+// already-authenticated principal — the sliding-session refresh (WF2-12.5). It
+// sits BEHIND the tenant middleware (which sets the Identity from the current
+// cookie); without a valid Identity it returns 401. The ASD calls it periodically
+// while the live picture is open (and on WebSocket reconnect / tab focus), so an
+// actively-used console is never logged out, while an abandoned session still
+// lapses after the (then-unrenewed) TTL. builtin mode only — a proxy session
+// lives in the upstream OIDC proxy, not in this cookie.
+func RenewHandler(cfg LoginConfig) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, ok := FromContext(r.Context())
+		if !ok {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		http.SetCookie(w, &http.Cookie{
+			Name:     cfg.cookieName(),
+			Value:    auth.MintSession(id.Subject, cfg.ttl(), cfg.SessionKey),
+			Path:     "/",
+			HttpOnly: true,
+			Secure:   cfg.Secure,
+			SameSite: http.SameSiteLaxMode,
+			MaxAge:   int(cfg.ttl().Seconds()),
+		})
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
 // LogoutHandler clears the session cookie.
 func LogoutHandler(cfg LoginConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {

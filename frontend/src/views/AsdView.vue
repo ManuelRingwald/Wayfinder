@@ -3,7 +3,10 @@
        operational view at route '/'. It gates on the session (ADR 0014: auth is
        always on): until the identity probe resolves we show a spinner, then either
        the login screen (anon) or the live picture (authed). The map + WebSocket
-       only mount once authenticated, so /ws never opens unauthenticated. -->
+       only mount once authenticated, so /ws never opens unauthenticated. While the
+       picture is up, the session is slid forward (WF2-12.5) so an active console
+       is never logged out; a real expiry surfaces as the login screen, not a
+       silent frozen map. -->
   <v-main
     v-if="session.status === 'loading'"
     class="d-flex justify-center align-center"
@@ -14,7 +17,7 @@
 
   <LoginCard
     v-else-if="session.status === 'anon'"
-    :error="session.error"
+    :error="loginNotice"
     :loading="loginLoading"
     @submit="onLogin"
   />
@@ -39,6 +42,7 @@
       <MapCanvas
         ref="mapCanvas"
         @track-click="onTrackClick"
+        @connection-change="onConnectionChange"
       />
       <!-- Account / logout: shows the logged-in principal and a logout action;
            admins also get a shortcut to the administration. -->
@@ -83,7 +87,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useDisplay } from 'vuetify'
 import { useAsdStore } from '@/stores/asd.js'
 import { useSessionStore } from '@/stores/session.js'
@@ -100,8 +104,45 @@ const drawerOpen = ref(true)
 const mapCanvas = ref(null)
 const loginLoading = ref(false)
 
-// Resolve the session on entry — decides login screen vs. live picture.
-onMounted(() => { session.probe() })
+// Make an expiry visible: a dropped session shows "session expired" on the login
+// screen instead of a bare prompt (WF2-12.5).
+const loginNotice = computed(() =>
+  session.expired ? 'Sitzung abgelaufen — bitte erneut anmelden.' : session.error,
+)
+
+// Resolve the session on entry, and slide it forward when the tab regains focus.
+onMounted(() => {
+  session.probe()
+  document.addEventListener('visibilitychange', onVisible)
+})
+onUnmounted(() => {
+  document.removeEventListener('visibilitychange', onVisible)
+  session.stopRenew()
+})
+
+// Run the sliding-refresh loop only while authenticated.
+watch(() => session.status, (s) => {
+  if (s === 'authed') session.startRenew()
+  else session.stopRenew()
+})
+
+function onVisible() {
+  if (document.visibilityState === 'visible' && session.status === 'authed') {
+    session.renewNow()
+  }
+}
+
+// The map's WebSocket lifecycle drives session freshness (WF2-12.5): on connect,
+// slide the session forward; on a drop, probe — if auth was lost the probe flips
+// to 'anon' and the login overlay appears; a transient drop stays authenticated
+// and the engine reconnects on its own.
+async function onConnectionChange(state) {
+  if (state === 'open') {
+    session.renewNow()
+  } else if (state === 'closed' && session.status === 'authed') {
+    session.probe()
+  }
+}
 
 async function onLogin({ subject, password }) {
   loginLoading.value = true

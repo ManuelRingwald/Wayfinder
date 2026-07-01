@@ -81,3 +81,61 @@ describe('session store — ASD map auth gate', () => {
     expect(calls.some((c) => c.url === '/api/logout' && c.method === 'POST')).toBe(true)
   })
 })
+
+describe('session store — sliding refresh (WF2-12.5)', () => {
+  it('renewNow POSTs to /api/session/renew', async () => {
+    const calls = installFetch({ 'POST /api/session/renew': { status: 204 } })
+    const s = useSessionStore()
+    const ok = await s.renewNow()
+    expect(ok).toBe(true)
+    expect(calls.some((c) => c.url === '/api/session/renew' && c.method === 'POST')).toBe(true)
+  })
+
+  it('renewNow on 401 re-probes and flips to anon + expired', async () => {
+    installFetch({ 'GET /api/whoami': { status: 200, body: { subject: 'x', tenant_id: 1, role: 'user' } } })
+    const s = useSessionStore()
+    await s.probe()
+    expect(s.status).toBe('authed')
+
+    installFetch({ 'POST /api/session/renew': { status: 401 }, 'GET /api/whoami': { status: 401 } })
+    const ok = await s.renewNow()
+    expect(ok).toBe(false)
+    expect(s.status).toBe('anon')
+    expect(s.expired).toBe(true)
+  })
+
+  it('probe marks expired only on an authed→anon transition', async () => {
+    installFetch({ 'GET /api/whoami': { status: 401 } })
+    const s = useSessionStore()
+    await s.probe() // never authed
+    expect(s.status).toBe('anon')
+    expect(s.expired).toBe(false)
+
+    installFetch({ 'GET /api/whoami': { status: 200, body: { subject: 'x', tenant_id: 1, role: 'user' } } })
+    await s.probe() // now authed
+    expect(s.expired).toBe(false)
+
+    installFetch({ 'GET /api/whoami': { status: 401 } })
+    await s.probe() // dropped → expired
+    expect(s.status).toBe('anon')
+    expect(s.expired).toBe(true)
+  })
+
+  it('startRenew fires renewNow on the interval; stopRenew halts it', async () => {
+    vi.useFakeTimers()
+    try {
+      const calls = installFetch({ 'POST /api/session/renew': { status: 204 } })
+      const s = useSessionStore()
+      s.startRenew(1000)
+      await vi.advanceTimersByTimeAsync(2500)
+      const fired = calls.filter((c) => c.url === '/api/session/renew').length
+      expect(fired).toBeGreaterThanOrEqual(2)
+
+      s.stopRenew()
+      await vi.advanceTimersByTimeAsync(3000)
+      expect(calls.filter((c) => c.url === '/api/session/renew').length).toBe(fired)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})

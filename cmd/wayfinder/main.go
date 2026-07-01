@@ -372,6 +372,11 @@ func main() {
 		tenants := store.NewTenantRepo(dbPool)
 		mux.Handle("/api/login", tenant.LoginHandler(users, creds, tenants, loginCfg))
 		mux.Handle("/api/logout", tenant.LogoutHandler(loginCfg))
+		// Sliding-session refresh (WF2-12.5): re-mint the cookie for an already
+		// authenticated principal. Behind the tenant middleware (needs the Identity),
+		// unlike login/logout. The ASD calls it periodically while the picture is
+		// open so an active console never logs out; an abandoned one still lapses.
+		mux.Handle("POST /api/session/renew", tenantMW(tenant.RenewHandler(loginCfg)))
 		logger.Info("builtin login enabled", slog.String("path", "/api/login"))
 	}
 

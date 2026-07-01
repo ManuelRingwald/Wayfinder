@@ -192,3 +192,47 @@ func TestLogoutClearsCookie(t *testing.T) {
 		t.Fatalf("logout did not clear the cookie: %+v", cookies)
 	}
 }
+
+func TestRenewHandlerReissuesCookie(t *testing.T) {
+	h := RenewHandler(LoginConfig{SessionKey: loginKey})
+
+	// The tenant middleware puts the resolved Identity in the context; renew
+	// re-mints a fresh cookie for that subject (sliding session).
+	req := httptest.NewRequest(http.MethodPost, "/api/session/renew", nil)
+	req = req.WithContext(WithIdentity(req.Context(),
+		Identity{TenantID: 7, UserID: 1, Subject: "bob", Role: store.RoleUser}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204", rec.Code)
+	}
+	var cookie *http.Cookie
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == "wf_session" {
+			cookie = c
+		}
+	}
+	if cookie == nil {
+		t.Fatal("renew did not set a session cookie")
+	}
+	subject, err := auth.ParseSession(cookie.Value, loginKey)
+	if err != nil || subject != "bob" {
+		t.Fatalf("renewed cookie session = %q, %v", subject, err)
+	}
+	if cookie.MaxAge <= 0 {
+		t.Errorf("renewed cookie MaxAge = %d, want > 0", cookie.MaxAge)
+	}
+}
+
+func TestRenewHandlerRejectsUnauthenticated(t *testing.T) {
+	h := RenewHandler(LoginConfig{SessionKey: loginKey})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/session/renew", nil)) // no Identity
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("no identity: status = %d, want 401", rec.Code)
+	}
+	if len(rec.Result().Cookies()) != 0 {
+		t.Error("no cookie should be set without an identity")
+	}
+}

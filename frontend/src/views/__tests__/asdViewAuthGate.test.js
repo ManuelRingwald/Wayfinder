@@ -8,7 +8,8 @@ import sfc from '../AsdView.vue?raw'
 describe('AsdView auth gate (ADR 0014)', () => {
   it('probes the session on mount', () => {
     expect(sfc).toContain("import { useSessionStore } from '@/stores/session.js'")
-    expect(sfc).toContain('onMounted(() => { session.probe() })')
+    expect(sfc).toContain('onMounted(')
+    expect(sfc).toContain('session.probe()')
   })
 
   it('shows a spinner while loading, the login card when anonymous', () => {
@@ -34,5 +35,20 @@ describe('AsdView auth gate (ADR 0014)', () => {
     expect(sfc).toContain('session.subject')
     expect(sfc).toContain('session.isAdmin')
     expect(sfc).toContain("{ name: 'admin' }")
+  })
+
+  it('runs the sliding-session refresh only while authenticated (WF2-12.5)', () => {
+    expect(sfc).toContain('session.startRenew()')
+    expect(sfc).toContain('session.stopRenew()')
+    // renew on tab focus and on WebSocket (re)connect
+    expect(sfc).toContain("document.addEventListener('visibilitychange'")
+    expect(sfc).toContain('@connection-change="onConnectionChange"')
+    expect(sfc).toContain('session.renewNow()')
+  })
+
+  it('makes an expiry visible (login screen, not a frozen map)', () => {
+    // on a WS drop, probe the session; a lost session flips to the login screen
+    expect(sfc).toContain('session.probe()')
+    expect(sfc).toContain('Sitzung abgelaufen')
   })
 })
