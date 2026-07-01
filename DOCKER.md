@@ -98,7 +98,7 @@ Passwortwechsel).
 > anlegen (`multicast_group: 239.255.0.62`, `port: 8600` — **nicht**
 > auto-allokieren) und einen Mandanten darauf abonnieren. Der vollständige
 > Ablauf (inkl. der festen-Endpoint-Feinheit und der Frankfurt-Szene) steht im
-> Runbook `docs/E2E-ABNAHME.md`, **Teil E-2**.
+> Runbook `docs/E2E-ABNAHME.md`, **Anhang A**.
 >
 > Alternativ ist derselbe Bridge-Aufbau als Schritt-für-Schritt-Anleitung mit
 > einem Master-Compose im **Überordner** in `docs/INSTALLATION.md`, Schritt 4.A

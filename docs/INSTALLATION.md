@@ -232,7 +232,8 @@ Feeds, die ihm zugewiesen wurden. Dazu kommen drei neue Bausteine hinzu:
 > docker compose -f docker-compose.bridge.yml up --build
 > ```
 > Wer lieber alles selbst im Überordner anlegt, folgt dem Rest dieses Schritts.
-> (E2E-Abnahme auf dem Mac mini: `docs/E2E-ABNAHME.md`, Anhang E.)
+> (E2E-Abnahme auf dem Mac mini: **voller** Lauf mit einer Linux-VM in
+> `docs/E2E-ABNAHME.md`, Teil 1–6; **Schnell-Check** ohne VM in Anhang A.)
 
 Legen Sie eine Datei `docker-compose.yml` im **gemeinsamen Überordner** beider
 Repos an. Die Struktur sieht dann so aus:
