@@ -8,7 +8,7 @@ import (
 )
 
 // userColumns is the column list shared by every user query.
-const userColumns = `id, tenant_id, subject, email, role, status, must_change_password, created_at`
+const userColumns = `id, tenant_id, subject, email, role, status, must_change_password, session_limit, created_at`
 
 // UserRepo provides access to the users table.
 type UserRepo struct {
@@ -148,6 +148,25 @@ func (r *UserRepo) SetMustChangePassword(ctx context.Context, id int64, must boo
 	return nil
 }
 
+// SetSessionLimit sets or clears a user's per-access concurrent-session limit
+// (AP7, ADR 0009 §5). A nil limit stores SQL NULL (fall back to the deployment
+// default); a non-negative value overrides it (0 == unlimited). A negative value
+// is rejected before the query (fail-closed). A missing user yields ErrNotFound.
+func (r *UserRepo) SetSessionLimit(ctx context.Context, id int64, limit *int) error {
+	if limit != nil && *limit < 0 {
+		return fmt.Errorf("store: set session limit: must be non-negative, got %d", *limit)
+	}
+	const q = `UPDATE users SET session_limit = $2 WHERE id = $1`
+	tag, err := r.db.Exec(ctx, q, id, limit)
+	if err != nil {
+		return wrap("set session limit", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // CountActiveAdmins returns the number of users with role 'admin' and status
 // 'active'. It backs two invariants (ONB-1, ADR 0011): the boot auto-seed only
 // provisions the default admin when this is zero, and the "last active admin"
@@ -186,7 +205,9 @@ func scanUser(row rowScanner) (User, error) {
 		role     string
 		status   string
 	)
-	if err := row.Scan(&u.ID, &tenantID, &u.Subject, &u.Email, &role, &status, &u.MustChangePassword, &u.CreatedAt); err != nil {
+	// session_limit is nullable (nil == fall back to the deployment default),
+	// scanned straight into the *int field like tenant_id above.
+	if err := row.Scan(&u.ID, &tenantID, &u.Subject, &u.Email, &role, &status, &u.MustChangePassword, &u.SessionLimit, &u.CreatedAt); err != nil {
 		return User{}, err
 	}
 	if tenantID != nil {

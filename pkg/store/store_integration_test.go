@@ -29,7 +29,7 @@ func testPool(t *testing.T) *pgxpool.Pool {
 		t.Fatalf("migrate: %v", err)
 	}
 	if _, err := pool.Exec(ctx,
-		`TRUNCATE tenants, users, feeds, subscriptions, view_configs, entitlements RESTART IDENTITY CASCADE`,
+		`TRUNCATE tenants, users, sessions, feeds, subscriptions, view_configs, entitlements RESTART IDENTITY CASCADE`,
 	); err != nil {
 		t.Fatalf("truncate: %v", err)
 	}
