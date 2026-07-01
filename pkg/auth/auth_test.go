@@ -15,26 +15,17 @@ func TestParseMode(t *testing.T) {
 	}{
 		"proxy":   {ModeProxy, true},
 		"builtin": {ModeBuiltin, true},
-		"none":    {ModeNone, true},
-		"PROXY":   {ModeProxy, true}, // case-insensitive
-		" none ":  {ModeNone, true},  // trimmed
-		"":        {ModeNone, false}, // fallback
-		"banana":  {ModeNone, false}, // fallback
+		"PROXY":   {ModeProxy, true},    // case-insensitive
+		" proxy ": {ModeProxy, true},    // trimmed
+		"":        {ModeBuiltin, false}, // fallback to builtin (ADR 0014)
+		"none":    {ModeBuiltin, false}, // removed mode -> fallback
+		"banana":  {ModeBuiltin, false}, // fallback
 	}
 	for in, want := range cases {
 		got, ok := ParseMode(in)
 		if got != want.want || ok != want.ok {
 			t.Errorf("ParseMode(%q) = %q,%v; want %q,%v", in, got, ok, want.want, want.ok)
 		}
-	}
-}
-
-func TestNoneAuthenticator(t *testing.T) {
-	a := NoneAuthenticator{Subject: "default"}
-	r := httptest.NewRequest("GET", "/", nil)
-	subject, err := a.Authenticate(r)
-	if err != nil || subject != "default" {
-		t.Fatalf("none authenticate = %q, %v", subject, err)
 	}
 }
 

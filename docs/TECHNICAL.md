@@ -189,7 +189,8 @@ Port überschreibbar via `WAYFINDER_PROBE_PORT`.
 
 ### Port 8081 — Browser-Rand
 
-Durch `authMiddleware` geschützt (wenn `WAYFINDER_AUTH_TOKEN` gesetzt).
+`/ws` und `/api/admin/*` sind durch die Tenant-Middleware geschützt (fail-closed,
+immer aktiv — ADR 0014); statische Frontend-Routen werden ausgeliefert.
 
 | Pfad | Methode | Bedeutung |
 |------|---------|-----------|
@@ -197,9 +198,11 @@ Durch `authMiddleware` geschützt (wenn `WAYFINDER_AUTH_TOKEN` gesetzt).
 | `/admin` | GET | Admin-Oberfläche (Vue-SPA-Route, History-Mode; nur sinnvoll bei Multi-Tenancy) — WF2-32 |
 | `/ws` | GET → Upgrade | WebSocket — Track- und Feed-Status-Updates |
 | `/api/map-config` | GET | Kartentheme und Startkonfiguration als JSON |
-| `/api/airspace` | GET | Luftraumstrukturen (GeoJSON, best-effort). **ONB-6 (ADR 0011):** im Multi-Mandanten-Betrieb hinter der Tenant-Middleware und liefert den **Cache des Request-Mandanten** (eigener Schlüssel/AOI, Fallback auf den globalen Cache); Single-Tenant unverändert global/unauthentifiziert |
+| `/api/airspace` | GET | Luftraumstrukturen (GeoJSON, best-effort). **ONB-6 (ADR 0011):** hinter der Tenant-Middleware; liefert den **Cache des Request-Mandanten** (eigener Schlüssel/AOI, Fallback auf den globalen Cache) |
 | `/api/navaids` | GET | VOR/NDB-Beacons (GeoJSON, best-effort). **ONB-6:** mandanten-aufgelöst wie `/api/airspace` |
 | `/api/waypoints` | GET | Wegpunkte (GeoJSON, best-effort). **ONB-6:** mandanten-aufgelöst wie `/api/airspace` |
+| `/api/whoami` | GET | **WF2-12.4:** rollen-agnostische Identitäts-Probe (`{subject, tenant_id, user_id, role, must_change_password, features}`); hinter der Tenant-Middleware, **nicht** `requireAdmin` — die ASD-Karte entscheidet damit Login-Schirm vs. Live-Bild; `401` ohne Sitzung |
+| `/api/session/renew` | POST | **WF2-12.5:** Sliding-Session — mintet das Session-Cookie mit frischer TTL neu (builtin); hinter der Tenant-Middleware, `401` ohne Sitzung. Die Karte ruft es periodisch (alle 10 min) + bei WS-Reconnect + Tab-Fokus auf, damit eine aktive Konsole nie ausgeloggt wird. **WF2-12.6:** bewahrt den Erst-Login-Zeitpunkt und antwortet `401` (kein neues Cookie), sobald das absolute Maximum `WAYFINDER_SESSION_MAX_LIFETIME` überschritten ist |
 | `/api/admin/whoami` | GET | Rollen-Probe + **effektive Feature-Flags** (`features`) als JSON; enthält seit ONB-1 `must_change_password`; rollen-gegated (WF2-32/50) |
 | `/api/admin/me` | GET | **ONB-1 (ADR 0011):** eigenes Konto (`{user_id, tenant_id, subject, role, must_change_password}`); **rollen-unabhängig** (kein `requireAdmin`) |
 | `/api/admin/me/password` | PUT | **ONB-1:** eigenes Passwort ändern (`{current_password, new_password}`, neu min. 8); aktuelles Passwort falsch → 401; setzt `must_change_password=false`; **auch im Pflichtwechsel-Zustand erreichbar** |
@@ -400,7 +403,7 @@ Auflösung (höchste Priorität zuerst):
 |----------|---------|-----|--------------|
 | `FIREFLY_CAT062_GROUP` | `239.255.0.62` | string | UDP-Multicast-Gruppe |
 | `FIREFLY_CAT062_PORT` | `8600` | int | UDP-Port |
-| `WAYFINDER_FEED_ID` | `0` | int64 | Katalog-Feed-ID des Einzel-Feeds (WF2-20), auf jeden Track gestempelt; `0` = Single-Tenant. Wird im Multi-Feed-Modus (WF2-20.2) durch den DB-Katalog abgelöst. |
+| `WAYFINDER_FEED_ID` | `0` | int64 | Legacy-Katalog-Feed-ID des ENV-Fallback-Feeds (WF2-20), genutzt nur bei leerem DB-Katalog; im Multi-Feed-Betrieb (WF2-20.2) liefert der DB-Katalog die IDs. |
 | `WAYFINDER_PROBE_PORT` | `8080` | int | Port für Probe/Metrics-Endpunkte |
 | `WAYFINDER_FEED_STALE_TIMEOUT` | `3` | int (s) | Sekunden ohne CAT065-Heartbeat bis Staleness |
 
@@ -456,27 +459,26 @@ Rein **client-seitige** Anzeigehilfen (keine Env-Variablen, keine Backend-Wirkun
 | Variable | Default | Typ | Beschreibung |
 |----------|---------|-----|--------------|
 | `WAYFINDER_ALLOWED_ORIGINS` | *(leer)* | string | Kommaseparierte Cross-Origin-Allowlist. Leer = nur Same-Origin. |
-| `WAYFINDER_AUTH_TOKEN` | *(leer)* | string | Bearer-Token. Leer = kein Check (Warn-Log). |
 | `WAYFINDER_TLS_CERT` | *(leer)* | Pfad | TLS-Zertifikat (PEM). Nur aktiv wenn beide TLS-Variablen gesetzt. |
 | `WAYFINDER_TLS_KEY` | *(leer)* | Pfad | TLS-Schlüssel (PEM). |
 
 ### 6.6 Multi-Mandanten (Wayfinder 2.0)
 
-Aktiv nur bei gesetztem `WAYFINDER_DB_URL` (sonst Single-Tenant, keine DB/
-Middleware). Mit DB: Schema-Migrationen beim Start, `/ws` durch die
-Tenant-Middleware geschützt (fail-closed → `401` ohne gültigen Mandanten-Nutzer).
-Identitäts-Modell siehe ADR 0006 §5.
+Multi-Mandanten-Betrieb ist der einzige Modus (ADR 0014): `WAYFINDER_DB_URL` ist
+**Pflicht** — ohne sie bricht der Start ab. Schema-Migrationen beim Start, `/ws`
+durch die Tenant-Middleware geschützt (fail-closed → `401` ohne gültigen
+Mandanten-Nutzer). Identitäts-Modell siehe ADR 0006 §5.
 
 | Variable | Default | Typ | Beschreibung |
 |----------|---------|-----|--------------|
-| `WAYFINDER_DB_URL` | *(leer)* | DSN | PostgreSQL-Verbindung. Leer = Single-Tenant (keine DB). |
-| `WAYFINDER_AUTH_MODE` | `none` | enum | `proxy` / `builtin` / `none`. Ungültig → `none`. |
+| `WAYFINDER_DB_URL` | *(Pflicht)* | DSN | PostgreSQL-Verbindung. **Pflichtfeld** (ADR 0014) — ohne DB bricht der Start ab. |
+| `WAYFINDER_AUTH_MODE` | `builtin` | enum | `proxy` / `builtin`. Ungültig/leer → `builtin`. |
 | `WAYFINDER_OIDC_ISSUER` | *(leer)* | URL | proxy: OIDC-Issuer (Discovery/JWKS), Pflicht. |
 | `WAYFINDER_OIDC_AUDIENCE` | *(leer)* | string | proxy: erwartete Audience, Pflicht. |
 | `WAYFINDER_SESSION_KEY` | *(leer)* | string | builtin: HMAC-Schlüssel für Session-Cookies. Leer in builtin → Wayfinder erzeugt einen **flüchtigen** Zufalls-Schlüssel und warnt (Sessions überleben keinen Neustart, nicht multi-Replica-fähig; ONB-1, ADR 0011). Für Produktion festen Schlüssel setzen (`openssl rand -hex 32`). |
 | `WAYFINDER_SESSION_COOKIE` | `wf_session` | string | builtin: Cookie-Name. |
-| `WAYFINDER_SESSION_TTL` | `12h` | duration | builtin: Session-Lebensdauer. |
-| `WAYFINDER_NONE_SUBJECT` | `default` | string | none: festes Subject je Anfrage. |
+| `WAYFINDER_SESSION_TTL` | `12h` | duration | builtin: Session-Lebensdauer = **Sliding-Idle-Fenster** (WF2-12.5). Bei aktiver ASD-Nutzung wird das Cookie periodisch neu gemintet (`POST /api/session/renew`) → aktive Konsole nie ausgeloggt; eine **verlassene** Sitzung läuft nach dieser Zeit ohne Erneuerung ab. Kürzer = strenger, länger = mehr Karenz nach Pausen. |
+| `WAYFINDER_SESSION_MAX_LIFETIME` | *(leer = aus)* | duration | builtin: **absolutes** Sitzungs-Maximum ab **Erst-Login** (WF2-12.6), unabhängig von Aktivität. `0`/leer = **aus** (reines Sliding wie oben, Default). Ist es gesetzt, kann eine Sitzung — egal wie aktiv — **nie** länger als diese Spanne leben: der Sliding-Renew hört auf, das Cookie wird auf `Erst-Login + MAX` gekappt, danach `401` → Neu-Login. Das Cookie trägt dazu einen signierten `iat`-Claim; alte Cookies ohne `iat` bleiben gültig und werden beim ersten Renew **sanft** auf „jetzt" verankert. **Für einen Probelauf:** `WAYFINDER_SESSION_MAX_LIFETIME=30m` setzen → das Zwangs-Logout ist nach 30 min sichtbar, ohne die 12-h-TTL abwarten zu müssen. |
 | `WAYFINDER_BOOTSTRAP_PASSWORD` | *(leer)* | string | Nur vom `bootstrap`-Subcommand gelesen: builtin-Passwort des ersten Admins. |
 | `WAYFINDER_SECRET_KEY` | *(leer)* | string (base64-32-Byte) | **ORCH-2c (ADR 0012 §6):** AES-256-Schlüssel, der Pro-Feed-Quell-Credentials (`feed_secrets`) verschlüsselt. **Am Server (`cmd/wayfinder`):** leer/ungültig → die write-only Secret-Routen (`…/feeds/{id}/secrets`) sind **deaktiviert** (503), nie unverschlüsselt speichernd. **Am Orchestrator (`cmd/wayfinder-orchestrator`, ORCH-5b-1):** **derselbe** Schlüssel muss gesetzt sein, damit die Control-Plane die Werte beim Container-Start entschlüsselt und als `FIREFLY_SOURCE_<i>_SECRET` injiziert; leer/ungültig → credentialled Quellen laufen **anonym** (WARN, kein Abbruch). Erzeugen: `openssl rand -base64 32`. |
 | `WAYFINDER_FEED_GROUP_BASE` | `239.255.0` | string (3 Oktette) | **ORCH-4 (ADR 0012):** /24-Basis für die automatische Multicast-Endpoint-Vergabe beim Feed-Anlegen (eine Gruppe je Feed). Ungültige Kombi → Fallback auf den Default-Pool. |
@@ -485,8 +487,12 @@ Identitäts-Modell siehe ADR 0006 §5.
 
 **builtin-Login-Endpoints:** `POST /api/login` (`{"subject","password"}` →
 HttpOnly-Cookie via `auth.MintSession`, sonst `401` mit Timing-Angleich gegen
-User-Enumeration), `POST /api/logout` (Cookie löschen). Nur im builtin-Modus
-registriert.
+User-Enumeration), `POST /api/logout` (Cookie löschen) und `POST /api/session/renew`
+(Sliding-Refresh: Cookie mit frischer TTL neu minten, hinter der Tenant-Middleware,
+WF2-12.5). Nur im builtin-Modus registriert. Ist `WAYFINDER_SESSION_MAX_LIFETIME`
+gesetzt (WF2-12.6), bewahrt der Renew den Erst-Login-Zeitpunkt (`iat`) über alle
+Verlängerungen und **verweigert** ihn mit `401`, sobald `jetzt − Erst-Login > MAX`
+— das absolute Sitzungs-Maximum.
 
 **Admin-Bootstrap (WF2-13):** Subcommand `wayfinder bootstrap` (`cmd/wayfinder/
 bootstrap.go`) legt **idempotent** ersten Mandanten + Admin-Nutzer (+ builtin-
@@ -688,8 +694,9 @@ der reale DinD-Lauf gehört auf einen Linux-Docker-Host (`docs/E2E-ABNAHME.md`).
 
 **Scoped Fan-out (WF2-21.1, 🔒 NFR-SEC-003):** der Broadcaster stellt einem
 `/ws`-Client einen Track **nur** zu, wenn dessen Mandant den Feed abonniert hat.
-`broadcast.Scope` (Menge erlaubter `feed_id`; nil = unscoped/Single-Tenant, leer =
-nichts/fail-closed) hängt am `Client`; `broadcastTracks` prüft
+`broadcast.Scope` (Menge erlaubter `feed_id`; immer gesetzt, ADR 0014; ein
+nil-Scope ist fail-closed → kein Feed, leer = nichts) hängt am `Client`;
+`broadcastTracks` prüft
 `scope.AllowsFeed(feed_id)` pro Batch/Client (Feed-Health über `messageChan` bleibt
 **global**). `ws.ScopeResolver` löst den Scope am Handshake **vor** dem Upgrade auf
 (Fehler → `403`, kein Stream); `cmd/wayfinder.newScopeResolver` liest die
@@ -795,13 +802,8 @@ Krypto-Eigenbau im ASD.
 | Mechanismus | Konfiguration | Verhalten bei Fehler |
 |-------------|---------------|----------------------|
 | Origin-Check | `WAYFINDER_ALLOWED_ORIGINS` | Cross-Origin-Request abgelehnt wenn nicht in Allowlist |
-| Token-Auth | `WAYFINDER_AUTH_TOKEN` | `401 Unauthorized` + `WWW-Authenticate: Bearer` |
+| Tenant-Middleware | `WAYFINDER_AUTH_MODE` (`builtin`/`proxy`) | `/ws` + `/api/admin/*` → `401`/`403` ohne gültige Mandanten-Identität (immer aktiv, ADR 0014) |
 | TLS | `WAYFINDER_TLS_CERT` + `WAYFINDER_TLS_KEY` | HTTPS/WSS statt HTTP/WS |
-
-**Token-Übergabe:** Da Browser-WebSocket-Clients keine Custom-Header beim
-Handshake senden können, akzeptiert Wayfinder den Token entweder als
-`Authorization: Bearer <token>`-Header (für REST-Clients) oder als
-`?token=<token>`-Query-Parameter (für Browser-WebSocket).
 
 **Health/Metrics (Port 8080)** sind bewusst unauthentifiziert — sie sollen
 für Monitoring-Systeme ohne Token erreichbar sein.
@@ -820,7 +822,7 @@ konfigurierbar.
 |-------|----------|-----------|
 | `INFO` | `receiver started` | UDP-Multicast-Socket geöffnet |
 | `INFO` | `feed status changed` | Übergang ok↔stale oder erster Heartbeat |
-| `WARN` | `auth token not set, relying on network isolation` | `WAYFINDER_AUTH_TOKEN` ist leer |
+| `WARN` | `WAYFINDER_SESSION_KEY not set — generated an ephemeral key` | `builtin` ohne festen Session-Key (Sessions überleben keinen Neustart) |
 | `WARN` | `client evicted: send channel full` | Browser-Client hängt oder ist zu langsam |
 | `WARN` | `openaip fetch failed` | OpenAIP-API nicht erreichbar (Last-Good-Cache aktiv) |
 | `ERROR` | `multicast join failed` | Socket konnte Multicast-Gruppe nicht beitreten |

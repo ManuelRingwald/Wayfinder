@@ -1,117 +1,144 @@
-# End-to-End-Abnahme der Auto-Orchestrierung (ORCH-5c)
+# End-to-End-Abnahme: ein Befehl starten, alles Weitere per UI
 
-> **Zweck:** Die komplette Auto-Orchestrierungs-Kette auf einem echten Docker-Host
-> nachweisen: **Feed zuweisen → Orchestrator spawnt Firefly → CAT062/UDP-Multicast
-> → Tracks im ASD → Abbestellen räumt auf.** Diese Datei ist das Abnahme-Runbook
-> zum Abhaken; das Skript `scripts/e2e-orchestrated.sh` automatisiert den
-> Großteil.
+> **Philosophie.** **Genau ein** Terminal-Befehl ist nötig — der **Start** der
+> Plattform. Alles danach passiert **ausschließlich in der Browser-Oberfläche**:
+> Passwortwechsel, Mandant/Nutzer/Features, Feed + Quellen, Feed zuweisen,
+> Abmelden als Admin, Anmelden als Mandant, Karte sehen. Das Terminal wird **nur
+> noch zum Nachschauen hinter den Kulissen** verwendet (Logs/Metriken: sendet
+> Firefly auf der erwarteten Gruppe:Port die richtigen Datentypen ADS-B / FLARM?).
+>
+> **Betriebsmodus.** Multi-Tenant ist der einzige Modus (ADR 0014): Postgres ist
+> Pflicht, die Anmeldung ist immer aktiv.
 
-## Was hier nachgewiesen wird (und was nicht)
+## Was hier nachgewiesen wird
 
-Bis ORCH-5c war die Auto-Orchestrierung **gebaut und unit-getestet**, aber in
-keiner lauffähigen Deployment-Konfiguration zusammengesteckt. ORCH-5c liefert das
-**Harness** (`docker-compose.orchestrated.yml` + `Dockerfile.orchestrator`) und
-diesen Abnahme-Lauf. Der **authentifizierte** OpenSky-Pfad braucht echte
-OAuth2-Credentials und Netz-Egress und wird daher zuletzt manuell abgenommen.
+| # | Behauptung | Teil |
+|---|------------|------|
+| 1 | Die ganze Kette startet mit **einem** Befehl (Zero-Touch). | 0 |
+| 2 | Erstanmeldung + erzwungener Passwortwechsel laufen **in der UI**. | 1 |
+| 3 | Ein Kunde wird **komplett über die UI** eingerichtet: Mandant, Features, Nutzer, Feed, Quellen (ADS-B/FLARM), Sicht (Zentrum + 30-NM-Radius), Zuweisung. | 2 |
+| 4 | **Abmelden als Admin** und **Anmelden als Mandant** geht in der UI; der Kunde sieht **seine** Karte. | 3 |
+| 5 | Hinter den Kulissen: Firefly wurde je Feed gestartet, sendet auf der erwarteten **Gruppe:Port** und trägt **echte ADS-B/FLARM-Daten**. | 4 |
+
+> ⚠️ **Plattform.** Die **Live-Daten-Kette** (Auto-Spawn + Multicast, Teil 0/4)
+> braucht **Host-Networking** und damit einen **Linux-Docker-Host**. Auf **Docker
+> Desktop (macOS/Windows, z. B. Mac mini)** funktioniert Host-Net-Multicast nicht
+> — dort laufen Teil 1–3 (die ganze UI-Einrichtung) identisch, aber für die
+> Live-Verifikation aus Teil 4 einen Linux-Host (oder eine Linux-VM) nutzen.
+> Hintergrund + Bridge-Workaround: `DOCKER.md`.
 
 ## Voraussetzungen
 
-- Docker-Daemon + `docker compose` v2 auf dem Abnahme-Host.
-- **Firefly-Image lokal vorhanden.** Aus dem Firefly-Repo bauen:
-  ```bash
-  docker build -t firefly:latest .   # im Firefly-Repo
-  ```
-  oder ein veröffentlichtes Tag setzen: `export WAYFINDER_FIREFLY_IMAGE=…`.
-- Linux-Host (Host-Networking + Multicast). Auf Docker Desktop (macOS/Windows)
-  funktioniert das Host-Networking-Multicast i. d. R. **nicht** — siehe `DOCKER.md`.
+- Linux-Docker-Host mit `docker compose` v2 (für Teil 4 Live-Multicast).
+- **Firefly-Image lokal**: im Firefly-Repo `docker build -t firefly:latest .`
+  (oder `WAYFINDER_FIREFLY_IMAGE` auf ein veröffentlichtes Tag setzen).
+- Netz-Egress, wenn echte ADS-B/FLARM-Daten geholt werden sollen (OpenSky,
+  Open Glider Network).
 
-## Die Prüfpunkte
+### EDLV-Geodaten (für die Sicht in Teil 2)
 
-| # | Behauptung | Beobachtung |
-|---|------------|-------------|
-| 1 | Feed-Zuweisung **spawnt** einen Container | `docker ps` zeigt `wayfinder-firefly-feed-<id>` (Label `wayfinder.feed_id`) |
-| 2 | Container bekommt die **richtige** Config | `docker inspect` Env: `FIREFLY_CAT062_GROUP/PORT`; je nach Quelle `FIREFLY_SCENE` **oder** `FIREFLY_MODE=live` + `FIREFLY_SOURCES` |
-| 3 | **Secret-Injection** wirkt (nur authentifiziert) | Firefly-Log: OpenSky **authentifiziert** (kein 401, höheres Limit) |
-| 4 | **Kein Leak** | Secret-Wert **nicht** im `FIREFLY_SOURCES`-JSON, in **keinem** Orchestrator-Log |
-| 5 | Tracks landen im ASD | `wayfinder_cat062_tracks_received_total` > 0; Karte zeigt Tracks |
-| 6 | **Anonym-Fallback** | Secret entfernen → Quelle läuft anonym weiter, kein Reconcile-Abbruch (WARN-Log) |
-| 7 | **Rotation → Restart** | Secret ändern → Spec-Hash ändert sich → neuer Container (neue ID) |
-| 8 | **Orphan-Cleanup** | Letztes Abo entfernen → Container gestoppt/entfernt |
+EDLV (Weeze) liegt bei **51,40° N / 6,15° E**. Die View-Config-Maske nimmt einen
+**Radius in nautischen Meilen (NM)** entgegen und rechnet die AOI selbst aus —
+also einfach **Radius = 30** eintragen.
 
-Das Skript deckt **1, 2, 5, 8** automatisiert ab (plus den Kein-Leak-Teil von 4
-im `opensky-anon`-Modus). **3, 6, 7** sind die credential-bezogenen Punkte und
-werden im authentifizierten Lauf manuell geprüft.
+| Feld in der Maske | Wert |
+|-------------------|------|
+| Zentrum Breite (`center_lat`) | `51.40` |
+| Zentrum Länge (`center_lon`) | `6.15` |
+| Radius | `30` (NM) |
+| Zoom | `9` |
+| FL min / FL max | `0` / `450` |
 
-## A) Automatischer Lauf (offline, Demo-Scene)
+---
 
-Beweist Spawn → Multicast → ASD → Cleanup **ohne** externen Netzzugriff: der Feed
-hat keine Live-Quellen, der Orchestrator gibt `FIREFLY_SCENE` mit, und Firefly
-spielt ein Demo-Szenario ein.
+## Teil 0 — Der **einzige** Terminal-Befehl: starten
 
-```bash
-scripts/e2e-orchestrated.sh            # --mode scene ist der Default
-```
+| # | Aktion | Erwartetes Ergebnis | Prüfung |
+|---|--------|---------------------|---------|
+| 0.1 | Im Wayfinder-Repo: `docker compose -f docker-compose.orchestrated.yml up --build` | Postgres + Wayfinder (`builtin`) + Orchestrator starten; Auto-Seed legt Default-Admin an. | `docker compose -f docker-compose.orchestrated.yml ps` → alle `Up`, `db (healthy)`. |
 
-Erwartung: jeder Prüfpunkt meldet `✓`, am Ende `✅ E2E acceptance (scene) passed.`
-Mit `--keep` bleibt der Stack zum Inspizieren oben.
+**Ab hier kein Terminal mehr für Aktionen — nur noch Browser.**
 
-## B) Automatischer Lauf (anonymes OpenSky)
+---
 
-Exerziert den `FIREFLY_SOURCES`-Live-Pfad (`FIREFLY_MODE=live`) mit einer
-anonymen `adsb_opensky`-Quelle. **Braucht Netz-Egress zu OpenSky.**
+## Teil 1 — Erstanmeldung + Passwortwechsel (UI)
 
-```bash
-scripts/e2e-orchestrated.sh --mode opensky-anon
-```
+| # | UI-Aktion | Erwartetes Ergebnis | Prüfung |
+|---|-----------|---------------------|---------|
+| 1.1 | Browser: **http://localhost:8081/admin** | Login-Maske „Anmelden" (Benutzername/Passwort). | Maske erscheint. |
+| 1.2 | Anmelden mit `admin` / `admin`. | Sofort die Maske **„Passwort ändern"** (erzwungen). | Kein Zugriff auf die Tabs, bevor das Passwort gesetzt ist. |
+| 1.3 | Neues Passwort (≥ 8 Zeichen) zweimal eingeben, bestätigen. | Admin-Dashboard mit Tabs **Mandanten / Feeds / Plattform-Administratoren**. | Tabs sind jetzt sichtbar/bedienbar. |
 
-Zusätzlich zu A prüft das Skript, dass `FIREFLY_SOURCES` gesetzt ist und **kein**
-`FIREFLY_SOURCE_0_SECRET` existiert (anonym → kein Credential-Env).
+---
 
-## C) Authentifizierter Lauf (manuell, Prüfpunkte 3/4/6/7)
+## Teil 2 — Ersten Kunden (EDLV) einrichten (UI)
 
-Nur auf deiner Zielumgebung mit echten OpenSky-OAuth2-Credentials.
+Alles im Admin-Dashboard, keine Terminal-Befehle.
 
-1. **Schlüssel setzen** (auf **beiden**, Server und Orchestrator):
-   ```bash
-   export WAYFINDER_SECRET_KEY=$(openssl rand -base64 32)
-   docker compose -f docker-compose.orchestrated.yml up -d --build
-   ```
-2. Auf der OpenSky-Account-Seite einen **API-Client** anlegen → `client_id` +
-   `client_secret` (OAuth2, ADR 0024 in Firefly).
-3. Im Admin (oder per Admin-API) einen Feed mit einer `adsb_opensky`-Quelle
-   anlegen, eine `cred_ref` vergeben und im Secret-Dialog **Client-ID + Client-
-   Secret** eintragen; einen Mandanten darauf abonnieren.
-4. **Prüfpunkt 3/4:** `docker inspect wayfinder-firefly-feed-<id>` → `FIREFLY_SOURCES`
-   enthält **keinen** Secret-Wert; `FIREFLY_SOURCE_0_SECRET` trägt ihn separat.
-   `docker logs` des Trackers: kein 401, OpenSky authentifiziert. Orchestrator-Log
-   enthält **nie** den Klartext.
-5. **Prüfpunkt 6 (Anonym-Fallback):** Secret entfernen → der Tracker startet ohne
-   `FIREFLY_SOURCE_0_SECRET` neu (anonym), der Orchestrator loggt eine WARN, der
-   Reconcile bricht **nicht** ab.
-6. **Prüfpunkt 7 (Rotation):** Secret ändern → der Spec-Hash ändert sich → der
-   Reconciler ersetzt den Container (neue Container-ID).
+| # | UI-Aktion | Erwartetes Ergebnis | Prüfung |
+|---|-----------|---------------------|---------|
+| 2.1 | Tab **Mandanten** → **Neuer Mandant**: Slug `edlv`, Name `EDLV Weeze`. | Mandant erscheint in der Liste. | Eintrag „EDLV Weeze" sichtbar. |
+| 2.2 | Mandant **EDLV Weeze** öffnen → Karte **Features**: das gewünschte Feature aktivieren (z. B. **`multi_feed`**, wenn der Kunde mehrere Feeds bekommen soll). | Toggle bleibt an (serverseitig gespeichert). | Feature-Toggle steht auf „an". |
+| 2.3 | Im Mandanten → Karte **Nutzer** → **Neuer Nutzer**: Subject `edlv-lotse`, Passwort (≥ 8), Rolle Nutzer. | Nutzer erscheint in der Mandanten-Nutzerliste. | Eintrag „edlv-lotse" sichtbar. |
+| 2.4 | Tab **Feeds** → **Neuer Feed**: Name `edlv-weeze`, Sensor-Mix `SSR, ADS-B`, **Endpoint automatisch** (Schalter an). | Feed erscheint mit **automatisch** zugewiesener Gruppe/Port. | Feed-Zeile zeigt eine `239.255.0.x:8600`-Adresse. |
+| 2.5 | Beim Feed **Quellen** öffnen → **echte Live-Quellen** hinzufügen: <br>• Typ `adsb_opensky`, BBox = EDLV-Gebiet (min/max Lat 50.90/51.90, Lon 5.34/6.96). <br>• Typ `flarm_aprs`, gleiche BBox. <br>Speichern. | Beide Quellen gespeichert; eine `coverage_bbox` wird angezeigt. | Quellen-Liste zeigt `adsb_opensky` **und** `flarm_aprs`. |
+| 2.6 | Im Mandanten → **View-Config**: Zentrum `51.40 / 6.15`, **Radius `30`**, Zoom `9`, FL `0`–`450`. Speichern. | Sicht gespeichert (AOI aus Radius berechnet). | Werte stehen nach Reload unverändert da. |
+| 2.7 | Im Mandanten → **Feeds/Provisioning**: Feed `edlv-weeze` **zuweisen** (Grant). | Feed ist dem Mandanten zugewiesen. | „Granted"-Status beim Feed. |
+
+> **Credentials (optional).** Anonyme ADS-B/FLARM-Quellen brauchen **keine**
+> Zugangsdaten (OpenSky/OGN anonym, rate-limitiert). Für höhere OpenSky-Limits
+> (OAuth2-Client-Credentials) den Secret-Dialog nutzen — der ist nur sichtbar,
+> wenn der Server mit `WAYFINDER_SECRET_KEY` läuft.
+
+---
+
+## Teil 3 — Abmelden als Admin, anmelden als Mandant (UI)
+
+| # | UI-Aktion | Erwartetes Ergebnis | Prüfung |
+|---|-----------|---------------------|---------|
+| 3.1 | Im Admin-Header **Abmelden**. | Zurück zur Login-Maske (Sitzung beendet). | Login-Maske erscheint wieder. |
+| 3.2 | Browser: **http://localhost:8081/** (die Lage-Karte). | Da keine Sitzung besteht: **Login-Maske** statt leerer Karte. | Login-Maske auf `/`. |
+| 3.3 | Anmelden als `edlv-lotse` + Passwort. | Karte lädt, zentriert auf **EDLV** (51,40/6,15, Zoom 9); oben rechts der Konto-Chip `edlv-lotse`. | Kartenausschnitt = Weeze. |
+| 3.4 | Warten, bis Tracks erscheinen (Live-Daten aus Teil 2.5). | ADS-B-/FLARM-Tracks im EDLV-Gebiet; der Kunde sieht **nur** seinen gescopten Strom. | Tracks liegen innerhalb der 30-NM-AOI. |
+
+> **Hinweis.** Der Konto-Chip oben rechts bietet **Abmelden** (und für Admins eine
+> Verknüpfung zur Administration). So ist der ganze Auth-Zyklus UI-bedienbar.
+
+---
+
+## Teil 4 — Hinter den Kulissen prüfen (Terminal — **nur** Verifikation)
+
+Erst hier wieder das Terminal — ausschließlich, um zu **bestätigen**, dass die
+in der UI angelegte Konfiguration real wirkt.
+
+| # | Prüf-Befehl | Erwartetes Ergebnis |
+|---|-------------|---------------------|
+| 4.1 | `docker ps --filter label=wayfinder.feed_id` | Container **`wayfinder-firefly-feed-<id>`** läuft (vom Orchestrator gespawnt). |
+| 4.2 | `docker inspect wayfinder-firefly-feed-<id> --format '{{json .Config.Env}}'` | `FIREFLY_CAT062_GROUP`/`FIREFLY_CAT062_PORT` = die **Feed-Adresse aus 2.4**; `FIREFLY_MODE=live`; `FIREFLY_SOURCES` enthält `adsb_opensky` **und** `flarm_aprs`. |
+| 4.3 | `docker logs wayfinder-firefly-feed-<id>` | Zeilen: **`live mode: starting tracker`** (mit `opensky_sources=1`, `flarm_sources=1`), **`CAT062 multicast feed enabled`** + Ziel **`<group>:<port>`**, **`OpenSky ADS-B poller … started`** (+ BBox), **`FLARM/OGN APRS-IS listener started`**. → bestätigt Adresse:Port **und** die Datentypen. |
+| 4.4 | `curl -s localhost:8080/metrics \| grep cat062` (Wayfinder) | `wayfinder_cat062_blocks_received_total` und `…_tracks_received_total` **> 0** → Wayfinder empfängt den Strom. |
+| 4.5 | Admin-UI → Feeds → **Feed-Gesundheit** (oder `GET /api/admin/feeds/health`) | Feld für den Feed wird **grün**, `ever_seen=true` (CAT065-Heartbeat läuft). |
+
+> Optional, falls Firefly `/metrics` exponiert: `firefly_sources_opensky` und
+> `firefly_sources_flarm` = `1` (Quelltypen verdrahtet), `firefly_cat062_scans_sent_total`
+> wächst (Multicast wird gesendet).
+
+---
 
 ## Aufräumen
 
 ```bash
 docker compose -f docker-compose.orchestrated.yml down -v --remove-orphans
+docker ps -aq --filter 'label=wayfinder.managed=true' | xargs -r docker rm -f
 ```
-
-Das Skript räumt am Ende selbst auf (außer mit `--keep`).
-
-## Sicherheits-Hinweis (Docker-Socket)
-
-Der Orchestrator mountet `/var/run/docker.sock` — das gibt ihm **root-äquivalente**
-Kontrolle über den Host (er startet/stoppt Container). Genau deshalb ist der
-Orchestrator ein **getrennter, Least-Privilege-Prozess** und der browser-zugewandte
-Server bekommt den Socket **nie** (ADR 0012 §6). Im Produktivbetrieb ist der
-Orchestrator-Host/-Node eine **hochwertige Vertrauensgrenze**: Netz-Isolation,
-restriktiver Zugang, keine Co-Location mit dem Browser-Rand.
 
 ## Bekannte Grenzen
 
-- **Docker Desktop (macOS/Windows):** Host-Networking-Multicast funktioniert dort
-  i. d. R. nicht — die Abnahme braucht einen Linux-Host.
-- **Diese Repo-CI/Sandbox:** ohne laufenden Docker-Daemon kann der Lauf nicht
-  ausgeführt werden; verifiziert sind dort nur `docker compose config`, die
-  Binär-Builds und die Skript-Syntax. Der echte Lauf gehört auf einen Docker-Host.
+- **Docker Desktop (macOS/Windows, Mac mini):** Host-Net-Multicast funktioniert
+  dort nicht — Teil 1–3 (UI) laufen identisch, die Live-Verifikation (Teil 4)
+  gehört auf einen Linux-Host. Bridge-Workaround: `DOCKER.md`.
+- **Sitzungsablauf:** läuft die Mandanten-Sitzung ab (Default 12 h), zeigt die
+  Karte den Stand bis zum Reload; ein erneutes Öffnen von `/` führt zur
+  Login-Maske. (Inline-Re-Login bei WS-Ablauf ist ein Folge-Schritt.)
+- **Diese Repo-CI/Sandbox:** ohne Docker-Daemon nur `docker compose config` /
+  Binär-/Frontend-Build verifizierbar; der echte Lauf gehört auf einen Docker-Host.

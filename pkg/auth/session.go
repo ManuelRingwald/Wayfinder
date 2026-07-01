@@ -21,13 +21,34 @@ var (
 
 var b64 = base64.RawURLEncoding
 
-// MintSession returns a signed, tamper-evident session token carrying subject
-// and an expiry ttl from now. Format: `b64(subject).exp.signature`, where
-// signature = HMAC-SHA256(key, "b64(subject).exp"). The token is signed, not
-// encrypted — do not place secrets in subject.
+// Claims are the verified fields carried by a session token.
+type Claims struct {
+	Subject string
+	// IssuedAt is the unix second of first login, carried unchanged across
+	// sliding-session renews so an absolute maximum lifetime can be enforced. It
+	// is 0 for legacy tokens minted before the field existed.
+	IssuedAt  int64
+	ExpiresAt int64 // unix second at which the token expires
+}
+
+// MintSession returns a signed, tamper-evident session token carrying subject,
+// an issued-at stamp of now and an expiry ttl from now. Format:
+// `b64(subject).iat.exp.signature`, where signature = HMAC-SHA256(key,
+// "b64(subject).iat.exp"). The token is signed, not encrypted — do not place
+// secrets in subject.
 func MintSession(subject string, ttl time.Duration, key []byte) string {
-	exp := time.Now().Add(ttl).Unix()
-	payload := b64.EncodeToString([]byte(subject)) + "." + strconv.FormatInt(exp, 10)
+	now := time.Now()
+	return MintSessionAt(subject, now, now.Add(ttl), key)
+}
+
+// MintSessionAt mints a token with an explicit issued-at and expiry. The
+// sliding-session renew uses it to preserve the ORIGINAL first-login time
+// (issuedAt) while setting a fresh — and possibly max-lifetime-capped — expiry,
+// so an absolute session maximum can be enforced independently of activity.
+func MintSessionAt(subject string, issuedAt, expiresAt time.Time, key []byte) string {
+	payload := b64.EncodeToString([]byte(subject)) + "." +
+		strconv.FormatInt(issuedAt.Unix(), 10) + "." +
+		strconv.FormatInt(expiresAt.Unix(), 10)
 	return payload + "." + sign(payload, key)
 }
 
@@ -35,36 +56,61 @@ func MintSession(subject string, ttl time.Duration, key []byte) string {
 // Tampering/malformed input yields ErrSessionInvalid; a valid but past-expiry
 // token yields ErrSessionExpired.
 func ParseSession(token string, key []byte) (string, error) {
+	c, err := ParseSessionClaims(token, key)
+	if err != nil {
+		return "", err
+	}
+	return c.Subject, nil
+}
+
+// ParseSessionClaims verifies a token's signature and expiry and returns its
+// claims. It accepts both the current `subject.iat.exp` layout and the legacy
+// `subject.exp` layout (tokens minted before the issued-at field existed); the
+// latter parse with IssuedAt == 0, so cookies already held by browsers stay
+// valid across the upgrade (no mass logout).
+func ParseSessionClaims(token string, key []byte) (Claims, error) {
 	i := strings.LastIndex(token, ".")
 	if i < 0 {
-		return "", ErrSessionInvalid
+		return Claims{}, ErrSessionInvalid
 	}
 	payload, sig := token[:i], token[i+1:]
 
 	// Constant-time signature check before trusting any field.
 	if subtle.ConstantTimeCompare([]byte(sig), []byte(sign(payload, key))) != 1 {
-		return "", ErrSessionInvalid
+		return Claims{}, ErrSessionInvalid
 	}
 
-	j := strings.LastIndex(payload, ".")
-	if j < 0 {
-		return "", ErrSessionInvalid
+	// The subject is base64 (RawURLEncoding, dot-free), so the payload splits
+	// cleanly on ".": two fields = legacy (subject.exp), three = subject.iat.exp.
+	parts := strings.Split(payload, ".")
+	var subjB64, iatStr, expStr string
+	switch len(parts) {
+	case 2:
+		subjB64, expStr = parts[0], parts[1]
+	case 3:
+		subjB64, iatStr, expStr = parts[0], parts[1], parts[2]
+	default:
+		return Claims{}, ErrSessionInvalid
 	}
-	subjB64, expStr := payload[:j], payload[j+1:]
 
 	exp, err := strconv.ParseInt(expStr, 10, 64)
 	if err != nil {
-		return "", ErrSessionInvalid
+		return Claims{}, ErrSessionInvalid
+	}
+	var iat int64
+	if iatStr != "" {
+		if iat, err = strconv.ParseInt(iatStr, 10, 64); err != nil {
+			return Claims{}, ErrSessionInvalid
+		}
 	}
 	if time.Now().Unix() > exp {
-		return "", ErrSessionExpired
+		return Claims{}, ErrSessionExpired
 	}
-
 	subject, err := b64.DecodeString(subjB64)
 	if err != nil {
-		return "", ErrSessionInvalid
+		return Claims{}, ErrSessionInvalid
 	}
-	return string(subject), nil
+	return Claims{Subject: string(subject), IssuedAt: iat, ExpiresAt: exp}, nil
 }
 
 func sign(payload string, key []byte) string {

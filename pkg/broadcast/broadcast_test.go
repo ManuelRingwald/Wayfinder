@@ -15,9 +15,9 @@ func TestBroadcasterBasic(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(nil, nil))
 	b := New(logger)
 
-	// Register a client.
+	// Register a client scoped to the (feed 0) batch below.
 	sendChan := make(chan Message, 10)
-	client := b.RegisterClient(sendChan, nil)
+	client := b.RegisterClient(sendChan, NewScope([]int64{0}))
 
 	// Run broadcaster in background.
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
@@ -72,7 +72,7 @@ func TestBroadcasterMultipleClients(t *testing.T) {
 	sendChans := make([]chan Message, 3)
 	for i := 0; i < 3; i++ {
 		sendChans[i] = make(chan Message, 10)
-		clients[i] = b.RegisterClient(sendChans[i], nil)
+		clients[i] = b.RegisterClient(sendChans[i], NewScope([]int64{0}))
 	}
 
 	// Run broadcaster.
@@ -201,12 +201,12 @@ func TestTracksToMessageMapsAdsbAge(t *testing.T) {
 }
 
 // TestScopeAllowsFeed covers the feed-level scope predicate: a nil scope sees
-// everything (single-tenant), a built scope sees only its feeds, and an empty
-// scope sees nothing (fail-closed).
+// nothing (fail-closed, ADR 0014 — production always scopes), a built scope sees
+// only its feeds, and an empty scope sees nothing (fail-closed).
 func TestScopeAllowsFeed(t *testing.T) {
 	var unscoped *Scope // nil
-	if !unscoped.AllowsFeed(1) || !unscoped.AllowsFeed(999) {
-		t.Error("nil scope must allow every feed (single-tenant passthrough)")
+	if unscoped.AllowsFeed(1) || unscoped.AllowsFeed(999) {
+		t.Error("nil scope must be fail-closed (allow no feed)")
 	}
 
 	s := NewScope([]int64{1, 3})

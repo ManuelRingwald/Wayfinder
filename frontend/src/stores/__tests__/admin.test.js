@@ -582,6 +582,21 @@ describe('admin store — login', () => {
     expect(r.ok).toBe(false)
     expect(r.status).toBe(401)
   })
+
+  it('logout POSTs to /api/logout and resets to the unauthenticated state', async () => {
+    const calls = installFetch({
+      'GET /api/admin/whoami': { status: 200, body: { subject: 'alice', tenant_id: 7, user_id: 1, role: 'admin' } },
+      'POST /api/logout': { status: 204 },
+    })
+    const s = useAdminStore()
+    await s.loadIdentity()
+    expect(s.isAuthorized).toBe(true)
+    await s.logout()
+    expect(s.identity).toBeNull()
+    expect(s.isAuthorized).toBe(false)
+    expect(s.accessStatus).toBe(401)
+    expect(calls.some((c) => c.url === '/api/logout' && c.method === 'POST')).toBe(true)
+  })
 })
 
 describe('admin store — view config', () => {

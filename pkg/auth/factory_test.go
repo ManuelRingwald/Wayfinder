@@ -5,17 +5,6 @@ import (
 	"testing"
 )
 
-func TestNewAuthenticatorNone(t *testing.T) {
-	a, err := NewAuthenticator(context.Background(), Config{Mode: ModeNone})
-	if err != nil {
-		t.Fatalf("none: %v", err)
-	}
-	n, ok := a.(NoneAuthenticator)
-	if !ok || n.Subject != "default" {
-		t.Fatalf("none authenticator = %#v", a)
-	}
-}
-
 func TestNewAuthenticatorBuiltin(t *testing.T) {
 	a, err := NewAuthenticator(context.Background(), Config{Mode: ModeBuiltin, SessionKey: []byte("k")})
 	if err != nil {

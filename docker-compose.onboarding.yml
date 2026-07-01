@@ -18,9 +18,10 @@
 # will start empty. For live tracks, run Firefly separately with host networking
 # on Linux, or use the master-compose approach from DOCKER.md on any platform.
 #
-# This file is the multi-tenant counterpart to the single-tenant docker-compose.yml.
-# Use that one for a quick anonymous ASD without a database; use this one for the
-# real, configurable multi-tenant platform.
+# This is the canonical Wayfinder deployment stack (multi-tenant is the only mode,
+# ADR 0014). Use it for a standalone platform with the built-in login; for the
+# end-to-end harness that also auto-spawns Firefly per feed, see
+# docker-compose.orchestrated.yml.
 
 services:
   db:

@@ -435,6 +435,30 @@ func TestWhoamiUnauthorizedWithoutIdentity(t *testing.T) {
 	}
 }
 
+// WhoamiHandler is mounted at GET /api/whoami WITHOUT requireAdmin so a plain
+// tenant user (RoleUser) can resolve its own session for the ASD map — the
+// admin-gated /api/admin/whoami would 403 that user.
+func TestWhoamiHandlerIsRoleAgnostic(t *testing.T) {
+	h := handlerWith(&fakeVS{}, fakeFeeds{}, fakeTenants{})
+
+	rec := httptest.NewRecorder()
+	h.WhoamiHandler().ServeHTTP(rec, adminReq(http.MethodGet, "/api/whoami", "", 7, store.RoleUser))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("RoleUser whoami status = %d, want 200", rec.Code)
+	}
+	var got map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &got)
+	if got["role"] != string(store.RoleUser) || got["tenant_id"] != 7.0 {
+		t.Errorf("RoleUser whoami body = %v", got)
+	}
+
+	rec2 := httptest.NewRecorder()
+	h.WhoamiHandler().ServeHTTP(rec2, adminReq(http.MethodGet, "/api/whoami", "", 0, ""))
+	if rec2.Code != http.StatusUnauthorized {
+		t.Fatalf("no-identity whoami status = %d, want 401", rec2.Code)
+	}
+}
+
 // --- live re-scope hook (WF2-33) --------------------------------------------
 
 func TestPutViewTriggersRescope(t *testing.T) {

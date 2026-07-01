@@ -12,9 +12,9 @@
 >   freie Hilfe.
 
 > 🧭 **Annahme:** Die Beispiele gehen vom **Multi-Tenant-Aufbau** aus
-> `INSTALLATION.md` Teil 5 aus (Verzeichnis `~/asd/start-plattform`, Compose-
-> Dienste `db`, `firefly`, `wayfinder`). Im Einzelplatz-Betrieb entfallen die
-> Mandanten-/Datenbank-Themen — der Rest gilt sinngemäß.
+> `INSTALLATION.md` Teil 4 aus (Verzeichnis `~/asd/start-plattform`, Compose-
+> Dienste `db`, `firefly`, `wayfinder`). Multi-Tenant ist der einzige
+> Betriebsmodus (ADR 0014).
 
 ---
 
@@ -233,12 +233,14 @@ Der „View as Tenant"-Einblick (Bedienung: `INSTALLATION.md` Schritt 5.11) ist 
 ## 6. Sicherheits-Betrieb
 
 ### 6.1 Anmelde-Modus (Auth)
-- **`builtin`** — eingebaute Nutzer + Passwörter (Standalone, Standard in
-  `INSTALLATION.md` Teil 5). Passwort setzen/zurücksetzen = `bootstrap` erneut
-  ausführen (5.1).
+- **`builtin`** — eingebaute Nutzer + Passwörter (Standard, Multi-Tenant mit
+  PostgreSQL; `INSTALLATION.md` Teil 4). Passwort setzen/zurücksetzen =
+  `bootstrap` erneut ausführen (Schritt 4.4).
 - **`proxy`** — Anmeldung über einen vorgelagerten OIDC-Proxy (Unternehmens-SSO);
   Wayfinder validiert nur das durchgereichte Token. Kein lokales Passwort.
-- **`none`** — kein Login (nur in einem **abgeschotteten** Netz vertretbar).
+
+Einen Betrieb **ohne** Anmeldung gibt es nicht mehr (ADR 0014): Auth ist immer
+aktiv, `WAYFINDER_DB_URL` ist Pflicht.
 
 ### 6.2 Der Signing-Key — und die Not-Bremse „alle abmelden"
 `WAYFINDER_SESSION_KEY` signiert die Login-Cookies **und** die
@@ -246,7 +248,7 @@ Impersonation-Grants. Praktische Folge:
 
 > 🔑 **Schlüssel wechseln = sofort alle Sitzungen und alle Read-Only-Einblicke
 > ungültig.** Bei Verdacht auf Missbrauch eines gestohlenen Cookies ist das die
-> schnellste Notbremse: neuen Schlüssel in der `docker-compose.yml` setzen und
+> schnellste Notbremse: neuen Schlüssel in der Compose-/Deployment-Konfiguration setzen und
 > `docker compose up -d` — alle müssen sich neu anmelden.
 
 Neuen Schlüssel erzeugen:
@@ -283,7 +285,9 @@ Auffälligkeiten (häufige `_denied`, unerwartete `_start`) eskalieren.
 **Was muss gesichert werden?** Nur die **PostgreSQL-Datenbank** (Mandanten,
 Nutzer, Feeds, Abos, Sichten, Rechte, Passwort-Hashes). Wayfinder selbst hält
 keinen sicherungswürdigen Zustand. Die `wayfinder.yaml` und die
-`docker-compose.yml` gehören in die normale Konfig-Sicherung/Versionskontrolle.
+Deployment-Konfiguration (`docker-compose.*.yml` mit `WAYFINDER_DB_URL`,
+`WAYFINDER_AUTH_MODE`, `WAYFINDER_SESSION_KEY` u. a.) gehören **verschlüsselt** in
+die Konfig-Sicherung/Versionskontrolle oder ein Secret-Management (K8s Secrets, Vault).
 
 ### 7.1 Sicherung anlegen (Backup)
 ```bash
@@ -358,7 +362,7 @@ Wayfinder reagiert auf das Stopp-Signal und schließt alle Verbindungen sauber;
   Replicas hinter einem Load-Balancer), solange alle dieselbe Datenbank nutzen.
 - **Aber:** Jede Replica muss den **Multicast-Feed empfangen** können — in
   Cloud-Netzen ist Multicast meist blockiert (Details + Sidecar-Muster:
-  `docs/TECHNICAL.md`, `docs/INSTALLATION.md` Teil 9).
+  `docs/TECHNICAL.md`, `docs/INSTALLATION.md` Teil 8).
 - Die **Datenbank** ist die zu schützende Komponente — hier auf Hochverfügbarkeit
   und Sicherung achten.
 

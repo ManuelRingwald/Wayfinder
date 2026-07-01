@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"crypto/rand"
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -169,9 +168,10 @@ func main() {
 			"key (e.g. openssl rand -hex 32) for production (ADR 0011)")
 	}
 
-	// Multi-tenancy (WF2-12): when WAYFINDER_DB_URL is set, open the DB, migrate
-	// and build the tenant-context middleware; otherwise run single-tenant. Done
-	// before the receivers so the feed catalogue (WF2-20.2) can drive them.
+	// Multi-tenancy (WF2-12, ADR 0014): open the DB, migrate and build the
+	// tenant-context middleware. WAYFINDER_DB_URL is mandatory — setupTenancy
+	// fails the start when it is missing (no single-tenant fallback). Done before
+	// the receivers so the feed catalogue (WF2-20.2) can drive them.
 	setupCtx, cancelSetup := context.WithTimeout(context.Background(), 30*time.Second)
 	tenantMW, dbPool, err := setupTenancy(setupCtx, cfg, logger)
 	if err != nil {
@@ -179,17 +179,12 @@ func main() {
 		logger.Error("tenancy setup", slog.String("error", err.Error()))
 		os.Exit(1)
 	}
-	if dbPool != nil {
-		defer dbPool.Close()
-	}
+	defer dbPool.Close()
 
-	// Resolve the feeds to receive: the DB catalogue (multi-feed, WF2-20.2) when
-	// present and non-empty, else the single ENV-configured feed (single-tenant /
-	// empty-catalogue fallback).
-	var catalogue []store.Feed
-	if dbPool != nil {
-		catalogue, err = store.NewFeedRepo(dbPool).List(setupCtx)
-	}
+	// Resolve the feeds to receive from the DB catalogue (multi-feed, WF2-20.2).
+	// An empty catalogue falls back to the single ENV-configured feed so a fresh
+	// instance always has something to receive (resolveFeeds).
+	catalogue, err := store.NewFeedRepo(dbPool).List(setupCtx)
 	cancelSetup()
 	if err != nil {
 		logger.Error("list feed catalogue", slog.String("error", err.Error()))
@@ -282,89 +277,62 @@ func main() {
 	// mode this Service is the global fallback cache behind the per-tenant registry.
 	go aeroService.Run(ctx)
 
-	// OpenAIP per tenant (ONB-6, ADR 0011): in multi-tenant mode each tenant fetches
-	// OpenAIP with its own key (or the global fallback) against its own area of
-	// interest. The registry supervises one Service per tenant alongside the global
-	// fallback; a tenant without its own running Service falls back to the global
-	// cache. Built only with a DB (the per-tenant key/AOI live there).
-	var aeroRegistry *aeronautical.Registry
-	var aeroLife adminapi.TenantAeroLifecycle
-	if dbPool != nil {
-		aeroRegistry = aeronautical.NewRegistry(ctx, aeroService, newAeroClientFactory(cfg.OpenAIPBaseURL), cfg.OpenAIPRefresh, logger)
-		defer aeroRegistry.StopAll()
-		life := tenantAeroLifecycle{
-			reg:       aeroRegistry,
-			tenants:   store.NewTenantRepo(dbPool),
-			views:     store.NewViewConfigRepo(dbPool),
-			globalKey: cfg.OpenAIPAPIKey,
-			radiusKM:  cfg.OpenAIPRadiusKM,
-			fallback:  aeronautical.BoundingBoxFromCenter(cfg.MapCenterLat, cfg.MapCenterLon, cfg.OpenAIPRadiusKM),
-			logger:    logger,
-		}
-		aeroLife = life
-		// Boot: bring up each tenant's per-tenant refresh from the catalogue, so the
-		// per-tenant caches are warm without waiting for an admin edit.
-		bootCtx, cancelBoot := context.WithTimeout(ctx, 30*time.Second)
-		if tenants, terr := store.NewTenantRepo(dbPool).List(bootCtx); terr != nil {
-			logger.Warn("openaip: list tenants for per-tenant refresh failed", slog.String("error", terr.Error()))
-		} else {
-			for _, t := range tenants {
-				life.Apply(bootCtx, t.ID)
-			}
-		}
-		cancelBoot()
+	// OpenAIP per tenant (ONB-6, ADR 0011): each tenant fetches OpenAIP with its own
+	// key (or the global fallback) against its own area of interest. The registry
+	// supervises one Service per tenant alongside the global fallback; a tenant
+	// without its own running Service falls back to the global cache.
+	aeroRegistry := aeronautical.NewRegistry(ctx, aeroService, newAeroClientFactory(cfg.OpenAIPBaseURL), cfg.OpenAIPRefresh, logger)
+	defer aeroRegistry.StopAll()
+	aeroLifeImpl := tenantAeroLifecycle{
+		reg:       aeroRegistry,
+		tenants:   store.NewTenantRepo(dbPool),
+		views:     store.NewViewConfigRepo(dbPool),
+		globalKey: cfg.OpenAIPAPIKey,
+		radiusKM:  cfg.OpenAIPRadiusKM,
+		fallback:  aeronautical.BoundingBoxFromCenter(cfg.MapCenterLat, cfg.MapCenterLon, cfg.OpenAIPRadiusKM),
+		logger:    logger,
 	}
+	var aeroLife adminapi.TenantAeroLifecycle = aeroLifeImpl
+	// Boot: bring up each tenant's per-tenant refresh from the catalogue, so the
+	// per-tenant caches are warm without waiting for an admin edit.
+	bootCtx, cancelBoot := context.WithTimeout(ctx, 30*time.Second)
+	if tenants, terr := store.NewTenantRepo(dbPool).List(bootCtx); terr != nil {
+		logger.Warn("openaip: list tenants for per-tenant refresh failed", slog.String("error", terr.Error()))
+	} else {
+		for _, t := range tenants {
+			aeroLifeImpl.Apply(bootCtx, t.ID)
+		}
+	}
+	cancelBoot()
 
 	// Feature entitlements (WF2-50): per-tenant feature flags as data, fail-closed.
-	// Built once here so the admin API and /metrics share one instance. Multi-tenant
-	// only (needs the tenant DB); single-tenant → nil, no feature gating.
-	var featSvc *feature.Service
-	if dbPool != nil {
-		featSvc = feature.New(store.NewEntitlementRepo(dbPool), logger)
-	}
+	// Built once here so the admin API and /metrics share one instance.
+	featSvc := feature.New(store.NewEntitlementRepo(dbPool), logger)
 
 	// Start health/readiness/metrics probe server. Decode errors are read from the
 	// process-wide counter (monotonic across feed churn, ONB-5).
 	decodeErrors := func() int64 { return decodeErrorCount.Load() }
-	// OpenAIP fetch counters (ONB-6): in multi-tenant mode sum across every
-	// per-tenant Service plus the global one so the process-wide counter stays
-	// meaningful as tenants come and go; single-tenant → the global Service alone.
-	aeroCounts := func() (int64, int64) { return aeroService.FetchSuccessCount(), aeroService.FetchFailureCount() }
-	if aeroRegistry != nil {
-		aeroCounts = func() (int64, int64) { return aeroRegistry.FetchSuccessCount(), aeroRegistry.FetchFailureCount() }
-	}
+	// OpenAIP fetch counters (ONB-6): sum across every per-tenant Service plus the
+	// global one so the process-wide counter stays meaningful as tenants come and go.
+	aeroCounts := func() (int64, int64) { return aeroRegistry.FetchSuccessCount(), aeroRegistry.FetchFailureCount() }
 	go startProbeServer(logger, &blockCount, &trackCount, &tracksCurrent, &heartbeatCount, broadcaster, decodeErrors, feedRegistry, aeroService, aeroCounts, &lastError, featSvc)
 
 	// Start WebSocket server.
-	if tenantMW == nil && cfg.AuthToken == "" {
-		logger.Warn("WAYFINDER_AUTH_TOKEN not set — browser edge relies on " +
-			"network isolation / a TLS+auth reverse proxy in front of this " +
-			"service (ADR 0003)")
-	}
-
 	mux := http.NewServeMux()
 
-	// Scoped fan-out (WF2-21): with multi-tenancy on, each /ws client is filtered
-	// to the feeds its tenant subscribes to; single-tenant → nil resolver (unscoped).
-	var scopeResolver ws.ScopeResolver
-	if dbPool != nil {
-		// Cross-tenant read-only impersonation (ADR 0008) needs a signing key;
-		// without one (proxy/none mode without WAYFINDER_SESSION_KEY) it stays
-		// disabled and the resolver behaves exactly as before (impChecker nil).
-		var impChecker impersonation.TenantChecker
-		if len(cfg.SessionKey) > 0 {
-			impChecker = tenantExistsChecker{repo: store.NewTenantRepo(dbPool)}
-		}
-		scopeResolver = newScopeResolver(store.NewSubscriptionRepo(dbPool), store.NewViewConfigRepo(dbPool), impChecker, cfg.SessionKey, logger)
+	// Scoped fan-out (WF2-21, ADR 0014): every /ws client is filtered to the feeds
+	// its tenant subscribes to. Cross-tenant read-only impersonation (ADR 0008)
+	// needs a signing key; without WAYFINDER_SESSION_KEY (e.g. proxy mode) it stays
+	// disabled and the resolver behaves as if impChecker were nil.
+	var impChecker impersonation.TenantChecker
+	if len(cfg.SessionKey) > 0 {
+		impChecker = tenantExistsChecker{repo: store.NewTenantRepo(dbPool)}
 	}
+	scopeResolver := newScopeResolver(store.NewSubscriptionRepo(dbPool), store.NewViewConfigRepo(dbPool), impChecker, cfg.SessionKey, logger)
 	wsHandler := ws.New(broadcaster, logger, cfg.AllowedOrigins, scopeResolver)
-	// The live picture is tenant-scoped: gate /ws with the tenant middleware when
-	// multi-tenancy is enabled; the middleware sets the Identity the resolver reads.
-	if tenantMW != nil {
-		mux.Handle("/ws", tenantMW(wsHandler))
-	} else {
-		mux.Handle("/ws", wsHandler)
-	}
+	// The live picture is tenant-scoped: gate /ws with the tenant middleware, which
+	// sets the Identity the resolver reads.
+	mux.Handle("/ws", tenantMW(wsHandler))
 
 	// Serve the ASD frontend (static HTML/JS/CSS) and its map configuration.
 	frontend, err := webui.Handler()
@@ -376,40 +344,40 @@ func main() {
 	mux.HandleFunc("/api/map-config", mapConfigHandler(cfg))
 
 	// Aeronautical GeoJSON endpoints (/api/airspace, /api/navaids,
-	// /api/waypoints), served from the OpenAIP cache (ADR 0004). In multi-tenant
-	// mode they are tenant-aware (ONB-6): behind the tenant middleware, each serves
-	// the requesting tenant's own per-tenant cache (with global fallback). In
-	// single-tenant mode they serve the global cache unauthenticated, as before.
-	if aeroRegistry != nil && tenantMW != nil {
-		aeroRegistry.Register(mux, tenantMW, func(r *http.Request) (int64, bool) {
-			id, ok := tenant.FromContext(r.Context())
-			return id.TenantID, ok
-		})
-	} else {
-		aeroService.Register(mux)
-	}
+	// /api/waypoints), served from the OpenAIP cache (ADR 0004). They are
+	// tenant-aware (ONB-6): behind the tenant middleware, each serves the
+	// requesting tenant's own per-tenant cache (with global fallback).
+	aeroRegistry.Register(mux, tenantMW, func(r *http.Request) (int64, bool) {
+		id, ok := tenant.FromContext(r.Context())
+		return id.TenantID, ok
+	})
 
 	// Coverage rings: static GeoJSON computed once from config, served to the
 	// browser on demand. An empty FeatureCollection is returned when no sensors
 	// are configured so the frontend can always fetch unconditionally.
 	mux.HandleFunc("/api/coverage/rings", coverageRingsHandler(cfg))
 
-	// Builtin-mode login/logout (WF2-12.3): only when multi-tenancy is on and the
-	// auth mode is builtin (proxy/none mint no local sessions). These routes are
-	// intentionally unauthenticated — they hand out the session the middleware
-	// later checks.
-	if dbPool != nil && cfg.AuthMode == auth.ModeBuiltin {
+	// Builtin-mode login/logout (WF2-12.3): only when the auth mode is builtin
+	// (proxy mints no local sessions). These routes are intentionally
+	// unauthenticated — they hand out the session the middleware later checks.
+	if cfg.AuthMode == auth.ModeBuiltin {
 		loginCfg := tenant.LoginConfig{
-			SessionKey: cfg.SessionKey,
-			CookieName: cfg.SessionCookie,
-			TTL:        cfg.SessionTTL,
-			Secure:     cfg.TLSCertFile != "" && cfg.TLSKeyFile != "",
+			SessionKey:  cfg.SessionKey,
+			CookieName:  cfg.SessionCookie,
+			TTL:         cfg.SessionTTL,
+			MaxLifetime: cfg.SessionMaxLife,
+			Secure:      cfg.TLSCertFile != "" && cfg.TLSKeyFile != "",
 		}
 		users := store.NewUserRepo(dbPool)
 		creds := store.NewCredentialRepo(dbPool)
 		tenants := store.NewTenantRepo(dbPool)
 		mux.Handle("/api/login", tenant.LoginHandler(users, creds, tenants, loginCfg))
 		mux.Handle("/api/logout", tenant.LogoutHandler(loginCfg))
+		// Sliding-session refresh (WF2-12.5): re-mint the cookie for an already
+		// authenticated principal. Behind the tenant middleware (needs the Identity),
+		// unlike login/logout. The ASD calls it periodically while the picture is
+		// open so an active console never logs out; an abandoned one still lapses.
+		mux.Handle("POST /api/session/renew", tenantMW(tenant.RenewHandler(loginCfg)))
 		logger.Info("builtin login enabled", slog.String("path", "/api/login"))
 	}
 
@@ -417,68 +385,68 @@ func main() {
 	// to admin (ADR 0009) and carries the whoami role probe the SPA reads on
 	// entering /admin (GET /api/admin/whoami). The browser route /admin itself is no
 	// longer a backend endpoint — it is served by the SPA shell via the history-mode
-	// fallback in webui.Handler. Only mounted with multi-tenancy active — the gate
-	// needs an Identity from the tenant middleware.
-	if tenantMW != nil {
-		requireAdmin := tenant.RequireRole(store.RoleAdmin)
-		viewRepo := store.NewViewConfigRepo(dbPool)
-		subRepo := store.NewSubscriptionRepo(dbPool)
-		// Live-apply (WF2-33): when an admin changes a tenant's view or feed
-		// grants, re-scope that tenant's connected clients in place — no reconnect.
-		rescope := func(ctx context.Context, tenantID int64) {
-			rescopeTenant(ctx, broadcaster, subRepo, viewRepo, logger, tenantID)
+	// fallback in webui.Handler.
+	requireAdmin := tenant.RequireRole(store.RoleAdmin)
+	viewRepo := store.NewViewConfigRepo(dbPool)
+	subRepo := store.NewSubscriptionRepo(dbPool)
+	// Live-apply (WF2-33): when an admin changes a tenant's view or feed
+	// grants, re-scope that tenant's connected clients in place — no reconnect.
+	rescope := func(ctx context.Context, tenantID int64) {
+		rescopeTenant(ctx, broadcaster, subRepo, viewRepo, logger, tenantID)
+	}
+	// Feed lifecycle (ONB-5): the admin API joins/leaves multicast groups live
+	// via the feed manager, and forgets a deleted feed's health (adapter below).
+	feedLife := feedLifecycle{mgr: feedManager, registry: feedRegistry}
+	// Per-feed source-credential sealing (ORCH-2c 3a, ADR 0012 §6). Wired only
+	// when a valid WAYFINDER_SECRET_KEY is configured; otherwise the secret routes
+	// stay disabled (503) rather than storing credentials unencrypted. A set but
+	// malformed key is logged loudly so a typo does not silently downgrade.
+	var secretSvc adminapi.SecretService
+	if len(cfg.SecretKey) == secret.KeySize {
+		if cipher, err := secret.NewCipher(cfg.SecretKey); err == nil {
+			secretSvc = orchestrator.NewSecretSealer(store.NewSecretRepo(dbPool), cipher)
+			logger.Info("per-feed source-credential encryption enabled (ORCH-2c)",
+				slog.String("path", "/api/admin/feeds/{id}/secrets"))
+		} else {
+			logger.Warn("WAYFINDER_SECRET_KEY rejected — secret routes disabled", slog.String("error", err.Error()))
 		}
-		// Feed lifecycle (ONB-5): the admin API joins/leaves multicast groups live
-		// via the feed manager, and forgets a deleted feed's health (adapter below).
-		feedLife := feedLifecycle{mgr: feedManager, registry: feedRegistry}
-		// Per-feed source-credential sealing (ORCH-2c 3a, ADR 0012 §6). Wired only
-		// when a valid WAYFINDER_SECRET_KEY is configured; otherwise the secret routes
-		// stay disabled (503) rather than storing credentials unencrypted. A set but
-		// malformed key is logged loudly so a typo does not silently downgrade.
-		var secretSvc adminapi.SecretService
-		if len(cfg.SecretKey) == secret.KeySize {
-			if cipher, err := secret.NewCipher(cfg.SecretKey); err == nil {
-				secretSvc = orchestrator.NewSecretSealer(store.NewSecretRepo(dbPool), cipher)
-				logger.Info("per-feed source-credential encryption enabled (ORCH-2c)",
-					slog.String("path", "/api/admin/feeds/{id}/secrets"))
-			} else {
-				logger.Warn("WAYFINDER_SECRET_KEY rejected — secret routes disabled", slog.String("error", err.Error()))
-			}
-		} else if os.Getenv("WAYFINDER_SECRET_KEY") != "" {
-			logger.Warn("WAYFINDER_SECRET_KEY set but invalid (need base64-encoded 32 bytes) — secret routes disabled")
-		}
-		feedRepo := store.NewFeedRepo(dbPool).WithMulticastPool(cfg.feedPool())
-		adminAPI := adminapi.New(viewRepo, subRepo, feedRepo, store.NewTenantRepo(dbPool),
-			store.NewUserRepo(dbPool), store.NewCredentialRepo(dbPool), featSvc, feedRegistry, feedLife, aeroLife, secretSvc, logger, rescope)
-		mux.Handle("/api/admin/", tenantMW(requireAdmin(adminAPI)))
+	} else if os.Getenv("WAYFINDER_SECRET_KEY") != "" {
+		logger.Warn("WAYFINDER_SECRET_KEY set but invalid (need base64-encoded 32 bytes) — secret routes disabled")
+	}
+	feedRepo := store.NewFeedRepo(dbPool).WithMulticastPool(cfg.feedPool())
+	adminAPI := adminapi.New(viewRepo, subRepo, feedRepo, store.NewTenantRepo(dbPool),
+		store.NewUserRepo(dbPool), store.NewCredentialRepo(dbPool), featSvc, feedRegistry, feedLife, aeroLife, secretSvc, logger, rescope)
+	mux.Handle("/api/admin/", tenantMW(requireAdmin(adminAPI)))
 
-		// Cross-tenant read-only impersonation (ADR 0008, WF2-34): mint and clear
-		// the grant cookie. The more-specific method+path patterns take precedence
-		// over the /api/admin/ subtree. Only wired when a signing key is configured;
-		// otherwise impersonation stays disabled platform-wide (fail-closed),
-		// matching the /ws read path.
-		if len(cfg.SessionKey) > 0 {
-			impAudit := logger.With(slog.String("component", "audit"))
-			impCfg := impersonationCookieConfig{
-				key:    cfg.SessionKey,
-				ttl:    cfg.ImpersonationTTL,
-				secure: cfg.TLSCertFile != "" && cfg.TLSKeyFile != "",
-			}
-			impChecker := tenantExistsChecker{repo: store.NewTenantRepo(dbPool)}
-			mux.Handle("GET /api/admin/impersonation", tenantMW(requireAdmin(impersonationStatusHandler(impChecker, impCfg))))
-			mux.Handle("POST /api/admin/impersonation", tenantMW(requireAdmin(startImpersonationHandler(impChecker, impCfg, impAudit))))
-			mux.Handle("DELETE /api/admin/impersonation", tenantMW(requireAdmin(stopImpersonationHandler(impCfg, impAudit))))
-			logger.Info("impersonation enabled (ADR 0008)",
-				slog.String("path", "/api/admin/impersonation"), slog.Duration("ttl", cfg.ImpersonationTTL))
+	// Role-agnostic identity probe for the ASD map (any authenticated principal,
+	// not just admins): the map reads it to decide between its login screen and
+	// the live picture. Behind the tenant middleware (sets the Identity) but NOT
+	// requireAdmin — a plain tenant user must be able to resolve its own session.
+	mux.Handle("GET /api/whoami", tenantMW(adminAPI.WhoamiHandler()))
+
+	// Cross-tenant read-only impersonation (ADR 0008, WF2-34): mint and clear
+	// the grant cookie. The more-specific method+path patterns take precedence
+	// over the /api/admin/ subtree. Only wired when a signing key is configured;
+	// otherwise impersonation stays disabled platform-wide (fail-closed),
+	// matching the /ws read path.
+	if len(cfg.SessionKey) > 0 {
+		impAudit := logger.With(slog.String("component", "audit"))
+		impCfg := impersonationCookieConfig{
+			key:    cfg.SessionKey,
+			ttl:    cfg.ImpersonationTTL,
+			secure: cfg.TLSCertFile != "" && cfg.TLSKeyFile != "",
 		}
+		impChecker := tenantExistsChecker{repo: store.NewTenantRepo(dbPool)}
+		mux.Handle("GET /api/admin/impersonation", tenantMW(requireAdmin(impersonationStatusHandler(impChecker, impCfg))))
+		mux.Handle("POST /api/admin/impersonation", tenantMW(requireAdmin(startImpersonationHandler(impChecker, impCfg, impAudit))))
+		mux.Handle("DELETE /api/admin/impersonation", tenantMW(requireAdmin(stopImpersonationHandler(impCfg, impAudit))))
+		logger.Info("impersonation enabled (ADR 0008)",
+			slog.String("path", "/api/admin/impersonation"), slog.Duration("ttl", cfg.ImpersonationTTL))
 	}
 
-	// The per-tenant middleware (on /ws) supersedes the legacy single shared
-	// token; only fall back to the token gate in single-tenant mode.
+	// The per-tenant middleware (on /ws) is the browser-edge gate; the whole mux
+	// is served directly (ADR 0014).
 	var handler http.Handler = mux
-	if tenantMW == nil {
-		handler = authMiddleware(cfg.AuthToken, mux)
-	}
 
 	go func() {
 		addr := ":8081"
@@ -515,10 +483,10 @@ func main() {
 type Config struct {
 	MulticastGroup string
 	MulticastPort  int
-	// FeedID is the catalogue feed this single-feed receiver consumes
-	// (WAYFINDER_FEED_ID, default 0 = single-tenant/unassigned). Stamped onto
-	// every track for the scoped fan-out (WF2-20/21). The DB-driven multi-feed
-	// receiver supersedes this single value in WF2-20.2.
+	// FeedID is the catalogue id of the single ENV-configured fallback feed used
+	// only when the DB catalogue is empty (WAYFINDER_FEED_ID, default 0 =
+	// unassigned). Stamped onto every track for the scoped fan-out (WF2-20/21).
+	// The DB-driven multi-feed receiver supersedes this single value (WF2-20.2).
 	FeedID       int64
 	ProbePort    int
 	MapCenterLat float64
@@ -531,7 +499,6 @@ type Config struct {
 	// default "dark". An explicit MapStyleURL always overrides the theme.
 	MapTheme       string
 	AllowedOrigins []string
-	AuthToken      string
 	TLSCertFile    string
 	TLSKeyFile     string
 	LogLevel       slog.Level
@@ -568,16 +535,14 @@ type Config struct {
 	CoverageSensors   []coverage.SensorConfig // WAYFINDER_COVERAGE_SENSOR_N_{LAT,LON,...}
 	CoverageRingColor string                  // WAYFINDER_COVERAGE_RING_COLOR, default #5B8DEF
 
-	// Multi-tenancy (Wayfinder 2.0, WF2-12, ADR 0005/0006). Multi-tenancy is
-	// enabled only when DBURL is set; otherwise the server runs as the legacy
-	// single-tenant ASD (ADR 0005 §7, degenerate case) with no database and no
-	// tenant middleware.
-	DBURL            string        // WAYFINDER_DB_URL (PostgreSQL DSN; empty = single-tenant)
-	AuthMode         auth.Mode     // WAYFINDER_AUTH_MODE (proxy|builtin|none, default none)
-	NoneSubject      string        // WAYFINDER_NONE_SUBJECT (ModeNone fixed subject, default "default")
+	// Multi-tenancy (Wayfinder 2.0, WF2-12, ADR 0005/0006/0014). Multi-tenant is
+	// the only mode: DBURL is mandatory and the start fails without it.
+	DBURL            string        // WAYFINDER_DB_URL (PostgreSQL DSN; required)
+	AuthMode         auth.Mode     // WAYFINDER_AUTH_MODE (proxy|builtin, default builtin)
 	SessionKey       []byte        // WAYFINDER_SESSION_KEY (ModeBuiltin HMAC key)
 	SessionCookie    string        // WAYFINDER_SESSION_COOKIE (default "wf_session")
-	SessionTTL       time.Duration // WAYFINDER_SESSION_TTL (Go duration, default 12h)
+	SessionTTL       time.Duration // WAYFINDER_SESSION_TTL (Go duration, sliding idle window, default 12h)
+	SessionMaxLife   time.Duration // WAYFINDER_SESSION_MAX_LIFETIME (absolute cap since first login; 0/unset = disabled, default off)
 	ImpersonationTTL time.Duration // WAYFINDER_IMPERSONATION_TTL (read-only impersonation grant lifetime, default 30m; ADR 0008)
 	OIDCIssuer       string        // WAYFINDER_OIDC_ISSUER (ModeProxy)
 	OIDCAudience     string        // WAYFINDER_OIDC_AUDIENCE (ModeProxy)
@@ -587,7 +552,6 @@ type Config struct {
 func (c Config) authConfig() auth.Config {
 	return auth.Config{
 		Mode:         c.AuthMode,
-		NoneSubject:  c.NoneSubject,
 		CookieName:   c.SessionCookie,
 		SessionKey:   c.SessionKey,
 		OIDCIssuer:   c.OIDCIssuer,
@@ -776,7 +740,6 @@ func loadConfig() Config {
 		}
 	}
 
-	cfg.AuthToken = os.Getenv("WAYFINDER_AUTH_TOKEN")
 	cfg.TLSCertFile = os.Getenv("WAYFINDER_TLS_CERT")
 	cfg.TLSKeyFile = os.Getenv("WAYFINDER_TLS_KEY")
 
@@ -827,10 +790,10 @@ func loadConfig() Config {
 		cfg.CoverageRingColor = "#5B8DEF"
 	}
 
-	// Multi-tenancy (WF2-12). Enabled only when WAYFINDER_DB_URL is set.
+	// Multi-tenancy (WF2-12, ADR 0014). WAYFINDER_DB_URL is mandatory; the start
+	// fails without it (setupTenancy).
 	cfg.DBURL = os.Getenv("WAYFINDER_DB_URL")
-	cfg.AuthMode, _ = auth.ParseMode(os.Getenv("WAYFINDER_AUTH_MODE")) // invalid → none
-	cfg.NoneSubject = os.Getenv("WAYFINDER_NONE_SUBJECT")
+	cfg.AuthMode, _ = auth.ParseMode(os.Getenv("WAYFINDER_AUTH_MODE")) // invalid/empty → builtin
 	if v := os.Getenv("WAYFINDER_SESSION_KEY"); v != "" {
 		cfg.SessionKey = []byte(v)
 	}
@@ -838,6 +801,14 @@ func loadConfig() Config {
 	if v := os.Getenv("WAYFINDER_SESSION_TTL"); v != "" {
 		if d, err := time.ParseDuration(v); err == nil && d > 0 {
 			cfg.SessionTTL = d
+		}
+	}
+	// Absolute session maximum since first login (opt-in; 0/unset = disabled). For
+	// a trial run set e.g. WAYFINDER_SESSION_MAX_LIFETIME=30m to watch it fire
+	// without waiting out the sliding TTL.
+	if v := os.Getenv("WAYFINDER_SESSION_MAX_LIFETIME"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			cfg.SessionMaxLife = d
 		}
 	}
 	if v := os.Getenv("WAYFINDER_IMPERSONATION_TTL"); v != "" {
@@ -900,16 +871,14 @@ func (c Config) feedPool() store.MulticastPool {
 	return p
 }
 
-// setupTenancy wires up multi-tenancy when WAYFINDER_DB_URL is configured: it
-// opens the database, applies migrations, builds the configured authenticator
-// and returns the tenant-context middleware. When no database is configured it
-// returns (nil, nil, nil) — the server then runs as the legacy single-tenant ASD
-// (ADR 0005 §7). The returned pool (if any) must be closed by the caller.
+// setupTenancy wires up multi-tenancy: it opens the database, applies
+// migrations, builds the configured authenticator and returns the
+// tenant-context middleware. WAYFINDER_DB_URL is mandatory (ADR 0014) — a
+// missing DSN fails the start rather than degrading to an unauthenticated,
+// unscoped ASD. The returned pool must be closed by the caller.
 func setupTenancy(ctx context.Context, cfg Config, logger *slog.Logger) (func(http.Handler) http.Handler, *pgxpool.Pool, error) {
 	if cfg.DBURL == "" {
-		logger.Warn("WAYFINDER_DB_URL not set — running as single-tenant ASD " +
-			"(no database, no tenant isolation); set it to enable multi-tenancy (ADR 0005)")
-		return nil, nil, nil
+		return nil, nil, fmt.Errorf("WAYFINDER_DB_URL is required: multi-tenant is the only mode (ADR 0014); set it to a PostgreSQL DSN")
 	}
 
 	pool, err := store.Open(ctx, cfg.DBURL)
@@ -925,11 +894,6 @@ func setupTenancy(ctx context.Context, cfg Config, logger *slog.Logger) (func(ht
 	if err != nil {
 		pool.Close()
 		return nil, nil, fmt.Errorf("build authenticator: %w", err)
-	}
-
-	if cfg.AuthMode == auth.ModeNone {
-		logger.Warn("WAYFINDER_AUTH_MODE=none — every request is the same fixed " +
-			"subject; relies on network isolation (ADR 0003)")
 	}
 
 	// Zero-touch onboarding (ONB-1, ADR 0011): in builtin mode, provision a default
@@ -1148,35 +1112,6 @@ func parseLogLevel(v string) (slog.Level, error) {
 	var level slog.Level
 	err := level.UnmarshalText([]byte(v))
 	return level, err
-}
-
-// authMiddleware enforces WAYFINDER_AUTH_TOKEN (if configured) on every
-// request: a bearer token via the Authorization header, or a "token" query
-// parameter (since browsers cannot set custom headers on the WebSocket
-// handshake). If no token is configured, requests pass through unchanged
-// (ADR 0003: this is a fail-closed *opt-in* on top of the primary
-// TLS/Auth-at-the-proxy mechanism).
-func authMiddleware(token string, next http.Handler) http.Handler {
-	if token == "" {
-		return next
-	}
-
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		provided := r.URL.Query().Get("token")
-		if provided == "" {
-			if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
-				provided = strings.TrimPrefix(auth, "Bearer ")
-			}
-		}
-
-		if subtle.ConstantTimeCompare([]byte(provided), []byte(token)) != 1 {
-			w.Header().Set("WWW-Authenticate", `Bearer realm="wayfinder"`)
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
-
-		next.ServeHTTP(w, r)
-	})
 }
 
 // mapConfigHandler serves the map center/zoom/style/theme as JSON for the

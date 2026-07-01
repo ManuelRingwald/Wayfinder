@@ -10,9 +10,9 @@
 
 ---
 
-## 🎯 Stand 2026-06-30
+## 🎯 Stand 2026-07-01
 
-- **Zuletzt aktualisiert:** 2026-06-30
+- **Zuletzt aktualisiert:** 2026-07-01
 - **Großes Bild:** Das **Prio-1-Go-to-Market-Fundament ist fertig** — ONB
   (Zero-Touch-Onboarding) ✅ und **ORCH (Auto-Orchestrierung) ✅ Kern komplett**
   (1…5c). „Feed zuweisen ⇒ passende Firefly-Instanz startet automatisch" ist
@@ -27,6 +27,49 @@
   ohne kritische Befunde, `broadcast.time_ms`-Fix, ROADMAP-Drift bereinigt) ·
   **Secret-Hardening** (AES-GCM-AAD-Bindung an `(feed_id, cred_ref)`).
   Cross-Repo: Firefly OpenSky **OAuth2 Client-Credentials** (ADR 0024).
+
+- **ADR 0014 — Multi-Tenant als einziger Betriebsmodus (diese Sitzung):**
+  Single-Tenant vollständig entfernt. **A** (ADR + Charta-Prinzip, PR #94 gemergt) ·
+  **B** (Code: `none`-Modus/No-DB-Fallback/nil-Scope raus, DB **+** Auth Pflicht,
+  unset `AUTH_MODE`→`builtin`, Legacy-`AUTH_TOKEN`-Gate weg) · **C** (ein
+  Multi-Tenant-Deployment-Stack: `orchestrated.yml`→`builtin`, Single-Tenant-
+  `docker-compose.yml` gelöscht, `DOCKER.md` aufgeräumt) · **D** (Doku:
+  INSTALLATION/TECHNICAL/Anforderungen NFR-SEC-004/BETRIEB; `E2E-ABNAHME.md` als
+  **EDLV-Zero-Touch-Runbook** neu). B–D in **PR #95**. Firefly-Doku quergeprüft —
+  keine Änderung nötig (CAT062-Wire-Vertrag unverändert).
+
+- **UI-getriebener E2E + Auth-UX-Lücken (diese Sitzung, PR #95):** UI-Audit über
+  beide Repos. Admin-Konfig ist bereits vollständig per UI (Mandant/Nutzer/Feed/
+  Quellen ADS-B+FLARM/Features/View/Abo). Geschlossene Lücken: **rollen-agnostischer
+  `GET /api/whoami`**, **Mandanten-Login + Auth-Gate auf der Karte (`/`)**,
+  **Logout** (Karte + Admin-Header), gemeinsamer `apiFetch`. `docs/E2E-ABNAHME.md`
+  als **UI-only-Ablaufplan** neu (genau ein Terminal-Befehl zum Start, Rest per UI,
+  Terminal nur zur Hinter-den-Kulissen-Prüfung: Firefly-Output Gruppe:Port +
+  ADS-B/FLARM). Firefly-Audit: **ADS-B (`adsb_opensky`) und FLARM (`flarm_aprs`)
+  beide produktionsreif** und live verdrahtet. Kundenseitige Landing-Login unter `/`:
+  durch WF2-12.4 erfüllt + WF2-12.6 Minimal-Branding (siehe unten).
+
+- **Sliding-Session + Login-Overlay (WF2-12.5, diese Sitzung, PR #95):** Der Lotse
+  wird bei **aktiver** Nutzung nie ausgeloggt (ASD offen + lebende WS = aktiv, nicht
+  Maus/Tastatur); eine verlassene Konsole läuft nach dem Idle-Fenster ab; ein Ablauf
+  ist **sichtbar** (Login-Overlay „Sitzung abgelaufen") statt stillem Freeze. Server:
+  `POST /api/session/renew`; Client: Renew alle 10 min + Tab-Fokus + WS-Reconnect;
+  WS-Close → `/api/whoami`-Probe → ggf. Overlay. Standardwerte: `WAYFINDER_SESSION_TTL`
+  = 12h (Sliding-Idle-Fenster), Renew-Takt 10 min. Doku: WF2-12.5, FR-UI-015, TECHNICAL.
+  Gates grün (go+205 vitest+build). Manueller Browser-Durchlauf im echten Stack offen.
+
+- **Landing-Branding + absolutes Sitzungs-Maximum (WF2-12.6, diese Sitzung, PR #95):**
+  Drei offene Punkte abgearbeitet. **(1)** Landing-Login unter `/` trägt jetzt
+  „Wayfinder — Anmelden" (Minimal-Branding, `10f1e04`; der Karten-Login-Gate selbst
+  war durch WF2-12.4 bereits erfüllt — kein funktionaler Bedarf, kein separater
+  `/login`-Pfad). **(2)** **Absolutes Sitzungs-Maximum** `WAYFINDER_SESSION_MAX_LIFETIME`
+  (opt-in, **Default aus**): eine Sitzung lebt — egal wie aktiv — nie länger als diese
+  Spanne ab Erst-Login. Signierter `iat`-Claim (rückwärtskompatibel, alte Cookies ohne
+  `iat` sanft verankert), Login+Renew kappen die Expiry auf `iat+MAX`, Renew `401` am
+  Maximum; Durchsetzung nur in Login/Renew (Impersonation-Grant unberührt).
+  Doku: WF2-12.6, FR-UI-016, TECHNICAL/INSTALLATION. Gates grün. **(3)** E2E auf
+  Linux-Docker-Host: Offline-Baseline hier grün; Live-Kern bleibt Host-Sache
+  (Checkliste beim Testen ins Runbook). **Probelauf:** `WAYFINDER_SESSION_MAX_LIFETIME=30m`.
 
 - **Nächste Schritte (für die frische Session — priorisiert):**
   1. **Realer E2E-Abnahme-Lauf** auf einem **Linux-Docker-Host** (hier nicht

@@ -28,9 +28,9 @@ const (
 // ScopeResolver resolves a connecting request to the tenant scope that filters
 // its track stream (WF2-21). It runs at the handshake, with the tenant Identity
 // already in the request context (the tenant middleware gates /ws). Returning an
-// error rejects the connection fail-closed; returning a nil *broadcast.Scope
-// means unscoped (single-tenant: receives every feed). A nil resolver disables
-// scoping entirely (single-tenant deployments).
+// error rejects the connection fail-closed. Production always wires a resolver
+// (ADR 0014); a nil resolver leaves the client's scope nil, which the broadcaster
+// treats fail-closed (the client receives no feed), never as a passthrough.
 type ScopeResolver func(r *http.Request) (*broadcast.Scope, error)
 
 // Handler is an HTTP handler for WebSocket connections.
@@ -45,8 +45,9 @@ type Handler struct {
 // New creates a new WebSocket handler. allowedOrigins is an additional
 // allowlist of origins (scheme://host[:port]) permitted to open a WebSocket
 // connection, beyond same-origin requests, which are always allowed (ADR
-// 0003: fail-closed origin check on /ws). scopeResolver (may be nil) resolves the
-// per-tenant track scope at connect (WF2-21); nil means unscoped.
+// 0003: fail-closed origin check on /ws). scopeResolver resolves the per-tenant
+// track scope at connect (WF2-21); production always passes one (ADR 0014). A nil
+// resolver leaves the scope nil, which the broadcaster treats fail-closed.
 func New(broadcaster *broadcast.Broadcaster, logger *slog.Logger, allowedOrigins []string, scopeResolver ScopeResolver) *Handler {
 	h := &Handler{
 		broadcaster:    broadcaster,

@@ -3,15 +3,15 @@
 // subject to a user and tenant, and enforcing it as fail-closed middleware,
 // lives in WF2-12.
 //
-// Three modes (WAYFINDER_AUTH_MODE), mirroring the proxy-primary pattern of
-// ADR 0003:
+// Two modes (WAYFINDER_AUTH_MODE), mirroring the proxy-primary pattern of
+// ADR 0003. Multi-tenant is the only supported mode (ADR 0014): authentication
+// is always on — there is no unauthenticated "none" mode.
 //
 //   - proxy   (primary): an OIDC reverse proxy authenticates and forwards a
 //     trusted token; Wayfinder validates it (WF2-11.2).
-//   - builtin (optional): Wayfinder authenticates users itself via argon2id
+//   - builtin (default): Wayfinder authenticates users itself via argon2id
 //     password hashes and a signed session cookie (this file + password/session).
-//   - none    (degenerate): single-tenant fallback with a fixed subject and a
-//     loud warning — not multi-tenant-secured.
+//     The default when WAYFINDER_AUTH_MODE is unset (zero-touch, ADR 0011).
 package auth
 
 import (
@@ -30,22 +30,20 @@ type Mode string
 const (
 	ModeProxy   Mode = "proxy"
 	ModeBuiltin Mode = "builtin"
-	ModeNone    Mode = "none"
 )
 
 // ParseMode parses WAYFINDER_AUTH_MODE. An empty or unrecognised value falls
-// back to ModeNone (the safe-to-start, single-tenant default); ok reports
-// whether the input was a recognised mode, so the caller can warn on fallback.
+// back to ModeBuiltin (the zero-touch multi-tenant default, ADR 0014); ok
+// reports whether the input was a recognised mode, so the caller can warn on
+// fallback. There is no unauthenticated mode — authentication is always on.
 func ParseMode(s string) (mode Mode, ok bool) {
 	switch Mode(strings.ToLower(strings.TrimSpace(s))) {
 	case ModeProxy:
 		return ModeProxy, true
 	case ModeBuiltin:
 		return ModeBuiltin, true
-	case ModeNone:
-		return ModeNone, true
 	default:
-		return ModeNone, false
+		return ModeBuiltin, false
 	}
 }
 

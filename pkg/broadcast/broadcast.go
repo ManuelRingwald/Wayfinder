@@ -24,8 +24,8 @@ type Message struct {
 // registry — combining CAT065 heartbeat liveness and CAT063 sensor counts.
 // Routed only to clients subscribed to FeedID (WF2-21 isolation).
 type FeedStatusMessage struct {
-	// FeedID identifies which feed this status belongs to. 0 = single-tenant /
-	// unscoped fallback (routed to all clients).
+	// FeedID identifies which feed this status belongs to. 0 = the unassigned
+	// ENV fallback feed, routed to all clients (no real catalogue feed uses 0).
 	FeedID int64 `json:"feed_id"`
 	// Color is the health indicator: "green" (operational), "yellow" (degraded:
 	// heartbeat fresh but 0 < sensors_active < sensors_total), "red" (stale or
@@ -42,7 +42,7 @@ type FeedStatusMessage struct {
 // TrackBatch is a set of decoded tracks attributed to the feed they arrived on.
 // FeedID is stamped by the receiver (WF2-20) and threaded onto every resulting
 // TrackMessage, so the scoped fan-out (WF2-21) can filter per tenant
-// subscription. FeedID 0 is the single-tenant / single-feed fallback.
+// subscription. FeedID 0 is the unassigned ENV fallback feed (no catalogue feed).
 type TrackBatch struct {
 	FeedID int64
 	Tracks []cat062.DecodedTrack
@@ -51,12 +51,13 @@ type TrackBatch struct {
 // Scope decides which tracks a client may receive (WF2-21 — the cross-tenant
 // isolation boundary). In WF2-21.1 it is feed-level: a client sees a track only
 // if the track's feed is in the allowed set, resolved from the tenant's
-// subscriptions at connect time. A nil Scope is unscoped — single-tenant, sees
-// every feed. View filters (AOI/FL/category) layer on in WF2-21.2.
+// subscriptions at connect time. Every client is scoped (ADR 0014): a nil Scope
+// is fail-closed (sees nothing), never a passthrough. View filters
+// (AOI/FL/category) layer on in WF2-21.2.
 type Scope struct {
 	// TenantID is the tenant this scope belongs to, used only for per-tenant
-	// metrics labelling (WF2-23.2). 0 means single-tenant / unattributed. It does
-	// not affect isolation (that is the feed allow-set + view filter).
+	// metrics labelling (WF2-23.2). 0 means unattributed. It does not affect
+	// isolation (that is the feed allow-set + view filter).
 	TenantID int64
 	// UserID is the user behind the connection. Like TenantID it does not affect
 	// isolation; it is carried so a live re-scope (WF2-33) can re-resolve this
@@ -102,10 +103,12 @@ func (s *Scope) filterView(msg Message) Message {
 }
 
 // AllowsFeed reports whether a client with this scope may receive tracks from the
-// given feed. A nil scope (single-tenant) allows every feed.
+// given feed. Every client is scoped (ADR 0014): production never registers a nil
+// scope. A nil scope is therefore treated fail-closed — it allows no feed — so a
+// stray unscoped client never sees the whole picture rather than the reverse.
 func (s *Scope) AllowsFeed(feedID int64) bool {
 	if s == nil {
-		return true
+		return false
 	}
 	return s.feeds[feedID]
 }
@@ -154,8 +157,8 @@ func (v *ViewFilter) admits(t TrackMessage) bool {
 
 // TrackMessage represents a single track in JSON format.
 type TrackMessage struct {
-	// FeedID is the catalogue feed this track arrived on (WF2-20). Omitted in the
-	// single-tenant fallback (FeedID 0); set once feeds are catalogued (WF2-20.2).
+	// FeedID is the catalogue feed this track arrived on (WF2-20). Omitted for the
+	// unassigned ENV fallback feed (FeedID 0); set for every catalogue feed (WF2-20.2).
 	FeedID    int64   `json:"feed_id,omitempty"`
 	TrackNum  uint16  `json:"track_num"`
 	SAC       uint8   `json:"sac"`
@@ -228,8 +231,8 @@ type TenantMetric struct {
 }
 
 // Client represents a connected WebSocket client. scope decides which feeds'
-// tracks it may receive and the view filter applied within them (nil = unscoped
-// / single-tenant).
+// tracks it may receive and the view filter applied within them (always non-nil
+// in production, ADR 0014; a nil scope is fail-closed).
 type Client struct {
 	send chan Message
 	// scope is the mutable isolation/view filter. It is read and written ONLY on
@@ -265,7 +268,8 @@ func (b *Broadcaster) TracksChan() chan<- TrackBatch {
 }
 
 // RegisterClient adds a new client to receive broadcasts, filtered by scope.
-// A nil scope is unscoped (single-tenant: receives every feed).
+// Production always passes a non-nil scope (ADR 0014); a nil scope is fail-closed
+// (AllowsFeed denies every feed), so such a client receives nothing.
 func (b *Broadcaster) RegisterClient(sendChan chan Message, scope *Scope) *Client {
 	c := &Client{send: sendChan, scope: scope}
 	if scope != nil {
@@ -317,8 +321,7 @@ type ClientRef struct {
 // the first phase of a live re-scope (WF2-33): it reads only the immutable
 // identity fields (never the mutable scope), so it is safe to call concurrently
 // with the Run loop. The caller then resolves fresh scopes *off* the hot path and
-// applies them via ApplyScopes. tenant 0 (single-tenant / unattributed) is never
-// re-scoped.
+// applies them via ApplyScopes. tenant 0 (unattributed) is never re-scoped.
 func (b *Broadcaster) ClientsForTenant(tenantID int64) []ClientRef {
 	if tenantID == 0 {
 		return nil
@@ -385,8 +388,8 @@ func (b *Broadcaster) applyScopes(scopes map[*Client]*Scope) {
 }
 
 // hasFeedRevoke reports whether transitioning from old to next removes any feed
-// that the old scope permitted. A nil old scope (unscoped / single-tenant) has
-// no feed allow-set, so nothing can be revoked.
+// that the old scope permitted. A nil old scope has no feed allow-set, so
+// nothing can be revoked.
 func hasFeedRevoke(old, next *Scope) bool {
 	if old == nil {
 		return false
@@ -518,7 +521,7 @@ func (b *Broadcaster) broadcastTracks(batch TrackBatch) {
 }
 
 // tenantConnectedDelta adjusts a tenant's connected-client gauge (WF2-23.2).
-// No-op for unscoped (single-tenant) clients.
+// No-op for an unattributed client (nil scope or TenantID 0).
 func (b *Broadcaster) tenantConnectedDelta(c *Client, delta int64) {
 	if c.scope == nil || c.scope.TenantID == 0 {
 		return
@@ -564,8 +567,8 @@ func (b *Broadcaster) TenantMetrics() []TenantMetric {
 
 // broadcast sends a message to connected clients. When the message carries a
 // FeedStatusMessage with FeedID != 0, only clients subscribed to that feed
-// receive it (per-feed status scoping, WF2-21 isolation). FeedID == 0 goes to
-// all clients (single-tenant / unscoped fallback).
+// receive it (per-feed status scoping, WF2-21 isolation). FeedID == 0 (the
+// unassigned ENV fallback feed) goes to all clients.
 func (b *Broadcaster) broadcast(msg Message) {
 	b.logger.Debug("broadcasting", slog.Int("tracks", len(msg.Tracks)), slog.Int("clients", b.clientCount()))
 

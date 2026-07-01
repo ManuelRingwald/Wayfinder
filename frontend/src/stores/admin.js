@@ -1,30 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-
-// apiFetch wraps fetch for the admin API: it always sends/expects JSON and
-// normalises the result into { ok, status, data, error } so callers never juggle
-// response parsing or status branching. A non-2xx with an {"error": "..."} body
-// surfaces that message; otherwise a generic "HTTP <status>" is used.
-async function apiFetch(path, options = {}) {
-  let res
-  try {
-    res = await fetch(path, {
-      headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
-      ...options,
-    })
-  } catch (e) {
-    return { ok: false, status: 0, data: null, error: `network error: ${e?.message ?? e}` }
-  }
-  let data = null
-  const text = await res.text()
-  if (text) {
-    try { data = JSON.parse(text) } catch { data = null }
-  }
-  if (!res.ok) {
-    return { ok: false, status: res.status, data, error: (data && data.error) || `HTTP ${res.status}` }
-  }
-  return { ok: true, status: res.status, data, error: null }
-}
+import { apiFetch } from '@/api.js'
 
 // useAdminStore backs the WF2-32 admin dashboard. It consumes the WF2-31 admin
 // REST API; the role gating it exposes (isAdmin) is cosmetic — the server
@@ -83,6 +59,16 @@ export const useAdminStore = defineStore('admin', () => {
       method: 'POST',
       body: JSON.stringify({ subject, password }),
     })
+  }
+
+  // logout clears the server session (wf_session cookie) and resets the store to
+  // the unauthenticated state, so the dashboard falls back to its login form.
+  async function logout() {
+    const r = await apiFetch('/api/logout', { method: 'POST' })
+    identity.value = null
+    accessError.value = null
+    accessStatus.value = 401
+    return r
   }
 
   async function loadView() {
@@ -536,7 +522,7 @@ export const useAdminStore = defineStore('admin', () => {
   return {
     identity, accessError, accessStatus, view, feeds, subscriptions, tenants, overview, feedsHealth, error, notice,
     role, isAdmin, isAuthorized, mustChangePassword, features, hasFeature,
-    loadIdentity, login, loadView, saveView, loadFeeds, loadSubscriptions,
+    loadIdentity, login, logout, loadView, saveView, loadFeeds, loadSubscriptions,
     loadTenants, loadTenantSubscriptions, grant, revoke,
     loadOverview, loadFeedsHealth, loadTenantView, saveTenantView, loadTenantEntitlements, setTenantEntitlement,
     loadTenantUsers, createUser, setUserStatus, deleteUser, setUserPassword, setTenantStatus,
