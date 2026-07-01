@@ -201,7 +201,7 @@ immer aktiv — ADR 0014); statische Frontend-Routen werden ausgeliefert.
 | `/api/airspace` | GET | Luftraumstrukturen (GeoJSON, best-effort). **ONB-6 (ADR 0011):** hinter der Tenant-Middleware; liefert den **Cache des Request-Mandanten** (eigener Schlüssel/AOI, Fallback auf den globalen Cache) |
 | `/api/navaids` | GET | VOR/NDB-Beacons (GeoJSON, best-effort). **ONB-6:** mandanten-aufgelöst wie `/api/airspace` |
 | `/api/waypoints` | GET | Wegpunkte (GeoJSON, best-effort). **ONB-6:** mandanten-aufgelöst wie `/api/airspace` |
-| `/api/whoami` | GET | **WF2-12.4:** rollen-agnostische Identitäts-Probe (`{subject, tenant_id, user_id, role, must_change_password, features}`); hinter der Tenant-Middleware, **nicht** `requireAdmin` — die ASD-Karte entscheidet damit Login-Schirm vs. Live-Bild; `401` ohne Sitzung |
+| `/api/whoami` | GET | **WF2-12.4:** rollen-agnostische Identitäts-Probe (`{subject, tenant_id, user_id, role, must_change_password, features, sensor_classes}`); hinter der Tenant-Middleware, **nicht** `requireAdmin` — die ASD-Karte entscheidet damit Login-Schirm vs. Live-Bild und gated Layer/Legende (Issues #106/#107); `401` ohne Sitzung. `sensor_classes` ist die Vereinigung der Sensor-Klassen über die abonnierten Feeds des Mandanten. |
 | `/api/session/renew` | POST | **WF2-12.5:** Sliding-Session — mintet das Session-Cookie mit frischer TTL neu (builtin); hinter der Tenant-Middleware, `401` ohne Sitzung. Die Karte ruft es periodisch (alle 10 min) + bei WS-Reconnect + Tab-Fokus auf, damit eine aktive Konsole nie ausgeloggt wird. **WF2-12.6:** bewahrt den Erst-Login-Zeitpunkt und antwortet `401` (kein neues Cookie), sobald das absolute Maximum `WAYFINDER_SESSION_MAX_LIFETIME` überschritten ist |
 | `/api/admin/whoami` | GET | Rollen-Probe + **effektive Feature-Flags** (`features`) als JSON; enthält seit ONB-1 `must_change_password`; rollen-gegated (WF2-32/50) |
 | `/api/admin/me` | GET | **ONB-1 (ADR 0011):** eigenes Konto (`{user_id, tenant_id, subject, role, must_change_password}`); **rollen-unabhängig** (kein `requireAdmin`) |
@@ -367,10 +367,20 @@ Keys werden fail-closed verweigert und über den `unknown_key`-Zähler sichtbar.
 | `vor_ndb` | VOR/NDB-Navaid-Overlay — ASD-003 | deny |
 | `waypoints` | Wegpunkt-Overlay — ASD-003 | deny |
 
-**UI-Gate-Formel (rein kosmetisch, keine Serverenforcement auf Aero-Daten):**
-`!isAuthorized || hasFeature(key)` — Nicht-Admin-Nutzer (403 auf `whoami`,
-`isAuthorized = false`) sehen alle Layer-Steuerelemente; Admin-Nutzer sehen nur,
-was ihr Mandant freigeschaltet hat.
+**UI-Gate der ASD-Karte (rein kosmetisch, kein Serverenforcement auf Aero-Daten;
+Issue #106).** Das Layer-/Filter-Panel (`LayerFilterContent.vue`) gated über die
+**rollen-agnostische** Session-Identität (`GET /api/whoami` → `features`), die auch
+für einen reinen Mandanten-Nutzer (Lotse) gefüllt ist. Formel:
+`!gateReady || session.hasFeature(key)` mit
+`gateReady = (session authenticated && !isAdmin)` — d. h. beim Laden/anonym oder für
+einen Admin-Betrachter (kein Mandanten-Scope) werden **alle** Steuerelemente gezeigt
+(fail-open), sonst nur die vom Mandanten freigeschalteten. (Zuvor gated die Karte über
+den admin-gegateten `whoami`, der beim Lotsen leer blieb → es wurde alles angezeigt.)
+
+**Spurherkunft-Legende (dynamisch, Issue #107).** Die Legende zeigt nur die
+Herkünfte, die die abonnierten Feeds liefern — abgeleitet aus
+`whoami.sensor_classes`. Bei leerer Menge (Laden/Admin/kein Feed) fällt sie auf die
+volle Legende zurück (nie leer).
 
 ### 5.6 Beispiel-Ausgabe
 
@@ -714,8 +724,18 @@ Control-Plane-Binary getrennt vom Server; `docker-compose.orchestrated.yml` fäh
 `scripts/e2e-orchestrated.sh` seedet Tenant+Feed+Subscription direkt in Postgres und
 assertet Spawn (Label `wayfinder.feed_id`), Container-Env, ASD-Empfang
 (`wayfinder_cat062_tracks_received_total`) und Orphan-Cleanup (Modi `scene` offline
-/ `opensky-anon`). Abnahme-Runbook: `docs/E2E-ABNAHME.md` (8 Prüfpunkte; die
-credential-bezogenen 3/4/6/7 als manueller authentifizierter Lauf).
+/ `opensky-anon`). Abnahme-Runbook: `docs/E2E-ABNAHME.md` (die credential-bezogenen
+Schritte als manueller authentifizierter Lauf).
+
+**Firefly-Container-Env (`dockerbackend.fireflyEnv`, Issue #104).** Der Orchestrator
+setzt der je Feed gespawnten Firefly-Instanz **immer** `FIREFLY_CAT062_ENABLED=true`
+(Fireflys Default ist *aus* — sonst läuft der Tracker, sendet aber nichts) und einen
+**pro Feed eindeutigen** `FIREFLY_PORT` (Basis `18080` + Feed-ID, außerhalb
+8080/8081/5432). Grund: Die Instanz teilt sich per `network_mode: host` den
+Port-Raum; Fireflys HTTP-Server bindet sonst auf `8080` — dem Port des
+Wayfinder-Probe-Servers — und stürzt mit *address already in use* in eine
+Crash-Loop. Fireflys HTTP/WS wird in dieser Topologie nicht konsumiert (Wayfinder
+liest den Multicast); der Port muss nur binden.
 
 **Stand:** Reconciler-Kern + Store-Soll + getrenntes Binary + Docker-Adapter +
 verschlüsselter Secret-Speicher/-Resolver + write-only Secret-API + änderungs-

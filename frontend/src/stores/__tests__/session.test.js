@@ -40,6 +40,35 @@ describe('session store — ASD map auth gate', () => {
     expect(s.isAdmin).toBe(false)
   })
 
+  it('exposes tenant features and sensor classes from whoami (Issues #106/#107)', async () => {
+    installFetch({
+      'GET /api/whoami': {
+        status: 200,
+        body: {
+          subject: 'lotse', tenant_id: 2, role: 'user',
+          features: { airspaces: true, range_rings: false },
+          sensor_classes: ['ADS-B', 'FLARM'],
+        },
+      },
+    })
+    const s = useSessionStore()
+    await s.probe()
+    expect(s.hasFeature('airspaces')).toBe(true)
+    expect(s.hasFeature('range_rings')).toBe(false)
+    expect(s.hasFeature('waypoints')).toBe(false) // absent ⇒ denied
+    expect(s.sensorClasses).toEqual(['ADS-B', 'FLARM'])
+  })
+
+  it('defaults features/sensorClasses to empty when whoami omits them', async () => {
+    installFetch({
+      'GET /api/whoami': { status: 200, body: { subject: 'lotse', tenant_id: 2, role: 'user' } },
+    })
+    const s = useSessionStore()
+    await s.probe()
+    expect(s.hasFeature('airspaces')).toBe(false)
+    expect(s.sensorClasses).toEqual([])
+  })
+
   it('probe falls closed to anon on 401 (no identity ⇒ login screen, never a map)', async () => {
     installFetch({ 'GET /api/whoami': { status: 401, body: { error: 'unauthorized' } } })
     const s = useSessionStore()

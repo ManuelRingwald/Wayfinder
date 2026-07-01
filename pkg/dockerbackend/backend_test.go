@@ -240,6 +240,12 @@ func TestFireflyEnvMapsSpec(t *testing.T) {
 		"FIREFLY_CAT062_PORT=8600":        false,
 		"FIREFLY_COVERAGE_BBOX=48,7,50,9": false,
 		"FIREFLY_SCENE=demo":              false,
+		// The multicast sender must be explicitly enabled — Firefly's default is off
+		// (Issue #104). Without it the spawned tracker never emits the feed.
+		"FIREFLY_CAT062_ENABLED=true": false,
+		// A per-feed HTTP port clear of Wayfinder's 8080/8081, so the host-networked
+		// tracker can bind (feed 1 → base+1 = 18081).
+		"FIREFLY_PORT=18081": false,
 	}
 	for _, e := range env {
 		if _, ok := want[e]; ok {
@@ -252,10 +258,31 @@ func TestFireflyEnvMapsSpec(t *testing.T) {
 		}
 	}
 
-	// No coverage and no scene → only group/port, deterministic.
+	// No coverage and no scene → group/port + the always-on ENABLED and per-feed
+	// FIREFLY_PORT, deterministic.
 	b2 := New(newFakeClient(), "firefly:test", "host", "", discardLogger())
 	env2 := b2.fireflyEnv(instance.Spec{FeedID: 1, Group: "239.0.0.5", Port: 8600})
-	if len(env2) != 2 {
-		t.Fatalf("env without coverage/scene = %v, want 2 entries", env2)
+	if len(env2) != 4 {
+		t.Fatalf("env without coverage/scene = %v, want 4 entries", env2)
+	}
+}
+
+// TestFireflyHTTPPortIsCollisionFree pins the Issue #104 invariants: the spawned
+// Firefly's HTTP port is distinct per feed and never clashes with Wayfinder's own
+// ports (8081 UI / 8080 probe) — host networking makes that port process-global.
+func TestFireflyHTTPPortIsCollisionFree(t *testing.T) {
+	seen := map[int]int64{}
+	for _, id := range []int64{1, 2, 3, 42, 254, 18000, 39999, 40000} {
+		p := fireflyHTTPPort(id)
+		if p < 1024 || p > 65535 {
+			t.Errorf("feed %d → port %d out of range", id, p)
+		}
+		if p == 8080 || p == 8081 {
+			t.Errorf("feed %d → port %d collides with a Wayfinder port", id, p)
+		}
+		if prev, dup := seen[p]; dup {
+			t.Errorf("feed %d and feed %d map to the same port %d", prev, id, p)
+		}
+		seen[p] = id
 	}
 }

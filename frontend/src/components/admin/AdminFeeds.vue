@@ -110,10 +110,13 @@
             class="mb-2"
           />
         </div>
+        <!-- Issue #102: the sensor mix is derived automatically from the feed's
+             sources when they are saved (under „Quellen“). This field is only an
+             optional initial hint before sources exist and is overwritten on save. -->
         <v-text-field
           v-model="form.sensorMix"
           label="Sensor-Mix (optional)"
-          hint="Kommagetrennt, z. B. PSR,SSR,ADS-B — gegen das Vokabular geprüft."
+          hint="Wird beim Speichern der Quellen automatisch aus deren Typen gesetzt — hier meist leer lassen."
           persistent-hint
         />
       </v-card-text>

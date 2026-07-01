@@ -92,7 +92,11 @@ function toggleFullscreen() {
 <style scoped>
 .map-controls {
   position: absolute;
-  top: calc(var(--v-layout-top, 0px) + 12px);
+  /* Issue #101: the account chip (top 12px) and the feed-status chip (top 50px)
+     float at the same right edge with a higher z-index, so anchoring the controls
+     at the top overlapped — and covered — the zoom and recenter buttons. Start the
+     control stack below both chips so nothing overlaps. */
+  top: calc(var(--v-layout-top, 0px) + 88px);
   right: 12px;
   z-index: 10;
   display: flex;

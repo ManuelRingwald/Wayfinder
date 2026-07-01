@@ -4,7 +4,10 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"sort"
 	"strings"
+
+	"github.com/manuelringwald/wayfinder/pkg/sensorclass"
 )
 
 // SourceType is a generic, Firefly-agnostic class of live input a feed's tracker
@@ -35,6 +38,37 @@ var knownSourceTypes = map[SourceType]bool{
 
 func (t SourceType) isAreaBounded() bool {
 	return t == SourceADSBOpenSky || t == SourceFLARMAPRS
+}
+
+// sensorClassBySourceType maps each live source kind to the surveillance sensor
+// class it contributes, so a feed's sensor mix (feed metadata, pkg/sensorclass)
+// can be DERIVED from its configured sources instead of hand-maintained
+// (Issue #102). radar_asterix is treated as secondary surveillance (SSR/Mode S):
+// CAT048 target reports carry a SAC/SIC identity. The mapping is intentionally
+// coarse — the sensor mix is informational metadata, not a rendering input.
+var sensorClassBySourceType = map[SourceType]sensorclass.Class{
+	SourceADSBOpenSky:  sensorclass.ADSB,
+	SourceFLARMAPRS:    sensorclass.FLARM,
+	SourceRadarASTERIX: sensorclass.SSR,
+}
+
+// DerivedSensorMix returns the feed's sensor mix implied by its configured source
+// types — deduplicated and sorted for a stable value. Once a feed has sources it
+// is the single source of truth for the feed's sensor metadata (Issue #102),
+// replacing the manually entered mix. An empty source list yields an empty mix.
+func (c SourceConfig) DerivedSensorMix() []string {
+	seen := map[sensorclass.Class]bool{}
+	for _, s := range c {
+		if cl, ok := sensorClassBySourceType[s.Type]; ok {
+			seen[cl] = true
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for cl := range seen {
+		out = append(out, string(cl))
+	}
+	sort.Strings(out)
+	return out
 }
 
 // Source is one configured live input for a feed's tracker. The fields that
@@ -233,8 +267,15 @@ func (r *FeedRepo) SetSourceConfig(ctx context.Context, feedID int64, sources So
 		}
 		covParam = s
 	}
-	const q = `UPDATE feeds SET source_config = $2::jsonb, coverage_bbox = $3::jsonb WHERE id = $1`
-	tag, err := r.db.Exec(ctx, q, feedID, srcJSON, covParam)
+	// The sensor mix is derived from the source types (Issue #102) and written in
+	// the same statement, so a feed's sensor metadata always mirrors its actual
+	// sources — no separate, hand-maintained field to drift out of sync.
+	mixJSON, err := toJSONB(sources.DerivedSensorMix())
+	if err != nil {
+		return wrap("set feed source config: marshal sensor mix", err)
+	}
+	const q = `UPDATE feeds SET source_config = $2::jsonb, coverage_bbox = $3::jsonb, sensor_mix = $4::jsonb WHERE id = $1`
+	tag, err := r.db.Exec(ctx, q, feedID, srcJSON, covParam, mixJSON)
 	if err != nil {
 		return wrap("set feed source config", err)
 	}
