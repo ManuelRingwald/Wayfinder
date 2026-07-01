@@ -181,6 +181,15 @@ func main() {
 	}
 	defer dbPool.Close()
 
+	// Server-side session registry (AP7, ADR 0009 §5). Built once and shared by the
+	// login handlers, the admin revocation hooks, the janitor and the /metrics
+	// gauge. Only in builtin mode — a proxy session lives in the upstream OIDC
+	// proxy, not in this registry — so it stays nil under proxy auth.
+	var sessionRepo *store.SessionRepo
+	if cfg.AuthMode == auth.ModeBuiltin {
+		sessionRepo = store.NewSessionRepo(dbPool)
+	}
+
 	// Resolve the feeds to receive from the DB catalogue (multi-feed, WF2-20.2).
 	// An empty catalogue falls back to the single ENV-configured feed so a fresh
 	// instance always has something to receive (resolveFeeds).
@@ -315,7 +324,7 @@ func main() {
 	// OpenAIP fetch counters (ONB-6): sum across every per-tenant Service plus the
 	// global one so the process-wide counter stays meaningful as tenants come and go.
 	aeroCounts := func() (int64, int64) { return aeroRegistry.FetchSuccessCount(), aeroRegistry.FetchFailureCount() }
-	go startProbeServer(logger, &blockCount, &trackCount, &tracksCurrent, &heartbeatCount, broadcaster, decodeErrors, feedRegistry, aeroService, aeroCounts, &lastError, featSvc)
+	go startProbeServer(logger, &blockCount, &trackCount, &tracksCurrent, &heartbeatCount, broadcaster, decodeErrors, feedRegistry, aeroService, aeroCounts, &lastError, featSvc, sessionRepo)
 
 	// Start WebSocket server.
 	mux := http.NewServeMux()
@@ -369,9 +378,11 @@ func main() {
 			Secure:      cfg.TLSCertFile != "" && cfg.TLSKeyFile != "",
 			// Registry-backed sessions (AP7, ADR 0009 §5): login opens a session with
 			// the concurrent-session limit enforced, logout deletes it, renew slides it.
-			Sessions:            store.NewSessionRepo(dbPool),
+			Sessions:            sessionRepo,
 			SessionLimitDefault: cfg.SessionLimitDefault,
 			SessionLimitPolicy:  cfg.SessionLimitPolicy,
+			OnSessionOpened:     func() { sessionsOpened.Add(1) },
+			OnLoginRejected:     func() { sessionsRejected.Add(1) },
 		}
 		users := store.NewUserRepo(dbPool)
 		creds := store.NewCredentialRepo(dbPool)
@@ -383,7 +394,13 @@ func main() {
 		// unlike login/logout. The ASD calls it periodically while the picture is
 		// open so an active console never logs out; an abandoned one still lapses.
 		mux.Handle("POST /api/session/renew", tenantMW(tenant.RenewHandler(loginCfg)))
-		logger.Info("builtin login enabled", slog.String("path", "/api/login"))
+		// Reap expired session rows in the background (expiry is also enforced at
+		// resolve time; this only stops dead rows accumulating). Bound to the shutdown
+		// context so it stops cleanly.
+		go runSessionJanitor(ctx, sessionRepo, sessionJanitorInterval, logger)
+		logger.Info("builtin login enabled", slog.String("path", "/api/login"),
+			slog.Int("session_limit_default", cfg.SessionLimitDefault),
+			slog.String("session_limit_policy", string(loginCfg.SessionLimitPolicy)))
 	}
 
 	// Admin surface (WF2-13/31/32): the tenant-scoped admin REST API is role-gated
@@ -421,6 +438,11 @@ func main() {
 	feedRepo := store.NewFeedRepo(dbPool).WithMulticastPool(cfg.feedPool())
 	adminAPI := adminapi.New(viewRepo, subRepo, feedRepo, store.NewTenantRepo(dbPool),
 		store.NewUserRepo(dbPool), store.NewCredentialRepo(dbPool), featSvc, feedRegistry, feedLife, aeroLife, secretSvc, logger, rescope)
+	// AP7: pausing an access or tenant revokes its live sessions immediately. Only
+	// in builtin mode (registry present); the counting adapter feeds the metric.
+	if sessionRepo != nil {
+		adminAPI = adminAPI.WithSessionRevoker(countingRevoker{repo: sessionRepo})
+	}
 	mux.Handle("/api/admin/", tenantMW(requireAdmin(adminAPI)))
 
 	// Role-agnostic identity probe for the ASD map (any authenticated principal,
@@ -1203,7 +1225,7 @@ func coverageRingsHandler(cfg Config) http.HandlerFunc {
 }
 
 // startProbeServer starts an HTTP server for health, readiness and metrics.
-func startProbeServer(logger *slog.Logger, blockCount, trackCount, tracksCurrent, heartbeatCount *atomic.Int64, broadcaster *broadcast.Broadcaster, decodeErrors func() int64, feedRegistry *health.Registry, aeroService *aeronautical.Service, aeroCounts func() (success, failure int64), lastError *atomic.Pointer[string], featSvc *feature.Service) {
+func startProbeServer(logger *slog.Logger, blockCount, trackCount, tracksCurrent, heartbeatCount *atomic.Int64, broadcaster *broadcast.Broadcaster, decodeErrors func() int64, feedRegistry *health.Registry, aeroService *aeronautical.Service, aeroCounts func() (success, failure int64), lastError *atomic.Pointer[string], featSvc *feature.Service, sessionRepo *store.SessionRepo) {
 	mux := http.NewServeMux()
 
 	// /health — liveness check (always ready unless startup failed).
@@ -1248,11 +1270,26 @@ func startProbeServer(logger *slog.Logger, blockCount, trackCount, tracksCurrent
 			metrics.Gauge("wayfinder_ws_clients_connected", "Number of currently connected WebSocket clients.", int64(broadcaster.ClientCount())),
 			metrics.Counter("wayfinder_ws_clients_evicted_total", "Total number of WebSocket clients evicted due to a full send channel.", broadcaster.EvictedCount()),
 			metrics.Counter("wayfinder_impersonation_sessions_total", "Total admin read-only impersonation /ws sessions started (ADR 0008). Excluded from the per-tenant series.", impersonationSessions.Load()),
+			metrics.Counter("wayfinder_sessions_opened_total", "Total login sessions opened in the server-side registry (AP7).", sessionsOpened.Load()),
+			metrics.Counter("wayfinder_session_logins_rejected_total", "Total logins refused by the concurrent-session limit under the reject policy (AP7).", sessionsRejected.Load()),
+			metrics.Counter("wayfinder_sessions_revoked_total", "Total sessions revoked by an access/tenant pause or delete (AP7).", sessionsRevoked.Load()),
+			metrics.Counter("wayfinder_sessions_expired_swept_total", "Total expired session rows removed by the janitor (AP7).", sessionsExpiredSwept.Load()),
 			metrics.Counter("wayfinder_cat065_heartbeats_received_total", "Total number of CAT065 SDPS-status heartbeats received.", heartbeatCount.Load()),
 			metrics.Gauge("wayfinder_feed_stale", "1 if the CAT065 heartbeat feed is currently stale, else 0.", feedStale),
 			metrics.Counter("wayfinder_openaip_fetch_success_total", "Total successful OpenAIP fetches (per kind), summed across the global and all per-tenant caches.", aeroSuccess),
 			metrics.Counter("wayfinder_openaip_fetch_failures_total", "Total failed OpenAIP fetches (per kind), summed across the global and all per-tenant caches.", aeroFailure),
 			metrics.Gauge("wayfinder_openaip_cache_age_seconds", "Seconds since the last successful OpenAIP fetch of the global fallback cache, or -1 if never.", aeroService.CacheAgeSeconds(time.Now())),
+		}
+		// Active-session gauge (AP7): a live count from the registry at scrape time,
+		// under a short timeout so a slow database cannot wedge the scrape. Skipped
+		// under proxy auth (no local registry) and on a query error (better to omit
+		// the series than to report a wrong value).
+		if sessionRepo != nil {
+			countCtx, cancelCount := context.WithTimeout(r.Context(), 2*time.Second)
+			if n, cerr := sessionRepo.CountActiveSessions(countCtx); cerr == nil {
+				mset = append(mset, metrics.Gauge("wayfinder_active_sessions", "Currently active (unexpired) sessions in the server-side registry (AP7).", int64(n)))
+			}
+			cancelCount()
 		}
 		// Per-tenant series (WF2-23.2). Labelled only by the stable tenant_id —
 		// never by high-cardinality identity (user/session), which stays in the

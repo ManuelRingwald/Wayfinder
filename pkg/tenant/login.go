@@ -58,6 +58,12 @@ type LoginConfig struct {
 	// SessionLimitPolicy decides what happens at the limit (reject | evict_oldest).
 	// An unset/invalid value is treated as reject (the ADR default).
 	SessionLimitPolicy store.SessionLimitPolicy
+
+	// OnSessionOpened and OnLoginRejected are optional metric hooks (AP7): the
+	// former fires when a login opens a registry session, the latter when a login
+	// is refused by the concurrent-session limit under the reject policy. Nil-safe.
+	OnSessionOpened func()
+	OnLoginRejected func()
 }
 
 func (c LoginConfig) cookieName() string {
@@ -220,11 +226,17 @@ func LoginHandler(users UserLookup, creds CredentialLookup, tenants TenantLookup
 		token, cerr := cfg.Sessions.CreateSession(r.Context(), u.ID, now, exp, cfg.effectiveLimit(u), cfg.policy(), clientMeta(r))
 		if cerr != nil {
 			if errors.Is(cerr, store.ErrSessionLimit) {
+				if cfg.OnLoginRejected != nil {
+					cfg.OnLoginRejected()
+				}
 				http.Error(w, "session limit reached", http.StatusTooManyRequests)
 				return
 			}
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
+		}
+		if cfg.OnSessionOpened != nil {
+			cfg.OnSessionOpened()
 		}
 		setSessionCookie(w, cfg, auth.MintSessionID(token, cfg.SessionKey), exp)
 		w.WriteHeader(http.StatusNoContent)

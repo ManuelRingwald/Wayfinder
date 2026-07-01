@@ -138,6 +138,10 @@ func (h *Handler) setAdminStatus(w http.ResponseWriter, r *http.Request) {
 		h.internalError(w, "set admin status", err)
 		return
 	}
+	// AP7: pausing an admin revokes its live sessions immediately, same as any access.
+	if status == store.StatusPaused {
+		h.revokeUserSessions(r.Context(), u.ID)
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
