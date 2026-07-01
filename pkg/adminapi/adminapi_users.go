@@ -24,6 +24,7 @@ type UserStore interface {
 	CreateAdmin(ctx context.Context, subject string, email *string) (store.User, error)
 	SetStatus(ctx context.Context, id int64, status store.Status) error
 	SetMustChangePassword(ctx context.Context, id int64, must bool) error
+	SetSessionLimit(ctx context.Context, id int64, limit *int) error
 	CountActiveAdmins(ctx context.Context) (int, error)
 	Delete(ctx context.Context, id int64) error
 }
@@ -44,17 +45,21 @@ const minPasswordLen = 8
 
 // userDTO is the admin-facing shape of an access account. The password hash and
 // other secrets are never exposed; role is always "user" for accounts created
-// here (admins are provisioned out-of-band via bootstrap).
+// here (admins are provisioned out-of-band via bootstrap). SessionLimit (AP7) is
+// the per-access concurrent-session cap: null = fall back to the deployment
+// default, 0 = unlimited, a positive number caps parallel logins. It is emitted
+// without omitempty so the UI can tell "not set (null → default)" from 0.
 type userDTO struct {
-	ID      int64   `json:"id"`
-	Subject string  `json:"subject"`
-	Email   *string `json:"email,omitempty"`
-	Role    string  `json:"role"`
-	Status  string  `json:"status"`
+	ID           int64   `json:"id"`
+	Subject      string  `json:"subject"`
+	Email        *string `json:"email,omitempty"`
+	Role         string  `json:"role"`
+	Status       string  `json:"status"`
+	SessionLimit *int    `json:"session_limit"`
 }
 
 func toUserDTO(u store.User) userDTO {
-	return userDTO{ID: u.ID, Subject: u.Subject, Email: u.Email, Role: string(u.Role), Status: string(u.Status)}
+	return userDTO{ID: u.ID, Subject: u.Subject, Email: u.Email, Role: string(u.Role), Status: string(u.Status), SessionLimit: u.SessionLimit}
 }
 
 func (h *Handler) listUsers(w http.ResponseWriter, r *http.Request) {
@@ -223,6 +228,38 @@ func (h *Handler) setUserPassword(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := h.creds.Set(r.Context(), uid, hash); err != nil {
 		h.internalError(w, "set credential", err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// setUserSessionLimit sets or clears an access's per-access concurrent-session
+// limit (AP7). Body {"limit": <int|null>}: a null/omitted limit stores SQL NULL
+// (fall back to the deployment default WAYFINDER_SESSION_LIMIT_DEFAULT), 0 means
+// unlimited, and a positive value caps parallel logins for this access. A negative
+// value is rejected with 400 (the store guards it too, fail-closed). The change
+// applies to the NEXT login; it does not retroactively evict existing sessions.
+func (h *Handler) setUserSessionLimit(w http.ResponseWriter, r *http.Request) {
+	tid, uid, ok := h.userPath(w, r)
+	if !ok {
+		return
+	}
+	var body struct {
+		Limit *int `json:"limit"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if body.Limit != nil && *body.Limit < 0 {
+		writeError(w, http.StatusBadRequest, "session limit must be non-negative (0 = unlimited, null = default)")
+		return
+	}
+	if _, ok := h.userInTenant(w, r, tid, uid); !ok {
+		return
+	}
+	if err := h.users.SetSessionLimit(r.Context(), uid, body.Limit); err != nil {
+		h.internalError(w, "set session limit", err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

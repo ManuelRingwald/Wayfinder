@@ -407,6 +407,22 @@ export const useAdminStore = defineStore('admin', () => {
     return r
   }
 
+  // setUserSessionLimit sets or clears an access's per-access concurrent-session
+  // limit (AP7). limit is a non-negative number (0 = unlimited) or null (fall back
+  // to the deployment default WAYFINDER_SESSION_LIMIT_DEFAULT). Applies to the next
+  // login — it does not evict existing sessions.
+  async function setUserSessionLimit(tenantId, userId, limit) {
+    error.value = null
+    notice.value = null
+    const r = await apiFetch(`/api/admin/tenants/${tenantId}/users/${userId}/session-limit`, {
+      method: 'PUT',
+      body: JSON.stringify({ limit }),
+    })
+    if (r.ok) notice.value = limit === null ? 'Sitzungslimit auf Standard zurückgesetzt.' : 'Sitzungslimit gesetzt.'
+    else error.value = r.error
+    return r
+  }
+
   async function setTenantStatus(tenantId, status) {
     error.value = null
     notice.value = null
@@ -525,7 +541,7 @@ export const useAdminStore = defineStore('admin', () => {
     loadIdentity, login, logout, loadView, saveView, loadFeeds, loadSubscriptions,
     loadTenants, loadTenantSubscriptions, grant, revoke,
     loadOverview, loadFeedsHealth, loadTenantView, saveTenantView, loadTenantEntitlements, setTenantEntitlement,
-    loadTenantUsers, createUser, setUserStatus, deleteUser, setUserPassword, setTenantStatus,
+    loadTenantUsers, createUser, setUserStatus, deleteUser, setUserPassword, setUserSessionLimit, setTenantStatus,
     createTenant, deleteTenant,
     createFeed, deleteFeed,
     loadFeedSources, saveFeedSources,

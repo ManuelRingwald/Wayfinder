@@ -303,6 +303,10 @@ func New(views ViewStore, subs SubscriptionStore, feeds FeedStore, tenants Tenan
 	mux.HandleFunc("PATCH /api/admin/tenants/{tenantID}/users/{userID}", h.requireAdmin(h.setUserStatus))
 	mux.HandleFunc("DELETE /api/admin/tenants/{tenantID}/users/{userID}", h.requireAdmin(h.deleteUser))
 	mux.HandleFunc("PUT /api/admin/tenants/{tenantID}/users/{userID}/password", h.requireAdmin(h.setUserPassword))
+	// AP7: set/clear the per-access concurrent-session limit (dedicated sub-route,
+	// like /password). Body {"limit": <int|null>}: null = deployment default, 0 =
+	// unlimited, positive = cap.
+	mux.HandleFunc("PUT /api/admin/tenants/{tenantID}/users/{userID}/session-limit", h.requireAdmin(h.setUserSessionLimit))
 	h.mux = mux
 	return h
 }

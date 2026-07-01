@@ -226,6 +226,7 @@ immer aktiv — ADR 0014); statische Frontend-Routen werden ausgeliefert.
 | `/api/admin/tenants/{id}/users` | GET/POST | Zugänge eines Mandanten (Rolle `user`) auflisten / anlegen (AP6); **admin**. POST `{subject, email?, password?}` → 201; Rolle **immer `user`** (ein mitgeschicktes `role:"admin"` → 400, Admins laufen über `/api/admin/admins`, ONB-3); Passwort min. 8 Zeichen; doppelter Subject → 409 |
 | `/api/admin/tenants/{id}/users/{uid}` | PATCH/DELETE | Zugang pausieren/reaktivieren (`{status:"active"\|"paused"}`) bzw. löschen (AP6); **admin**. User-ID aus fremdem Mandanten → 404 |
 | `/api/admin/tenants/{id}/users/{uid}/password` | PUT | Passwort setzen/zurücksetzen (`{password}`, min. 8) (AP6); **admin** |
+| `/api/admin/tenants/{id}/users/{uid}/session-limit` | PUT | Per-Zugang-Session-Limit setzen/löschen (`{limit: <int\|null>}`; `null`=Default, `0`=unbegrenzt, positiv=Kappung, negativ→400) (AP7); **admin**. Gilt ab dem nächsten Login |
 | `/api/admin/tenants` | POST | **ONB-4 (ADR 0011):** neuen Mandanten anlegen (`{slug, name?}`) → 201; Slug DNS-label-artig (Kleinbuchstaben/Ziffern/Bindestrich, kein führender/abschließender Bindestrich, ≤ 63), `name` Default = `slug`; doppelter Slug → 409; **admin** |
 | `/api/admin/tenants/{id}` | DELETE | **ONB-4:** Mandanten löschen → 204; kaskadiert (ON DELETE CASCADE) auf Zugänge (+ Credentials), Abos, Entitlements, View-Konfig; **Guard B**: solange der Mandant noch **Zugänge** hat → **409** (erst Konten entfernen); **admin** |
 | `/api/admin/tenants/{id}` | PATCH | Mandant pausieren/reaktivieren (`{status}`); kaskadiert via Login-Enforcement auf alle Zugänge (AP6); **admin** |
@@ -583,7 +584,8 @@ Grant/Revoke idempotent (`204`). Der Config-Cache (WF2-30) folgt später.
 **Zugänge** (Login-Konten, Rolle `user`) pro Mandant und pausiert ganze Mandanten
 — alles cross-tenant hinter `requireAdmin` (`pkg/adminapi/adminapi_users.go`):
 `GET/POST /api/admin/tenants/{id}/users`, `PATCH/DELETE …/users/{uid}`,
-`PUT …/users/{uid}/password`, `PATCH /api/admin/tenants/{id}` (Mandant-Status).
+`PUT …/users/{uid}/password`, `PUT …/users/{uid}/session-limit` (AP7: per-Zugang-
+Session-Limit, `{limit:<int|null>}`), `PATCH /api/admin/tenants/{id}` (Mandant-Status).
 Neue Konten sind **immer** Rolle `user` (Plattform-Admins kommen über
 `bootstrap`); Passwort min. 8 Zeichen; doppelter Subject → `409`; eine User-ID
 aus einem fremden Mandanten → `404` (die Ressourcen-Hierarchie bleibt ehrlich).

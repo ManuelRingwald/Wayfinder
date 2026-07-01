@@ -33,7 +33,11 @@
   **Adversariale Review** (Fan-out find→verify): eine echte Lücke gefunden & gefixt
   (Limit-Bypass auf dem Legacy-Konversions-Pfad). Gates grün inkl. real-PG
   (`scripts/pg-test.sh`). Doku: FR-ADMIN-010, Milestone WF2-12.7, TECHNICAL/
-  INSTALLATION/BETRIEB.
+  INSTALLATION/BETRIEB. PR #98 **gemergt**. **Nachtrag (Branch
+  `claude/session-limit-admin-ui`):** Admin-UI zum Setzen des per-Zugang
+  `session_limit` — Route `PUT /api/admin/tenants/{id}/users/{uid}/session-limit`
+  (`null`=Default/`0`=unbegrenzt/positiv=Kappung), `userDTO.session_limit`,
+  `AdminUsers.vue`-Spalte + „Limit"-Dialog; Go+Frontend-Gates grün (vitest 207).
 
 - **Diese Sitzung (2026-06-29/30):** ORCH-5b-1 (Cred-Auflösung in der
   Control-Plane, Variante A) · 5b-2 (UI-Zwei-Felder) · 5c (E2E-Abnahme-Harness:
@@ -115,8 +119,10 @@
      Auto-Spawn-Nachweis (1/2/8) braucht einen echten Linux-Kernel (VM genügt).
   2. **Offene Wayfinder-Issues:** #57 (Admin-UI View-Config-Captions, S2) ·
      #68 (Impersonation auf `admin`-Rolle, S4). (#64 Session-Registry/-Limit ✅
-     erledigt — AP7, Branch `claude/issue-64-session-registry-ymz7py`; offen:
-     Admin-UI für per-Zugang `session_limit` + reale Browser-E2E gegen den Stack.)
+     erledigt & gemergt — AP7, PR #98. Nachtrag ✅: **Admin-UI zum Setzen des
+     per-Zugang `session_limit`** (Route `PUT …/users/{uid}/session-limit` +
+     `AdminUsers.vue`-Spalte/Dialog, Branch `claude/session-limit-admin-ui`).
+     Offen nur noch: reale Browser-E2E gegen den Stack.)
   3. **Firefly-Cross-Project (Issue #35):** die übrigen Live-Adapter
      `flarm_aprs` + `radar_asterix` (je eigener ADR; Vokabular im Kontrakt
      reserviert, Wayfinder-Rendering steht schon).
