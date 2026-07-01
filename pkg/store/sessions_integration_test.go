@@ -7,6 +7,52 @@ import (
 	"time"
 )
 
+// TestIntegrationUserSessionLimitColumn verifies the per-access session_limit
+// column round-trips through SetSessionLimit + scanUser (AP7, backs the admin-UI
+// session-limit editor): default NULL, set to a value, and cleared back to NULL.
+func TestIntegrationUserSessionLimitColumn(t *testing.T) {
+	pool := testPool(t)
+	ctx := context.Background()
+	tenants := NewTenantRepo(pool)
+	users := NewUserRepo(pool)
+
+	ten, _ := tenants.Create(ctx, "acme", "ACME")
+	u, err := users.Create(ctx, ten.ID, "alice", nil)
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	// New rows default to NULL (fall back to the deployment default).
+	if u.SessionLimit != nil {
+		t.Fatalf("new user session_limit = %v, want nil", u.SessionLimit)
+	}
+
+	three := 3
+	if err := users.SetSessionLimit(ctx, u.ID, &three); err != nil {
+		t.Fatalf("set limit: %v", err)
+	}
+	if got, _ := users.GetByID(ctx, u.ID); got.SessionLimit == nil || *got.SessionLimit != 3 {
+		t.Fatalf("after set, session_limit = %v, want 3", got.SessionLimit)
+	}
+
+	// Clear back to NULL (fall back to default).
+	if err := users.SetSessionLimit(ctx, u.ID, nil); err != nil {
+		t.Fatalf("clear limit: %v", err)
+	}
+	if got, _ := users.GetByID(ctx, u.ID); got.SessionLimit != nil {
+		t.Fatalf("after clear, session_limit = %v, want nil", *got.SessionLimit)
+	}
+
+	// A negative value is rejected before the query (fail-closed).
+	neg := -1
+	if err := users.SetSessionLimit(ctx, u.ID, &neg); err == nil {
+		t.Fatal("SetSessionLimit(-1) = nil, want error")
+	}
+	// A missing user yields ErrNotFound.
+	if err := users.SetSessionLimit(ctx, 999999, &three); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("SetSessionLimit(missing) = %v, want ErrNotFound", err)
+	}
+}
+
 // TestIntegrationSessionRegistry exercises AP7 against a real database: create +
 // resolve (with last_seen touch), the sliding/absolute expiry, real logout,
 // and the janitor sweep. The limit and revocation paths have their own tests.

@@ -228,6 +228,103 @@ func TestSetUserPasswordTooShort(t *testing.T) {
 	}
 }
 
+func TestSetUserSessionLimit(t *testing.T) {
+	three := 3
+	us := &fakeUserStore{byID: map[int64]store.User{
+		2: {ID: 2, TenantID: 7, Subject: "bob", Role: store.RoleUser, Status: store.StatusActive},
+	}}
+	// Set an explicit cap.
+	rec := httptest.NewRecorder()
+	handlerForUsers(us, &fakeCredStore{}, tenantsWith(7)).ServeHTTP(rec,
+		adminReq(http.MethodPut, "/api/admin/tenants/7/users/2/session-limit", `{"limit":3}`, 7, store.RoleAdmin))
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204; body=%s", rec.Code, rec.Body.String())
+	}
+	if got := us.limitSet[2]; got == nil || *got != three {
+		t.Fatalf("session limit set = %v, want 3", got)
+	}
+
+	// null clears the override (fall back to the deployment default).
+	rec = httptest.NewRecorder()
+	handlerForUsers(us, &fakeCredStore{}, tenantsWith(7)).ServeHTTP(rec,
+		adminReq(http.MethodPut, "/api/admin/tenants/7/users/2/session-limit", `{"limit":null}`, 7, store.RoleAdmin))
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("clear: status = %d, want 204", rec.Code)
+	}
+	if !us.limitCalled[2] || us.limitSet[2] != nil {
+		t.Fatalf("clear: limit = %v, want nil (called)", us.limitSet[2])
+	}
+}
+
+func TestSetUserSessionLimitValidation(t *testing.T) {
+	us := &fakeUserStore{byID: map[int64]store.User{2: {ID: 2, TenantID: 7}}}
+	cases := map[string]struct {
+		body string
+		want int
+	}{
+		"negative": {`{"limit":-1}`, http.StatusBadRequest},
+		"bad json": {`not-json`, http.StatusBadRequest},
+		"zero ok":  {`{"limit":0}`, http.StatusNoContent}, // 0 = unlimited, valid
+		"omit ok":  {`{}`, http.StatusNoContent},          // null → default
+	}
+	for name, tc := range cases {
+		rec := httptest.NewRecorder()
+		handlerForUsers(us, &fakeCredStore{}, tenantsWith(7)).ServeHTTP(rec,
+			adminReq(http.MethodPut, "/api/admin/tenants/7/users/2/session-limit", tc.body, 7, store.RoleAdmin))
+		if rec.Code != tc.want {
+			t.Errorf("%s: status = %d, want %d", name, rec.Code, tc.want)
+		}
+	}
+}
+
+// TestSetUserSessionLimitCrossTenant: a user id under the wrong tenant URL is 404
+// and the limit is not touched (resource hierarchy stays honest).
+func TestSetUserSessionLimitCrossTenant(t *testing.T) {
+	us := &fakeUserStore{byID: map[int64]store.User{
+		2: {ID: 2, TenantID: 99, Subject: "elsewhere", Role: store.RoleUser},
+	}}
+	rec := httptest.NewRecorder()
+	handlerForUsers(us, &fakeCredStore{}, tenantsWith(7)).ServeHTTP(rec,
+		adminReq(http.MethodPut, "/api/admin/tenants/7/users/2/session-limit", `{"limit":3}`, 7, store.RoleAdmin))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rec.Code)
+	}
+	if us.limitCalled[2] {
+		t.Error("cross-tenant user's limit must not be set")
+	}
+}
+
+// TestUserDTOCarriesSessionLimit: the access list exposes session_limit so the UI
+// can show the current value (null = default, number = explicit).
+func TestUserDTOCarriesSessionLimit(t *testing.T) {
+	five := 5
+	us := &fakeUserStore{listByTen: map[int64][]store.User{
+		7: {
+			{ID: 1, TenantID: 7, Subject: "alice", Role: store.RoleUser, Status: store.StatusActive, SessionLimit: &five},
+			{ID: 2, TenantID: 7, Subject: "bob", Role: store.RoleUser, Status: store.StatusActive}, // nil = default
+		},
+	}}
+	rec := httptest.NewRecorder()
+	handlerForUsers(us, &fakeCredStore{}, tenantsWith(7)).ServeHTTP(rec,
+		adminReq(http.MethodGet, "/api/admin/tenants/7/users", "", 7, store.RoleAdmin))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var got []struct {
+		Subject      string `json:"subject"`
+		SessionLimit *int   `json:"session_limit"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(got) != 2 || got[0].SessionLimit == nil || *got[0].SessionLimit != 5 {
+		t.Fatalf("alice session_limit = %v, want 5", got[0].SessionLimit)
+	}
+	if got[1].SessionLimit != nil {
+		t.Fatalf("bob session_limit = %v, want null (default)", got[1].SessionLimit)
+	}
+}
+
 func TestSetTenantStatus(t *testing.T) {
 	ft := tenantsWith(7)
 	rec := httptest.NewRecorder()
@@ -411,6 +508,7 @@ func TestAccessRoutesForbidNonAdmin(t *testing.T) {
 		{http.MethodPatch, "/api/admin/tenants/7/users/2", `{"status":"paused"}`},
 		{http.MethodDelete, "/api/admin/tenants/7/users/2", ""},
 		{http.MethodPut, "/api/admin/tenants/7/users/2/password", `{"password":"longenough"}`},
+		{http.MethodPut, "/api/admin/tenants/7/users/2/session-limit", `{"limit":3}`},
 		{http.MethodPatch, "/api/admin/tenants/7", `{"status":"paused"}`},
 	}
 	for _, rt := range routes {
@@ -425,7 +523,7 @@ func TestAccessRoutesForbidNonAdmin(t *testing.T) {
 		if rec.Code != http.StatusForbidden {
 			t.Errorf("%s %s: status = %d, want 403", rt.method, rt.path, rec.Code)
 		}
-		if us.created.ID != 0 || len(us.statusSet) != 0 || len(us.deleted) != 0 || len(cs.set) != 0 || len(ft.statusSet) != 0 {
+		if us.created.ID != 0 || len(us.statusSet) != 0 || len(us.deleted) != 0 || len(cs.set) != 0 || len(ft.statusSet) != 0 || len(us.limitSet) != 0 {
 			t.Errorf("%s %s: a mutation occurred despite 403", rt.method, rt.path)
 		}
 	}

@@ -57,12 +57,13 @@
             <th>Benutzername</th>
             <th>E-Mail</th>
             <th class="text-right">Status</th>
+            <th class="text-right">Sitzungslimit</th>
             <th class="text-right">Aktionen</th>
           </tr>
         </thead>
         <tbody>
           <tr v-if="!users.length">
-            <td colspan="4" class="text-medium-emphasis">Noch keine Zugänge.</td>
+            <td colspan="5" class="text-medium-emphasis">Noch keine Zugänge.</td>
           </tr>
           <tr v-for="u in users" :key="u.id">
             <td>{{ u.subject }}</td>
@@ -77,6 +78,9 @@
               </v-chip>
             </td>
             <td class="text-right">
+              <span class="text-caption text-medium-emphasis">{{ sessionLimitLabel(u.session_limit) }}</span>
+            </td>
+            <td class="text-right">
               <v-btn
                 size="small"
                 :color="u.status === 'paused' ? 'success' : 'warning'"
@@ -88,6 +92,9 @@
               </v-btn>
               <v-btn size="small" variant="text" :loading="busy" @click="openPassword(u)">
                 Passwort
+              </v-btn>
+              <v-btn size="small" variant="text" :loading="busy" @click="openLimit(u)">
+                Limit
               </v-btn>
               <v-btn size="small" color="error" variant="text" :loading="busy" @click="openDelete(u)">
                 Löschen
@@ -147,6 +154,40 @@
     </v-card>
   </v-dialog>
 
+  <!-- Session-limit dialog (AP7) -->
+  <v-dialog v-model="limitDialog" max-width="460">
+    <v-card>
+      <v-card-title class="text-subtitle-1">Sitzungslimit</v-card-title>
+      <v-card-text>
+        <p class="text-body-2 mb-3">
+          Max. gleichzeitige Sitzungen für <strong>{{ target?.subject }}</strong>.
+        </p>
+        <v-checkbox
+          v-model="limitUseDefault"
+          label="Standard verwenden (Deployment-Default)"
+          density="compact"
+          hide-details
+          class="mb-2"
+        />
+        <v-text-field
+          v-model.number="limitValue"
+          type="number"
+          min="0"
+          label="Limit (0 = unbegrenzt)"
+          :disabled="limitUseDefault"
+          :error-messages="limitError"
+          hint="Gilt ab dem nächsten Login; laufende Sitzungen bleiben."
+          persistent-hint
+        />
+      </v-card-text>
+      <v-card-actions>
+        <v-spacer />
+        <v-btn variant="text" @click="limitDialog = false">Abbrechen</v-btn>
+        <v-btn color="primary" :loading="busy" @click="submitLimit">Speichern</v-btn>
+      </v-card-actions>
+    </v-card>
+  </v-dialog>
+
   <!-- Delete confirmation -->
   <v-dialog v-model="deleteDialog" max-width="420">
     <v-card>
@@ -187,10 +228,22 @@ const effectiveTenant = computed(() => props.tenantId ?? selectedTenant.value)
 const createDialog = ref(false)
 const passwordDialog = ref(false)
 const deleteDialog = ref(false)
+const limitDialog = ref(false)
 const showPassword = ref(false)
 const target = ref(null)
 const newPassword = ref('')
 const form = ref({ subject: '', email: '', password: '' })
+const limitValue = ref(0)
+const limitUseDefault = ref(true)
+const limitError = ref('')
+
+// sessionLimitLabel renders a user's per-access session limit (AP7): null =
+// deployment default, 0 = unlimited, otherwise the explicit cap.
+function sessionLimitLabel(limit) {
+  if (limit === null || limit === undefined) return 'Standard'
+  if (limit === 0) return 'unbegrenzt'
+  return String(limit)
+}
 
 const tenant = computed(() => admin.tenants.find((t) => t.id === selectedTenant.value) || null)
 
@@ -257,6 +310,35 @@ async function submitPassword() {
   const r = await admin.setUserPassword(effectiveTenant.value, target.value.id, newPassword.value)
   busy.value = false
   if (r.ok) passwordDialog.value = false
+}
+
+function openLimit(u) {
+  target.value = u
+  limitError.value = ''
+  // null → "use default"; a concrete value (incl. 0) → explicit.
+  limitUseDefault.value = u.session_limit === null || u.session_limit === undefined
+  limitValue.value = limitUseDefault.value ? 0 : u.session_limit
+  limitDialog.value = true
+}
+
+async function submitLimit() {
+  let limit = null
+  if (!limitUseDefault.value) {
+    const n = Number(limitValue.value)
+    if (!Number.isInteger(n) || n < 0) {
+      limitError.value = 'Bitte eine ganze Zahl ≥ 0 angeben (0 = unbegrenzt).'
+      return
+    }
+    limit = n
+  }
+  limitError.value = ''
+  busy.value = true
+  const r = await admin.setUserSessionLimit(effectiveTenant.value, target.value.id, limit)
+  busy.value = false
+  if (r.ok) {
+    limitDialog.value = false
+    await refresh()
+  }
 }
 
 function openDelete(u) {

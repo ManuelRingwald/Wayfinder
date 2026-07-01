@@ -727,6 +727,27 @@ describe('admin store — access management (AP6)', () => {
     expect(JSON.parse(put.body)).toEqual({ password: 'newsecret1' })
   })
 
+  it('setUserSessionLimit PUTs a numeric limit (AP7)', async () => {
+    const calls = installFetch({ 'PUT /api/admin/tenants/42/users/7/session-limit': { status: 204 } })
+    const s = useAdminStore()
+    const r = await s.setUserSessionLimit(42, 7, 3)
+    expect(r.ok).toBe(true)
+    const put = calls.find((c) => c.method === 'PUT')
+    expect(put.url).toBe('/api/admin/tenants/42/users/7/session-limit')
+    expect(JSON.parse(put.body)).toEqual({ limit: 3 })
+    expect(s.notice).toMatch(/Sitzungslimit gesetzt/)
+  })
+
+  it('setUserSessionLimit PUTs null to reset to the default (AP7)', async () => {
+    const calls = installFetch({ 'PUT /api/admin/tenants/42/users/7/session-limit': { status: 204 } })
+    const s = useAdminStore()
+    const r = await s.setUserSessionLimit(42, 7, null)
+    expect(r.ok).toBe(true)
+    const put = calls.find((c) => c.method === 'PUT')
+    expect(JSON.parse(put.body)).toEqual({ limit: null })
+    expect(s.notice).toMatch(/Standard/)
+  })
+
   it('setTenantStatus PATCHes the tenant and notes the mode', async () => {
     const calls = installFetch({ 'PATCH /api/admin/tenants/42': { status: 204 } })
     const s = useAdminStore()
