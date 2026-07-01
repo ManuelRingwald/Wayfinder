@@ -362,10 +362,11 @@ func main() {
 	// unauthenticated — they hand out the session the middleware later checks.
 	if cfg.AuthMode == auth.ModeBuiltin {
 		loginCfg := tenant.LoginConfig{
-			SessionKey: cfg.SessionKey,
-			CookieName: cfg.SessionCookie,
-			TTL:        cfg.SessionTTL,
-			Secure:     cfg.TLSCertFile != "" && cfg.TLSKeyFile != "",
+			SessionKey:  cfg.SessionKey,
+			CookieName:  cfg.SessionCookie,
+			TTL:         cfg.SessionTTL,
+			MaxLifetime: cfg.SessionMaxLife,
+			Secure:      cfg.TLSCertFile != "" && cfg.TLSKeyFile != "",
 		}
 		users := store.NewUserRepo(dbPool)
 		creds := store.NewCredentialRepo(dbPool)
@@ -540,7 +541,8 @@ type Config struct {
 	AuthMode         auth.Mode     // WAYFINDER_AUTH_MODE (proxy|builtin, default builtin)
 	SessionKey       []byte        // WAYFINDER_SESSION_KEY (ModeBuiltin HMAC key)
 	SessionCookie    string        // WAYFINDER_SESSION_COOKIE (default "wf_session")
-	SessionTTL       time.Duration // WAYFINDER_SESSION_TTL (Go duration, default 12h)
+	SessionTTL       time.Duration // WAYFINDER_SESSION_TTL (Go duration, sliding idle window, default 12h)
+	SessionMaxLife   time.Duration // WAYFINDER_SESSION_MAX_LIFETIME (absolute cap since first login; 0/unset = disabled, default off)
 	ImpersonationTTL time.Duration // WAYFINDER_IMPERSONATION_TTL (read-only impersonation grant lifetime, default 30m; ADR 0008)
 	OIDCIssuer       string        // WAYFINDER_OIDC_ISSUER (ModeProxy)
 	OIDCAudience     string        // WAYFINDER_OIDC_AUDIENCE (ModeProxy)
@@ -799,6 +801,14 @@ func loadConfig() Config {
 	if v := os.Getenv("WAYFINDER_SESSION_TTL"); v != "" {
 		if d, err := time.ParseDuration(v); err == nil && d > 0 {
 			cfg.SessionTTL = d
+		}
+	}
+	// Absolute session maximum since first login (opt-in; 0/unset = disabled). For
+	// a trial run set e.g. WAYFINDER_SESSION_MAX_LIFETIME=30m to watch it fire
+	// without waiting out the sliding TTL.
+	if v := os.Getenv("WAYFINDER_SESSION_MAX_LIFETIME"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			cfg.SessionMaxLife = d
 		}
 	}
 	if v := os.Getenv("WAYFINDER_IMPERSONATION_TTL"); v != "" {

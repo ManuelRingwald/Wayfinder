@@ -27,8 +27,13 @@ type TenantLookup interface {
 type LoginConfig struct {
 	SessionKey []byte        // HMAC key for signing the session cookie (required)
 	CookieName string        // session cookie name (default "wf_session")
-	TTL        time.Duration // session lifetime (default 12h)
-	Secure     bool          // set the cookie Secure flag (TLS deployments)
+	TTL        time.Duration // sliding idle window: session lifetime per (re)issue (default 12h)
+	// MaxLifetime is an absolute cap on a session's total lifetime measured from
+	// first login, enforced independently of activity: no matter how active a
+	// console is, once MaxLifetime has elapsed the sliding renew stops and the
+	// operator must log in again. 0 (the default) disables the cap — pure sliding.
+	MaxLifetime time.Duration
+	Secure      bool // set the cookie Secure flag (TLS deployments)
 }
 
 func (c LoginConfig) cookieName() string {
@@ -43,6 +48,23 @@ func (c LoginConfig) ttl() time.Duration {
 		return 12 * time.Hour
 	}
 	return c.TTL
+}
+
+// expiry computes a session's expiry for a login/renew happening at `now`, given
+// the session's first-login time `issuedAt`. It is `now + TTL` (the sliding idle
+// window), clamped so the session never outlives `issuedAt + MaxLifetime` when an
+// absolute maximum is configured. With MaxLifetime <= 0 the cap is off and this is
+// just the sliding expiry. Because the cap lowers the expiry itself, the absolute
+// maximum is enforced by the ordinary expiry check too — even a client that never
+// calls renew self-expires at the cap; it does not rely on the renew tor alone.
+func (c LoginConfig) expiry(now, issuedAt time.Time) time.Time {
+	exp := now.Add(c.ttl())
+	if c.MaxLifetime > 0 {
+		if limit := issuedAt.Add(c.MaxLifetime); limit.Before(exp) {
+			exp = limit
+		}
+	}
+	return exp
 }
 
 // dummyHash is verified against when the user or credential is not found, so a
@@ -103,14 +125,19 @@ func LoginHandler(users UserLookup, creds CredentialLookup, tenants TenantLookup
 			return
 		}
 
+		// First login: stamp the issued-at at now and cap the expiry at the absolute
+		// maximum (if any). With a max shorter than the TTL the cookie already carries
+		// the shortened lifetime, so an unrenewed session still self-expires at the cap.
+		now := time.Now()
+		exp := cfg.expiry(now, now)
 		http.SetCookie(w, &http.Cookie{
 			Name:     cfg.cookieName(),
-			Value:    auth.MintSession(u.Subject, cfg.ttl(), cfg.SessionKey),
+			Value:    auth.MintSessionAt(u.Subject, now, exp, cfg.SessionKey),
 			Path:     "/",
 			HttpOnly: true,
 			Secure:   cfg.Secure,
 			SameSite: http.SameSiteLaxMode,
-			MaxAge:   int(cfg.ttl().Seconds()),
+			MaxAge:   int(time.Until(exp).Seconds()),
 		})
 		w.WriteHeader(http.StatusNoContent)
 	}
@@ -131,14 +158,36 @@ func RenewHandler(cfg LoginConfig) http.HandlerFunc {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
+
+		// Recover the original first-login time so the sliding renew can honour an
+		// absolute maximum lifetime. The middleware already validated the cookie; we
+		// re-read it only for the issued-at claim (not carried on Identity). A legacy
+		// cookie without issued-at is treated softly: anchor the cap at now (this
+		// first renew) instead of bouncing everyone on the upgrade.
+		now := time.Now()
+		issuedAt := now
+		if c, err := r.Cookie(cfg.cookieName()); err == nil {
+			if claims, perr := auth.ParseSessionClaims(c.Value, cfg.SessionKey); perr == nil && claims.IssuedAt > 0 {
+				issuedAt = time.Unix(claims.IssuedAt, 0)
+			}
+		}
+
+		// Absolute maximum reached → stop sliding and force a fresh login. The capped
+		// expiry is already at/before now here, so re-minting would hand out a dead
+		// cookie; return the generic 401 (no cookie) instead.
+		exp := cfg.expiry(now, issuedAt)
+		if !exp.After(now) {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
 		http.SetCookie(w, &http.Cookie{
 			Name:     cfg.cookieName(),
-			Value:    auth.MintSession(id.Subject, cfg.ttl(), cfg.SessionKey),
+			Value:    auth.MintSessionAt(id.Subject, issuedAt, exp, cfg.SessionKey),
 			Path:     "/",
 			HttpOnly: true,
 			Secure:   cfg.Secure,
 			SameSite: http.SameSiteLaxMode,
-			MaxAge:   int(cfg.ttl().Seconds()),
+			MaxAge:   int(time.Until(exp).Seconds()),
 		})
 		w.WriteHeader(http.StatusNoContent)
 	}

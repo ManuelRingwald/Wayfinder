@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/manuelringwald/wayfinder/pkg/auth"
 	"github.com/manuelringwald/wayfinder/pkg/store"
@@ -234,5 +235,118 @@ func TestRenewHandlerRejectsUnauthenticated(t *testing.T) {
 	}
 	if len(rec.Result().Cookies()) != 0 {
 		t.Error("no cookie should be set without an identity")
+	}
+}
+
+func sessionCookie(t *testing.T, rec *httptest.ResponseRecorder) *http.Cookie {
+	t.Helper()
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == "wf_session" {
+			return c
+		}
+	}
+	t.Fatal("no session cookie set")
+	return nil
+}
+
+// renewWithCookie drives RenewHandler with an authenticated Identity and an
+// optional incoming session cookie (whose issued-at the handler preserves).
+func renewWithCookie(t *testing.T, cfg LoginConfig, cookieVal string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/api/session/renew", nil)
+	req = req.WithContext(WithIdentity(req.Context(),
+		Identity{TenantID: 7, UserID: 1, Subject: "bob", Role: store.RoleUser}))
+	if cookieVal != "" {
+		req.AddCookie(&http.Cookie{Name: "wf_session", Value: cookieVal})
+	}
+	rec := httptest.NewRecorder()
+	RenewHandler(cfg).ServeHTTP(rec, req)
+	return rec
+}
+
+// TestLoginCapsExpiryAtMaxLifetime: with an absolute maximum shorter than the
+// TTL, the login cookie already carries the shortened lifetime, so a session that
+// is never renewed still self-expires at the cap (not the 12h idle window).
+func TestLoginCapsExpiryAtMaxLifetime(t *testing.T) {
+	users, creds, tenants := loginFixture(t)
+	cfg := LoginConfig{SessionKey: loginKey, TTL: 12 * time.Hour, MaxLifetime: 30 * time.Minute}
+	rec := postLogin(t, LoginHandler(users, creds, tenants, cfg), `{"subject":"bob","password":"s3cret"}`)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204", rec.Code)
+	}
+	cookie := sessionCookie(t, rec)
+	if cookie.MaxAge <= 0 || cookie.MaxAge > int((30*time.Minute).Seconds()) {
+		t.Fatalf("MaxAge = %d, want ~1800 (capped at 30m, not the 12h TTL)", cookie.MaxAge)
+	}
+	c, err := auth.ParseSessionClaims(cookie.Value, loginKey)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if span := c.ExpiresAt - c.IssuedAt; span > int64((30*time.Minute).Seconds())+2 {
+		t.Errorf("exp-iat = %ds, want <= 1800 (max cap)", span)
+	}
+}
+
+// TestRenewHandlerPreservesIssuedAt: the sliding renew keeps the ORIGINAL
+// first-login time so the absolute clock keeps counting; it does not reset on
+// every renew.
+func TestRenewHandlerPreservesIssuedAt(t *testing.T) {
+	iat := time.Now().Add(-10 * time.Minute)
+	cookieVal := auth.MintSessionAt("bob", iat, time.Now().Add(time.Hour), loginKey)
+	rec := renewWithCookie(t, LoginConfig{SessionKey: loginKey, TTL: 12 * time.Hour, MaxLifetime: 30 * time.Minute}, cookieVal)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204", rec.Code)
+	}
+	c, err := auth.ParseSessionClaims(sessionCookie(t, rec).Value, loginKey)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if c.IssuedAt != iat.Unix() {
+		t.Errorf("renewed IssuedAt = %d, want preserved %d", c.IssuedAt, iat.Unix())
+	}
+}
+
+// TestRenewHandlerEnforcesMaxLifetime: a still-valid cookie whose first login was
+// longer ago than the max (models enabling/shortening the cap on an existing long
+// session) must be refused — 401, no new cookie, forcing a fresh login.
+func TestRenewHandlerEnforcesMaxLifetime(t *testing.T) {
+	iat := time.Now().Add(-40 * time.Minute)
+	cookieVal := auth.MintSessionAt("bob", iat, time.Now().Add(time.Hour), loginKey)
+	rec := renewWithCookie(t, LoginConfig{SessionKey: loginKey, TTL: 12 * time.Hour, MaxLifetime: 30 * time.Minute}, cookieVal)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401 (past absolute max)", rec.Code)
+	}
+	if len(rec.Result().Cookies()) != 0 {
+		t.Error("no cookie should be re-issued past the absolute max")
+	}
+}
+
+// TestRenewHandlerMaxLifetimeZeroDisabled: the same old session slides forever
+// when the cap is off (0) — today's pure sliding behaviour, backward compatible.
+func TestRenewHandlerMaxLifetimeZeroDisabled(t *testing.T) {
+	iat := time.Now().Add(-40 * time.Minute)
+	cookieVal := auth.MintSessionAt("bob", iat, time.Now().Add(time.Hour), loginKey)
+	rec := renewWithCookie(t, LoginConfig{SessionKey: loginKey, TTL: 12 * time.Hour}, cookieVal)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204 (cap disabled)", rec.Code)
+	}
+}
+
+// TestRenewHandlerLegacyCookieSoftAnchor: a cookie without a usable issued-at
+// (legacy/upgrade window) is anchored softly at THIS first renew instead of being
+// bounced — renew succeeds and stamps issued-at at now.
+func TestRenewHandlerLegacyCookieSoftAnchor(t *testing.T) {
+	legacyLike := auth.MintSessionAt("bob", time.Unix(0, 0), time.Now().Add(time.Hour), loginKey) // iat == 0
+	before := time.Now().Unix()
+	rec := renewWithCookie(t, LoginConfig{SessionKey: loginKey, TTL: 12 * time.Hour, MaxLifetime: 30 * time.Minute}, legacyLike)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204 (soft anchor, not bounced)", rec.Code)
+	}
+	c, err := auth.ParseSessionClaims(sessionCookie(t, rec).Value, loginKey)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if c.IssuedAt < before {
+		t.Errorf("re-stamped IssuedAt = %d, want ~now (>= %d)", c.IssuedAt, before)
 	}
 }

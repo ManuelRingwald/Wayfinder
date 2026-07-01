@@ -21,6 +21,8 @@ func TestLoadConfigTenancyEnvVars(t *testing.T) {
 	t.Setenv("WAYFINDER_DB_URL", "postgres://x")
 	t.Setenv("WAYFINDER_AUTH_MODE", "proxy")
 	t.Setenv("WAYFINDER_SESSION_KEY", "sekret")
+	t.Setenv("WAYFINDER_SESSION_TTL", "8h")
+	t.Setenv("WAYFINDER_SESSION_MAX_LIFETIME", "30m")
 	t.Setenv("WAYFINDER_OIDC_ISSUER", "https://iss")
 	t.Setenv("WAYFINDER_OIDC_AUDIENCE", "wf")
 
@@ -28,6 +30,15 @@ func TestLoadConfigTenancyEnvVars(t *testing.T) {
 	if cfg.DBURL != "postgres://x" || cfg.AuthMode != auth.ModeProxy ||
 		string(cfg.SessionKey) != "sekret" || cfg.OIDCIssuer != "https://iss" || cfg.OIDCAudience != "wf" {
 		t.Fatalf("tenancy config not parsed: %+v", cfg)
+	}
+	if cfg.SessionTTL != 8*time.Hour || cfg.SessionMaxLife != 30*time.Minute {
+		t.Fatalf("session durations not parsed: ttl=%v max=%v", cfg.SessionTTL, cfg.SessionMaxLife)
+	}
+
+	// The absolute maximum is opt-in: unset/invalid leaves it disabled (0).
+	t.Setenv("WAYFINDER_SESSION_MAX_LIFETIME", "not-a-duration")
+	if got := loadConfig(); got.SessionMaxLife != 0 {
+		t.Fatalf("invalid max lifetime = %v, want 0 (disabled)", got.SessionMaxLife)
 	}
 
 	// Unset/invalid auth mode falls back to builtin (ADR 0014: zero-touch default).
