@@ -12,6 +12,11 @@ type Config struct {
 	// CookieName and SessionKey configure ModeBuiltin. SessionKey is required.
 	CookieName string
 	SessionKey []byte
+	// Sessions is the server-side session registry (AP7, ADR 0009 §5). When set,
+	// ModeBuiltin resolves session-id cookies against it (revocable sessions) and
+	// still accepts legacy stateless cookies during the rollout. Nil keeps the
+	// pre-AP7 stateless behaviour.
+	Sessions SessionResolver
 
 	// OIDCIssuer and OIDCAudience configure ModeProxy. Both are required.
 	OIDCIssuer   string
@@ -32,7 +37,7 @@ func NewAuthenticator(ctx context.Context, cfg Config) (Authenticator, error) {
 		if name == "" {
 			name = "wf_session"
 		}
-		return BuiltinAuthenticator{CookieName: name, Key: cfg.SessionKey}, nil
+		return BuiltinAuthenticator{CookieName: name, Key: cfg.SessionKey, Sessions: cfg.Sessions}, nil
 
 	case ModeProxy:
 		if cfg.OIDCIssuer == "" || cfg.OIDCAudience == "" {

@@ -548,12 +548,16 @@ type Config struct {
 	OIDCAudience     string        // WAYFINDER_OIDC_AUDIENCE (ModeProxy)
 }
 
-// authConfig projects the runtime Config onto the auth package's Config.
-func (c Config) authConfig() auth.Config {
+// authConfig projects the runtime Config onto the auth package's Config. sessions
+// is the server-side session registry (AP7); in builtin mode the authenticator
+// resolves session-id cookies against it. Pass nil to keep the stateless
+// behaviour (e.g. proxy mode, which mints no local cookies).
+func (c Config) authConfig(sessions auth.SessionResolver) auth.Config {
 	return auth.Config{
 		Mode:         c.AuthMode,
 		CookieName:   c.SessionCookie,
 		SessionKey:   c.SessionKey,
+		Sessions:     sessions,
 		OIDCIssuer:   c.OIDCIssuer,
 		OIDCAudience: c.OIDCAudience,
 	}
@@ -890,7 +894,16 @@ func setupTenancy(ctx context.Context, cfg Config, logger *slog.Logger) (func(ht
 		return nil, nil, fmt.Errorf("migrate schema: %w", err)
 	}
 
-	authenticator, err := auth.NewAuthenticator(ctx, cfg.authConfig())
+	// Registry-backed authentication (AP7, ADR 0009 §5): in builtin mode the
+	// authenticator resolves session-id cookies against the server-side registry
+	// so sessions are revocable, while still accepting legacy stateless cookies
+	// during the rollout (sanfte Übernahme). Building it here (not only in the
+	// login wiring) is what makes every authenticated request registry-checked.
+	var sessions auth.SessionResolver
+	if cfg.AuthMode == auth.ModeBuiltin {
+		sessions = store.NewSessionRepo(pool)
+	}
+	authenticator, err := auth.NewAuthenticator(ctx, cfg.authConfig(sessions))
 	if err != nil {
 		pool.Close()
 		return nil, nil, fmt.Errorf("build authenticator: %w", err)

@@ -113,6 +113,40 @@ func ParseSessionClaims(token string, key []byte) (Claims, error) {
 	return Claims{Subject: string(subject), IssuedAt: iat, ExpiresAt: exp}, nil
 }
 
+// MintSessionID wraps an opaque registry session token in a signed cookie value
+// (AP7, ADR 0009 §5). Format: `token.signature`, where signature =
+// HMAC-SHA256(key, token). The token is a dot-free base64url string, so the value
+// is structurally distinct from a stateless `subject.iat.exp` cookie (which
+// carries at least one dot in its payload) — ParseSessionID and ParseSessionClaims
+// therefore never confuse the two. The signature lets the edge reject a forged
+// token without a database round-trip; the registry lookup then authorises it.
+func MintSessionID(token string, key []byte) string {
+	return token + "." + sign(token, key)
+}
+
+// ParseSessionID verifies a registry cookie's signature and returns its token.
+// It accepts only the single-field `token.signature` layout: a payload that still
+// contains a dot is a legacy stateless cookie, not a session id, and yields
+// ErrSessionInvalid so the caller can fall back to ParseSession. Unlike the
+// stateless parse there is no expiry check here — expiry lives in the registry.
+func ParseSessionID(cookie string, key []byte) (string, error) {
+	i := strings.LastIndex(cookie, ".")
+	if i < 0 {
+		return "", ErrSessionInvalid
+	}
+	token, sig := cookie[:i], cookie[i+1:]
+	// A dot in the token means this is not a session-id cookie (e.g. a legacy
+	// subject.iat.exp value); reject before the constant-time compare so the
+	// caller falls through to the legacy path.
+	if strings.Contains(token, ".") {
+		return "", ErrSessionInvalid
+	}
+	if subtle.ConstantTimeCompare([]byte(sig), []byte(sign(token, key))) != 1 {
+		return "", ErrSessionInvalid
+	}
+	return token, nil
+}
+
 func sign(payload string, key []byte) string {
 	mac := hmac.New(sha256.New, key)
 	mac.Write([]byte(payload))
