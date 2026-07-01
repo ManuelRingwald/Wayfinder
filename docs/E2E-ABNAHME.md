@@ -1,203 +1,291 @@
-# End-to-End-Abnahme: ein Befehl starten, alles Weitere per UI
+# End-to-End-Abnahme auf dem Mac mini (mit Multipass-Linux-VM)
 
-> **Philosophie.** **Genau ein** Terminal-Befehl ist nötig — der **Start** der
-> Plattform. Alles danach passiert **ausschließlich in der Browser-Oberfläche**:
-> Passwortwechsel, Mandant/Nutzer/Features, Feed + Quellen, Feed zuweisen,
-> Abmelden als Admin, Anmelden als Mandant, Karte sehen. Das Terminal wird **nur
-> noch zum Nachschauen hinter den Kulissen** verwendet (Logs/Metriken: sendet
-> Firefly auf der erwarteten Gruppe:Port die richtigen Datentypen ADS-B / FLARM?).
->
-> **Betriebsmodus.** Multi-Tenant ist der einzige Modus (ADR 0014): Postgres ist
-> Pflicht, die Anmeldung ist immer aktiv.
+> **Ziel dieses Dokuments.** Von einem **frischen Mac mini** bis zur
+> **nachgewiesen funktionierenden** Luftlage — Schritt für Schritt. Jeder Schritt
+> nennt **exakt**, was du eingibst, **was genau herauskommen muss** und **woran du
+> das prüfst**. Es gibt **keinen Interpretationsspielraum**: Wenn das erwartete
+> Ergebnis nicht eintritt, ist der Schritt nicht bestanden — dann hilft
+> [Teil 8 (Fehlerbehebung)](#teil-8--fehlerbehebung).
 
-## Was hier nachgewiesen wird
-
-| # | Behauptung | Teil |
-|---|------------|------|
-| 1 | Die ganze Kette startet mit **einem** Befehl (Zero-Touch). | 0 |
-| 2 | Erstanmeldung + erzwungener Passwortwechsel laufen **in der UI**. | 1 |
-| 3 | Ein Kunde wird **komplett über die UI** eingerichtet: Mandant, Features, Nutzer, Feed, Quellen (ADS-B/FLARM), Sicht (Zentrum + 30-NM-Radius), Zuweisung. | 2 |
-| 4 | **Abmelden als Admin** und **Anmelden als Mandant** geht in der UI; der Kunde sieht **seine** Karte. | 3 |
-| 5 | Hinter den Kulissen: Firefly wurde je Feed gestartet, sendet auf der erwarteten **Gruppe:Port** und trägt **echte ADS-B/FLARM-Daten**. | 4 |
-
-> ⚠️ **Plattform.** Die **Live-Daten-Kette** (Auto-Spawn + Multicast, Teil 0/4)
-> braucht **Host-Networking** und damit einen **Linux-Docker-Host**. Auf **Docker
-> Desktop (macOS/Windows, z. B. Mac mini)** funktioniert Host-Net-Multicast nicht
-> — dort laufen Teil 1–3 (die ganze UI-Einrichtung) identisch, aber für die
-> Live-Verifikation aus Teil 4 einen Linux-Host (oder eine Linux-VM) nutzen.
-> Hintergrund + Bridge-Workaround: `DOCKER.md`.
-
-## Voraussetzungen
-
-- Linux-Docker-Host mit `docker compose` v2 (für Teil 4 Live-Multicast).
-- **Firefly-Image lokal**: im Firefly-Repo `docker build -t firefly:latest .`
-  (oder `WAYFINDER_FIREFLY_IMAGE` auf ein veröffentlichtes Tag setzen).
-- Netz-Egress, wenn echte ADS-B/FLARM-Daten geholt werden sollen (OpenSky,
-  Open Glider Network).
-
-### EDLV-Geodaten (für die Sicht in Teil 2)
-
-EDLV (Weeze) liegt bei **51,40° N / 6,15° E**. Die View-Config-Maske nimmt einen
-**Radius in nautischen Meilen (NM)** entgegen und rechnet die AOI selbst aus —
-also einfach **Radius = 30** eintragen.
-
-| Feld in der Maske | Wert |
-|-------------------|------|
-| Zentrum Breite (`center_lat`) | `51.40` |
-| Zentrum Länge (`center_lon`) | `6.15` |
-| Radius | `30` (NM) |
-| Zoom | `9` |
-| FL min / FL max | `0` / `450` |
+> **Warum eine Linux-VM?** Der vollständige Betrieb (Orchestrator startet je Feed
+> automatisch eine Firefly-Instanz, CAT062 fließt per **UDP-Multicast** über
+> `network_mode: host`) braucht einen **echten Linux-Kernel**. Docker Desktop auf
+> dem Mac kann das nicht (nur die interne VM, nicht der Mac-Host). Lösung: eine
+> schlanke **Ubuntu-VM mit Multipass** direkt auf dem Mac mini — darin läuft alles
+> nativ wie auf einem Linux-Server. (Einen schnellen Teil-Check **ohne** VM
+> beschreibt [Anhang A](#anhang-a--schnell-check-ohne-vm-nur-auf-dem-mac).)
 
 ---
 
-## Teil 0 — Der **einzige** Terminal-Befehl: starten
+## Was am Ende nachgewiesen ist
 
-| # | Aktion | Erwartetes Ergebnis | Prüfung |
-|---|--------|---------------------|---------|
-| 0.1 | Im Wayfinder-Repo: `docker compose -f docker-compose.orchestrated.yml up --build` | Postgres + Wayfinder (`builtin`) + Orchestrator starten; Auto-Seed legt Default-Admin an. | `docker compose -f docker-compose.orchestrated.yml ps` → alle `Up`, `db (healthy)`. |
+| # | Behauptung | Nachgewiesen in |
+|---|------------|-----------------|
+| 1 | Aus einem frischen Mac mini wird mit wenigen Befehlen ein **echter Linux-Docker-Host** (Multipass-VM). | Teil 1–2 |
+| 2 | Der **orchestrierte Stack** (Datenbank + ASD-Server + Orchestrator) startet vollständig. | Teil 3 |
+| 3 | **Automatischer Nachweis** der Kette: Feed → Auto-Spawn einer Firefly-Instanz → CAT062-Multicast → ASD empfängt Tracks → Abmelden räumt auf. | Teil 4 |
+| 4 | Die **ganze Kundeneinrichtung** (Mandant, Nutzer, Feed, Sicht, Zuweisung) läuft in der **Browser-UI**; der angemeldete Mandant sieht **live Tracks**. | Teil 5 |
+| 5 | **Hinter den Kulissen** belegen Container, Logs und Metriken jede Stufe der Kette. | Teil 6 |
 
-**Ab hier kein Terminal mehr für Aktionen — nur noch Browser.**
+**Inhalt:**
+[Teil 0 Voraussetzungen](#teil-0--voraussetzungen) ·
+[Teil 1 Linux-VM](#teil-1--linux-vm-mit-multipass-anlegen) ·
+[Teil 2 Docker in der VM](#teil-2--docker-in-der-vm-einrichten) ·
+[Teil 3 Repos + Stack](#teil-3--repos-holen-firefly-image-bauen-stack-starten) ·
+[Teil 4 Automatischer Lauf](#teil-4--automatischer-abnahme-lauf-deterministisch) ·
+[Teil 5 UI-Abnahme](#teil-5--abnahme-in-der-browser-ui) ·
+[Teil 6 Hinter den Kulissen](#teil-6--hinter-den-kulissen-prüfen) ·
+[Teil 7 Aufräumen](#teil-7--aufräumen) ·
+[Teil 8 Fehlerbehebung](#teil-8--fehlerbehebung) ·
+[Anhang A Schnell-Check ohne VM](#anhang-a--schnell-check-ohne-vm-nur-auf-dem-mac)
 
----
-
-## Teil 1 — Erstanmeldung + Passwortwechsel (UI)
-
-| # | UI-Aktion | Erwartetes Ergebnis | Prüfung |
-|---|-----------|---------------------|---------|
-| 1.1 | Browser: **http://localhost:8081/admin** | Login-Maske „Anmelden" (Benutzername/Passwort). | Maske erscheint. |
-| 1.2 | Anmelden mit `admin` / `admin`. | Sofort die Maske **„Passwort ändern"** (erzwungen). | Kein Zugriff auf die Tabs, bevor das Passwort gesetzt ist. |
-| 1.3 | Neues Passwort (≥ 8 Zeichen) zweimal eingeben, bestätigen. | Admin-Dashboard mit Tabs **Mandanten / Feeds / Plattform-Administratoren**. | Tabs sind jetzt sichtbar/bedienbar. |
-
----
-
-## Teil 2 — Ersten Kunden (EDLV) einrichten (UI)
-
-Alles im Admin-Dashboard, keine Terminal-Befehle.
-
-| # | UI-Aktion | Erwartetes Ergebnis | Prüfung |
-|---|-----------|---------------------|---------|
-| 2.1 | Tab **Mandanten** → **Neuer Mandant**: Slug `edlv`, Name `EDLV Weeze`. | Mandant erscheint in der Liste. | Eintrag „EDLV Weeze" sichtbar. |
-| 2.2 | Mandant **EDLV Weeze** öffnen → Karte **Features**: das gewünschte Feature aktivieren (z. B. **`multi_feed`**, wenn der Kunde mehrere Feeds bekommen soll). | Toggle bleibt an (serverseitig gespeichert). | Feature-Toggle steht auf „an". |
-| 2.3 | Im Mandanten → Karte **Nutzer** → **Neuer Nutzer**: Subject `edlv-lotse`, Passwort (≥ 8), Rolle Nutzer. | Nutzer erscheint in der Mandanten-Nutzerliste. | Eintrag „edlv-lotse" sichtbar. |
-| 2.4 | Tab **Feeds** → **Neuer Feed**: Name `edlv-weeze`, Sensor-Mix `SSR, ADS-B`, **Endpoint automatisch** (Schalter an). | Feed erscheint mit **automatisch** zugewiesener Gruppe/Port. | Feed-Zeile zeigt eine `239.255.0.x:8600`-Adresse. |
-| 2.5 | Beim Feed **Quellen** öffnen → **echte Live-Quellen** hinzufügen: <br>• Typ `adsb_opensky`, BBox = EDLV-Gebiet (min/max Lat 50.90/51.90, Lon 5.34/6.96). <br>• Typ `flarm_aprs`, gleiche BBox. <br>Speichern. | Beide Quellen gespeichert; eine `coverage_bbox` wird angezeigt. | Quellen-Liste zeigt `adsb_opensky` **und** `flarm_aprs`. |
-| 2.6 | Im Mandanten → **View-Config**: Zentrum `51.40 / 6.15`, **Radius `30`**, Zoom `9`, FL `0`–`450`. Speichern. | Sicht gespeichert (AOI aus Radius berechnet). | Werte stehen nach Reload unverändert da. |
-| 2.7 | Im Mandanten → **Feeds/Provisioning**: Feed `edlv-weeze` **zuweisen** (Grant). | Feed ist dem Mandanten zugewiesen. | „Granted"-Status beim Feed. |
-
-> **Credentials (optional).** Anonyme ADS-B/FLARM-Quellen brauchen **keine**
-> Zugangsdaten (OpenSky/OGN anonym, rate-limitiert). Für höhere OpenSky-Limits
-> (OAuth2-Client-Credentials) den Secret-Dialog nutzen — der ist nur sichtbar,
-> wenn der Server mit `WAYFINDER_SECRET_KEY` läuft.
+> **Konventionen.** `〈…〉` markiert einen Wert, den **du** aus einer vorherigen
+> Ausgabe einsetzt (z. B. `〈VM-IP〉`). „**Auf dem Mac**" = Terminal auf macOS.
+> „**In der VM**" = eine Shell **innerhalb** der Ubuntu-VM (nach
+> `multipass shell asd`). Der Eingabe-Prompt in der VM sieht so aus:
+> `ubuntu@asd:~$`.
 
 ---
 
-## Teil 3 — Abmelden als Admin, anmelden als Mandant (UI)
+## Teil 0 — Voraussetzungen
 
-| # | UI-Aktion | Erwartetes Ergebnis | Prüfung |
-|---|-----------|---------------------|---------|
-| 3.1 | Im Admin-Header **Abmelden**. | Zurück zur Login-Maske (Sitzung beendet). | Login-Maske erscheint wieder. |
-| 3.2 | Browser: **http://localhost:8081/** (die Lage-Karte). | Da keine Sitzung besteht: **Login-Maske** statt leerer Karte. | Login-Maske auf `/`. |
-| 3.3 | Anmelden als `edlv-lotse` + Passwort. | Karte lädt, zentriert auf **EDLV** (51,40/6,15, Zoom 9); oben rechts der Konto-Chip `edlv-lotse`. | Kartenausschnitt = Weeze. |
-| 3.4 | Warten, bis Tracks erscheinen (Live-Daten aus Teil 2.5). | ADS-B-/FLARM-Tracks im EDLV-Gebiet; der Kunde sieht **nur** seinen gescopten Strom. | Tracks liegen innerhalb der 30-NM-AOI. |
+| # | Aktion (auf dem Mac) | Erwartetes Ergebnis | ✅ Prüfung |
+|---|----------------------|---------------------|-----------|
+| 0.1 | **Homebrew** installiert? Terminal öffnen, `brew --version` eingeben. | Eine Versionszeile erscheint, z. B. `Homebrew 4.x.x`. | Ausgabe beginnt mit `Homebrew`. Fehlt Homebrew: von <https://brew.sh> installieren, dann 0.1 wiederholen. |
 
-> **Hinweis.** Der Konto-Chip oben rechts bietet **Abmelden** (und für Admins eine
-> Verknüpfung zur Administration). So ist der ganze Auth-Zyklus UI-bedienbar.
+> Mehr braucht der Mac **nicht** — Multipass bringt die komplette Linux-Umgebung
+> mit. Multipass wählt automatisch die passende Architektur (Apple Silicon →
+> ARM64, Intel → x86_64); beide Container-Images bauen dann **nativ**, ohne
+> langsame Emulation.
 
 ---
 
-## Teil 4 — Hinter den Kulissen prüfen (Terminal — **nur** Verifikation)
+## Teil 1 — Linux-VM mit Multipass anlegen
 
-Erst hier wieder das Terminal — ausschließlich, um zu **bestätigen**, dass die
-in der UI angelegte Konfiguration real wirkt.
+| # | Aktion (auf dem Mac) | Erwartetes Ergebnis | ✅ Prüfung |
+|---|----------------------|---------------------|-----------|
+| 1.1 | `brew install --cask multipass` | Installation endet ohne Fehler. | `multipass version` gibt eine Zeile `multipass 1.x.x` aus. |
+| 1.2 | VM starten (dauert 1–2 min): <br>`multipass launch --name asd --cpus 4 --memory 8G --disk 40G` | Am Ende steht `Launched: asd`. | siehe 1.3. |
+| 1.3 | `multipass list` | Eine Zeile für `asd`. | Spalte **State** = `Running`, und eine **IPv4**-Adresse ist eingetragen. |
+| 1.4 | **VM-IP notieren:** `multipass info asd \| grep IPv4` | Zeile wie `IPv4: 192.168.64.7`. | Es erscheint **genau eine** IPv4-Adresse. **Diese Adresse ist ab jetzt `〈VM-IP〉`** (in Teil 5 im Browser gebraucht). |
+
+> Die `〈VM-IP〉` liegt in einem privaten Netz (meist `192.168.64.x`) und ist vom
+> Mac aus **direkt erreichbar** — genau das brauchen wir für den Browser-Zugriff
+> auf das ASD.
+
+---
+
+## Teil 2 — Docker in der VM einrichten
+
+Ab hier arbeiten wir **in der VM**.
+
+| # | Aktion | Erwartetes Ergebnis | ✅ Prüfung |
+|---|--------|---------------------|-----------|
+| 2.1 | **Auf dem Mac:** `multipass shell asd` | Der Prompt wechselt zu `ubuntu@asd:~$`. | Der Prompt beginnt mit `ubuntu@asd`. |
+| 2.2 | **In der VM:** <br>`sudo apt-get update` <br>`sudo apt-get install -y docker.io docker-compose-v2 git` | Pakete werden installiert; endet ohne rot markierten Fehler. | Letzte Zeilen ohne `E:`-Fehler. |
+| 2.3 | **In der VM:** `sudo usermod -aG docker $USER` | Keine Ausgabe (Erfolg ist stumm). | — |
+| 2.4 | Gruppe aktivieren: `exit` (zurück auf den Mac), dann **auf dem Mac** erneut `multipass shell asd`. | Wieder `ubuntu@asd:~$`. | Der neue Shell-Login hat die `docker`-Gruppe. |
+| 2.5 | **In der VM:** `docker run --rm hello-world` | Docker lädt ein Test-Image und führt es aus. | Die Ausgabe enthält **wörtlich** die Zeile `Hello from Docker!`. Erscheint stattdessen `permission denied`, wurde 2.4 übersprungen — nachholen. |
+| 2.6 | **In der VM:** `docker compose version` und `git --version` | Je eine Versionszeile. | `Docker Compose version v2.x` **und** `git version 2.x`. |
+
+---
+
+## Teil 3 — Repos holen, Firefly-Image bauen, Stack starten
+
+Weiter **in der VM**.
+
+| # | Aktion | Erwartetes Ergebnis | ✅ Prüfung |
+|---|--------|---------------------|-----------|
+| 3.1 | Projektordner + beide Repos als **Geschwister** klonen: <br>`mkdir -p ~/asd && cd ~/asd` <br>`git clone https://github.com/manuelringwald/firefly.git` <br>`git clone https://github.com/manuelringwald/wayfinder.git` | Zwei Klone laufen durch. | `ls ~/asd` gibt **genau** aus: `firefly  wayfinder`. |
+| 3.2 | Firefly-Image bauen (erstes Mal einige Minuten, Rust-Compiler): <br>`cd ~/asd/firefly && docker build -t firefly:latest .` | Build endet mit einer Zeile wie `naming to docker.io/library/firefly:latest`. | `docker image inspect firefly:latest --format '{{.Id}}'` gibt eine `sha256:…`-ID aus (kein `No such image`). |
+| 3.3 | Orchestrierten Stack bauen+starten (Go-Compiler beim ersten Mal): <br>`cd ~/asd/wayfinder` <br>`docker compose -f docker-compose.orchestrated.yml up --build -d` | Baut `wayfinder` + `orchestrator`, startet `db`, `wayfinder`, `orchestrator`; kehrt zur Eingabeaufforderung zurück. | Keine Fehlermeldung; siehe 3.4. |
+| 3.4 | `docker compose -f docker-compose.orchestrated.yml ps` | Drei Dienste gelistet. | `db` zeigt `Up … (healthy)`; `wayfinder` und `orchestrator` zeigen `Up …`. |
+| 3.5 | Server lebt? `curl -s localhost:8080/health` | — | Ausgabe ist **exakt** `ok`. |
+| 3.6 | Feed noch nicht abonniert → noch keine Daten: <br>`curl -s -o /dev/null -w "%{http_code}\n" localhost:8080/ready` | — | Ausgabe ist **`503`**. **Das ist korrekt** (noch kein Feed/Heartbeat). Nach Teil 4/5 wird daraus `200`. |
+
+> **Wenn du nur den automatischen Nachweis willst,** kannst du Teil 3.3–3.6
+> überspringen — das Skript in Teil 4 startet und stoppt den Stack selbst. Für die
+> UI-Abnahme in Teil 5 brauchst du den Stack laufend (Teil 3.3).
+
+---
+
+## Teil 4 — Automatischer Abnahme-Lauf (deterministisch)
+
+Dieser Lauf ist **vollständig offline** und **reproduzierbar**: Er seedet direkt
+in der Datenbank einen Mandanten + Feed **ohne** Live-Quellen; der Orchestrator
+spawnt daraufhin eine Firefly-Instanz, die die **Frankfurt-Demo-Szene** abspielt
+und CAT062-Tracks sendet. Kein Internet, keine UI nötig.
+
+| # | Aktion (in der VM, im Ordner `~/asd/wayfinder`) | Erwartetes Ergebnis |
+|---|--------------------------------------------------|---------------------|
+| 4.1 | `./scripts/e2e-orchestrated.sh --mode scene` | Das Skript fährt den Stack hoch, prüft die Kette Punkt für Punkt und räumt am Ende auf. |
+
+**Erwartete Ausgabe — jede dieser Zeilen muss erscheinen (IDs können 1 oder höher sein):**
+
+```
+→ preflight
+  ✓ Docker daemon up, Firefly image 'firefly:latest' present
+  ✓ schema ready
+  ✓ seeded feed id=1 (tenant id=1)
+→ checkpoint 1 — orchestrator spawns the tracker container
+  ✓ container running: wayfinder-firefly-feed-1
+→ checkpoint 2 — container env matches the spec
+  ✓ endpoint + FIREFLY_SCENE present (placeholder source)
+→ checkpoint 5 — tracks reach the ASD (server /metrics)
+  ✓ ASD received CAT062 tracks (wayfinder_cat062_tracks_received_total > 0)
+→ checkpoint 8 — unsubscribe triggers orphan cleanup
+  ✓ tracker torn down after unsubscribe
+
+✅ E2E acceptance (scene) passed.
+```
+
+**Bestanden heißt eindeutig:**
+
+1. Die **allerletzte** Zeile ist **exakt** `✅ E2E acceptance (scene) passed.`, **und**
+2. bei **checkpoint 5** steht ein **`✓ ASD received CAT062 tracks …`** (nicht `⚠ WARN`).
+
+Steht bei checkpoint 5 stattdessen `⚠ WARN: no CAT062 tracks observed …`, ist der
+Spawn-/Aufräum-Teil bestanden, aber es kamen keine Tracks an → siehe
+[Teil 8](#teil-8--fehlerbehebung). Bricht das Skript mit `✗ FAIL:` ab, nennt die
+Zeile den fehlgeschlagenen Prüfpunkt.
+
+> **Optionaler Live-Lauf.** `./scripts/e2e-orchestrated.sh --mode opensky-anon`
+> nutzt statt der Szene eine **echte** anonyme ADS-B-Quelle (OpenSky). Er braucht
+> **Internet** aus der VM; die Trefferzahl hängt vom realen Verkehr ab, deshalb ist
+> checkpoint 5 hier bewusst nur ein **Hinweis** (`⚠ WARN` ist kein Fehler). Für den
+> **deterministischen** Nachweis gilt `--mode scene`.
+
+---
+
+## Teil 5 — Abnahme in der Browser-UI
+
+Jetzt der menschliche Durchlauf: **ein** Terminal-Befehl zum Start, alles Weitere
+im Browser. Voraussetzung: Der Stack aus **Teil 3.3** läuft (falls du Teil 4
+gefahren hast, hat es den Stack wieder abgebaut — dann Teil 3.3 erneut ausführen).
+
+> Wir verwenden bewusst einen Feed **ohne** Live-Quellen. Dann spielt die
+> gespawnte Firefly-Instanz die **Frankfurt-Szene** (acht Flugzeuge, ~40 min) ab —
+> so ist garantiert Verkehr zu sehen, unabhängig von echtem Flugaufkommen.
+
+### 5.1 Anmelden + Passwortwechsel
+
+| # | UI-Aktion (Browser **auf dem Mac**) | Erwartetes Ergebnis | ✅ Prüfung |
+|---|-------------------------------------|---------------------|-----------|
+| 5.1.1 | `http://〈VM-IP〉:8081/admin` öffnen (die IP aus Schritt 1.4). | Login-Maske „Anmelden" (Benutzername/Passwort). | Maske erscheint. Lädt nichts → [Teil 8](#teil-8--fehlerbehebung). |
+| 5.1.2 | Anmelden mit `admin` / `admin`. | Sofort die Maske **„Passwort ändern"** (erzwungen). | Kein Zugriff auf die Tabs vor dem Wechsel. |
+| 5.1.3 | Neues Passwort (≥ 8 Zeichen) zweimal eingeben, bestätigen. | Admin-Dashboard mit den Tabs **Mandanten**, **Feeds**, **Plattform-Administratoren**. | Die drei Tabs sind sichtbar. |
+
+### 5.2 Kunden anlegen
+
+| # | UI-Aktion | Erwartetes Ergebnis | ✅ Prüfung |
+|---|-----------|---------------------|-----------|
+| 5.2.1 | Tab **Mandanten** → **Neuer Mandant**: Slug `demo`, Name `Demo Frankfurt`. | Mandant erscheint in der Liste. | Eintrag „Demo Frankfurt" sichtbar. |
+| 5.2.2 | Mandant **Demo Frankfurt** öffnen („Konfigurieren") → Karte **Nutzer** → **Neuer Nutzer**: Subject `lotse`, Passwort (≥ 8), Rolle Nutzer. | Nutzer erscheint in der Nutzerliste des Mandanten. | Eintrag „lotse" sichtbar. |
+| 5.2.3 | Tab **Feeds** → **Neuer Feed**: Name `frankfurt-demo`, Sensor-Mix `PSR, SSR, ADS-B`, **Endpoint automatisch = AN**. **Keine** Quellen hinzufügen. | Feed erscheint mit **automatisch** vergebener Adresse. | Feed-Zeile zeigt eine `239.255.0.x:8600`-Adresse. |
+
+> **Wichtig — Unterschied zum Nicht-Orchestrierten Weg:** Hier ist **„Endpoint
+> automatisch = AN"** richtig. Der Orchestrator startet die Firefly-Instanz
+> **genau auf dieser vergebenen Adresse**, und der ASD-Server hört dort zu. (Nur
+> im VM-losen [Anhang A](#anhang-a--schnell-check-ohne-vm-nur-auf-dem-mac) muss man
+> den Endpoint **fest** eintragen.)
+
+### 5.3 Sicht setzen + Feed zuweisen
+
+| # | UI-Aktion | Erwartetes Ergebnis | ✅ Prüfung |
+|---|-----------|---------------------|-----------|
+| 5.3.1 | Im Mandanten **Demo Frankfurt** → **View-Config**: Zentrum `50.04` / `8.56`, Radius `100` (NM), Zoom `8`, FL `0`–`450`. Speichern. | Sicht gespeichert. | Werte stehen nach Reload unverändert da. |
+| 5.3.2 | Im Mandanten → **Feeds** → Feed `frankfurt-demo` **zuweisen** (Grant). | Feed ist dem Mandanten zugewiesen. | Feed zeigt Status **„Granted"**. |
+
+> Nach 5.3.2 spawnt der Orchestrator innerhalb weniger Sekunden die Firefly-
+> Instanz (der Beleg dafür kommt in Teil 6).
+
+### 5.4 Als Kunde anmelden und Tracks sehen
+
+| # | UI-Aktion | Erwartetes Ergebnis | ✅ Prüfung |
+|---|-----------|---------------------|-----------|
+| 5.4.1 | Oben rechts **Abmelden** (Admin). Am besten ein **privates Browserfenster** öffnen. | Zurück zur Login-Maske. | Login-Maske erscheint. |
+| 5.4.2 | `http://〈VM-IP〉:8081/` öffnen, anmelden als `lotse` + Passwort. | Karte lädt, zentriert auf **Frankfurt** (50.04/8.56, Zoom 8); oben rechts der Konto-Chip `lotse`. | Kartenausschnitt = Raum Frankfurt. |
+| 5.4.3 | Wenige Sekunden warten. | **Ca. acht** Flugzeug-Tracks erscheinen und **bewegen sich**; oben links ein **grüner Banner „FEED OK"**. | Bewegte Track-Symbole sichtbar **und** Banner grün. |
+
+> **Sichtbar bleibend ~40 min:** Die Frankfurt-Szene läuft rund 40 Minuten und
+> endet dann; danach kommen keine neuen Tracks mehr. Das ist **erwartetes**
+> Verhalten, kein Fehler. Für einen neuen Lauf den Stack neu starten (Teil 7 → 3).
+
+---
+
+## Teil 6 — Hinter den Kulissen prüfen
+
+Rein zur **Bestätigung**, dass die UI-Konfiguration real wirkt. Diese Befehle
+laufen **in der VM** (`multipass shell asd`, dann `cd ~/asd/wayfinder`). `〈id〉` ist
+die Feed-ID aus dem Container-Namen in 6.1.
 
 | # | Prüf-Befehl | Erwartetes Ergebnis |
 |---|-------------|---------------------|
-| 4.1 | `docker ps --filter label=wayfinder.feed_id` | Container **`wayfinder-firefly-feed-<id>`** läuft (vom Orchestrator gespawnt). |
-| 4.2 | `docker inspect wayfinder-firefly-feed-<id> --format '{{json .Config.Env}}'` | `FIREFLY_CAT062_GROUP`/`FIREFLY_CAT062_PORT` = die **Feed-Adresse aus 2.4**; `FIREFLY_MODE=live`; `FIREFLY_SOURCES` enthält `adsb_opensky` **und** `flarm_aprs`. |
-| 4.3 | `docker logs wayfinder-firefly-feed-<id>` | Zeilen: **`live mode: starting tracker`** (mit `opensky_sources=1`, `flarm_sources=1`), **`CAT062 multicast feed enabled`** + Ziel **`<group>:<port>`**, **`OpenSky ADS-B poller … started`** (+ BBox), **`FLARM/OGN APRS-IS listener started`**. → bestätigt Adresse:Port **und** die Datentypen. |
-| 4.4 | `curl -s localhost:8080/metrics \| grep cat062` (Wayfinder) | `wayfinder_cat062_blocks_received_total` und `…_tracks_received_total` **> 0** → Wayfinder empfängt den Strom. |
-| 4.5 | Admin-UI → Feeds → **Feed-Gesundheit** (oder `GET /api/admin/feeds/health`) | Feld für den Feed wird **grün**, `ever_seen=true` (CAT065-Heartbeat läuft). |
-
-> Optional, falls Firefly `/metrics` exponiert: `firefly_sources_opensky` und
-> `firefly_sources_flarm` = `1` (Quelltypen verdrahtet), `firefly_cat062_scans_sent_total`
-> wächst (Multicast wird gesendet).
+| 6.1 | `docker ps --filter label=wayfinder.feed_id --format '{{.Names}}'` | Genau ein Name der Form **`wayfinder-firefly-feed-〈id〉`** (vom Orchestrator gespawnt). |
+| 6.2 | `docker inspect wayfinder-firefly-feed-〈id〉 --format '{{json .Config.Env}}'` | Enthält `FIREFLY_CAT062_GROUP=239.255.0.x` und `FIREFLY_CAT062_PORT=8600` (**die Feed-Adresse aus 5.2.3**) sowie `FIREFLY_SCENE=frankfurt`. |
+| 6.3 | `docker logs wayfinder-firefly-feed-〈id〉 2>&1 \| grep -i cat062` | Zeile **`CAT062 multicast feed enabled`** mit Ziel **`239.255.0.x:8600`**. |
+| 6.4 | `curl -s localhost:8080/metrics \| grep cat062` | `wayfinder_cat062_blocks_received_total` **und** `wayfinder_cat062_tracks_received_total` sind **> 0**. |
+| 6.5 | `curl -s -o /dev/null -w "%{http_code}\n" localhost:8080/ready` | **`200`** (Feed aktiv — mindestens ein CAT065-Heartbeat empfangen). |
+| 6.6 | In der Admin-UI: Tab **Feeds** → **Feed-Gesundheit** des zugewiesenen Feeds. | Der Feed-Chip ist **grün** (`ever_seen=true`, Heartbeat läuft). |
 
 ---
 
-## Anhang E — Bridge-Abnahme auf Docker Desktop (Mac mini / Windows)
+## Teil 7 — Aufräumen
 
-Der Haupt-Ablauf oben (Teil 0/4) fährt den **orchestrierten** Stack mit
-`network_mode: host`. Auf **Docker Desktop** (Mac mini, Windows) bindet
-Host-Networking nur an die interne Linux-VM, nicht an den Rechner — der
-Live-Multicast-Pfad kommt dort nicht an. Auf dem Mac mini nimmt man deshalb den
-**Bridge-Weg**: Firefly, Postgres und Wayfinder in **einem gemeinsamen
-Bridge-Netz** (`docker-compose.bridge.yml`). Multicast zwischen Containern auf
-derselben Bridge funktioniert auch unter Docker Desktop — kaputt ist dort nur
-Host↔Container.
+| # | Aktion | Erwartetes Ergebnis | ✅ Prüfung |
+|---|--------|---------------------|-----------|
+| 7.1 | **In der VM**, im Ordner `~/asd/wayfinder`: <br>`docker compose -f docker-compose.orchestrated.yml down -v --remove-orphans` <br>`docker ps -aq --filter 'label=wayfinder.managed=true' \| xargs -r docker rm -f` | Stack + Datenbank-Volume + gespawnte Firefly-Container entfernt. | `docker ps` listet keine `wayfinder-*`-Container mehr. |
+| 7.2 | VM anhalten (Zustand bleibt): **auf dem Mac** `multipass stop asd`. | VM gestoppt. | `multipass list` zeigt `asd  Stopped`. |
+| 7.3 | *(optional)* VM ganz löschen: `multipass delete asd --purge`. | VM vollständig entfernt. | `multipass list` enthält kein `asd` mehr. |
 
-### Teil E-1 — Was der Bridge-Weg abdeckt (und was nicht)
+> Nur **anhalten** (7.2), wenn du später weitertesten willst — ein
+> `multipass start asd` bringt sie in Sekunden zurück. **Löschen** (7.3) gibt den
+> Speicher frei, dann beginnt ein neuer Test wieder bei Teil 1.2.
 
-| Prüf-Baustein | Bridge (Mac mini) | Orchestriert (Linux) |
+---
+
+## Teil 8 — Fehlerbehebung
+
+| Symptom | Ursache | Lösung |
+|---------|---------|--------|
+| **`http://〈VM-IP〉:8081` lädt nicht** im Mac-Browser | Falsche IP, oder `localhost` statt VM-IP verwendet, oder Server noch nicht oben. | 1) Server-Check **in der VM**: `curl -s localhost:8080/health` → muss `ok` sein. 2) IP neu holen: `multipass info asd \| grep IPv4`. 3) **Nicht** `localhost:8081` am Mac benutzen — die Ports liegen auf der VM. |
+| **`docker run hello-world` → `permission denied`** | Schritt 2.4 (Gruppe aktivieren) übersprungen. | `exit`, dann auf dem Mac erneut `multipass shell asd`; 2.5 wiederholen. |
+| **Skript (Teil 4): `✗ FAIL: Firefly image 'firefly:latest' not found`** | Teil 3.2 nicht gemacht. | `cd ~/asd/firefly && docker build -t firefly:latest .`, dann Teil 4 erneut. |
+| **Skript: checkpoint 5 zeigt `⚠ WARN: no CAT062 tracks`** | Multicast überquert den Host nicht, oder die Szene ist still. | Läuft die VM als **echter** Linux-Host (ja bei Multipass)? `docker logs wayfinder-firefly-feed-〈id〉` prüfen: erscheint `CAT062 multicast feed enabled`? |
+| **UI: Karte bleibt leer** | Feed nicht zugewiesen (5.3.2), Sicht-AOI zu klein (Tracks außerhalb), oder Szene nach ~40 min zu Ende. | Zuweisung prüfen (Status „Granted"); Radius in 5.3.1 auf `100` NM setzen; Stack neu starten (Teil 7 → 3.3). |
+| **`docker compose … up` bricht mit Build-Fehler ab** | Zu wenig RAM/Disk oder Netzwerkabbruch beim ersten Abhängigkeits-Download. | VM größer neu anlegen: `multipass delete asd --purge` und `multipass launch … --memory 8G --disk 40G` erneut. |
+| **`db` wird nicht `healthy`** | Datenbank braucht ein paar Sekunden. | 10 s warten, `docker compose -f docker-compose.orchestrated.yml ps` erneut; bleibt es `unhealthy`: `docker compose -f docker-compose.orchestrated.yml logs db`. |
+
+---
+
+## Anhang A — Schnell-Check ohne VM (nur auf dem Mac)
+
+Wenn du **keinen** vollständigen orchestrierten Lauf brauchst, sondern nur schnell
+die **UI + Live-Tracks** auf dem Mac sehen willst, gibt es einen VM-losen Weg über
+ein **gemeinsames Bridge-Netz** (`docker-compose.bridge.yml`, Details in
+`DOCKER.md`). Container↔Container-Multicast funktioniert dort auch unter Docker
+Desktop.
+
+**Abdeckung — dieser Weg zeigt weniger:**
+
+| Prüf-Baustein | Bridge (Mac, ohne VM) | Voller Lauf (Multipass, Teil 1–6) |
 |---|---|---|
-| UI-Einrichtung (Login, Mandant, Nutzer, Feature, Feed, Quellen, View, Zuweisung) — Teil 1–3 | ✅ identisch | ✅ |
-| **Live-Tracks auf der Karte** (Multicast Container→Container) | ✅ ja | ✅ |
-| Orchestrator-**Auto-Spawn je Feed** + Teardown (Prüfpunkte 1/2/8) | ❌ nein | ✅ |
-| `scripts/e2e-orchestrated.sh` | ❌ (braucht Host-Net + Docker-Socket) | ✅ |
+| UI-Einrichtung (Login, Mandant, Nutzer, Feed, Sicht, Zuweisung) | ✅ | ✅ |
+| Live-Tracks auf der Karte | ✅ | ✅ |
+| Orchestrator-**Auto-Spawn je Feed** + Aufräumen (checkpoints 1/2/8) | ❌ | ✅ |
+| Automatischer Skript-Nachweis `e2e-orchestrated.sh` | ❌ | ✅ |
 
-Auf dem Bridge-Weg gibt es **keinen Orchestrator**: Firefly ist ein **fester**
-externer Sender auf `239.255.0.62:8600`. Der Kern-Unterschied zur UI aus Teil 2
-ist deshalb **ein einziger Schritt** (siehe E-2, Schritt E.4): der Feed wird mit
-**genau diesem festen Endpoint** angelegt — **nicht** „Endpoint automatisch". Eine
-auto-allokierte `239.255.0.x`-Adresse würde ins Leere zeigen (Firefly sendet dort
-nicht) und die Karte bliebe leer.
+**Ablauf (Kurzform):**
 
-> **Voraussetzung Layout.** Beide Repos als Geschwister-Ordner, z. B. unter
-> `~/asd/`:
->
-> ```
-> ~/asd/
-> ├── firefly/     ← Firefly-Repo (der ../firefly-Build-Kontext)
-> └── wayfinder/   ← dieses Repo (von hier starten)
-> ```
+1. Firefly-Repo als **Geschwister** von `wayfinder/` klonen (wie Teil 3.1, aber auf
+   dem Mac, z. B. unter `~/asd/`).
+2. `cd ~/asd/wayfinder && docker compose -f docker-compose.bridge.yml up --build`.
+3. Browser: `http://localhost:8081/admin` (Login `admin`/`admin`, Passwortwechsel).
+4. **Entscheidender Unterschied:** Da es hier **keinen** Orchestrator gibt, ist
+   Firefly ein **fester** Sender auf `239.255.0.62:8600`. Beim Feed-Anlegen deshalb
+   **„Endpoint automatisch = AUS"** und Gruppe **`239.255.0.62`** / Port **`8600`**
+   **von Hand** eintragen, dann dem Mandanten zuweisen.
 
-### Teil E-2 — Ablauf
-
-| # | Aktion | Erwartetes Ergebnis | Prüfung |
-|---|--------|---------------------|---------|
-| E.1 | Firefly-Repo daneben klonen (falls noch nicht): `git clone …/firefly.git` als Geschwister von `wayfinder/`. | `~/asd/firefly` und `~/asd/wayfinder` liegen nebeneinander. | `ls ~/asd` → `firefly wayfinder`. |
-| E.2 | Im Wayfinder-Repo: `docker compose -f docker-compose.bridge.yml up --build` | Firefly + Postgres + Wayfinder starten in einem Bridge-Netz; Auto-Seed legt den Default-Admin an. | `docker compose -f docker-compose.bridge.yml ps` → alle `Up`, `db (healthy)`. |
-| E.3 | **Teil 1–3 wie oben** durchlaufen (Login `admin`/`admin` + Passwortwechsel, Mandant/Nutzer/Features/View, Abmelden/Anmelden). | Identisch zum Haupt-Ablauf — die UI unterscheidet sich nicht. | Siehe Teil 1–3. |
-| E.4 | Tab **Feeds** → **Neuer Feed**: **Endpoint automatisch AUS**, Gruppe **`239.255.0.62`**, Port **`8600`** von Hand eintragen (= Fireflys fester Sende-Endpoint). | Feed erscheint mit genau `239.255.0.62:8600`. | Feed-Zeile zeigt `239.255.0.62:8600` (nicht `239.255.0.x`). |
-| E.5 | Feed dem Mandanten **zuweisen** (Grant), dann als Mandant anmelden. | Karte lädt; nach wenigen Sekunden erscheinen die Frankfurt-Tracks. | Tracks sichtbar; oben links **FEED OK** (grün). |
-| E.6 | Hinter den Kulissen (Terminal, nur Verifikation): `curl -s localhost:8080/metrics \| grep cat062` | `wayfinder_cat062_blocks_received_total` und `…_tracks_received_total` **> 0**. | Werte wachsen. |
-
-> **Bleibt die Karte leer?** Fast immer ist es E.4 — der Feed wurde
-> **auto-allokiert** statt auf `239.255.0.62:8600` gesetzt. Prüfen mit
-> `docker compose -f docker-compose.bridge.yml logs firefly` (sendet Firefly auf
-> `239.255.0.62:8600`?) und der Feed-Adresse in der Admin-UI.
-
-## Aufräumen
-
-```bash
-# Orchestrierter Stack (Linux):
-docker compose -f docker-compose.orchestrated.yml down -v --remove-orphans
-docker ps -aq --filter 'label=wayfinder.managed=true' | xargs -r docker rm -f
-
-# Bridge-Stack (Mac mini / Windows):
-docker compose -f docker-compose.bridge.yml down -v --remove-orphans
-```
-
-## Bekannte Grenzen
-
-- **Docker Desktop (macOS/Windows, Mac mini):** Host-Net-Multicast funktioniert
-  dort nicht, der **orchestrierte** Stack (Auto-Spawn, Prüfpunkte 1/2/8) gehört
-  daher auf einen Linux-Host. **Live-Tracks** sind auf dem Mac mini trotzdem
-  möglich — über den **Bridge-Weg** (`docker-compose.bridge.yml`): Firefly +
-  Wayfinder im selben Bridge-Netz, fester Feed-Endpoint statt Auto-Spawn. Der
-  vollständige Ablauf steht oben in **Anhang E**; Hintergrund in `DOCKER.md`.
-- **Sitzungsablauf:** läuft die Mandanten-Sitzung ab (Default 12 h), zeigt die
-  Karte den Stand bis zum Reload; ein erneutes Öffnen von `/` führt zur
-  Login-Maske. (Inline-Re-Login bei WS-Ablauf ist ein Folge-Schritt.)
-- **Diese Repo-CI/Sandbox:** ohne Docker-Daemon nur `docker compose config` /
-  Binär-/Frontend-Build verifizierbar; der echte Lauf gehört auf einen Docker-Host.
+   **Erwartetes Ergebnis:** Nach der Anmeldung als Mandant erscheinen die
+   Frankfurt-Tracks; `curl -s localhost:8080/metrics | grep cat062` zeigt Werte
+   **> 0**.

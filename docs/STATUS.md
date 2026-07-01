@@ -28,17 +28,22 @@
   **Secret-Hardening** (AES-GCM-AAD-Bindung an `(feed_id, cred_ref)`).
   Cross-Repo: Firefly OpenSky **OAuth2 Client-Credentials** (ADR 0024).
 
-- **Mac-mini-E2E über Bridge-Netz (Sitzung 2026-07-01):** Der orchestrierte
-  E2E-Stack braucht Host-Net-Multicast und damit Linux; auf Docker Desktop
-  (Mac mini/Windows) geht das nicht. Neu: eingecheckte **`docker-compose.bridge.yml`**
+- **Mac-mini-E2E (Sitzung 2026-07-01):** Der orchestrierte E2E-Stack braucht
+  Host-Net-Multicast und damit Linux; auf Docker Desktop (Mac mini/Windows) geht
+  das nicht. Zwei Ergebnisse: **(1)** eingecheckte **`docker-compose.bridge.yml`**
   (Firefly + Postgres + Wayfinder in **einem** Bridge-Netz; Container↔Container-
-  Multicast funktioniert dort). Runbook `docs/E2E-ABNAHME.md` um **Anhang E**
-  (E-1 Abgrenzung zum Auto-Spawn, E-2 Ablauf mit **festem** Feed-Endpoint statt
-  Auto-Allokation) erweitert; `DOCKER.md` (Inline-YAML → Verweis auf die Datei,
-  tote „Teil E-2"-Referenz aufgelöst, Stack-Tabelle), `INSTALLATION.md` (Schritt 4.A
-  Kurzweg) und `TECHNICAL.md` (Einschränkungs-Tabelle) nachgezogen. Gates grün
-  (gofmt/build/vet + 28 Test-Pakete; `docker compose config` valide). Kein
-  Go-/ICD-Change — reine Betriebs-/Abnahme-Ergänzung.
+  Multicast funktioniert dort → UI + Live-Tracks auf dem Mac, aber ohne
+  Auto-Spawn). **(2)** `docs/E2E-ABNAHME.md` **komplett neu** als
+  Schritt-für-Schritt-Runbook mit einer **Multipass-Linux-VM** auf dem Mac mini:
+  Teil 0–2 (VM + Docker), Teil 3 (Repos/Image/Stack), Teil 4 (automatischer,
+  deterministischer Lauf `e2e-orchestrated.sh --mode scene` mit exakter
+  Soll-Ausgabe), Teil 5 (UI-Abnahme, Auto-Endpoint, Frankfurt-Szene → Tracks),
+  Teil 6 (Belege), Teil 7 (Aufräumen), Teil 8 (Fehlerbehebung), **Anhang A**
+  (Bridge-Schnell-Check ohne VM). Jeder Schritt mit **exaktem** erwartetem
+  Ergebnis. Querverweise in `DOCKER.md`/`INSTALLATION.md`/`TECHNICAL.md` auf die
+  neue Struktur (Anhang A / Teil 1–6) nachgezogen. Gates grün (gofmt/build/vet +
+  28 Test-Pakete; `docker compose config` valide). Kein Go-/ICD-Change — reine
+  Betriebs-/Abnahme-Doku.
 
 - **ADR 0014 — Multi-Tenant als einziger Betriebsmodus (diese Sitzung):**
   Single-Tenant vollständig entfernt. **A** (ADR + Charta-Prinzip, PR #94 gemergt) ·
@@ -84,13 +89,14 @@
   (Checkliste beim Testen ins Runbook). **Probelauf:** `WAYFINDER_SESSION_MAX_LIFETIME=30m`.
 
 - **Nächste Schritte (für die frische Session — priorisiert):**
-  1. **Realer E2E-Abnahme-Lauf.** Zwei Wege: (a) **Mac mini / Docker Desktop**
-     über `docker-compose.bridge.yml` — voller UI-Durchlauf **+ Live-Tracks**,
-     aber **ohne** Orchestrator-Auto-Spawn (Runbook Anhang E). (b) **Linux-Docker-
-     Host** für den orchestrierten Kern: `scripts/e2e-orchestrated.sh`
-     (Prüfpunkte 1/2/5/8) + authentifizierter Lauf mit echten OpenSky-
-     `client_id`/`client_secret` (Prüfpunkte 3/4/6/7). Der Auto-Spawn-Nachweis
-     (1/2/8) bleibt **Linux-Sache**.
+  1. **Realer E2E-Abnahme-Lauf.** Zwei Wege: (a) **Schnell-Check ohne VM** auf dem
+     Mac über `docker-compose.bridge.yml` — voller UI-Durchlauf **+ Live-Tracks**,
+     aber **ohne** Orchestrator-Auto-Spawn (Runbook Anhang A). (b) **Voller
+     orchestrierter Lauf** — jetzt auch auf dem Mac mini via **Multipass-Linux-VM**
+     (Runbook Teil 1–6) oder auf jedem Linux-Docker-Host: `scripts/e2e-orchestrated.sh`
+     (Prüfpunkte 1/2/5/8, deterministisch offline) + authentifizierter Lauf mit
+     echten OpenSky-`client_id`/`client_secret` (Prüfpunkte 3/4/6/7). Der
+     Auto-Spawn-Nachweis (1/2/8) braucht einen echten Linux-Kernel (VM genügt).
   2. **Offene Wayfinder-Issues:** #57 (Admin-UI View-Config-Captions, S2) ·
      #64 (Session-Registry/-Limit, S4) · #68 (Impersonation auf `admin`-Rolle, S4).
   3. **Firefly-Cross-Project (Issue #35):** die übrigen Live-Adapter
