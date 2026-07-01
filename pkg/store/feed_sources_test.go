@@ -168,3 +168,60 @@ func TestCoverageBBoxMarginClampsToValidRange(t *testing.T) {
 		t.Fatalf("coverage not clamped: %+v", *got)
 	}
 }
+
+// TestDerivedSensorMix pins Issue #102: the sensor mix is derived from the
+// configured source types (deduped, sorted, canonical), so it can no longer drift
+// from the actual sources.
+func TestDerivedSensorMix(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  SourceConfig
+		want []string
+	}{
+		{name: "empty", cfg: SourceConfig{}, want: []string{}},
+		{
+			name: "adsb only",
+			cfg:  SourceConfig{{Type: SourceADSBOpenSky, BBox: bbox(48, 7, 50, 9)}},
+			want: []string{"ADS-B"},
+		},
+		{
+			name: "flarm only",
+			cfg:  SourceConfig{{Type: SourceFLARMAPRS, BBox: bbox(48, 7, 50, 9)}},
+			want: []string{"FLARM"},
+		},
+		{
+			name: "adsb + flarm sorted",
+			cfg: SourceConfig{
+				{Type: SourceFLARMAPRS, BBox: bbox(48, 7, 50, 9)},
+				{Type: SourceADSBOpenSky, BBox: bbox(48, 7, 50, 9)},
+			},
+			want: []string{"ADS-B", "FLARM"},
+		},
+		{
+			name: "duplicate source type deduped",
+			cfg: SourceConfig{
+				{Type: SourceADSBOpenSky, BBox: bbox(48, 7, 50, 9)},
+				{Type: SourceADSBOpenSky, BBox: bbox(40, 0, 42, 2)},
+			},
+			want: []string{"ADS-B"},
+		},
+		{
+			name: "radar maps to SSR",
+			cfg:  SourceConfig{{Type: SourceRadarASTERIX, SAC: ptrInt(1), SIC: ptrInt(4)}},
+			want: []string{"SSR"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := tc.cfg.DerivedSensorMix()
+			if len(got) != len(tc.want) {
+				t.Fatalf("DerivedSensorMix() = %v, want %v", got, tc.want)
+			}
+			for i := range got {
+				if got[i] != tc.want[i] {
+					t.Fatalf("DerivedSensorMix() = %v, want %v", got, tc.want)
+				}
+			}
+		})
+	}
+}

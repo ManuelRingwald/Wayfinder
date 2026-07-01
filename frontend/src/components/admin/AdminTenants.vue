@@ -86,31 +86,33 @@
       <v-card-title class="text-subtitle-1">Mandant anlegen</v-card-title>
       <v-card-text>
         <v-text-field
-          v-model="form.slug"
-          label="Slug (Kennung)"
-          hint="Kleinbuchstaben, Ziffern und Bindestriche; eindeutig und URL-sicher (z. B. kunde-nord)."
+          v-model="form.name"
+          label="Name"
+          hint="Anzeigename des Kunden, z. B. „EDLV Weeze“."
           persistent-hint
           autofocus
-          class="mb-3"
+          class="mb-2"
         />
-        <v-text-field
-          v-model="form.name"
-          label="Anzeigename (optional)"
-          hint="Leer lassen, um den Slug als Namen zu verwenden."
-          persistent-hint
-        />
+        <!-- Issue #105: the slug is a technical identifier (URLs/API references),
+             derived automatically from the name and shown read-only — never a
+             manual field the admin has to fill in. -->
+        <div class="text-caption text-medium-emphasis">
+          Kennung (automatisch):
+          <code v-if="derivedSlug">{{ derivedSlug }}</code>
+          <span v-else class="text-warning">Bitte einen Namen mit Buchstaben oder Ziffern wählen.</span>
+        </div>
       </v-card-text>
       <v-card-actions>
         <v-spacer />
         <v-btn variant="text" @click="createDialog = false">Abbrechen</v-btn>
-        <v-btn color="primary" :loading="loading" :disabled="!form.slug.trim()" @click="submitCreate">Anlegen</v-btn>
+        <v-btn color="primary" :loading="loading" :disabled="!derivedSlug" @click="submitCreate">Anlegen</v-btn>
       </v-card-actions>
     </v-card>
   </v-dialog>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useAdminStore } from '@/stores/admin.js'
 
 defineEmits(['select'])
@@ -118,20 +120,38 @@ defineEmits(['select'])
 const admin = useAdminStore()
 const loading = ref(false)
 
-// ONB-4: create-tenant dialog state.
+// ONB-4: create-tenant dialog state. Issue #105: the admin only enters a name; the
+// slug is derived from it (see slugify) rather than typed by hand.
 const createDialog = ref(false)
-const form = ref({ slug: '', name: '' })
+const form = ref({ name: '' })
+
+// slugify turns a display name into a DNS-label-like slug matching the server's
+// slugPattern (lowercase a–z0–9 and inner hyphens): transliterate the common
+// German umlauts, lowercase, replace every other run of non-alphanumerics with a
+// single hyphen, trim leading/trailing hyphens, and cap at the 63-char limit.
+function slugify(name) {
+  const map = { ä: 'ae', ö: 'oe', ü: 'ue', ß: 'ss' }
+  return (name || '')
+    .toLowerCase()
+    .replace(/[äöüß]/g, (c) => map[c])
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 63)
+    .replace(/-+$/g, '')
+}
+
+const derivedSlug = computed(() => slugify(form.value.name))
 
 function openCreate() {
-  form.value = { slug: '', name: '' }
+  form.value = { name: '' }
   createDialog.value = true
 }
 
 async function submitCreate() {
+  const slug = derivedSlug.value
+  if (!slug) return
   loading.value = true
-  const payload = { slug: form.value.slug.trim() }
-  if (form.value.name.trim()) payload.name = form.value.name.trim()
-  const r = await admin.createTenant(payload)
+  const r = await admin.createTenant({ slug, name: form.value.name.trim() })
   loading.value = false
   if (r.ok) {
     createDialog.value = false

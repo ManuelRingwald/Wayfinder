@@ -235,6 +235,21 @@ func (b *Backend) fireflyEnv(spec instance.Spec) []string {
 	env := []string{
 		"FIREFLY_CAT062_GROUP=" + spec.Group,
 		"FIREFLY_CAT062_PORT=" + strconv.Itoa(spec.Port),
+		// The orchestrator exists to EMIT this feed, so the CAT062 multicast sender
+		// must be on. Firefly's own default is off (a demo must not blast UDP onto
+		// the network unasked) — without this the spawned tracker runs but stays
+		// silent (no CAT062, no CAT065 heartbeat), and the ASD only ever sees a
+		// "feed unknown" state.
+		"FIREFLY_CAT062_ENABLED=true",
+		// Firefly always binds an HTTP server on FIREFLY_PORT (default 8080). The
+		// spawned tracker shares the HOST network namespace (multicast egress needs
+		// it), where 8080 is already held by the Wayfinder probe server — so an
+		// unset port makes Firefly fail to bind and crash-loop, and multiple feeds
+		// would collide with each other. We give every feed a stable, distinct port
+		// clear of Wayfinder (8081 UI / 8080 probe) and Postgres (5432). Firefly's
+		// HTTP/WS is unused in this topology (Wayfinder consumes the multicast); the
+		// port only has to bind successfully.
+		"FIREFLY_PORT=" + strconv.Itoa(fireflyHTTPPort(spec.FeedID)),
 	}
 	if spec.Coverage != nil {
 		c := spec.Coverage
@@ -255,6 +270,26 @@ func (b *Backend) fireflyEnv(spec instance.Spec) []string {
 // sanitisation is needed and names never collide.
 func containerName(feedID int64) string {
 	return "wayfinder-firefly-feed-" + strconv.FormatInt(feedID, 10)
+}
+
+// fireflyHTTPPortBase is the start of the port window for the spawned Firefly
+// instances' (otherwise unused) HTTP servers. It sits well clear of Wayfinder's
+// own ports (8081 UI / 8080 probe) and Postgres (5432), so a host-networked
+// tracker can always bind — see fireflyEnv.
+const fireflyHTTPPortBase = 18080
+
+// fireflyHTTPPort maps a feed id to a stable, collision-free HTTP port for that
+// feed's spawned Firefly instance. Host networking makes the port process-global,
+// so every feed needs a distinct one; the (unique) feed id provides that. The id
+// is wrapped into a bounded window so a large id can never exceed the valid port
+// range; the window (~40k ports) far exceeds any realistic feed count on a host.
+func fireflyHTTPPort(feedID int64) int {
+	const window = 40000
+	off := feedID % window
+	if off < 0 {
+		off += window
+	}
+	return fireflyHTTPPortBase + int(off)
 }
 
 // specHash is a stable fingerprint of the container-defining inputs (image,

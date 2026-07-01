@@ -23,8 +23,8 @@
 |---|------------|-----------------|
 | 1 | Aus einem frischen Mac mini wird mit wenigen Befehlen ein **echter Linux-Docker-Host** (Multipass-VM). | Teil 1–2 |
 | 2 | Der **orchestrierte Stack** (Datenbank + ASD-Server + Orchestrator) startet vollständig. | Teil 3 |
-| 3 | **Automatischer Nachweis** der Kette: Feed → Auto-Spawn einer Firefly-Instanz → CAT062-Multicast → ASD empfängt Tracks → Abmelden räumt auf. | Teil 4 |
-| 4 | Die **ganze Kundeneinrichtung** (Mandant, Nutzer, Feed, Sicht, Zuweisung) läuft in der **Browser-UI**; der angemeldete Mandant sieht **live Tracks**. | Teil 5 |
+| 3 | *(optional)* Ein **offline Smoke-Test** belegt die Kette Feed → Auto-Spawn → CAT062-Multicast → ASD → Aufräumen mit einer Demo-Szene. | Teil 4 |
+| 4 | Die **ganze Kundeneinrichtung** (Mandant, Zugang, Feed, Sicht, Zuweisung) läuft in der **Browser-UI**, mit **echten** ADS-B-/FLARM-Daten (Raum Frankfurt); der angemeldete Mandant sieht **live Tracks**. | Teil 5 |
 | 5 | **Hinter den Kulissen** belegen Container, Logs und Metriken jede Stufe der Kette. | Teil 6 |
 
 **Inhalt:**
@@ -32,8 +32,8 @@
 [Teil 1 Linux-VM](#teil-1--linux-vm-mit-multipass-anlegen) ·
 [Teil 2 Docker in der VM](#teil-2--docker-in-der-vm-einrichten) ·
 [Teil 3 Repos + Stack](#teil-3--repos-holen-firefly-image-bauen-stack-starten) ·
-[Teil 4 Automatischer Lauf](#teil-4--automatischer-abnahme-lauf-deterministisch) ·
-[Teil 5 UI-Abnahme](#teil-5--abnahme-in-der-browser-ui) ·
+[Teil 4 Optionaler Offline-Smoke-Test](#teil-4--optionaler-offline-smoke-test) ·
+[Teil 5 UI-Abnahme mit echten Daten](#teil-5--ui-abnahme-mit-echten-daten) ·
 [Teil 6 Hinter den Kulissen](#teil-6--hinter-den-kulissen-prüfen) ·
 [Teil 7 Aufräumen](#teil-7--aufräumen) ·
 [Teil 8 Fehlerbehebung](#teil-8--fehlerbehebung) ·
@@ -103,13 +103,21 @@ Weiter **in der VM**.
 | 3.5 | Server lebt? `curl -s localhost:8080/health` | — | Ausgabe ist **exakt** `ok`. |
 | 3.6 | Feed noch nicht abonniert → noch keine Daten: <br>`curl -s -o /dev/null -w "%{http_code}\n" localhost:8080/ready` | — | Ausgabe ist **`503`**. **Das ist korrekt** (noch kein Feed/Heartbeat). Nach Teil 4/5 wird daraus `200`. |
 
-> **Wenn du nur den automatischen Nachweis willst,** kannst du Teil 3.3–3.6
+> **Wenn du nur den optionalen Offline-Smoke-Test willst,** kannst du Teil 3.3–3.6
 > überspringen — das Skript in Teil 4 startet und stoppt den Stack selbst. Für die
-> UI-Abnahme in Teil 5 brauchst du den Stack laufend (Teil 3.3).
+> UI-Abnahme in Teil 5 (der Hauptweg) brauchst du den Stack laufend (Teil 3.3).
 
 ---
 
-## Teil 4 — Automatischer Abnahme-Lauf (deterministisch)
+## Teil 4 — Optionaler Offline-Smoke-Test
+
+> **Dieser Teil ist optional.** Er ersetzt **nicht** die eigentliche Abnahme —
+> die läuft mit **echten** Daten in [Teil 5](#teil-5--ui-abnahme-mit-echten-daten).
+> Teil 4 ist ein kurzer, **offline** laufender Smoke-Test, der nur die technische
+> Kette (Feed → Auto-Spawn → CAT062-Multicast → ASD → Aufräumen) belegt, **ohne**
+> echten Verkehr und ohne Internet. Nützlich als schneller Vorab-Check, bevor du
+> mit Teil 5 die eigentliche Abnahme mit echten Daten machst — aber überspringbar,
+> wenn du direkt zu Teil 5 willst.
 
 Dieser Lauf ist **vollständig offline** und **reproduzierbar**: Er seedet direkt
 in der Datenbank einen Mandanten + Feed **ohne** Live-Quellen; der Orchestrator
@@ -149,23 +157,41 @@ Spawn-/Aufräum-Teil bestanden, aber es kamen keine Tracks an → siehe
 [Teil 8](#teil-8--fehlerbehebung). Bricht das Skript mit `✗ FAIL:` ab, nennt die
 Zeile den fehlgeschlagenen Prüfpunkt.
 
-> **Optionaler Live-Lauf.** `./scripts/e2e-orchestrated.sh --mode opensky-anon`
-> nutzt statt der Szene eine **echte** anonyme ADS-B-Quelle (OpenSky). Er braucht
-> **Internet** aus der VM; die Trefferzahl hängt vom realen Verkehr ab, deshalb ist
-> checkpoint 5 hier bewusst nur ein **Hinweis** (`⚠ WARN` ist kein Fehler). Für den
-> **deterministischen** Nachweis gilt `--mode scene`.
+> **Das war's für Teil 4.** Für die eigentliche Abnahme mit echten Daten geht es
+> jetzt in [Teil 5](#teil-5--ui-abnahme-mit-echten-daten) weiter — dort wird der
+> Stack (Teil 3.3) noch einmal frisch gebraucht, falls Teil 4 ihn wieder abgebaut
+> hat.
 
 ---
 
-## Teil 5 — Abnahme in der Browser-UI
+## Teil 5 — UI-Abnahme mit echten Daten
 
-Jetzt der menschliche Durchlauf: **ein** Terminal-Befehl zum Start, alles Weitere
-im Browser. Voraussetzung: Der Stack aus **Teil 3.3** läuft (falls du Teil 4
-gefahren hast, hat es den Stack wieder abgebaut — dann Teil 3.3 erneut ausführen).
+Das ist der **Hauptweg** dieser Abnahme: die komplette Kundeneinrichtung
+(Mandant, Zugang, Feed, Quellen, Sicht, Zuweisung) in der Browser-UI, mit
+**echten** ADS-B- und FLARM-Daten im Raum Frankfurt — **keine** Simulation, keine
+Demo-Szene. Voraussetzung: Der Stack aus **Teil 3.3** läuft (falls du Teil 4
+gefahren hast, hat es den Stack wieder abgebaut — dann Teil 3.3 erneut
+ausführen).
 
-> Wir verwenden bewusst einen Feed **ohne** Live-Quellen. Dann spielt die
-> gespawnte Firefly-Instanz die **Frankfurt-Szene** (acht Flugzeuge, ~40 min) ab —
-> so ist garantiert Verkehr zu sehen, unabhängig von echtem Flugaufkommen.
+> **Nicht-deterministisch, mit Absicht.** Anders als die Demo-Szene aus Teil 4
+> hängt das Track-Bild jetzt vom **echten** Flugverkehr ab. Es gibt **keine**
+> Garantie auf eine feste Anzahl Tracks zu einem festen Zeitpunkt — das ist
+> erwartet, kein Fehler. ADS-B ist um Frankfurt dicht beflogen und sollte
+> zuverlässig Tracks liefern; **FLARM** (Segelflug/GA) ist wetter- und
+> tageszeitabhängig und kann **spärlich oder zeitweise leer** sein — auch das ist
+> kein Fehler, siehe die einzelnen Prüfschritte unten.
+
+Wir prüfen **drei Feeds nacheinander**, jeweils als Lotse in der UI:
+
+1. Ein Feed **nur ADS-B** ([5.4](#54-feed-1--nur-ads-b-prüfen)),
+2. ein Feed **nur FLARM** ([5.5](#55-feed-2--nur-flarm-prüfen)),
+3. ein Feed **ADS-B + FLARM kombiniert** ([5.6](#56-feed-3--ads-b--flarm-kombiniert-prüfen)).
+
+Damit dafür **kein** `multi_feed`-Entitlement nötig ist (ein Mandant ohne dieses
+Recht darf höchstens einen Feed gleichzeitig zugewiesen bekommen — siehe
+`docs/BETRIEB.md`), weisen wir **immer nur einen Feed auf einmal** zu: prüfen,
+dann **entziehen**, dann den nächsten zuweisen. So bleiben die drei Prüfungen
+sauber voneinander isoliert.
 
 ### 5.1 Anmelden + Passwortwechsel
 
@@ -175,41 +201,88 @@ gefahren hast, hat es den Stack wieder abgebaut — dann Teil 3.3 erneut ausfüh
 | 5.1.2 | Anmelden mit `admin` / `admin`. | Sofort die Maske **„Passwort ändern"** (erzwungen). | Kein Zugriff auf die Tabs vor dem Wechsel. |
 | 5.1.3 | Neues Passwort (≥ 8 Zeichen) zweimal eingeben, bestätigen. | Admin-Dashboard mit den Tabs **Mandanten**, **Feeds**, **Plattform-Administratoren**. | Die drei Tabs sind sichtbar. |
 
-### 5.2 Kunden anlegen
+### 5.2 Mandant + Zugang anlegen
 
 | # | UI-Aktion | Erwartetes Ergebnis | ✅ Prüfung |
 |---|-----------|---------------------|-----------|
-| 5.2.1 | Tab **Mandanten** → **Neuer Mandant**: Slug `demo`, Name `Demo Frankfurt`. | Mandant erscheint in der Liste. | Eintrag „Demo Frankfurt" sichtbar. |
-| 5.2.2 | Mandant **Demo Frankfurt** öffnen („Konfigurieren") → Karte **Nutzer** → **Neuer Nutzer**: Subject `lotse`, Passwort (≥ 8), Rolle Nutzer. | Nutzer erscheint in der Nutzerliste des Mandanten. | Eintrag „lotse" sichtbar. |
-| 5.2.3 | Tab **Feeds** → **Neuer Feed**: Name `frankfurt-demo`, Sensor-Mix `PSR, SSR, ADS-B`, **Endpoint automatisch = AN**. **Keine** Quellen hinzufügen. | Feed erscheint mit **automatisch** vergebener Adresse. | Feed-Zeile zeigt eine `239.255.0.x:8600`-Adresse. |
+| 5.2.1 | Tab **Mandanten** → **Mandant anlegen**: Slug `demo`, Name `Demo Frankfurt`. | Mandant erscheint in der Liste. | Eintrag „Demo Frankfurt" sichtbar. |
+| 5.2.2 | Mandant **Demo Frankfurt** öffnen („Konfigurieren") → Abschnitt **„Zugänge"** → **„Zugang anlegen"**: Benutzername `lotse`, E-Mail (optional) leer lassen, Passwort (optional, min. 8 Zeichen) setzen, dann **„Anlegen"**. | Zugang erscheint in der Zugänge-Tabelle des Mandanten. | Eintrag „lotse" sichtbar. |
 
-> **Wichtig — Unterschied zum Nicht-Orchestrierten Weg:** Hier ist **„Endpoint
-> automatisch = AN"** richtig. Der Orchestrator startet die Firefly-Instanz
-> **genau auf dieser vergebenen Adresse**, und der ASD-Server hört dort zu. (Nur
-> im VM-losen [Anhang A](#anhang-a--schnell-check-ohne-vm-nur-auf-dem-mac) muss man
-> den Endpoint **fest** eintragen.)
+> **Keine Rollenauswahl nötig.** Mandanten-Zugänge sind immer die Rolle `user` —
+> es gibt im Dialog kein Rollenfeld.
 
-### 5.3 Sicht setzen + Feed zuweisen
+### 5.3 Sicht setzen + drei Feeds anlegen
+
+Wir legen jetzt **drei Feeds** im globalen Feed-Katalog an (Tab **Feeds**) — sie
+werden erst in 5.4–5.6 einzeln dem Mandanten zugewiesen. Für alle drei gilt
+dieselbe grobzügige **BBox Frankfurt**: min lat `48.5`, min lon `6.5`, max lat
+`51.5`, max lon `10.5`.
 
 | # | UI-Aktion | Erwartetes Ergebnis | ✅ Prüfung |
 |---|-----------|---------------------|-----------|
 | 5.3.1 | Im Mandanten **Demo Frankfurt** → **View-Config**: Zentrum `50.04` / `8.56`, Radius `100` (NM), Zoom `8`, FL `0`–`450`. Speichern. | Sicht gespeichert. | Werte stehen nach Reload unverändert da. |
-| 5.3.2 | Im Mandanten → **Feeds** → Feed `frankfurt-demo` **zuweisen** (Grant). | Feed ist dem Mandanten zugewiesen. | Feed zeigt Status **„Granted"**. |
+| 5.3.2 | Tab **Feeds** → **„Feed anlegen"**: Feld „Name" = `frankfurt-adsb`; Schalter **„Multicast-Endpoint automatisch zuweisen"** = **AN** lassen; Feld **„Sensor-Mix (optional)"** **leer** lassen; **„Anlegen"**. | Feed erscheint mit **automatisch** vergebener Adresse. | Feed-Zeile zeigt eine `239.255.0.x:8600`-Adresse. |
+| 5.3.3 | In der Feed-Zeile von `frankfurt-adsb`: Button **„Quellen"** → **„Quelle hinzufügen"** → **Quell-Typ** = **„ADS-B (OpenSky)"**; BBox-Felder (min lat/min lon/max lat/max lon) mit den Frankfurt-Werten oben füllen; **„Speichern"**. | Quelle ist dem Feed zugeordnet. | Dialog „Quellen — frankfurt-adsb" zeigt eine Zeile mit Typ ADS-B (OpenSky) und der BBox. |
+| 5.3.4 | Wie 5.3.2, aber Name `frankfurt-flarm`. | Zweiter Feed erscheint mit eigener automatischer Adresse. | Feed-Zeile `frankfurt-flarm` mit eigener `239.255.0.x:8600`-Adresse. |
+| 5.3.5 | Wie 5.3.3, aber am Feed `frankfurt-flarm`, Quell-Typ **„FLARM (OGN/APRS)"**, gleiche Frankfurt-BBox. | Quelle ist dem Feed zugeordnet. | Dialog „Quellen — frankfurt-flarm" zeigt eine Zeile mit Typ FLARM (OGN/APRS) und der BBox. |
+| 5.3.6 | Wie 5.3.2, aber Name `frankfurt-kombiniert`. | Dritter Feed erscheint mit eigener automatischer Adresse. | Feed-Zeile `frankfurt-kombiniert` mit eigener `239.255.0.x:8600`-Adresse. |
+| 5.3.7 | Am Feed `frankfurt-kombiniert`: Button **„Quellen"** → **zwei** Quellen nacheinander mit **„Quelle hinzufügen"** anlegen — einmal Quell-Typ **„ADS-B (OpenSky)"**, einmal **„FLARM (OGN/APRS)"**, beide mit der Frankfurt-BBox; einmal **„Speichern"** für beide. | Beide Quellen sind dem Feed zugeordnet. | Dialog „Quellen — frankfurt-kombiniert" zeigt **zwei** Zeilen (ADS-B und FLARM). |
 
-> Nach 5.3.2 spawnt der Orchestrator innerhalb weniger Sekunden die Firefly-
-> Instanz (der Beleg dafür kommt in Teil 6).
+> **„Sensor-Mix (optional)" bewusst leer lassen.** Der Sensor-Mix ist eine
+> reine Anzeige-Eigenschaft und wird künftig automatisch aus den Quellen
+> abgeleitet (Issue #102) — von Hand pflegen ist überflüssig und kann veralten.
+>
+> **Warum „Multicast-Endpoint automatisch zuweisen" = AN richtig ist:** Der
+> Orchestrator startet die Firefly-Instanz **genau auf der vergebenen Adresse**,
+> und der ASD-Server hört dort zu. (Nur im VM-losen
+> [Anhang A](#anhang-a--schnell-check-ohne-vm-nur-auf-dem-mac) muss man den
+> Endpoint **fest** eintragen.)
 
-### 5.4 Als Kunde anmelden und Tracks sehen
+### 5.4 Feed 1 — nur ADS-B prüfen
 
 | # | UI-Aktion | Erwartetes Ergebnis | ✅ Prüfung |
 |---|-----------|---------------------|-----------|
-| 5.4.1 | Oben rechts **Abmelden** (Admin). Am besten ein **privates Browserfenster** öffnen. | Zurück zur Login-Maske. | Login-Maske erscheint. |
-| 5.4.2 | `http://〈VM-IP〉:8081/` öffnen, anmelden als `lotse` + Passwort. | Karte lädt, zentriert auf **Frankfurt** (50.04/8.56, Zoom 8); oben rechts der Konto-Chip `lotse`. | Kartenausschnitt = Raum Frankfurt. |
-| 5.4.3 | Wenige Sekunden warten. | **Ca. acht** Flugzeug-Tracks erscheinen und **bewegen sich**; oben links ein **grüner Banner „FEED OK"**. | Bewegte Track-Symbole sichtbar **und** Banner grün. |
+| 5.4.1 | Im Mandanten **Demo Frankfurt** → Abschnitt **„Feed-Zuweisungen"** → bei `frankfurt-adsb` **„Zuweisen"**. | Feed ist dem Mandanten zugewiesen. | Status-Chip zeigt **„zugewiesen"**. |
+| 5.4.2 | Oben rechts **Abmelden** (Admin). Am besten ein **privates Browserfenster** öffnen. | Zurück zur Login-Maske. | Login-Maske erscheint. |
+| 5.4.3 | `http://〈VM-IP〉:8081/` öffnen, anmelden als `lotse` + Passwort. | Karte lädt, zentriert auf **Frankfurt** (50.04/8.56, Zoom 8); oben rechts der Konto-Chip `lotse`. | Kartenausschnitt = Raum Frankfurt. |
+| 5.4.4 | Etwas warten (echter Verkehr, keine feste Zeit). | Tracks erscheinen, sobald realer ADS-B-Verkehr im Gebiet ist; oben links ein **grüner Banner „FEED OK"**. ADS-B um Frankfurt ist dicht beflogen → sollte zuverlässig kommen. | Mindestens ein bewegtes Track-Symbol sichtbar **und** Banner grün. |
+| 5.4.5 | Zurück im Admin-Fenster: im Mandanten → **„Feed-Zuweisungen"** → bei `frankfurt-adsb` **„Entziehen"**. | Feed ist dem Mandanten nicht mehr zugewiesen. | Status-Chip zeigt wieder **„—"** statt „zugewiesen". |
 
-> **Sichtbar bleibend ~40 min:** Die Frankfurt-Szene läuft rund 40 Minuten und
-> endet dann; danach kommen keine neuen Tracks mehr. Das ist **erwartetes**
-> Verhalten, kein Fehler. Für einen neuen Lauf den Stack neu starten (Teil 7 → 3).
+### 5.5 Feed 2 — nur FLARM prüfen
+
+| # | UI-Aktion | Erwartetes Ergebnis | ✅ Prüfung |
+|---|-----------|---------------------|-----------|
+| 5.5.1 | Im Mandanten → **„Feed-Zuweisungen"** → bei `frankfurt-flarm` **„Zuweisen"**. | Feed ist dem Mandanten zugewiesen. | Status-Chip zeigt **„zugewiesen"**. |
+| 5.5.2 | Als `lotse` (privates Fenster von 5.4.2, ggf. Seite neu laden). | Karte lädt wie zuvor. | Kartenausschnitt = Raum Frankfurt. |
+| 5.5.3 | Etwas warten. | Tracks erscheinen, sobald reale FLARM-Sender (Segelflug/GA) im Gebiet aktiv sind. **FLARM ist wetter- und tageszeitabhängig** — je nach Lage kann die Karte **spärlich besetzt oder zeitweise leer** bleiben. Das ist **kein Fehler**, solange der Feed-Banner grün bleibt (Feed lebt, es fliegt nur gerade niemand). | Banner **grün** (Feed-Heartbeat da); Tracks **wenn** Segelflugverkehr aktiv ist — leere Karte bei grünem Banner ist an sich schon ein bestandener Schritt. |
+| 5.5.4 | Zurück im Admin-Fenster: im Mandanten → **„Feed-Zuweisungen"** → bei `frankfurt-flarm` **„Entziehen"**. | Feed ist dem Mandanten nicht mehr zugewiesen. | Status-Chip zeigt wieder **„—"**. |
+
+### 5.6 Feed 3 — ADS-B + FLARM kombiniert prüfen
+
+| # | UI-Aktion | Erwartetes Ergebnis | ✅ Prüfung |
+|---|-----------|---------------------|-----------|
+| 5.6.1 | Im Mandanten → **„Feed-Zuweisungen"** → bei `frankfurt-kombiniert` **„Zuweisen"**. | Feed ist dem Mandanten zugewiesen. | Status-Chip zeigt **„zugewiesen"**. |
+| 5.6.2 | Als `lotse` (Seite neu laden). | Karte lädt wie zuvor. | Kartenausschnitt = Raum Frankfurt. |
+| 5.6.3 | Etwas warten. | Tracks aus **beiden** Quellen können erscheinen — ADS-B üblicherweise zuverlässig, FLARM wetter-/tageszeitabhängig (siehe 5.5.3). | Banner grün; mindestens die ADS-B-Tracks aus 5.4 sollten wieder erscheinen. |
+| 5.6.4 | In der Legende **„Spurherkunft"** nachsehen (Karten-Werkzeugleiste). | Die Legende ist **dynamisch** (Issue #107): sie zeigt **nur** die Herkünfte, die die abonnierten Feeds liefern. Beim kombinierten Feed also **ADS-B** (◆) **und FLARM** (◆); beim reinen ADS-B-Feed nur ADS-B, beim reinen FLARM-Feed nur FLARM. | Legende zeigt genau die zum Feed passenden Einträge. |
+| 5.6.5 | Zurück im Admin-Fenster: im Mandanten → **„Feed-Zuweisungen"** → bei `frankfurt-kombiniert` **„Entziehen"**. | Feed ist dem Mandanten nicht mehr zugewiesen. | Status-Chip zeigt wieder **„—"**. |
+
+### 5.7 OpenAIP-Layer aktivieren und prüfen
+
+Ohne einen OpenAIP-API-Schlüssel bleiben die Layer **Lufträume**, **VOR / NDB**
+und **Waypoints** **leer**, auch wenn ihre Schalter in der Kartenleiste auf „an"
+stehen — das ist erwartungsgemäß und **kein Fehler**. Dieser Schritt setzt den
+Schlüssel und prüft, dass die Layer danach Daten zeigen.
+
+| # | Aktion | Erwartetes Ergebnis | ✅ Prüfung |
+|---|--------|---------------------|-----------|
+| 5.7.1 | Ohne Schlüssel: als `lotse` in der Kartenleiste die Layer **Lufträume**, **VOR / NDB**, **Waypoints** einschalten. | Schalter stehen auf „an", aber es erscheinen **keine** Symbole/Flächen. | Karte bleibt in diesen Layern leer — das ist der erwartete Ausgangszustand ohne Schlüssel. |
+| 5.7.2 | Schlüssel setzen — **Option A, global:** in der VM in `~/asd/wayfinder/docker-compose.orchestrated.yml` beim Service `wayfinder` unter `environment:` die Zeile `WAYFINDER_OPENAIP_API_KEY: "〈dein-schlüssel〉"` ergänzen, dann `docker compose -f docker-compose.orchestrated.yml up -d wayfinder`. **Option B, pro Mandant:** als Admin im Mandanten **Demo Frankfurt** im Abschnitt **„OpenAIP-Konfiguration"** den Schlüssel eintragen und **„Schlüssel speichern"**. | Bei Option A: Container `wayfinder` neu gestartet mit gesetztem Schlüssel. Bei Option B: Chip zeigt „Eigener Schlüssel: gesetzt". | Option A: `docker compose -f docker-compose.orchestrated.yml ps` zeigt `wayfinder` wieder `Up`. Option B: Chip „gesetzt" sichtbar, kein Neustart nötig. |
+| 5.7.3 | Als `lotse` die Karte neu laden (bzw. bei Option B reicht Warten — die Änderung greift ohne Neustart). | Layer **Lufträume**, **VOR / NDB** und **Waypoints** zeigen jetzt Daten im Frankfurt-Raum. | Sichtbare Luftraum-Flächen und/oder Navaid-/Waypoint-Symbole im Kartenausschnitt. |
+
+> **Zwei Wege, eine Wirkung.** Der pro-Mandant-Schlüssel überschreibt den
+> globalen nur für diesen Mandanten; ohne eigenen Schlüssel greift der globale
+> als Rückfall. Für die Abnahme reicht **einer** der beiden Wege.
 
 ---
 
@@ -217,15 +290,16 @@ gefahren hast, hat es den Stack wieder abgebaut — dann Teil 3.3 erneut ausfüh
 
 Rein zur **Bestätigung**, dass die UI-Konfiguration real wirkt. Diese Befehle
 laufen **in der VM** (`multipass shell asd`, dann `cd ~/asd/wayfinder`). `〈id〉` ist
-die Feed-ID aus dem Container-Namen in 6.1.
+die Feed-ID aus dem Container-Namen in 6.1; die Beispiele gehen von einem
+aktuell zugewiesenen Feed aus einem der Prüfschritte 5.4–5.6 aus.
 
 | # | Prüf-Befehl | Erwartetes Ergebnis |
 |---|-------------|---------------------|
 | 6.1 | `docker ps --filter label=wayfinder.feed_id --format '{{.Names}}'` | Genau ein Name der Form **`wayfinder-firefly-feed-〈id〉`** (vom Orchestrator gespawnt). |
-| 6.2 | `docker inspect wayfinder-firefly-feed-〈id〉 --format '{{json .Config.Env}}'` | Enthält `FIREFLY_CAT062_GROUP=239.255.0.x` und `FIREFLY_CAT062_PORT=8600` (**die Feed-Adresse aus 5.2.3**) sowie `FIREFLY_SCENE=frankfurt`. |
+| 6.2 | `docker inspect wayfinder-firefly-feed-〈id〉 --format '{{json .Config.Env}}'` | Enthält `FIREFLY_CAT062_GROUP=239.255.0.x` und `FIREFLY_CAT062_PORT=8600` (**die Feed-Adresse aus 5.3**) sowie `FIREFLY_SOURCES` mit der konfigurierten Quelle (ADS-B und/oder FLARM). |
 | 6.3 | `docker logs wayfinder-firefly-feed-〈id〉 2>&1 \| grep -i cat062` | Zeile **`CAT062 multicast feed enabled`** mit Ziel **`239.255.0.x:8600`**. |
-| 6.4 | `curl -s localhost:8080/metrics \| grep cat062` | `wayfinder_cat062_blocks_received_total` **und** `wayfinder_cat062_tracks_received_total` sind **> 0**. |
-| 6.5 | `curl -s -o /dev/null -w "%{http_code}\n" localhost:8080/ready` | **`200`** (Feed aktiv — mindestens ein CAT065-Heartbeat empfangen). |
+| 6.4 | `curl -s localhost:8080/metrics \| grep cat062` | `wayfinder_cat062_blocks_received_total` **und** `wayfinder_cat062_tracks_received_total` sind **> 0**, sobald realer Verkehr eingetroffen ist (siehe 5.4/5.5/5.6 — bei ADS-B typischerweise schnell, bei FLARM ggf. verzögert). |
+| 6.5 | `curl -s -o /dev/null -w "%{http_code}\n" localhost:8080/ready` | **`200`** (Feed aktiv — mindestens ein CAT065-Heartbeat empfangen; das gilt bereits ohne Tracks). |
 | 6.6 | In der Admin-UI: Tab **Feeds** → **Feed-Gesundheit** des zugewiesenen Feeds. | Der Feed-Chip ist **grün** (`ever_seen=true`, Heartbeat läuft). |
 
 ---
@@ -250,11 +324,13 @@ die Feed-ID aus dem Container-Namen in 6.1.
 |---------|---------|--------|
 | **`http://〈VM-IP〉:8081` lädt nicht** im Mac-Browser | Falsche IP, oder `localhost` statt VM-IP verwendet, oder Server noch nicht oben. | 1) Server-Check **in der VM**: `curl -s localhost:8080/health` → muss `ok` sein. 2) IP neu holen: `multipass info asd \| grep IPv4`. 3) **Nicht** `localhost:8081` am Mac benutzen — die Ports liegen auf der VM. |
 | **`docker run hello-world` → `permission denied`** | Schritt 2.4 (Gruppe aktivieren) übersprungen. | `exit`, dann auf dem Mac erneut `multipass shell asd`; 2.5 wiederholen. |
-| **Skript (Teil 4): `✗ FAIL: Firefly image 'firefly:latest' not found`** | Teil 3.2 nicht gemacht. | `cd ~/asd/firefly && docker build -t firefly:latest .`, dann Teil 4 erneut. |
-| **Skript: checkpoint 5 zeigt `⚠ WARN: no CAT062 tracks`** | Multicast überquert den Host nicht, oder die Szene ist still. | Läuft die VM als **echter** Linux-Host (ja bei Multipass)? `docker logs wayfinder-firefly-feed-〈id〉` prüfen: erscheint `CAT062 multicast feed enabled`? |
-| **UI: Karte bleibt leer** | Feed nicht zugewiesen (5.3.2), Sicht-AOI zu klein (Tracks außerhalb), oder Szene nach ~40 min zu Ende. | Zuweisung prüfen (Status „Granted"); Radius in 5.3.1 auf `100` NM setzen; Stack neu starten (Teil 7 → 3.3). |
+| **Skript (Teil 4, optional): `✗ FAIL: Firefly image 'firefly:latest' not found`** | Teil 3.2 nicht gemacht. | `cd ~/asd/firefly && docker build -t firefly:latest .`, dann Teil 4 erneut. |
+| **Skript (Teil 4, optional): checkpoint 5 zeigt `⚠ WARN: no CAT062 tracks`** | Multicast überquert den Host nicht, oder die Szene ist still. | Läuft die VM als **echter** Linux-Host (ja bei Multipass)? `docker logs wayfinder-firefly-feed-〈id〉` prüfen: erscheint `CAT062 multicast feed enabled`? |
+| **UI (Teil 5): Karte bleibt leer** | Feed nicht zugewiesen (5.4.1/5.5.1/5.6.1), Sicht-AOI zu klein (Tracks außerhalb), oder gerade kein echter Verkehr im Gebiet (bei FLARM normal, siehe 5.5.3). | Zuweisung prüfen (Status „zugewiesen"); Radius in 5.3.1 auf `100` NM setzen; bei ADS-B länger warten (dichter Verkehr, sollte kommen); bei FLARM ist eine leere Karte **kein Fehler**, solange der Feed-Banner grün ist. |
+| **UI (Teil 5.7): Lufträume/VOR-NDB/Waypoints bleiben leer** | Kein OpenAIP-Schlüssel gesetzt (weder global noch pro Mandant). | Schritt 5.7.2 ausführen (`WAYFINDER_OPENAIP_API_KEY` global oder „OpenAIP-Konfiguration" pro Mandant); danach Karte neu laden. |
 | **`docker compose … up` bricht mit Build-Fehler ab** | Zu wenig RAM/Disk oder Netzwerkabbruch beim ersten Abhängigkeits-Download. | VM größer neu anlegen: `multipass delete asd --purge` und `multipass launch … --memory 8G --disk 40G` erneut. |
 | **`db` wird nicht `healthy`** | Datenbank braucht ein paar Sekunden. | 10 s warten, `docker compose -f docker-compose.orchestrated.yml ps` erneut; bleibt es `unhealthy`: `docker compose -f docker-compose.orchestrated.yml logs db`. |
+| **`apt`-Fehler „Release file is not valid yet"** | VM-Uhr nachgelaufen. | In der VM `sudo timedatectl set-ntp true` bzw. auf dem Mac `multipass restart asd`. |
 
 ---
 
@@ -270,21 +346,24 @@ Desktop.
 
 | Prüf-Baustein | Bridge (Mac, ohne VM) | Voller Lauf (Multipass, Teil 1–6) |
 |---|---|---|
-| UI-Einrichtung (Login, Mandant, Nutzer, Feed, Sicht, Zuweisung) | ✅ | ✅ |
+| UI-Einrichtung (Login, Mandant, Zugang, Feed, Sicht, Zuweisung) | ✅ | ✅ |
 | Live-Tracks auf der Karte | ✅ | ✅ |
 | Orchestrator-**Auto-Spawn je Feed** + Aufräumen (checkpoints 1/2/8) | ❌ | ✅ |
 | Automatischer Skript-Nachweis `e2e-orchestrated.sh` | ❌ | ✅ |
 
-**Ablauf (Kurzform):**
+**Ablauf (Kurzform):** Dieser Weg nutzt der Einfachheit halber die
+**Demo-Szene** (kein Orchestrator, also keine Quellen-Konfiguration) — für die
+Abnahme mit echten Daten gilt Teil 5.
 
 1. Firefly-Repo als **Geschwister** von `wayfinder/` klonen (wie Teil 3.1, aber auf
    dem Mac, z. B. unter `~/asd/`).
 2. `cd ~/asd/wayfinder && docker compose -f docker-compose.bridge.yml up --build`.
 3. Browser: `http://localhost:8081/admin` (Login `admin`/`admin`, Passwortwechsel).
 4. **Entscheidender Unterschied:** Da es hier **keinen** Orchestrator gibt, ist
-   Firefly ein **fester** Sender auf `239.255.0.62:8600`. Beim Feed-Anlegen deshalb
-   **„Endpoint automatisch = AUS"** und Gruppe **`239.255.0.62`** / Port **`8600`**
-   **von Hand** eintragen, dann dem Mandanten zuweisen.
+   Firefly ein **fester** Sender auf `239.255.0.62:8600`. Beim Anlegen mit
+   **„Feed anlegen"** deshalb Schalter **„Multicast-Endpoint automatisch
+   zuweisen" = AUS** und Gruppe **`239.255.0.62`** / Port **`8600`** **von Hand**
+   eintragen, dann im Mandanten unter „Feed-Zuweisungen" **„Zuweisen"**.
 
    **Erwartetes Ergebnis:** Nach der Anmeldung als Mandant erscheinen die
    Frankfurt-Tracks; `curl -s localhost:8080/metrics | grep cat062` zeigt Werte

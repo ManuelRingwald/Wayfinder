@@ -65,6 +65,22 @@
   28 Test-Pakete; `docker compose config` valide). Kein Go-/ICD-Change — reine
   Betriebs-/Abnahme-Doku.
 
+- **E2E-Testlauf-Findings #100–#107 umgesetzt (Sitzung 2026-07-01):** Aus dem realen
+  Multipass-Durchlauf gesammelte Issues gebündelt umgesetzt. **#104 (Blocker, Bug):**
+  Orchestrator-`fireflyEnv` setzt jetzt `FIREFLY_CAT062_ENABLED=true` **und** einen
+  pro Feed eindeutigen `FIREFLY_PORT` (18080+Feed-ID) — der host-vernetzte Firefly
+  crashte zuvor auf Port 8080 (Wayfinder-Probe) und sendete zudem gar kein CAT062.
+  **#102:** Sensor-Mix wird aus den Quell-Typen abgeleitet (`DerivedSensorMix`, in
+  `SetSourceConfig` atomar geschrieben). **#106/#107:** `whoami` liefert `sensor_classes`;
+  ASD-Karte gated Layer über role-agnostisches Session-`whoami` (Lotse sieht nur
+  freigeschaltete Layer) und die Spurherkunft-Legende ist dynamisch je Feed. **#105:**
+  Mandanten-Slug wird aus dem Namen abgeleitet (kein Pflicht-Freitextfeld). **#101:**
+  Karten-Bedienelemente unter die Status-Chips verschoben (kein Overlap). **#100/#103:**
+  `docs/E2E-ABNAHME.md` auf echte Daten (ADS-B→FLARM→beides) + OpenAIP umgeschrieben,
+  Labels korrigiert. Doku: TECHNICAL.md (whoami/UI-Gate/fireflyEnv), Register
+  (FR-ORCH-008, FR-UI-017). Gates grün: gofmt/vet/`go test ./...` + vitest 207→**209**
+  + Frontend-Build; `dist/` neu gebaut.
+
 - **ADR 0014 — Multi-Tenant als einziger Betriebsmodus (diese Sitzung):**
   Single-Tenant vollständig entfernt. **A** (ADR + Charta-Prinzip, PR #94 gemergt) ·
   **B** (Code: `none`-Modus/No-DB-Fallback/nil-Scope raus, DB **+** Auth Pflicht,

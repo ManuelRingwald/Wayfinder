@@ -13,7 +13,9 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/manuelringwald/wayfinder/pkg/feature"
@@ -348,6 +350,11 @@ type whoamiDTO struct {
 	Role               store.Role      `json:"role"`
 	MustChangePassword bool            `json:"must_change_password"`
 	Features           map[string]bool `json:"features"`
+	// SensorClasses is the union of sensor classes across the tenant's subscribed
+	// feeds (Issue #107), so the ASD map can render only the track-provenance
+	// legend entries its feeds can actually produce. Empty when nothing is
+	// subscribed. Cosmetic, like Features — the server enforces scope independently.
+	SensorClasses []string `json:"sensor_classes"`
 }
 
 // WhoamiHandler exposes the identity probe for mounting OUTSIDE the requireAdmin
@@ -371,7 +378,39 @@ func (h *Handler) whoami(w http.ResponseWriter, r *http.Request) {
 		Role:               id.Role,
 		MustChangePassword: id.MustChangePassword,
 		Features:           h.effectiveFeatures(r.Context(), id.TenantID),
+		SensorClasses:      h.effectiveSensorClasses(r.Context(), id.TenantID),
 	})
+}
+
+// effectiveSensorClasses returns the union of sensor classes across the tenant's
+// subscribed feeds (Issue #107), so the ASD map's provenance legend can show only
+// the entries its feeds can produce. Sorted + deduped for a stable value.
+// Fail-soft: on a backend error it returns an empty slice (already logged), so the
+// worst case is an empty legend, never a wrong one.
+func (h *Handler) effectiveSensorClasses(ctx context.Context, tenantID int64) []string {
+	if h.subs == nil {
+		return []string{}
+	}
+	feeds, err := h.subs.ListFeedsByTenant(ctx, tenantID)
+	if err != nil {
+		h.logger.Warn("whoami: list subscribed feeds failed; empty sensor classes",
+			slog.Int64("tenant_id", tenantID), slog.String("error", err.Error()))
+		return []string{}
+	}
+	seen := map[string]bool{}
+	for _, f := range feeds {
+		for _, c := range f.SensorMix {
+			if c = strings.TrimSpace(c); c != "" {
+				seen[c] = true
+			}
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for c := range seen {
+		out = append(out, c)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // effectiveFeatures returns the tenant's feature flags for the SPA to gate UI.

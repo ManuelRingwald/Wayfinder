@@ -8,11 +8,11 @@
     <!-- ── Kartenlayer ── -->
     <div class="filter-section-header">Kartenlayer</div>
 
-    <!-- AP2: cosmetic feature gates. !admin.isAuthorized = identity not yet loaded
-         or user role (403 on whoami) → show all controls. isAuthorized + feature
-         disabled → hide the control. Server does not enforce aeronautical data
-         access; this is a pure UX gate. -->
-    <div v-if="!admin.isAuthorized || admin.hasFeature('airspaces')" class="filter-row">
+    <!-- Issue #106 (cosmetic feature gate): showLayer(key) hides a layer the
+         tenant is not entitled to. Fail-open while the identity is still loading or
+         for an admin viewer (gateReady false → show all). The server enforces
+         access independently; this is a pure UX gate. -->
+    <div v-if="showLayer('airspaces')" class="filter-row">
       <v-switch
         v-model="store.layerVisibility.airspace"
         label="Lufträume"
@@ -25,7 +25,7 @@
     </div>
 
     <!-- ASD-011: airspace sub-group toggles, indented, coloured per group -->
-    <template v-if="(!admin.isAuthorized || admin.hasFeature('airspaces')) && store.layerVisibility.airspace">
+    <template v-if="(showLayer('airspaces')) && store.layerVisibility.airspace">
       <div
         v-for="group in AIRSPACE_GROUPS"
         :key="group.id"
@@ -44,7 +44,7 @@
       </div>
     </template>
 
-    <div v-if="!admin.isAuthorized || admin.hasFeature('vor_ndb')" class="filter-row">
+    <div v-if="showLayer('vor_ndb')" class="filter-row">
       <v-switch
         v-model="store.layerVisibility.navaids"
         label="VOR / NDB"
@@ -56,7 +56,7 @@
       />
     </div>
 
-    <div v-if="!admin.isAuthorized || admin.hasFeature('waypoints')" class="filter-row">
+    <div v-if="showLayer('waypoints')" class="filter-row">
       <v-switch
         v-model="store.layerVisibility.waypoints"
         label="Waypoints"
@@ -80,7 +80,7 @@
       />
     </div>
 
-    <div v-if="!admin.isAuthorized || admin.hasFeature('history_dots')" class="filter-row">
+    <div v-if="showLayer('history_dots')" class="filter-row">
       <v-switch
         v-model="store.layerVisibility.historyDots"
         label="History Dots"
@@ -92,7 +92,7 @@
       />
     </div>
 
-    <div v-if="!admin.isAuthorized || admin.hasFeature('range_rings')" class="filter-row">
+    <div v-if="showLayer('range_rings')" class="filter-row">
       <v-switch
         v-model="store.layerVisibility.rangeRings"
         label="Range-Rings"
@@ -105,7 +105,7 @@
     </div>
 
     <!-- ASD-012: range-ring spacing + count, shown only while the layer is active -->
-    <template v-if="(!admin.isAuthorized || admin.hasFeature('range_rings')) && store.layerVisibility.rangeRings">
+    <template v-if="(showLayer('range_rings')) && store.layerVisibility.rangeRings">
       <div class="filter-row filter-row--sub">
         <v-select
           v-model.number="ringSpacing"
@@ -195,14 +195,25 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useAsdStore } from '@/stores/asd.js'
-import { useAdminStore } from '@/stores/admin.js'
+import { useSessionStore } from '@/stores/session.js'
 import { AIRSPACE_GROUPS, RANGE_RING_SPACING_OPTIONS_NM, MAX_RANGE_RING_COUNT } from '@/map/constants.js'
 
 const emit = defineEmits(['layer-toggle', 'fl-filter-change'])
 const store = useAsdStore()
-const admin = useAdminStore()
+const session = useSessionStore()
+
+// Issue #106: show a lotse only the layers/filters their tenant is entitled to.
+// The gate is driven by the role-agnostic session identity (whoami → features),
+// which is populated for a plain tenant user (the admin store's role probe is not).
+// gateReady is true only for an authenticated tenant user; for the loading/anon
+// state or an admin/platform viewer with no tenant scope we show everything
+// (fail-open cosmetic gate — the server enforces access independently).
+const gateReady = computed(() => session.status === 'authed' && !session.isAdmin)
+function showLayer(featureKey) {
+  return !gateReady.value || session.hasFeature(featureKey)
+}
 
 const minFL = ref(store.flFilter.minFL)
 const maxFL = ref(store.flFilter.maxFL)
@@ -216,14 +227,25 @@ function onRangeRingChange() {
   store.setRangeRingConfig({ spacingNM: ringSpacing.value, count: ringCount.value })
 }
 
-// WF2-40: track-symbol provenance legend. Glyphs mirror the map icons drawn in
-// layers.js (◆ ADS-B, ■ SSR/Mode S, ○ primary/PSR). Colour is omitted here on
-// purpose — it encodes track state, not provenance (see caption).
-const provenanceLegend = [
-  { glyph: '◆', label: 'ADS-B (kooperativ)' },
-  { glyph: '■', label: 'SSR / Mode S' },
-  { glyph: '○', label: 'Primär (PSR)' },
+// WF2-40 + Issue #107: track-symbol provenance legend, filtered to the sensor
+// classes the tenant's feeds can actually produce (session.sensorClasses, the
+// union across subscribed feeds). Glyphs mirror the map icons drawn in layers.js
+// (◆ cooperative, ■ SSR/Mode S, ○ primary/PSR); colour is omitted on purpose — it
+// encodes track state, not provenance (see caption). FLARM shares the cooperative
+// ◆ glyph until distinct FLARM provenance lands (Issue #90). Fallback: when no
+// sensor classes are known yet (still loading / admin viewer / no subscribed feed)
+// the full legend is shown rather than an empty box.
+const PROVENANCE_LEGEND = [
+  { glyph: '◆', label: 'ADS-B (kooperativ)', classes: ['ADS-B'] },
+  { glyph: '◆', label: 'FLARM', classes: ['FLARM'] },
+  { glyph: '■', label: 'SSR / Mode S', classes: ['SSR', 'MODE_S', 'MLAT'] },
+  { glyph: '○', label: 'Primär (PSR)', classes: ['PSR'] },
 ]
+const provenanceLegend = computed(() => {
+  const active = new Set(session.sensorClasses)
+  if (active.size === 0) return PROVENANCE_LEGEND
+  return PROVENANCE_LEGEND.filter((e) => e.classes.some((c) => active.has(c)))
+})
 
 function onLayerToggle(layer, val) {
   store.setLayerVisibility(layer, val)

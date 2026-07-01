@@ -28,6 +28,21 @@ export const useSessionStore = defineStore('session', () => {
   const role = computed(() => identity.value?.role ?? null)
   const isAdmin = computed(() => role.value === 'admin')
 
+  // Feature entitlements of the logged-in principal's tenant, delivered by the
+  // role-agnostic whoami (WF2-50). The ASD map uses these to show a lotse only the
+  // layers/filters their tenant is entitled to (Issue #106). Cosmetic gating — the
+  // server enforces access independently.
+  const features = computed(() => identity.value?.features ?? {})
+  function hasFeature(key) {
+    return features.value[key] === true
+  }
+
+  // sensorClasses is the union of sensor classes across the tenant's subscribed
+  // feeds (Issue #107), so the map's provenance legend lists only the entries the
+  // tenant's feeds can actually produce. Empty when nothing is subscribed / not yet
+  // loaded — the legend then falls back to showing all entries.
+  const sensorClasses = computed(() => identity.value?.sensor_classes ?? [])
+
   // probe resolves the current session via the role-agnostic identity endpoint.
   // 200 → authed; anything else (401 etc.) → anon. A transition from authed → anon
   // marks the session as expired (for the visible "session expired" hint).
@@ -101,6 +116,7 @@ export const useSessionStore = defineStore('session', () => {
 
   return {
     identity, status, error, expired, subject, role, isAdmin,
+    features, hasFeature, sensorClasses,
     probe, login, renewNow, startRenew, stopRenew, logout,
   }
 })
