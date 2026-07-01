@@ -52,6 +52,11 @@ type LoginConfig struct {
 	// session-id cookie; renew extends the registry row; logout deletes it. Nil
 	// keeps the pre-AP7 stateless cookie behaviour.
 	Sessions SessionStore
+	// Users resolves the acting principal's per-access session limit when the renew
+	// handler converts a legacy cookie into a registry session (AP7 rollout). Nil
+	// falls back to SessionLimitDefault. Without it, the legacy-conversion path would
+	// not know a per-access override and could bypass the configured limit.
+	Users UserLookup
 	// SessionLimitDefault is the concurrent-session limit applied to an access that
 	// has no per-access override (WAYFINDER_SESSION_LIMIT_DEFAULT). 0 == unlimited.
 	SessionLimitDefault int
@@ -110,6 +115,20 @@ func (c LoginConfig) expiry(now, issuedAt time.Time) time.Time {
 func (c LoginConfig) effectiveLimit(u store.User) int {
 	if u.SessionLimit != nil {
 		return *u.SessionLimit
+	}
+	return c.SessionLimitDefault
+}
+
+// renewLimit resolves the concurrent-session limit to enforce when the renew
+// handler converts a legacy cookie into a registry session (AP7 rollout). It
+// prefers the per-access override (looked up via Users) and falls back to the
+// deployment default. Enforcing it here — not passing 0 — is what stops a replayed
+// legacy cookie from minting unbounded sessions and bypassing the limit.
+func (c LoginConfig) renewLimit(ctx context.Context, id Identity) int {
+	if c.Users != nil {
+		if u, err := c.Users.GetBySubject(ctx, id.Subject); err == nil {
+			return c.effectiveLimit(u)
+		}
 	}
 	return c.SessionLimitDefault
 }
@@ -297,8 +316,11 @@ func RenewHandler(cfg LoginConfig) http.HandlerFunc {
 		// No registry cookie (a legacy stateless cookie, or none) → adopt into a new
 		// registry session, anchoring the absolute-max clock at the original
 		// first-login time when the legacy cookie still carries one. The concurrent-
-		// session limit is NOT enforced on conversion: this is an already-active
-		// console, not a new login, and bouncing it mid-rollout would be user-hostile.
+		// session limit IS enforced here, exactly like a normal login: otherwise a
+		// replayed still-valid legacy cookie would mint unbounded sessions and defeat
+		// the limit during the rollout window. A genuinely-active console converts
+		// exactly once (its next renew carries the new registry cookie and takes the
+		// extend path above), so enforcement only bites a user truly over their limit.
 		issuedAt := now
 		if c, cerr := r.Cookie(cfg.cookieName()); cerr == nil {
 			if claims, perr := auth.ParseSessionClaims(c.Value, cfg.SessionKey); perr == nil && claims.IssuedAt > 0 {
@@ -310,8 +332,15 @@ func RenewHandler(cfg LoginConfig) http.HandlerFunc {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		token, cerr := cfg.Sessions.CreateSession(r.Context(), id.UserID, issuedAt, exp, 0, store.SessionLimitReject, clientMeta(r))
+		token, cerr := cfg.Sessions.CreateSession(r.Context(), id.UserID, issuedAt, exp, cfg.renewLimit(r.Context(), id), cfg.policy(), clientMeta(r))
 		if cerr != nil {
+			if errors.Is(cerr, store.ErrSessionLimit) {
+				if cfg.OnLoginRejected != nil {
+					cfg.OnLoginRejected()
+				}
+				http.Error(w, "session limit reached", http.StatusTooManyRequests)
+				return
+			}
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}

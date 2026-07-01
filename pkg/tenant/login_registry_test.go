@@ -211,11 +211,45 @@ func TestRenewConvertsLegacyCookie(t *testing.T) {
 	if d := fs.lastCreate.createdAt.Sub(iat); d < -2*time.Second || d > 2*time.Second {
 		t.Errorf("createdAt not anchored at legacy iat: delta %v", d)
 	}
+	// With no Users lookup and default 0, the effective limit is 0 (unlimited) — the
+	// common opt-in-off case — so conversion is unconstrained here.
 	if fs.lastCreate.limit != 0 {
-		t.Errorf("conversion enforced a limit (%d); should not bounce an active console", fs.lastCreate.limit)
+		t.Errorf("conversion limit = %d, want 0 (no Users, default 0)", fs.lastCreate.limit)
 	}
 	if _, err := auth.ParseSessionID(sessionCookie(t, rec).Value, loginKey); err != nil {
 		t.Errorf("converted cookie is not a session-id cookie: %v", err)
+	}
+}
+
+// TestRenewConversionEnforcesLimit: the legacy-cookie conversion path enforces the
+// per-access session limit (resolved via Users), so replaying a legacy cookie
+// cannot mint unbounded sessions and bypass the limit during the rollout window.
+func TestRenewConversionEnforcesLimit(t *testing.T) {
+	limit := 2
+	users := fakeUsers{bySubject: map[string]store.User{
+		"bob": {ID: 5, TenantID: 7, Subject: "bob", Role: store.RoleUser, Status: store.StatusActive, SessionLimit: &limit},
+	}}
+	// The store reports the access is already at its limit.
+	fs := &fakeSessions{createErr: store.ErrSessionLimit}
+	cfg := LoginConfig{SessionKey: loginKey, TTL: 12 * time.Hour, Sessions: fs, Users: users, SessionLimitDefault: 9}
+	legacy := auth.MintSessionAt("bob", time.Now().Add(-time.Minute), time.Now().Add(time.Hour), loginKey)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/session/renew", nil)
+	req = req.WithContext(WithIdentity(req.Context(), Identity{TenantID: 7, UserID: 5, Subject: "bob"}))
+	req.AddCookie(&http.Cookie{Name: "wf_session", Value: legacy})
+	rec := httptest.NewRecorder()
+	RenewHandler(cfg).ServeHTTP(rec, req)
+
+	// The conversion must pass the per-access limit (2), not 0, and surface the
+	// limit breach as 429 with no new cookie — the security fix for the bypass.
+	if fs.lastCreate == nil || fs.lastCreate.limit != 2 {
+		t.Fatalf("conversion limit = %+v, want per-access 2 (not 0/default 9)", fs.lastCreate)
+	}
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("status = %d, want 429 (limit enforced on conversion)", rec.Code)
+	}
+	if len(rec.Result().Cookies()) != 0 {
+		t.Error("no cookie should be set when conversion hits the limit")
 	}
 }
 

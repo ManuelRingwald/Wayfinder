@@ -370,6 +370,9 @@ func main() {
 	// (proxy mints no local sessions). These routes are intentionally
 	// unauthenticated — they hand out the session the middleware later checks.
 	if cfg.AuthMode == auth.ModeBuiltin {
+		users := store.NewUserRepo(dbPool)
+		creds := store.NewCredentialRepo(dbPool)
+		tenants := store.NewTenantRepo(dbPool)
 		loginCfg := tenant.LoginConfig{
 			SessionKey:  cfg.SessionKey,
 			CookieName:  cfg.SessionCookie,
@@ -378,15 +381,15 @@ func main() {
 			Secure:      cfg.TLSCertFile != "" && cfg.TLSKeyFile != "",
 			// Registry-backed sessions (AP7, ADR 0009 §5): login opens a session with
 			// the concurrent-session limit enforced, logout deletes it, renew slides it.
+			// Users lets the renew handler resolve a per-access limit when converting a
+			// legacy cookie, so that path cannot bypass the configured limit.
 			Sessions:            sessionRepo,
+			Users:               users,
 			SessionLimitDefault: cfg.SessionLimitDefault,
 			SessionLimitPolicy:  cfg.SessionLimitPolicy,
 			OnSessionOpened:     func() { sessionsOpened.Add(1) },
 			OnLoginRejected:     func() { sessionsRejected.Add(1) },
 		}
-		users := store.NewUserRepo(dbPool)
-		creds := store.NewCredentialRepo(dbPool)
-		tenants := store.NewTenantRepo(dbPool)
 		mux.Handle("/api/login", tenant.LoginHandler(users, creds, tenants, loginCfg))
 		mux.Handle("/api/logout", tenant.LogoutHandler(loginCfg))
 		// Sliding-session refresh (WF2-12.5): re-mint the cookie for an already

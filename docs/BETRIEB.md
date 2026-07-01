@@ -257,6 +257,32 @@ openssl rand -hex 32
 ```
 Den Schlüssel wie ein Passwort behandeln (nie ins Git, nur als Secret/ENV).
 
+### 6.2a Einzelne Sitzung sperren + Session-Limit (AP7)
+Seit AP7 kennt der Server jede aktive Sitzung (serverseitige Registry). Für den
+Alltag heißt das — **ohne** den globalen Not-Bremsen-Schlüsselwechsel aus 6.2:
+
+- **Zugang/Mandant pausieren wirkt sofort.** Pausierst du einen Zugang
+  (Zugangs-Verwaltung → Pausieren) oder einen ganzen Mandanten, fliegen dessen
+  **laufende** Sitzungen beim nächsten Request raus — nicht erst beim
+  Cookie-Ablauf. Reaktivieren hebt die Sperre auf (bereits abgemeldete Konsolen
+  müssen sich neu anmelden). Löschen wirkt genauso.
+- **Abmelden ist echt.** Ein Logout löscht die Sitzung serverseitig, nicht nur im
+  Browser.
+- **Limit gleichzeitiger Sitzungen je Zugang** (opt-in, Default **aus**):
+  `WAYFINDER_SESSION_LIMIT_DEFAULT=N` begrenzt parallele Logins pro Zugang;
+  `WAYFINDER_SESSION_LIMIT_POLICY` steuert das Verhalten am Limit —
+  `reject` (Default: der N+1-te Login wird mit „Sitzungslimit erreicht"/`429`
+  abgewiesen) oder `evict_oldest` (die älteste Sitzung wird verdrängt). Ein
+  einzelner Zugang kann per `users.session_limit` ein eigenes Limit tragen.
+- **Rollout-Hinweis:** Nach dem Update auf AP7 laufen offene Browser noch kurz mit
+  ihrem alten Cookie weiter und werden beim nächsten automatischen „Renew" (alle
+  10 min) in die Registry überführt. Wer **sofort** eine saubere Basis will, nutzt
+  die Not-Bremse aus 6.2 (Schlüsselwechsel) — dann meldet sich jeder einmalig neu
+  an, direkt in eine registrierte Sitzung.
+- **Kennzahlen:** `wayfinder_active_sessions` (aktuelle Sitzungen),
+  `wayfinder_session_logins_rejected_total` (am Limit abgewiesen),
+  `wayfinder_sessions_revoked_total` (durch Pause/Löschen beendet).
+
 ### 6.3 TLS & Herkunfts-Prüfung am Browser-Rand
 - **TLS** im Produktivbetrieb **immer** — primär am vorgelagerten Reverse-Proxy/
   Ingress; alternativ direkt in Wayfinder (`WAYFINDER_TLS_CERT`/`_KEY`).
