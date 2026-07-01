@@ -148,6 +148,17 @@ type FeedHealthSource interface {
 // resolve + enqueue.
 type RescopeFunc func(ctx context.Context, tenantID int64)
 
+// SessionRevoker deletes an access's (or a whole tenant's) live registry sessions
+// so a pause/delete takes effect immediately (AP7, ADR 0009 §5) rather than
+// waiting out the cookie lifetime. Satisfied in production by an adapter over
+// *store.SessionRepo (main.go); nil disables the eager delete — the session
+// resolver's status join still fails paused/deleted access closed, so this is a
+// belt-and-suspenders cleanup that also keeps active-session counts honest.
+type SessionRevoker interface {
+	DeleteUserSessions(ctx context.Context, userID int64) (int64, error)
+	DeleteTenantSessions(ctx context.Context, tenantID int64) (int64, error)
+}
+
 // Handler routes the /api/admin/* endpoints.
 type Handler struct {
 	views      ViewStore
@@ -161,9 +172,43 @@ type Handler struct {
 	feedLife   FeedLifecycle       // may be nil; disables live receiver join/leave (ONB-5)
 	aeroLife   TenantAeroLifecycle // may be nil; disables live per-tenant OpenAIP apply (ONB-6)
 	secrets    SecretService       // may be nil; disables the per-feed secret routes (503) when no key is configured (ORCH-2c 3a)
+	sessions   SessionRevoker      // may be nil; disables eager session revocation on pause (AP7)
 	rescope    RescopeFunc
 	logger     *slog.Logger
 	mux        *http.ServeMux
+}
+
+// WithSessionRevoker wires eager session revocation (AP7): pausing an access or a
+// tenant then kills its live sessions at once. Returns the handler for chaining.
+// Nil-safe by omission — without it, pause still fails-closed at the session
+// resolver, just not with an immediate registry delete.
+func (h *Handler) WithSessionRevoker(s SessionRevoker) *Handler {
+	h.sessions = s
+	return h
+}
+
+// revokeUserSessions eagerly deletes one access's live sessions after a pause (AP7).
+// Best-effort: a delete error is logged but does not fail the pause, which has
+// already succeeded — the session resolver's status join keeps the paused access
+// out regardless. No-op when no revoker is wired.
+func (h *Handler) revokeUserSessions(ctx context.Context, userID int64) {
+	if h.sessions == nil {
+		return
+	}
+	if _, err := h.sessions.DeleteUserSessions(ctx, userID); err != nil && h.logger != nil {
+		h.logger.Warn("revoke user sessions", slog.Int64("user_id", userID), slog.String("error", err.Error()))
+	}
+}
+
+// revokeTenantSessions eagerly deletes every session under a tenant after a tenant
+// pause (AP7). Best-effort, like revokeUserSessions.
+func (h *Handler) revokeTenantSessions(ctx context.Context, tenantID int64) {
+	if h.sessions == nil {
+		return
+	}
+	if _, err := h.sessions.DeleteTenantSessions(ctx, tenantID); err != nil && h.logger != nil {
+		h.logger.Warn("revoke tenant sessions", slog.Int64("tenant_id", tenantID), slog.String("error", err.Error()))
+	}
 }
 
 // New builds the admin API handler. Method+path patterns give automatic 405s for

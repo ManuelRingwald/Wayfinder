@@ -19,6 +19,22 @@
   gebaut, getestet, sicherheits-reviewed und gehärtet. Alles auf `main`,
   alle Gates grün (Go: build/test/vet/gofmt/golangci-lint; Frontend: 180 vitest).
 
+- **AP7 — Serverseitige Session-Registry + Session-Limit (Issue #64, diese Sitzung):**
+  Letztes offenes Arbeitspaket von **ADR 0009** umgesetzt (Branch
+  `claude/issue-64-session-registry-ymz7py`). Neue Tabelle `sessions` (Migration
+  00014; Cookie trägt eine signierte Session-ID, in der DB nur als Hash), `SessionRepo`
+  mit atomarem **Session-Limit** (Advisory-Lock, Policy `reject`/`evict_oldest`),
+  fail-closed **Resolve** (Status-Join Zugang+Mandant), gleitender/absoluter Ablauf,
+  **Sofort-Revoke** bei Pause/Löschen (Zugang/Admin/Mandant-Kaskade), echtes
+  serverseitiges **Logout**, Janitor + Metriken (`wayfinder_active_sessions` u. a.).
+  **Sanfte Übernahme** beim Rollout (Legacy-Cookie → Registry beim nächsten Renew;
+  harter Schnitt per `WAYFINDER_SESSION_KEY`-Rotation). Env:
+  `WAYFINDER_SESSION_LIMIT_DEFAULT` (Default aus) + `_POLICY` (Default `reject`).
+  **Adversariale Review** (Fan-out find→verify): eine echte Lücke gefunden & gefixt
+  (Limit-Bypass auf dem Legacy-Konversions-Pfad). Gates grün inkl. real-PG
+  (`scripts/pg-test.sh`). Doku: FR-ADMIN-010, Milestone WF2-12.7, TECHNICAL/
+  INSTALLATION/BETRIEB.
+
 - **Diese Sitzung (2026-06-29/30):** ORCH-5b-1 (Cred-Auflösung in der
   Control-Plane, Variante A) · 5b-2 (UI-Zwei-Felder) · 5c (E2E-Abnahme-Harness:
   `docker-compose.orchestrated.yml` + `Dockerfile.orchestrator` +
@@ -98,7 +114,9 @@
      echten OpenSky-`client_id`/`client_secret` (Prüfpunkte 3/4/6/7). Der
      Auto-Spawn-Nachweis (1/2/8) braucht einen echten Linux-Kernel (VM genügt).
   2. **Offene Wayfinder-Issues:** #57 (Admin-UI View-Config-Captions, S2) ·
-     #64 (Session-Registry/-Limit, S4) · #68 (Impersonation auf `admin`-Rolle, S4).
+     #68 (Impersonation auf `admin`-Rolle, S4). (#64 Session-Registry/-Limit ✅
+     erledigt — AP7, Branch `claude/issue-64-session-registry-ymz7py`; offen:
+     Admin-UI für per-Zugang `session_limit` + reale Browser-E2E gegen den Stack.)
   3. **Firefly-Cross-Project (Issue #35):** die übrigen Live-Adapter
      `flarm_aprs` + `radar_asterix` (je eigener ADR; Vokabular im Kontrakt
      reserviert, Wayfinder-Rendering steht schon).
@@ -124,7 +142,7 @@
 | **Stufe 4** | Provenienz (WF2-40), Sensorklassen (WF2-41), Feature-Entitlements (WF2-50) | ✅ |
 | **ASD-012** | Range-Rings + Scale-Bar + Nord-Orientierung | ✅ |
 | **WF2-34** | Cross-Tenant Read-Only-Impersonation (ADR 0008) | ✅ |
-| **ADR 0009** | Admin-Bereich-Neuschnitt: AP1–AP6 (Rollen, Features, Dashboard, Feed-Health, Impersonation, Zugänge) | ✅ (AP7 offen) |
+| **ADR 0009** | Admin-Bereich-Neuschnitt: AP1–AP7 (Rollen, Features, Dashboard, Feed-Health, Impersonation, Zugänge, **Session-Registry/-Limit**) | ✅ |
 | **WF-1–WF-4** | CAT063 Sensor-Status-Decoder + Broadcast + Frontend-Banner (ICD 2.5.0) | ✅ |
 
 ---
@@ -152,7 +170,7 @@ Siehe zentrale **`docs/ROADMAP.md`** für aktuelle Priorisierung (Prio 1 / Prio 
 
 - **Prio 1 (jetzt):** ORCH-5 (Container-Injection + Firefly-Quell-Env, cross-project, Firefly #35) → ORCH-6 (ORCH-1, ORCH-2/3, ORCH-2c 3a+3a-API+3b, ORCH-4 ✅)
 - **Prio 2 (nach Prio 1):** Modular CWP / EFS / IMS (ADR 0013, Epic CWP-0…IMS-3)
-- **ADR 0009 AP7:** Session-Registry, DB-gestützt (S4, offen)
+- **ADR 0009 AP7:** Session-Registry, DB-gestützt (S4) — ✅ **erledigt** (Issue #64)
 
 ---
 

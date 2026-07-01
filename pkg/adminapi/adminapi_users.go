@@ -174,6 +174,11 @@ func (h *Handler) setUserStatus(w http.ResponseWriter, r *http.Request) {
 		h.internalError(w, "set user status", err)
 		return
 	}
+	// AP7: a pause takes effect immediately — kill the access's live sessions so the
+	// next request fails closed rather than riding the old cookie to expiry.
+	if status == store.StatusPaused {
+		h.revokeUserSessions(r.Context(), uid)
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -250,6 +255,11 @@ func (h *Handler) setTenantStatus(w http.ResponseWriter, r *http.Request) {
 	if err := h.tenants.SetStatus(r.Context(), tid, status); err != nil {
 		h.internalError(w, "set tenant status", err)
 		return
+	}
+	// AP7: a tenant pause cascades to every access immediately — revoke all of the
+	// tenant's live sessions so no console under it survives to its cookie expiry.
+	if status == store.StatusPaused {
+		h.revokeTenantSessions(r.Context(), tid)
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

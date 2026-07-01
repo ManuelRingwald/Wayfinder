@@ -803,6 +803,8 @@ ohne gültigen, einem Mandanten zugeordneten Nutzer → `401`).
 | `WAYFINDER_SESSION_COOKIE` | `wf_session` | `builtin`: Name der Session-Cookie |
 | `WAYFINDER_SESSION_TTL` | `12h` | `builtin`: Session-Lebensdauer = Sliding-Idle-Fenster (`8h`, `12h` …) |
 | `WAYFINDER_SESSION_MAX_LIFETIME` | *(leer = aus)* | `builtin`: **absolutes** Sitzungs-Maximum ab Erst-Login, unabhängig von Aktivität (`0`/leer = aus, Default). Gesetzt (z. B. `12h`) erzwingt es nach dieser Spanne einen Neu-Login, auch bei aktiver Konsole. **Probelauf:** `30m` setzen, um das Zwangs-Logout schnell zu sehen. |
+| `WAYFINDER_SESSION_LIMIT_DEFAULT` | `0` (unbegrenzt) | `builtin` (AP7): Default-Limit **gleichzeitiger** Sessions je Zugang, wenn der Zugang kein eigenes Limit trägt. `0`/leer = unbegrenzt (opt-in, Default). Positiver Wert (z. B. `3`) begrenzt parallele Logins pro Zugang. |
+| `WAYFINDER_SESSION_LIMIT_POLICY` | `reject` | `builtin` (AP7): Verhalten am Limit — `reject` (Default: N+1-ter Login → `429`, alte Sessions bleiben) oder `evict_oldest` (älteste Session verdrängen, neuen Login zulassen). |
 | `WAYFINDER_IMPERSONATION_TTL` | `30m` | Lebensdauer des Read-Only-Impersonation-Grants („View as Tenant", ADR 0008). Nur wirksam, wenn ein Signing-Key (`WAYFINDER_SESSION_KEY`) gesetzt ist; sonst ist Impersonation deaktiviert. |
 | `WAYFINDER_OIDC_ISSUER` | *(leer)* | `proxy`: OIDC-Issuer-URL (Pflicht im proxy-Modus) |
 | `WAYFINDER_OIDC_AUDIENCE` | *(leer)* | `proxy`: erwartete Audience/Client-ID (Pflicht im proxy-Modus) |

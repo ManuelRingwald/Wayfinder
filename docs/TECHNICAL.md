@@ -313,6 +313,11 @@ externe Prometheus-Bibliothek — der Exporter ist handgerollt in
 | `wayfinder_tenant_ws_clients_connected{tenant="…"}` | Gauge | **Pro Mandant** verbundene Clients (WF2-23.2). Label-Wert = stabile `tenant_id`. Nur im Multi-Mandanten-Betrieb. |
 | `wayfinder_tenant_tracks_delivered_total{tenant="…"}` | Counter | **Pro Mandant** zugestellte Track-Nachrichten (WF2-23.2), fürs Billing/SLA-Monitoring. |
 | `wayfinder_impersonation_sessions_total` | Counter | Gestartete `super_admin`-Read-Only-Impersonation-`/ws`-Sessions (ADR 0008). **Bewusst aus den Pro-Tenant-Serien ausgeschlossen** (die Session läuft mit `scope.TenantID=0`), damit Support-Einblicke Verbrauch/SLA des Ziel-Mandanten nicht verfälschen. |
+| `wayfinder_active_sessions` | Gauge | **AP7:** aktuell aktive (unabgelaufene) Sessions in der serverseitigen Registry — zur Scrape-Zeit live aus der DB gezählt (unter kurzem Timeout). Nur im builtin-Modus. |
+| `wayfinder_sessions_opened_total` | Counter | **AP7:** insgesamt eröffnete Login-Sessions. |
+| `wayfinder_session_logins_rejected_total` | Counter | **AP7:** Logins, die das Session-Limit unter der `reject`-Policy abgelehnt hat (→ 429). |
+| `wayfinder_sessions_revoked_total` | Counter | **AP7:** durch Pause/Löschen eines Zugangs oder Mandanten widerrufene Sessions. |
+| `wayfinder_sessions_expired_swept_total` | Counter | **AP7:** vom Janitor entfernte abgelaufene Session-Zeilen. |
 
 > **Kardinalitäts-Regel (WF2-23):** Metrik-Labels sind auf das **kontrollierte
 > `tenant`-Label** (stabile `tenant_id`) beschränkt. Hochkardinale Identität
@@ -479,6 +484,8 @@ Mandanten-Nutzer). Identitäts-Modell siehe ADR 0006 §5.
 | `WAYFINDER_SESSION_COOKIE` | `wf_session` | string | builtin: Cookie-Name. |
 | `WAYFINDER_SESSION_TTL` | `12h` | duration | builtin: Session-Lebensdauer = **Sliding-Idle-Fenster** (WF2-12.5). Bei aktiver ASD-Nutzung wird das Cookie periodisch neu gemintet (`POST /api/session/renew`) → aktive Konsole nie ausgeloggt; eine **verlassene** Sitzung läuft nach dieser Zeit ohne Erneuerung ab. Kürzer = strenger, länger = mehr Karenz nach Pausen. |
 | `WAYFINDER_SESSION_MAX_LIFETIME` | *(leer = aus)* | duration | builtin: **absolutes** Sitzungs-Maximum ab **Erst-Login** (WF2-12.6), unabhängig von Aktivität. `0`/leer = **aus** (reines Sliding wie oben, Default). Ist es gesetzt, kann eine Sitzung — egal wie aktiv — **nie** länger als diese Spanne leben: der Sliding-Renew hört auf, das Cookie wird auf `Erst-Login + MAX` gekappt, danach `401` → Neu-Login. Das Cookie trägt dazu einen signierten `iat`-Claim; alte Cookies ohne `iat` bleiben gültig und werden beim ersten Renew **sanft** auf „jetzt" verankert. **Für einen Probelauf:** `WAYFINDER_SESSION_MAX_LIFETIME=30m` setzen → das Zwangs-Logout ist nach 30 min sichtbar, ohne die 12-h-TTL abwarten zu müssen. |
+| `WAYFINDER_SESSION_LIMIT_DEFAULT` | `0` (unbegrenzt) | int | **AP7 (ADR 0009 §5):** Default-Limit **gleichzeitiger** Sessions je Zugang, wenn der Zugang kein eigenes Limit (`users.session_limit`) trägt. `0`/leer/negativ = **unbegrenzt** (Enforcement aus, opt-in — Verhalten wie bisher). Ein positiver Wert (z. B. `3`) begrenzt parallele Logins pro Zugang; der Überschuss wird gemäß `…_POLICY` behandelt. |
+| `WAYFINDER_SESSION_LIMIT_POLICY` | `reject` | `reject` \| `evict_oldest` | **AP7:** Verhalten beim Erreichen des Session-Limits. `reject` (Default) lehnt den N+1-ten Login mit **429** ab (bestehende Sessions bleiben; der Nutzer muss aktiv eine alte Konsole beenden). `evict_oldest` verdrängt die **älteste** Session und lässt den neuen Login zu (die alte Konsole fliegt beim nächsten Request raus). Unbekannter Wert → `reject`. |
 | `WAYFINDER_BOOTSTRAP_PASSWORD` | *(leer)* | string | Nur vom `bootstrap`-Subcommand gelesen: builtin-Passwort des ersten Admins. |
 | `WAYFINDER_SECRET_KEY` | *(leer)* | string (base64-32-Byte) | **ORCH-2c (ADR 0012 §6):** AES-256-Schlüssel, der Pro-Feed-Quell-Credentials (`feed_secrets`) verschlüsselt. **Am Server (`cmd/wayfinder`):** leer/ungültig → die write-only Secret-Routen (`…/feeds/{id}/secrets`) sind **deaktiviert** (503), nie unverschlüsselt speichernd. **Am Orchestrator (`cmd/wayfinder-orchestrator`, ORCH-5b-1):** **derselbe** Schlüssel muss gesetzt sein, damit die Control-Plane die Werte beim Container-Start entschlüsselt und als `FIREFLY_SOURCE_<i>_SECRET` injiziert; leer/ungültig → credentialled Quellen laufen **anonym** (WARN, kein Abbruch). Erzeugen: `openssl rand -base64 32`. |
 | `WAYFINDER_FEED_GROUP_BASE` | `239.255.0` | string (3 Oktette) | **ORCH-4 (ADR 0012):** /24-Basis für die automatische Multicast-Endpoint-Vergabe beim Feed-Anlegen (eine Gruppe je Feed). Ungültige Kombi → Fallback auf den Default-Pool. |
@@ -486,13 +493,36 @@ Mandanten-Nutzer). Identitäts-Modell siehe ADR 0006 §5.
 | `WAYFINDER_FEED_OCTET_MIN` / `_MAX` | `1` / `254` | int (0..255) | **ORCH-4:** zuweisbarer Bereich des letzten Gruppen-Oktetts → Kapazität (Default ~254 Feeds; auf /16 weitbar). |
 
 **builtin-Login-Endpoints:** `POST /api/login` (`{"subject","password"}` →
-HttpOnly-Cookie via `auth.MintSession`, sonst `401` mit Timing-Angleich gegen
-User-Enumeration), `POST /api/logout` (Cookie löschen) und `POST /api/session/renew`
-(Sliding-Refresh: Cookie mit frischer TTL neu minten, hinter der Tenant-Middleware,
-WF2-12.5). Nur im builtin-Modus registriert. Ist `WAYFINDER_SESSION_MAX_LIFETIME`
-gesetzt (WF2-12.6), bewahrt der Renew den Erst-Login-Zeitpunkt (`iat`) über alle
-Verlängerungen und **verweigert** ihn mit `401`, sobald `jetzt − Erst-Login > MAX`
-— das absolute Sitzungs-Maximum.
+HttpOnly-Cookie, sonst `401` mit Timing-Angleich gegen User-Enumeration),
+`POST /api/logout` (Cookie löschen) und `POST /api/session/renew` (Sliding-Refresh:
+Cookie mit frischer TTL neu minten, hinter der Tenant-Middleware, WF2-12.5). Nur im
+builtin-Modus registriert. Ist `WAYFINDER_SESSION_MAX_LIFETIME` gesetzt (WF2-12.6),
+bewahrt der Renew den Erst-Login-Zeitpunkt (`iat`) über alle Verlängerungen und
+**verweigert** ihn mit `401`, sobald `jetzt − Erst-Login > MAX` — das absolute
+Sitzungs-Maximum.
+
+**Serverseitige Session-Registry (AP7, ADR 0009 §5).** Im builtin-Modus sind
+Sessions **serverseitig bekannt, zählbar und widerrufbar** (Tabelle `sessions`,
+Migration `00014`) — der Preis dafür ist ein DB-Lookup je authentifiziertem
+Request, bei der Zielgröße (Betreiber + Lotsen) unkritisch. Das Cookie trägt eine
+**signierte Session-ID** (in der DB nur als `sha256`-Hash abgelegt, ein Dump gibt
+keine brauchbaren Cookies her); jeder Request wird gegen die Registry aufgelöst und
+scheitert **fail-closed**, sobald die Session abgelaufen/widerrufen ist **oder** der
+Zugang bzw. sein Mandant pausiert wurde. Damit greift **eines**: (1) **Limit
+gleichzeitiger Sessions** je Zugang beim Login (`…_LIMIT_DEFAULT`/`…_POLICY`, atomar
+per Advisory-Lock durchgesetzt), (2) **Sofort-Pause/-Löschung** — das Pausieren
+eines Zugangs (`PATCH …/users/{id}`), eines Admins oder eines ganzen Mandanten
+(`PATCH …/tenants/{id}`, Kaskade) beendet dessen laufende Sessions sofort, ebenso
+das Löschen (via `ON DELETE CASCADE`), und (3) **echtes serverseitiges Logout**
+(`POST /api/logout` löscht die Registry-Zeile). Ein Hintergrund-**Janitor** räumt
+abgelaufene Zeilen (Ablauf wird zusätzlich bei jeder Auflösung erzwungen). Der
+Impersonation-Grant (ADR 0008) bleibt ein **separater**, weiterhin stateless
+signierter Grant. **Rollout (sanfte Übernahme):** ein noch gültig signiertes
+Legacy-Cookie (aus der Zeit vor AP7) wird auf Signatur akzeptiert und beim nächsten
+Renew in eine Registry-Session überführt; solange es nicht überführt ist, ist es
+nicht widerrufbar (Ablauf ≤ TTL). Wer **sofort** hart umstellen will, rotiert
+`WAYFINDER_SESSION_KEY` — dann verlieren alle Legacy-Cookies ihre Gültigkeit und
+jeder meldet sich einmalig neu an (direkt in eine Registry-Session).
 
 **Admin-Bootstrap (WF2-13):** Subcommand `wayfinder bootstrap` (`cmd/wayfinder/
 bootstrap.go`) legt **idempotent** ersten Mandanten + Admin-Nutzer (+ builtin-
