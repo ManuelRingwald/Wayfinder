@@ -223,6 +223,17 @@ Feeds, die ihm zugewiesen wurden. Dazu kommen drei neue Bausteine hinzu:
 > Firefly) direkt zu [Schritt 4.5](#schritt-45--feeds-in-den-katalog-aufnehmen)
 > springen.
 
+> ⚡ **Schneller (ohne selbst Compose schreiben):** Im Wayfinder-Repo liegt eine
+> fertige, eingecheckte Bridge-Compose-Datei `docker-compose.bridge.yml`. Sie
+> erwartet `firefly/` und `wayfinder/` als Geschwister-Ordner (wie in Teil 3) und
+> wird **aus dem Wayfinder-Ordner** gestartet:
+> ```bash
+> cd ~/asd/wayfinder
+> docker compose -f docker-compose.bridge.yml up --build
+> ```
+> Wer lieber alles selbst im Überordner anlegt, folgt dem Rest dieses Schritts.
+> (E2E-Abnahme auf dem Mac mini: `docs/E2E-ABNAHME.md`, Anhang E.)
+
 Legen Sie eine Datei `docker-compose.yml` im **gemeinsamen Überordner** beider
 Repos an. Die Struktur sieht dann so aus:
 

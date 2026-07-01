@@ -125,18 +125,77 @@ in der UI angelegte Konfiguration real wirkt.
 
 ---
 
+## Anhang E — Bridge-Abnahme auf Docker Desktop (Mac mini / Windows)
+
+Der Haupt-Ablauf oben (Teil 0/4) fährt den **orchestrierten** Stack mit
+`network_mode: host`. Auf **Docker Desktop** (Mac mini, Windows) bindet
+Host-Networking nur an die interne Linux-VM, nicht an den Rechner — der
+Live-Multicast-Pfad kommt dort nicht an. Auf dem Mac mini nimmt man deshalb den
+**Bridge-Weg**: Firefly, Postgres und Wayfinder in **einem gemeinsamen
+Bridge-Netz** (`docker-compose.bridge.yml`). Multicast zwischen Containern auf
+derselben Bridge funktioniert auch unter Docker Desktop — kaputt ist dort nur
+Host↔Container.
+
+### Teil E-1 — Was der Bridge-Weg abdeckt (und was nicht)
+
+| Prüf-Baustein | Bridge (Mac mini) | Orchestriert (Linux) |
+|---|---|---|
+| UI-Einrichtung (Login, Mandant, Nutzer, Feature, Feed, Quellen, View, Zuweisung) — Teil 1–3 | ✅ identisch | ✅ |
+| **Live-Tracks auf der Karte** (Multicast Container→Container) | ✅ ja | ✅ |
+| Orchestrator-**Auto-Spawn je Feed** + Teardown (Prüfpunkte 1/2/8) | ❌ nein | ✅ |
+| `scripts/e2e-orchestrated.sh` | ❌ (braucht Host-Net + Docker-Socket) | ✅ |
+
+Auf dem Bridge-Weg gibt es **keinen Orchestrator**: Firefly ist ein **fester**
+externer Sender auf `239.255.0.62:8600`. Der Kern-Unterschied zur UI aus Teil 2
+ist deshalb **ein einziger Schritt** (siehe E-2, Schritt E.4): der Feed wird mit
+**genau diesem festen Endpoint** angelegt — **nicht** „Endpoint automatisch". Eine
+auto-allokierte `239.255.0.x`-Adresse würde ins Leere zeigen (Firefly sendet dort
+nicht) und die Karte bliebe leer.
+
+> **Voraussetzung Layout.** Beide Repos als Geschwister-Ordner, z. B. unter
+> `~/asd/`:
+>
+> ```
+> ~/asd/
+> ├── firefly/     ← Firefly-Repo (der ../firefly-Build-Kontext)
+> └── wayfinder/   ← dieses Repo (von hier starten)
+> ```
+
+### Teil E-2 — Ablauf
+
+| # | Aktion | Erwartetes Ergebnis | Prüfung |
+|---|--------|---------------------|---------|
+| E.1 | Firefly-Repo daneben klonen (falls noch nicht): `git clone …/firefly.git` als Geschwister von `wayfinder/`. | `~/asd/firefly` und `~/asd/wayfinder` liegen nebeneinander. | `ls ~/asd` → `firefly wayfinder`. |
+| E.2 | Im Wayfinder-Repo: `docker compose -f docker-compose.bridge.yml up --build` | Firefly + Postgres + Wayfinder starten in einem Bridge-Netz; Auto-Seed legt den Default-Admin an. | `docker compose -f docker-compose.bridge.yml ps` → alle `Up`, `db (healthy)`. |
+| E.3 | **Teil 1–3 wie oben** durchlaufen (Login `admin`/`admin` + Passwortwechsel, Mandant/Nutzer/Features/View, Abmelden/Anmelden). | Identisch zum Haupt-Ablauf — die UI unterscheidet sich nicht. | Siehe Teil 1–3. |
+| E.4 | Tab **Feeds** → **Neuer Feed**: **Endpoint automatisch AUS**, Gruppe **`239.255.0.62`**, Port **`8600`** von Hand eintragen (= Fireflys fester Sende-Endpoint). | Feed erscheint mit genau `239.255.0.62:8600`. | Feed-Zeile zeigt `239.255.0.62:8600` (nicht `239.255.0.x`). |
+| E.5 | Feed dem Mandanten **zuweisen** (Grant), dann als Mandant anmelden. | Karte lädt; nach wenigen Sekunden erscheinen die Frankfurt-Tracks. | Tracks sichtbar; oben links **FEED OK** (grün). |
+| E.6 | Hinter den Kulissen (Terminal, nur Verifikation): `curl -s localhost:8080/metrics \| grep cat062` | `wayfinder_cat062_blocks_received_total` und `…_tracks_received_total` **> 0**. | Werte wachsen. |
+
+> **Bleibt die Karte leer?** Fast immer ist es E.4 — der Feed wurde
+> **auto-allokiert** statt auf `239.255.0.62:8600` gesetzt. Prüfen mit
+> `docker compose -f docker-compose.bridge.yml logs firefly` (sendet Firefly auf
+> `239.255.0.62:8600`?) und der Feed-Adresse in der Admin-UI.
+
 ## Aufräumen
 
 ```bash
+# Orchestrierter Stack (Linux):
 docker compose -f docker-compose.orchestrated.yml down -v --remove-orphans
 docker ps -aq --filter 'label=wayfinder.managed=true' | xargs -r docker rm -f
+
+# Bridge-Stack (Mac mini / Windows):
+docker compose -f docker-compose.bridge.yml down -v --remove-orphans
 ```
 
 ## Bekannte Grenzen
 
 - **Docker Desktop (macOS/Windows, Mac mini):** Host-Net-Multicast funktioniert
-  dort nicht — Teil 1–3 (UI) laufen identisch, die Live-Verifikation (Teil 4)
-  gehört auf einen Linux-Host. Bridge-Workaround: `DOCKER.md`.
+  dort nicht, der **orchestrierte** Stack (Auto-Spawn, Prüfpunkte 1/2/8) gehört
+  daher auf einen Linux-Host. **Live-Tracks** sind auf dem Mac mini trotzdem
+  möglich — über den **Bridge-Weg** (`docker-compose.bridge.yml`): Firefly +
+  Wayfinder im selben Bridge-Netz, fester Feed-Endpoint statt Auto-Spawn. Der
+  vollständige Ablauf steht oben in **Anhang E**; Hintergrund in `DOCKER.md`.
 - **Sitzungsablauf:** läuft die Mandanten-Sitzung ab (Default 12 h), zeigt die
   Karte den Stand bis zum Reload; ein erneutes Öffnen von `/` führt zur
   Login-Maske. (Inline-Re-Login bei WS-Ablauf ist ein Folge-Schritt.)

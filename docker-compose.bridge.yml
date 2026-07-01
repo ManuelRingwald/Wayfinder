@@ -1,0 +1,118 @@
+# Bridge end-to-end stack for Docker Desktop (macOS / Mac mini, Windows).
+#
+# WHY THIS FILE EXISTS
+# --------------------
+# The orchestrated harness (docker-compose.orchestrated.yml) reaches the ASD via
+# CAT062/UDP-multicast over `network_mode: host`. On Docker Desktop that only
+# binds to the internal Linux VM, not the real Mac/Windows host, so host-net
+# multicast does NOT work there (docs/E2E-ABNAHME.md "Bekannte Grenzen").
+#
+# The fix is NOT the folder layout by itself — it is putting Firefly and Wayfinder
+# (plus Postgres) on the SAME user-defined bridge network. Container-to-container
+# UDP-multicast IS delivered on a shared bridge (the Linux bridge floods it to all
+# ports), even on Docker Desktop; only host<->container multicast is broken there.
+# Both containers each have exactly ONE interface on this network (eth0), so the
+# sender's default multicast route and the receiver's system-assigned join both
+# land on the right NIC without any interface knob.
+#
+# LAYOUT (both repos as sibling folders, e.g. under ~/asd):
+#   ~/asd/
+#   ├── firefly/     ← Firefly repo (the ../firefly build context below)
+#   └── wayfinder/   ← this repo (run the command from here)
+#
+# RUN (from the wayfinder repo root):
+#   docker compose -f docker-compose.bridge.yml up --build
+#
+# Then open http://localhost:8081/admin (login admin/admin, forced password
+# change). Because there is NO orchestrator here, Firefly is a FIXED external
+# sender on 239.255.0.62:8600 — so to see tracks you must create a feed with
+# EXACTLY that endpoint (multicast_group 239.255.0.62, port 8600, NOT
+# auto-allocated) and subscribe a tenant to it. Full walk-through:
+# docs/E2E-ABNAHME.md, Teil E-2.
+#
+# This differs from the orchestrated stack: it does NOT exercise the per-feed
+# auto-spawn / teardown chain (that needs Linux host networking). It DOES give the
+# full UI setup plus live tracks on the map on a Mac mini.
+
+name: asd-bridge
+
+networks:
+  asd:
+    driver: bridge
+
+volumes:
+  wayfinder-db:
+
+services:
+  # Test data source: Firefly replays a scene and sends it as CAT062 (+ CAT065
+  # heartbeat) to the multicast group. `frankfurt` is busy enough to actually see
+  # something; the small demo scene is too quiet for an end-to-end check.
+  firefly:
+    build:
+      context: ../firefly
+      dockerfile: Dockerfile
+    networks: [asd]
+    environment:
+      FIREFLY_SCENE: ${FIREFLY_SCENE:-frankfurt}
+      # Off by default in Firefly — a demo should not blast UDP unasked. Turn it on.
+      FIREFLY_CAT062_ENABLED: "true"
+      FIREFLY_CAT062_GROUP: ${FIREFLY_CAT062_GROUP:-239.255.0.62}
+      FIREFLY_CAT062_PORT: ${FIREFLY_CAT062_PORT:-8600}
+      RUST_LOG: ${RUST_LOG:-info}
+    restart: unless-stopped
+
+  # Multi-tenant database (mandatory, ADR 0014). No host-port binding: wayfinder
+  # reaches it via the bridge-network DNS name "db", which avoids clashing with a
+  # local PostgreSQL on 5432.
+  db:
+    image: postgres:16-alpine
+    networks: [asd]
+    environment:
+      POSTGRES_USER: wayfinder
+      POSTGRES_PASSWORD: wayfinder
+      POSTGRES_DB: wayfinder
+    volumes:
+      - wayfinder-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wayfinder -d wayfinder"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    restart: unless-stopped
+
+  # Browser-facing ASD server + multi-tenant platform (builtin auth). Owns the
+  # schema (runs migrations on start), serves the admin UI + WebSocket, and joins
+  # the multicast group to receive the CAT062 feed.
+  wayfinder:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    networks: [asd]
+    depends_on:
+      db:
+        condition: service_healthy
+      firefly:
+        condition: service_started
+    ports:
+      - "8081:8081"   # ASD frontend / admin UI (the browser port)
+      - "8080:8080"   # health / readiness / metrics
+    environment:
+      WAYFINDER_DB_URL: "postgres://wayfinder:wayfinder@db:5432/wayfinder?sslmode=disable"
+      WAYFINDER_AUTH_MODE: "builtin"
+      FIREFLY_CAT062_GROUP: ${FIREFLY_CAT062_GROUP:-239.255.0.62}
+      FIREFLY_CAT062_PORT: ${FIREFLY_CAT062_PORT:-8600}
+      # Session-signing key. Unset ⇒ ephemeral key + warning (sessions reset on
+      # restart). For a stable/multi-replica run: WAYFINDER_SESSION_KEY=$(openssl rand -hex 32)
+      WAYFINDER_SESSION_KEY: ${WAYFINDER_SESSION_KEY:-}
+      # Map opens on Frankfurt to match the frankfurt scene above.
+      WAYFINDER_MAP_CENTER_LAT: ${WAYFINDER_MAP_CENTER_LAT:-50.0379}
+      WAYFINDER_MAP_CENTER_LON: ${WAYFINDER_MAP_CENTER_LON:-8.5622}
+      WAYFINDER_MAP_ZOOM: ${WAYFINDER_MAP_ZOOM:-8}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped

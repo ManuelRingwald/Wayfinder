@@ -903,7 +903,7 @@ sondern ein normaler Tageswechsel.
 
 | Thema | Einschränkung | Workaround / Geplant |
 |-------|---------------|----------------------|
-| **Multicast auf macOS/Windows** | `network_mode: host` nicht verfügbar in Docker Desktop | Bridge-Netzwerk (siehe `docs/INSTALLATION.md`, Abschnitt 5) |
+| **Multicast auf macOS/Windows** | `network_mode: host` nicht verfügbar in Docker Desktop (nur Host↔Container betroffen; Container↔Container funktioniert) | Gemeinsames Bridge-Netz: fertige `docker-compose.bridge.yml` bzw. Master-Compose in `docs/INSTALLATION.md` Schritt 4.A; E2E-Abnahme `docs/E2E-ABNAHME.md` Anhang E |
 | **Konfigurierbarer System-Referenzpunkt (I062/100)** | I062/100-Koordinaten beziehen sich auf Fireflys Demo-Ursprung (Frankfurt); für andere Gebiete nur I062/105 (WGS84) nutzbar | Geplant in Fireflys Roadmap |
 | **Multicast-Authentifizierung** | UDP-Multicast hat keine eingebaute Absender-Authentifizierung; Schutz liegt auf Netzwerkebene (ADR 0003) | Netz-Isolation; optionaler App-Layer in Planung |
 | **Single-Node** | Wayfinder ist nicht für horizontale Skalierung (mehrere Instanzen hinter Load-Balancer) ausgelegt — jede Instanz hält ihren eigenen WebSocket-State | Für ASD typischerweise nicht nötig |

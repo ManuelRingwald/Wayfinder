@@ -70,74 +70,23 @@ Unter Docker Desktop bindet `network_mode: host` nur an die interne Linux-VM,
 nicht an den eigentlichen Rechner — der host-net-Orchestrator-Stack ist dort
 also nicht das richtige Werkzeug. Stattdessen Firefly und Wayfinder (samt
 Postgres) in **einem** Bridge-Compose zusammenführen; im selben Netz
-funktioniert das Multicast-Routing zwischen den Containern problemlos.
+funktioniert das Multicast-Routing **zwischen den Containern** problemlos (nur
+Host↔Container ist unter Docker Desktop kaputt). Nicht der gemeinsame Ordner an
+sich löst das Problem, sondern das **gemeinsame Bridge-Netz**.
 
-Beide Repos als Geschwister-Ordner ablegen (`./firefly`, `./wayfinder`) und ein
-übergeordnetes `docker-compose.yml` anlegen:
+Dafür liegt eine fertige, eingecheckte Compose-Datei bereit:
+**`docker-compose.bridge.yml`**. Beide Repos als Geschwister-Ordner ablegen
+(z. B. unter `~/asd/`) und aus dem Wayfinder-Repo starten:
 
-```yaml
-networks:
-  radar-net:
-    driver: bridge
-
-services:
-  db:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: wayfinder
-      POSTGRES_PASSWORD: wayfinder
-      POSTGRES_DB: wayfinder
-    networks:
-      - radar-net
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U wayfinder -d wayfinder"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-    restart: unless-stopped
-
-  firefly-server:
-    build:
-      context: ./firefly
-      dockerfile: Dockerfile
-    environment:
-      FIREFLY_SCENE: frankfurt
-      FIREFLY_CAT062_ENABLED: "true"
-      RUST_LOG: info
-    networks:
-      - radar-net
-    restart: unless-stopped
-
-  wayfinder:
-    build:
-      context: ./wayfinder
-      dockerfile: Dockerfile
-    ports:
-      - "8081:8081"   # ASD-Frontend / Admin-UI
-      - "8080:8080"   # Health / Readiness / Metrics
-    environment:
-      # Multi-Tenant ist Pflicht: Postgres über die Bridge-DNS "db" erreichbar.
-      WAYFINDER_DB_URL: "postgres://wayfinder:wayfinder@db:5432/wayfinder?sslmode=disable"
-      WAYFINDER_AUTH_MODE: builtin
-      FIREFLY_CAT062_GROUP: 239.255.0.62
-      FIREFLY_CAT062_PORT: 8600
-      WAYFINDER_MAP_CENTER_LAT: 50.0379
-      WAYFINDER_MAP_CENTER_LON: 8.5622
-      WAYFINDER_MAP_ZOOM: 8
-    networks:
-      - radar-net
-    depends_on:
-      db:
-        condition: service_healthy
-      firefly-server:
-        condition: service_started
-    restart: unless-stopped
+```
+~/asd/
+├── firefly/     ← Firefly-Repo (der ../firefly-Build-Kontext)
+└── wayfinder/   ← dieses Repo (von hier starten)
 ```
 
-Starten:
-
 ```bash
-docker compose up --build
+cd ~/asd/wayfinder
+docker compose -f docker-compose.bridge.yml up --build
 ```
 
 Dann im Browser: **http://localhost:8081/admin** (Login `admin`/`admin`,
@@ -148,8 +97,12 @@ Passwortwechsel).
 > angemeldeter Mandant Tracks sieht, einen **Feed mit genau diesem Endpoint**
 > anlegen (`multicast_group: 239.255.0.62`, `port: 8600` — **nicht**
 > auto-allokieren) und einen Mandanten darauf abonnieren. Der vollständige
-> Ablauf (inkl. EDLV-Sicht/AOI und der Frankfurt-Szene-Einschränkung) steht im
+> Ablauf (inkl. der festen-Endpoint-Feinheit und der Frankfurt-Szene) steht im
 > Runbook `docs/E2E-ABNAHME.md`, **Teil E-2**.
+>
+> Alternativ ist derselbe Bridge-Aufbau als Schritt-für-Schritt-Anleitung mit
+> einem Master-Compose im **Überordner** in `docs/INSTALLATION.md`, Schritt 4.A
+> beschrieben (für Einsteiger ohne Docker-Vorwissen).
 
 ## Details
 
@@ -158,6 +111,7 @@ Passwortwechsel).
 | Datei | Zweck | Netz | Plattform |
 |-------|-------|------|-----------|
 | `docker-compose.onboarding.yml` | Standard-Plattform (Postgres + Server, `builtin`) | Bridge | alle |
+| `docker-compose.bridge.yml` | E2E mit **festem** Firefly-Sender (kein Orchestrator); Live-Tracks auf Docker Desktop | Bridge | alle (v. a. Mac mini / Windows) |
 | `docker-compose.orchestrated.yml` | E2E-Harness mit Firefly-Auto-Spawn (+ Orchestrator) | Host | Linux |
 
 Beide setzen `WAYFINDER_DB_URL` und `WAYFINDER_AUTH_MODE: builtin`; der
