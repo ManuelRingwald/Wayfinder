@@ -367,6 +367,11 @@ func main() {
 			TTL:         cfg.SessionTTL,
 			MaxLifetime: cfg.SessionMaxLife,
 			Secure:      cfg.TLSCertFile != "" && cfg.TLSKeyFile != "",
+			// Registry-backed sessions (AP7, ADR 0009 §5): login opens a session with
+			// the concurrent-session limit enforced, logout deletes it, renew slides it.
+			Sessions:            store.NewSessionRepo(dbPool),
+			SessionLimitDefault: cfg.SessionLimitDefault,
+			SessionLimitPolicy:  cfg.SessionLimitPolicy,
 		}
 		users := store.NewUserRepo(dbPool)
 		creds := store.NewCredentialRepo(dbPool)
@@ -537,15 +542,21 @@ type Config struct {
 
 	// Multi-tenancy (Wayfinder 2.0, WF2-12, ADR 0005/0006/0014). Multi-tenant is
 	// the only mode: DBURL is mandatory and the start fails without it.
-	DBURL            string        // WAYFINDER_DB_URL (PostgreSQL DSN; required)
-	AuthMode         auth.Mode     // WAYFINDER_AUTH_MODE (proxy|builtin, default builtin)
-	SessionKey       []byte        // WAYFINDER_SESSION_KEY (ModeBuiltin HMAC key)
-	SessionCookie    string        // WAYFINDER_SESSION_COOKIE (default "wf_session")
-	SessionTTL       time.Duration // WAYFINDER_SESSION_TTL (Go duration, sliding idle window, default 12h)
-	SessionMaxLife   time.Duration // WAYFINDER_SESSION_MAX_LIFETIME (absolute cap since first login; 0/unset = disabled, default off)
-	ImpersonationTTL time.Duration // WAYFINDER_IMPERSONATION_TTL (read-only impersonation grant lifetime, default 30m; ADR 0008)
-	OIDCIssuer       string        // WAYFINDER_OIDC_ISSUER (ModeProxy)
-	OIDCAudience     string        // WAYFINDER_OIDC_AUDIENCE (ModeProxy)
+	DBURL          string        // WAYFINDER_DB_URL (PostgreSQL DSN; required)
+	AuthMode       auth.Mode     // WAYFINDER_AUTH_MODE (proxy|builtin, default builtin)
+	SessionKey     []byte        // WAYFINDER_SESSION_KEY (ModeBuiltin HMAC key)
+	SessionCookie  string        // WAYFINDER_SESSION_COOKIE (default "wf_session")
+	SessionTTL     time.Duration // WAYFINDER_SESSION_TTL (Go duration, sliding idle window, default 12h)
+	SessionMaxLife time.Duration // WAYFINDER_SESSION_MAX_LIFETIME (absolute cap since first login; 0/unset = disabled, default off)
+	// SessionLimitDefault is the per-access concurrent-session cap applied when an
+	// access has no override (AP7); 0/unset = unlimited (opt-in, default off).
+	SessionLimitDefault int // WAYFINDER_SESSION_LIMIT_DEFAULT
+	// SessionLimitPolicy decides what happens at the limit: reject (default) or
+	// evict_oldest (WAYFINDER_SESSION_LIMIT_POLICY).
+	SessionLimitPolicy store.SessionLimitPolicy
+	ImpersonationTTL   time.Duration // WAYFINDER_IMPERSONATION_TTL (read-only impersonation grant lifetime, default 30m; ADR 0008)
+	OIDCIssuer         string        // WAYFINDER_OIDC_ISSUER (ModeProxy)
+	OIDCAudience       string        // WAYFINDER_OIDC_AUDIENCE (ModeProxy)
 }
 
 // authConfig projects the runtime Config onto the auth package's Config. sessions
@@ -814,6 +825,18 @@ func loadConfig() Config {
 		if d, err := time.ParseDuration(v); err == nil && d > 0 {
 			cfg.SessionMaxLife = d
 		}
+	}
+	// Per-access concurrent-session limit (AP7): default cap for accesses without
+	// an override. Unset/0/negative → unlimited (enforcement off, opt-in).
+	if v := os.Getenv("WAYFINDER_SESSION_LIMIT_DEFAULT"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			cfg.SessionLimitDefault = n
+		}
+	}
+	// Limit-overflow policy: reject (default) or evict_oldest. An unrecognised
+	// value falls back to reject (enforced downstream by LoginConfig.policy()).
+	if p := store.SessionLimitPolicy(strings.ToLower(strings.TrimSpace(os.Getenv("WAYFINDER_SESSION_LIMIT_POLICY")))); p.Valid() {
+		cfg.SessionLimitPolicy = p
 	}
 	if v := os.Getenv("WAYFINDER_IMPERSONATION_TTL"); v != "" {
 		if d, err := time.ParseDuration(v); err == nil && d > 0 {
