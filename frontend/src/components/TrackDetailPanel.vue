@@ -32,5 +32,8 @@ const open = computed(() => store.selectedTrack !== null)
   right: 16px;
   width: 280px;
   z-index: 10;
+  /* Design System v1: floating chrome over the WebGL canvas pairs elevation
+     with a faint hairline so it separates cleanly from the map. */
+  border: var(--wf-chrome-border);
 }
 </style>

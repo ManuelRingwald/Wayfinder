@@ -9,7 +9,8 @@
   <v-chip
     :color="chipColor"
     size="small"
-    class="font-weight-bold"
+    variant="tonal"
+    class="font-weight-bold feed-badge"
     prepend-icon="mdi-access-point"
   >
     {{ chipLabel }}
@@ -36,3 +37,11 @@ const chipLabel = computed(() => ({
   unknown: 'FEED ?',
 }[store.feedStatus] ?? 'FEED ?'))
 </script>
+
+<style scoped>
+/* Design System v1: status badge — wide-tracked uppercase over a tonal fill,
+   matching the scope's other status chips. */
+.feed-badge {
+  letter-spacing: 0.06em;
+}
+</style>
