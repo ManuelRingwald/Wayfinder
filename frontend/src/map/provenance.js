@@ -65,3 +65,25 @@ export const PROVENANCE_LABELS = {
   [PROVENANCE_SSR]: 'SSR / Mode S',
   [PROVENANCE_PSR]: 'Primär (PSR)',
 }
+
+// PROVENANCE_LEGEND: the scope's "shape = provenance" key. Each entry pairs the
+// map glyph (A/F drawn as letters, ■/○ as marks — see map/layers.js) with its
+// German label and the sensor classes that can produce it. Single source of
+// truth shared by the sidebar (LayerFilterContent) and the floating ScopeLegend;
+// both filter it to the tenant's actual feeds (session.sensorClasses, #107).
+export const PROVENANCE_LEGEND = [
+  { glyph: 'A', label: PROVENANCE_LABELS[PROVENANCE_ADSB], classes: ['ADS-B'] },
+  { glyph: 'F', label: PROVENANCE_LABELS[PROVENANCE_FLARM], classes: ['FLARM'] },
+  { glyph: '■', label: PROVENANCE_LABELS[PROVENANCE_SSR], classes: ['SSR', 'MODE_S', 'MLAT'] },
+  { glyph: '○', label: PROVENANCE_LABELS[PROVENANCE_PSR], classes: ['PSR'] },
+]
+
+// filterProvenanceLegend narrows PROVENANCE_LEGEND to the entries a tenant's
+// subscribed feeds can actually produce. An empty/unknown class set (still
+// loading, admin viewer, or no subscribed feed) shows the full legend rather
+// than an empty box.
+export function filterProvenanceLegend(sensorClasses) {
+  const active = new Set(sensorClasses || [])
+  if (active.size === 0) return PROVENANCE_LEGEND
+  return PROVENANCE_LEGEND.filter((e) => e.classes.some((c) => active.has(c)))
+}

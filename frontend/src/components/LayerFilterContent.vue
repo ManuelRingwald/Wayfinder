@@ -246,6 +246,7 @@ import { ref, computed } from 'vue'
 import { useAsdStore } from '@/stores/asd.js'
 import { useSessionStore } from '@/stores/session.js'
 import { AIRSPACE_GROUPS, RANGE_RING_SPACING_OPTIONS_NM, MAX_RANGE_RING_COUNT } from '@/map/constants.js'
+import { filterProvenanceLegend } from '@/map/provenance.js'
 
 // #116: the NavigationRail opens one section at a time on desktop; the mobile
 // drawer renders all of them ('all'), with the account block last.
@@ -300,17 +301,7 @@ function onRangeRingChange() {
 // provenance (see caption). Fallback: when no sensor classes are known yet
 // (still loading / admin viewer / no subscribed feed) the full legend is shown
 // rather than an empty box.
-const PROVENANCE_LEGEND = [
-  { glyph: 'A', label: 'ADS-B (kooperativ)', classes: ['ADS-B'] },
-  { glyph: 'F', label: 'FLARM', classes: ['FLARM'] },
-  { glyph: '■', label: 'SSR / Mode S', classes: ['SSR', 'MODE_S', 'MLAT'] },
-  { glyph: '○', label: 'Primär (PSR)', classes: ['PSR'] },
-]
-const provenanceLegend = computed(() => {
-  const active = new Set(session.sensorClasses)
-  if (active.size === 0) return PROVENANCE_LEGEND
-  return PROVENANCE_LEGEND.filter((e) => e.classes.some((c) => active.has(c)))
-})
+const provenanceLegend = computed(() => filterProvenanceLegend(session.sensorClasses))
 
 function onLayerToggle(layer, val) {
   store.setLayerVisibility(layer, val)

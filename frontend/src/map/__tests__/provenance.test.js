@@ -8,7 +8,26 @@ import {
   PROVENANCE_SSR,
   PROVENANCE_PSR,
   PROVENANCE_LABELS,
+  PROVENANCE_LEGEND,
+  filterProvenanceLegend,
 } from '../provenance.js'
+
+describe('filterProvenanceLegend (shared sidebar + scope legend)', () => {
+  it('returns the full legend when no sensor classes are known', () => {
+    expect(filterProvenanceLegend([])).toEqual(PROVENANCE_LEGEND)
+    expect(filterProvenanceLegend(undefined)).toEqual(PROVENANCE_LEGEND)
+  })
+
+  it('narrows to the entries a tenant\'s feeds can produce', () => {
+    const got = filterProvenanceLegend(['ADS-B', 'PSR'])
+    expect(got.map((e) => e.glyph)).toEqual(['A', '○'])
+  })
+
+  it('maps Mode S / MLAT classes to the SSR entry', () => {
+    expect(filterProvenanceLegend(['MODE_S']).map((e) => e.glyph)).toEqual(['■'])
+    expect(filterProvenanceLegend(['MLAT']).map((e) => e.glyph)).toEqual(['■'])
+  })
+})
 
 describe('isAdsbFresh', () => {
   it('is false for absent age (undefined/null)', () => {
