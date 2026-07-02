@@ -23,6 +23,7 @@ import {
   addCoverageLayer,
   updateCoverageSource,
   addRangeRingsLayer,
+  addWeatherRadarLayer,
 } from './layers.js'
 import { rangeRingsGeoJSON } from './rangerings.js'
 import { updateTracksLayer } from './tracks.js'
@@ -41,6 +42,7 @@ import {
   RANGE_RINGS_LAYER_ID,
   RANGE_RINGS_LABEL_LAYER_ID,
   HISTORY_DOTS_LAYER_ID,
+  WEATHER_RADAR_LAYER_ID,
 } from './constants.js'
 
 // initMap creates a MapLibre instance on the given container element, wires
@@ -69,6 +71,10 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
   // configured server-side; expose that so the sidebar can disable the toggle
   // (a switch that visibly does nothing reads as a bug).
   store.setCoverageAvailable((cfg.coverage_sensor_count ?? 0) > 0)
+
+  // WX-A: only offer the DWD radar toggle when the backend has a WMS source
+  // configured — a switch that visibly does nothing reads as a bug.
+  store.setWeatherRadarAvailable(cfg.weather_radar_available === true)
 
   const map = new maplibregl.Map({
     container,
@@ -229,7 +235,11 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
 
   // Wire everything once the MapLibre style is fully loaded.
   map.on('load', () => {
-    // Aeronautical overlays first, so they sit beneath the track layers.
+    // WX-A: DWD weather-radar overlay first of all, so it sits directly above the
+    // base map and beneath every operational overlay. Starts hidden; toggled via
+    // the sidebar (gated by the weather_radar entitlement + availability).
+    addWeatherRadarLayer(map)
+    // Aeronautical overlays next, so they sit beneath the track layers.
     addAeronauticalIcons(map)
     addAirspaceLayers(map, palette)
     addNavaidLayers(map, palette)
@@ -313,6 +323,7 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
       coverageRings: [COVERAGE_RINGS_LAYER_ID, COVERAGE_RINGS_LAYER_ID + '-inner', COVERAGE_CENTER_LAYER_ID],
       rangeRings: [RANGE_RINGS_LAYER_ID, RANGE_RINGS_LABEL_LAYER_ID],
       historyDots: [HISTORY_DOTS_LAYER_ID],
+      weatherRadar: [WEATHER_RADAR_LAYER_ID],
     }
     for (const [key, layerIds] of Object.entries(groups)) {
       if (key in vis) {

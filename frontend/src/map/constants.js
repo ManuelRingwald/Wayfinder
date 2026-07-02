@@ -75,6 +75,17 @@ export const DEFAULT_RANGE_RING_SPACING_NM = 10
 export const DEFAULT_RANGE_RING_COUNT = 5
 export const MAX_RANGE_RING_COUNT = 10
 
+// WX-A (ADR 0016): DWD weather-radar overlay. A MapLibre raster source whose
+// tiles are proxied by Wayfinder (/api/weather/radar/{z}/{x}/{y}.png → DWD WMS in
+// EPSG:3857). The overlay sits above the base map but below the aeronautical and
+// track layers; opacity keeps the air picture readable through it.
+export const WEATHER_RADAR_SOURCE_ID = 'weather-radar'
+export const WEATHER_RADAR_LAYER_ID = 'weather-radar-raster'
+export const WEATHER_RADAR_TILES_URL = '/api/weather/radar/{z}/{x}/{y}.png'
+export const WEATHER_RADAR_OPACITY = 0.6
+// GeoNutzV / CC BY 4.0 requires the DWD source note on any DWD-derived layer.
+export const DWD_ATTRIBUTION = '© Deutscher Wetterdienst'
+
 // ASD-002: Deconfliction geometry constants (all values in screen pixels).
 // LABEL_TEXT_SIZE      : data-block text size; used as the symbol layer's "text-size".
 // LABEL_SLOT_RADIUS_PX : distance from symbol centre to label anchor candidate.

@@ -90,6 +90,25 @@
         Keine Radarabdeckung konfiguriert — nur bei Radar-Sensoren verfügbar.
       </div>
 
+      <!-- WX-A (ADR 0016): DWD weather-radar overlay. Feature-gated per tenant
+           (weather_radar) and disabled when no DWD source is configured
+           server-side, with a hint instead of a dead switch. -->
+      <div v-if="showLayer('weather_radar')" class="filter-row">
+        <v-switch
+          v-model="store.layerVisibility.weatherRadar"
+          label="DWD-Regenradar"
+          color="primary"
+          density="compact"
+          hide-details
+          inset
+          :disabled="!store.weatherRadarAvailable"
+          @update:model-value="onLayerToggle('weatherRadar', $event)"
+        />
+      </div>
+      <div v-if="showLayer('weather_radar') && !store.weatherRadarAvailable" class="filter-hint">
+        Keine DWD-Radarquelle konfiguriert (WAYFINDER_DWD_WMS_URL).
+      </div>
+
       <div v-if="showLayer('history_dots')" class="filter-row">
         <v-switch
           v-model="store.layerVisibility.historyDots"

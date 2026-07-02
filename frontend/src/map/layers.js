@@ -34,6 +34,11 @@ import {
   RANGE_RINGS_SOURCE_ID,
   RANGE_RINGS_LAYER_ID,
   RANGE_RINGS_LABEL_LAYER_ID,
+  WEATHER_RADAR_SOURCE_ID,
+  WEATHER_RADAR_LAYER_ID,
+  WEATHER_RADAR_TILES_URL,
+  WEATHER_RADAR_OPACITY,
+  DWD_ATTRIBUTION,
 } from './constants.js'
 
 // Build a MapLibre 'match' expression keyed on the OpenAIP numeric type field.
@@ -249,6 +254,29 @@ export function addTrackIcons(map) {
       }
     }
   }
+}
+
+// addWeatherRadarLayer registers the DWD weather-radar raster overlay (WX-A,
+// ADR 0016). Tiles are proxied same-origin by Wayfinder from the DWD GeoServer
+// WMS. It is added FIRST (before the aeronautical/track layers) so it sits above
+// the base map but below every operational overlay; it starts hidden and is
+// toggled via the sidebar (store.layerVisibility.weatherRadar). A raster source
+// self-fetches, so there is no setData/refresh helper — the backend proxy caps
+// the tile freshness to the DWD radar cadence (~5 min).
+export function addWeatherRadarLayer(map) {
+  map.addSource(WEATHER_RADAR_SOURCE_ID, {
+    type: 'raster',
+    tiles: [WEATHER_RADAR_TILES_URL],
+    tileSize: 256,
+    attribution: DWD_ATTRIBUTION,
+  })
+  map.addLayer({
+    id: WEATHER_RADAR_LAYER_ID,
+    type: 'raster',
+    source: WEATHER_RADAR_SOURCE_ID,
+    layout: { visibility: 'none' },
+    paint: { 'raster-opacity': WEATHER_RADAR_OPACITY },
+  })
 }
 
 // addAirspaceLayers registers the airspace source and its fill/outline/label

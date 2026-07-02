@@ -776,7 +776,33 @@ Ohne `WAYFINDER_OPENAIP_API_KEY` ist das Feature aus (Warn-Log, kein Fehler).
 > Die Endpunkte `/api/airspace`, `/api/navaids`, `/api/waypoints` liefern damit im
 > Multi-Mandanten-Betrieb je Anmeldung die Daten des **eigenen** Mandanten.
 
-### 7.4 Sicherheit (Browser-Rand)
+### 7.4 Wetter-Overlays (DWD, optional)
+
+Best-effort Wetter-Kontext aus offenen Quellen (ADR 0016). Der Track-Pfad
+(CAT062) ist davon unabhängig — ein Ausfall lässt nur das Overlay fehlen.
+
+**Wetter-Overlay (DWD-Radar, WX-A).** Ohne `WAYFINDER_DWD_WMS_URL` ist das
+Feature aus (Warn-Log, kein Fehler); der Kachel-Endpunkt liefert dann
+transparente Kacheln. Zusätzlich braucht der Mandant das Feature-Entitlement
+`weather_radar`, damit der Sidebar-Schalter erscheint.
+
+| Variable | Default | Beschreibung |
+|----------|---------|--------------|
+| `WAYFINDER_DWD_WMS_URL` | *(leer)* | DWD-GeoServer-WMS-Basis-URL, z. B. `https://maps.dwd.de/geoserver/dwd/wms`; leer = Feature aus |
+| `WAYFINDER_DWD_RADAR_LAYER` | `dwd:Niederschlagsradar` | WMS-Layer-Name des Radar-/Niederschlagskomposits |
+| `WAYFINDER_DWD_REFRESH` | `5m` | Cache-Lebensdauer je Radar-Kachel (DWD-Radar aktualisiert ~5 min) |
+
+> **Ausgehender Netzzugang (Vertrauensgrenze, ADR 0016).** Wayfinder holt die
+> Radar-Kacheln **server-seitig** vom DWD und liefert sie same-origin an den
+> Browser (`/api/weather/radar/{z}/{x}/{y}.png`). Das **Deployment-Netz muss
+> daher ausgehend `maps.dwd.de` (HTTPS/443) erreichen dürfen.** Der Abruf ist
+> best-effort und misstrauisch (Timeout, Größenlimit, kein Absturz auf
+> Fehldaten) und blockiert nie `/ready`.
+>
+> **Lizenz/Attribution.** DWD-Daten sind frei unter GeoNutzV/CC BY 4.0; die
+> Attribution **„© Deutscher Wetterdienst"** wird im Karten-Overlay gesetzt.
+
+### 7.5 Sicherheit (Browser-Rand)
 
 | Variable | Default | Beschreibung |
 |----------|---------|--------------|
@@ -785,10 +811,10 @@ Ohne `WAYFINDER_OPENAIP_API_KEY` ist das Feature aus (Warn-Log, kein Fehler).
 | `WAYFINDER_TLS_KEY` | *(leer)* | Pfad zum TLS-Schlüssel (PEM) |
 
 > Der eigentliche Login am Browser-Rand läuft über die Mandanten-Authentifizierung
-> (`WAYFINDER_AUTH_MODE`, siehe §7.5); `/ws` ist immer durch die
+> (`WAYFINDER_AUTH_MODE`, siehe §7.6); `/ws` ist immer durch die
 > Mandanten-Middleware geschützt (fail-closed).
 
-### 7.5 Multi-Mandanten
+### 7.6 Multi-Mandanten
 
 `WAYFINDER_DB_URL` ist **Pflicht** (ADR 0014): Ohne diese Variable **startet der
 Server nicht**. Mit gesetzter DB werden die Schema-Migrationen beim Start
@@ -870,7 +896,7 @@ ohne gültigen, einem Mandanten zugeordneten Nutzer → `401`).
 > Scope — der Compliance-Nachweis „wer sah welchen Scope". Es geht in den normalen
 > Log-Strom (JSON auf `stderr`); zur Aufbewahrung in eine externe Log-Senke leiten.
 
-### 7.6 Radarabdeckungs-Overlay (optional, Paket 6)
+### 7.7 Radarabdeckungs-Overlay (optional, Paket 6)
 
 Sensor-Positionen/-Reichweiten für die Coverage-Ringe. `N` = 1, 2, 3, … (max. 20),
 lückenlos beginnend.
@@ -884,14 +910,14 @@ lückenlos beginnend.
 | `WAYFINDER_COVERAGE_SENSOR_N_LABEL` | *(leer)* | Tooltip-Bezeichnung |
 | `WAYFINDER_COVERAGE_RING_COLOR` | `#5B8DEF` | Farbe aller Ringe (CSS-Hex) |
 
-### 7.7 Betrieb
+### 7.8 Betrieb
 
 | Variable | Default | Beschreibung |
 |----------|---------|--------------|
 | `WAYFINDER_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` (ungültig → `info`) |
 | `WAYFINDER_CONFIG_FILE` | `wayfinder.yaml` | Pfad zur optionalen YAML-Datei. Fehlende Datei ist nicht fatal |
 
-### 7.8 Vollständige `wayfinder.yaml`
+### 7.9 Vollständige `wayfinder.yaml`
 
 ```yaml
 # wayfinder.yaml — die einzigen unterstützten Felder.

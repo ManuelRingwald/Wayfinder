@@ -261,6 +261,7 @@ immer aktiv — ADR 0014); statische Frontend-Routen werden ausgeliefert.
 | `/api/airspace` | GET | Luftraumstrukturen (GeoJSON, best-effort). **ONB-6 (ADR 0011):** hinter der Tenant-Middleware; liefert den **Cache des Request-Mandanten** (eigener Schlüssel/AOI, Fallback auf den globalen Cache) |
 | `/api/navaids` | GET | VOR/NDB-Beacons (GeoJSON, best-effort). **ONB-6:** mandanten-aufgelöst wie `/api/airspace` |
 | `/api/waypoints` | GET | Wegpunkte (GeoJSON, best-effort). **ONB-6:** mandanten-aufgelöst wie `/api/airspace` |
+| `/api/weather/radar/{z}/{x}/{y}.png` | GET | **WX-A (ADR 0016):** DWD-Radar-Kachel-Proxy — übersetzt jede XYZ-Kachel in einen DWD-WMS-`GetMap` (EPSG:3857), cacht sie ~5 min und liefert PNG. Hinter der Tenant-Middleware (nur authentifiziert erreicht den Egress). **Best-effort:** deaktiviert/unerreichbar → **transparente** Kachel (HTTP 200), nie ein Fehler; blockiert nie `/ready`. Overlay per Feature-Entitlement `weather_radar` in der UI gegated |
 | `/api/whoami` | GET | **WF2-12.4:** rollen-agnostische Identitäts-Probe (`{subject, tenant_id, user_id, role, must_change_password, features, sensor_classes, fl_min?, fl_max?, icao?}`); hinter der Tenant-Middleware, **nicht** `requireAdmin` — die ASD-Karte entscheidet damit Login-Schirm vs. Live-Bild und gated Layer/Legende (Issues #106/#107); `401` ohne Sitzung. `sensor_classes` ist die Vereinigung der Sensor-Klassen über die abonnierten Feeds des Mandanten. `fl_min`/`fl_max` spiegeln das FL-Band der effektiven Ansicht (Standard-Ansicht oder Nutzer-Override) für den grauen Bereichs-Hinweis im FL-Filter der Sidebar (#116; `omitempty`, fehlen wenn kein Band konfiguriert). `icao` (Reskin 3a, FR-UI-020) ist das optionale **ICAO-Kürzel** der effektiven Ansicht (Sektor/FIR, z. B. `EDGG·KTG`), das die ASD-Kopfzeile zeigt — reine Anzeige-Config (kein CAT062-Feld), am View-Config gepflegt (Migration 00015, Admin-View-Editor), `omitempty`. |
 | `/api/session/renew` | POST | **WF2-12.5:** Sliding-Session — mintet das Session-Cookie mit frischer TTL neu (builtin); hinter der Tenant-Middleware, `401` ohne Sitzung. Die Karte ruft es periodisch (alle 10 min) + bei WS-Reconnect + Tab-Fokus auf, damit eine aktive Konsole nie ausgeloggt wird. **WF2-12.6:** bewahrt den Erst-Login-Zeitpunkt und antwortet `401` (kein neues Cookie), sobald das absolute Maximum `WAYFINDER_SESSION_MAX_LIFETIME` überschritten ist |
 | `/api/admin/whoami` | GET | Rollen-Probe + **effektive Feature-Flags** (`features`) als JSON; enthält seit ONB-1 `must_change_password`; rollen-gegated (WF2-32/50) |
@@ -400,6 +401,18 @@ externe Prometheus-Bibliothek — der Exporter ist handgerollt in
 | `wayfinder_openaip_fetch_failures_total` | Counter | Anzahl fehlgeschlagener OpenAIP-Datenabrufe. **ONB-6:** wie oben summiert |
 | `wayfinder_openaip_cache_age_seconds` | Gauge | Alter des letzten erfolgreichen Cache-Befüllens in Sekunden; `-1` wenn noch kein erfolgreicher Fetch. **ONB-6:** bezieht sich auf den **globalen Fallback-Cache** |
 
+### 5.4a Wetter-Feeds (DWD/NOAA, WX, ADR 0016)
+
+Nach Quelle gelabelt (`source`), damit sich die Wetter-Features eine
+Metrik-Familie teilen. WX-A liefert die Quelle `dwd_radar`; WX-B/C ergänzen
+`noaa_metar` bzw. `dwd_warnings`.
+
+| Metrik | Typ | Beschreibung |
+|--------|-----|--------------|
+| `wayfinder_weather_fetch_success_total{source="dwd_radar"}` | Counter | Erfolgreiche Abrufe der Wetterquelle (WX-A: DWD-Radar-Kacheln vom Upstream) |
+| `wayfinder_weather_fetch_failures_total{source="dwd_radar"}` | Counter | Fehlgeschlagene Abrufe (Upstream-Fehler/Timeout/Nicht-Bild-Antwort → transparente Kachel) |
+| `wayfinder_weather_cache_age_seconds{source="dwd_radar"}` | Gauge | Sekunden seit dem letzten erfolgreichen Abruf der Quelle; `-1` wenn nie. Ein QNH-Wert (WX-B) wird **nicht** als Float-Gauge exponiert (Gauge ist `int64`), nur über REST |
+
 ### 5.5 Feature-Entitlements (Multi-Mandant, WF2-50)
 
 | Metrik | Typ | Bedeutung |
@@ -426,6 +439,7 @@ Keys werden fail-closed verweigert und über den `unknown_key`-Zähler sichtbar.
 | `history_dots` | Track-History-Punkte — ASD-004a | deny |
 | `vor_ndb` | VOR/NDB-Navaid-Overlay — ASD-003 | deny |
 | `waypoints` | Wegpunkt-Overlay — ASD-003 | deny |
+| `weather_radar` | DWD-Wetter-Radar-Overlay — WX-A (ADR 0016) | deny |
 
 **UI-Gate der ASD-Karte (rein kosmetisch, kein Serverenforcement auf Aero-Daten;
 Issue #106).** Das Layer-/Filter-Panel (`LayerFilterContent.vue`) gated über die
@@ -501,6 +515,17 @@ Auflösung (höchste Priorität zuerst):
 | `WAYFINDER_OPENAIP_RADIUS_KM` | `250` | int | Abfrageradius um das Zentrum in km. **ONB-6:** je Mandant um das **View-Zentrum** (oder dessen AOI-Box, falls gesetzt); ohne View die globale Karten-Box |
 | `WAYFINDER_OPENAIP_REFRESH` | `24h` | duration | Refresh-Intervall (Go-Duration, z. B. `1h`, `30m`); gilt für den globalen **und** jeden Per-Mandant-Refresh |
 | `WAYFINDER_OPENAIP_BASE_URL` | *(intern)* | URL | Override der OpenAIP-API-Basis-URL (geteilt von globalem und Per-Mandant-Client) |
+
+### 6.4 Wetter-Overlays (DWD, WX-A, ADR 0016)
+
+Best-effort; ohne WMS-URL ist das Radar-Overlay aus (transparente Kacheln). Der
+Egress zum DWD muss im Deployment-Netz erlaubt sein (`maps.dwd.de`, HTTPS/443).
+
+| Variable | Default | Typ | Beschreibung |
+|----------|---------|-----|--------------|
+| `WAYFINDER_DWD_WMS_URL` | *(leer)* | URL | DWD-GeoServer-WMS-Basis-URL (z. B. `https://maps.dwd.de/geoserver/dwd/wms`); leer = Radar-Overlay aus |
+| `WAYFINDER_DWD_RADAR_LAYER` | `dwd:Niederschlagsradar` | string | WMS-Layer-Name des Radar-/Niederschlagskomposits |
+| `WAYFINDER_DWD_REFRESH` | `5m` | duration | Cache-Lebensdauer je Radar-Kachel (Go-Duration) |
 
 ### 6.5 Radarabdeckungs-Overlay (Paket 6)
 
