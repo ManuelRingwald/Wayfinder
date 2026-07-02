@@ -326,3 +326,21 @@ Details siehe `docs/cross-project/todo-for-firefly.md`.
 - Nicht „fertig" melden, solange die Qualitäts-Gates (Abschnitt 6) nicht erfüllt
   sind.
 - Korrektheit und Sicherheit nicht dem Tempo opfern.
+
+---
+
+## 11. Git & Branch-Hygiene (Betriebshinweis)
+
+- **Ein PR pro abgeschlossenem Häppchen gegen `main`**; nach dem Merge den
+  Feature-Branch frisch auf `main` aufsetzen.
+- **GitHub löscht den Branch nach dem Merge automatisch** — das Repo ist mit
+  „Automatically delete head branches" konfiguriert. Daraus folgt:
+  - Ein gemergter PR ist **abgeschlossen**. Keine neuen Commits auf den alten
+    Branch stapeln — Folgearbeit **frisch von `origin/main`** aufsetzen
+    (`git fetch origin main && git checkout -B <branch> origin/main`) und als
+    **neuen** Branch pushen; der dafür geöffnete PR ist ein neuer PR.
+  - Weil der alte Remote-Branch nach dem Merge **nicht mehr existiert**, ist ein
+    `--force-with-lease`-Push **nicht** nötig und scheitert mit „stale info"
+    (nur der lokale Tracking-Ref ist veraltet). Stattdessen den veralteten
+    Tracking-Ref verwerfen und **normal** pushen — `git push -u origin <branch>`
+    legt den Branch neu an.
