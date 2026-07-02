@@ -137,9 +137,10 @@ Das Frontend leitet daraus — zusammen mit `icao_addr`/`mode_3a`/`callsign` —
 
 | Symbol | Herkunft | Bedingung |
 |--------|----------|-----------|
+| **K** (Buchstabe) | Kombiniert (Mehr-Sensor) | **≥ 2** Technologien gleichzeitig frisch (beliebige 2 aus ES/ADS-B, FLARM, SSR, Mode S) — Fusions-Track, höchste Güte (#125) |
 | **A** (Buchstabe) | ADS-B (kooperativ) | `adsb_age_s` vorhanden **und** ≤ 30 s (frisch) |
 | **F** (Buchstabe) | FLARM              | kein frisches ADS-B, aber `flarm_age_s` frisch (≤ 30 s) |
-| ▢ Quadrat (gefüllt) | SSR / Mode S     | kein frisches ADS-B/FLARM, aber `icao_addr`/`mode_3a`/Callsign |
+| ▢ Quadrat (gefüllt) | SSR / Mode S     | kein frisches ADS-B/FLARM, aber `ssr_age_s`/`mds_age_s` frisch oder `icao_addr`/`mode_3a`/Callsign |
 | ○ Ring (offen)      | Primär (PSR)     | keines der obigen — reine Skin-Paint ohne ID |
 
 Seit ICD 2.6.0 ist **FLARM erstmals sauber unterscheidbar** (eigenes `flarm_age_s`),
@@ -249,7 +250,7 @@ immer aktiv — ADR 0014); statische Frontend-Routen werden ausgeliefert.
 | `/api/admin/tenants/{id}` | DELETE | **ONB-4:** Mandanten löschen → 204; kaskadiert (ON DELETE CASCADE) auf Zugänge (+ Credentials), Abos, Entitlements, View-Konfig; **Guard B**: solange der Mandant noch **Zugänge** hat → **409** (erst Konten entfernen); **admin** |
 | `/api/admin/tenants/{id}` | PATCH | Mandant pausieren/reaktivieren (`{status}`); kaskadiert via Login-Enforcement auf alle Zugänge (AP6); **admin** |
 | `/api/admin/sensor-classes` | GET | Sensorklassen-Katalog (read-only Referenz, WF2-41) |
-| `/api/admin/impersonation` | GET/POST/DELETE | Cross-Tenant Read-Only-Impersonation (ADR 0008): **GET** liefert den aktuellen Status (`{active, tenant_id}`) für den Banner (Reload-fest, da der Cookie HttpOnly ist); **POST** `{"tenant_id":…}` mintet den signierten Grant-Cookie (`super_admin` only, Ziel-Mandant muss existieren → sonst 404); **DELETE** beendet sie (Cookie löschen). Nur aktiv, wenn ein Signing-Key (`WAYFINDER_SESSION_KEY`) konfiguriert ist. |
+| `/api/admin/impersonation` | GET/POST/DELETE | Cross-Tenant Read-Only-Impersonation (ADR 0008): **GET** liefert den aktuellen Status (`{active, tenant_id}`) für den Banner (Reload-fest, da der Cookie HttpOnly ist); **POST** `{"tenant_id":…}` mintet den signierten Grant-Cookie (`admin` only, Ziel-Mandant muss existieren → sonst 404); **DELETE** beendet sie (Cookie löschen). Nur aktiv, wenn ein Signing-Key (`WAYFINDER_SESSION_KEY`) konfiguriert ist. |
 | `/api/admin/*` | div. | Tenant-skopiertes Admin-API (WF2-31/31b); rollen-gegated |
 
 > **Pflicht-Passwortwechsel-Gate (ONB-1, ADR 0011):** Trägt das eingeloggte Konto
@@ -268,7 +269,7 @@ immer aktiv — ADR 0014); statische Frontend-Routen werden ausgeliefert.
 > **abgewiesen** (`feed add` → Fehler). **Abos binden an Feeds:** ein Mandant
 > **ohne** `multi_feed`-Entitlement hält **höchstens einen** Feed — ein zweiter
 > distinkter Grant wird mit **409 Conflict** abgewiesen, *bevor* er die DB
-> erreicht (harte Invariante; super_admin muss erst `multi_feed` setzen).
+> erreicht (harte Invariante; admin muss erst `multi_feed` setzen).
 
 > **SPA-History-Fallback (WF2-32):** `webui.Handler` liefert für jeden nicht als
 > Datei auflösbaren Pfad die `index.html`-Shell aus (Client-Router übernimmt) —
@@ -331,7 +332,7 @@ externe Prometheus-Bibliothek — der Exporter ist handgerollt in
 | `wayfinder_ws_clients_evicted_total` | Counter | Anzahl Clients, die wegen vollem Send-Channel entfernt wurden (langsame oder hängende Verbindungen) |
 | `wayfinder_tenant_ws_clients_connected{tenant="…"}` | Gauge | **Pro Mandant** verbundene Clients (WF2-23.2). Label-Wert = stabile `tenant_id`. Nur im Multi-Mandanten-Betrieb. |
 | `wayfinder_tenant_tracks_delivered_total{tenant="…"}` | Counter | **Pro Mandant** zugestellte Track-Nachrichten (WF2-23.2), fürs Billing/SLA-Monitoring. |
-| `wayfinder_impersonation_sessions_total` | Counter | Gestartete `super_admin`-Read-Only-Impersonation-`/ws`-Sessions (ADR 0008). **Bewusst aus den Pro-Tenant-Serien ausgeschlossen** (die Session läuft mit `scope.TenantID=0`), damit Support-Einblicke Verbrauch/SLA des Ziel-Mandanten nicht verfälschen. |
+| `wayfinder_impersonation_sessions_total` | Counter | Gestartete `admin`-Read-Only-Impersonation-`/ws`-Sessions (ADR 0008). **Bewusst aus den Pro-Tenant-Serien ausgeschlossen** (die Session läuft mit `scope.TenantID=0`), damit Support-Einblicke Verbrauch/SLA des Ziel-Mandanten nicht verfälschen. |
 | `wayfinder_active_sessions` | Gauge | **AP7:** aktuell aktive (unabgelaufene) Sessions in der serverseitigen Registry — zur Scrape-Zeit live aus der DB gezählt (unter kurzem Timeout). Nur im builtin-Modus. |
 | `wayfinder_sessions_opened_total` | Counter | **AP7:** insgesamt eröffnete Login-Sessions. |
 | `wayfinder_session_logins_rejected_total` | Counter | **AP7:** Logins, die das Session-Limit unter der `reject`-Policy abgelehnt hat (→ 429). |
@@ -592,23 +593,23 @@ die per-Mandant-Route `/api/admin/tenants/{id}/users` verwaltet ausschließlich
 Nutzer. Der **„letzter aktiver Admin"-Guard** (`wouldOrphanAdmins` →
 `CountActiveAdmins`) schützt Pausieren/Löschen von Admins (409) — dieselbe
 Invariante wie beim Boot-Seed und `DELETE /api/admin/me`.
-**`/admin`-Gate:** `tenant.RequireRole(tenant_admin, super_admin)` hinter der
+**`/admin`-Gate:** `tenant.RequireRole(admin)` hinter der
 Tenant-Middleware (fail-closed `403` ohne passende Rolle/Identität); liefert eine
 minimale whoami-JSON-Antwort, Admin-UI folgt WF2-32.
 
 **Admin-API (WF2-31, `pkg/adminapi`):** tenant-skopiertes REST unter `/api/admin/*`
-hinter `tenantMW`+`RequireRole(tenant_admin, super_admin)`. Die `tenant_id` kommt
+hinter `tenantMW`+`RequireRole(admin)`. Die `tenant_id` kommt
 **aus der Identity**, nie aus Pfad/Body (Isolation per Konstruktion). `GET/PUT
 /api/admin/view` (Tenant-Default-Sicht, **server-validiert** in `validateView`:
 Lat/Lon/Zoom-Bereiche, AOI wohlgeformt, `fl_min ≤ fl_max`), `GET
 /api/admin/subscriptions` (eigene Feeds), `GET /api/admin/feeds` (Katalog,
 read-only). DTOs verbergen Infra-Felder (multicast_group/port).
 
-**super_admin-Provisioning (WF2-31b, cross-tenant):** `GET /api/admin/tenants`,
+**admin-Provisioning (WF2-31b, cross-tenant):** `GET /api/admin/tenants`,
 `GET/POST /api/admin/tenants/{tenantID}/subscriptions`, `DELETE
 /api/admin/tenants/{tenantID}/subscriptions/{feedID}` — Ziel-`tenant_id` aus dem
-**Pfad**. Doppel-Gate: äußerer `RequireRole(tenant_admin, super_admin)` +
-in-handler `requireSuper` (`Identity.Role == super_admin`, sonst `403`) — die
+**Pfad**. Doppel-Gate: äußerer `RequireRole(admin)` +
+in-handler `requireAdmin` (`Identity.Role == admin`, sonst `403`) — `admin` ist die
 einzige cross-tenant-schreibende Rolle (Billing-/Entitlement-Grenze). Validierung:
 Ziel-Tenant/Feed müssen existieren (`404`), Body/Pfad-IDs wohlgeformt (`400`);
 Grant/Revoke idempotent (`204`). Der Config-Cache (WF2-30) folgt später.

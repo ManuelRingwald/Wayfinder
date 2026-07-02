@@ -26,7 +26,7 @@ func (f fakeTenants) Exists(_ context.Context, id int64) (bool, error) {
 	return f.existing[id], nil
 }
 
-func superAdmin() tenant.Identity {
+func adminIdentity() tenant.Identity {
 	return tenant.Identity{TenantID: 1, UserID: 1, Subject: "root", Role: store.RoleAdmin}
 }
 
@@ -74,7 +74,7 @@ func TestParseGrantRejectsExpired(t *testing.T) {
 // --- Resolve: the decision matrix -------------------------------------------
 
 func TestResolveNoGrantIsDefaultPath(t *testing.T) {
-	d, err := Resolve(context.Background(), "", superAdmin(), testKey, fakeTenants{})
+	d, err := Resolve(context.Background(), "", adminIdentity(), testKey, fakeTenants{})
 	if err != nil {
 		t.Fatalf("unexpected error %v", err)
 	}
@@ -86,7 +86,7 @@ func TestResolveNoGrantIsDefaultPath(t *testing.T) {
 func TestResolveValidGrantAdminActivates(t *testing.T) {
 	token := MintGrant(42, time.Hour, testKey)
 	tenants := fakeTenants{existing: map[int64]bool{42: true}}
-	d, err := Resolve(context.Background(), token, superAdmin(), testKey, tenants)
+	d, err := Resolve(context.Background(), token, adminIdentity(), testKey, tenants)
 	if err != nil {
 		t.Fatalf("unexpected error %v", err)
 	}
@@ -111,7 +111,7 @@ func TestResolveValidGrantNonAdminDenied(t *testing.T) {
 func TestResolveValidGrantUnknownTenantRejected(t *testing.T) {
 	token := MintGrant(99, time.Hour, testKey)
 	tenants := fakeTenants{existing: map[int64]bool{42: true}} // 99 absent
-	d, err := Resolve(context.Background(), token, superAdmin(), testKey, tenants)
+	d, err := Resolve(context.Background(), token, adminIdentity(), testKey, tenants)
 	if !errors.Is(err, ErrUnknownTenant) {
 		t.Fatalf("err = %v, want ErrUnknownTenant", err)
 	}
@@ -123,7 +123,7 @@ func TestResolveValidGrantUnknownTenantRejected(t *testing.T) {
 func TestResolveExpiredGrantIsIgnored(t *testing.T) {
 	token := MintGrant(42, -time.Minute, testKey) // expired
 	tenants := fakeTenants{existing: map[int64]bool{42: true}}
-	d, err := Resolve(context.Background(), token, superAdmin(), testKey, tenants)
+	d, err := Resolve(context.Background(), token, adminIdentity(), testKey, tenants)
 	if err != nil {
 		t.Fatalf("expired grant must not error (default path), got %v", err)
 	}
@@ -136,7 +136,7 @@ func TestResolveTamperedGrantIsIgnored(t *testing.T) {
 	token := MintGrant(42, time.Hour, testKey)
 	tampered := "x" + token[1:] // corrupt the payload
 	tenants := fakeTenants{existing: map[int64]bool{42: true}}
-	d, err := Resolve(context.Background(), tampered, superAdmin(), testKey, tenants)
+	d, err := Resolve(context.Background(), tampered, adminIdentity(), testKey, tenants)
 	if err != nil {
 		t.Fatalf("tampered grant must not error (default path), got %v", err)
 	}
@@ -148,7 +148,7 @@ func TestResolveTamperedGrantIsIgnored(t *testing.T) {
 func TestResolveTenantCheckerErrorFailsClosed(t *testing.T) {
 	token := MintGrant(42, time.Hour, testKey)
 	tenants := fakeTenants{err: errors.New("database down")}
-	d, err := Resolve(context.Background(), token, superAdmin(), testKey, tenants)
+	d, err := Resolve(context.Background(), token, adminIdentity(), testKey, tenants)
 	if err == nil {
 		t.Fatal("a tenant-checker error must propagate (fail closed), got nil")
 	}

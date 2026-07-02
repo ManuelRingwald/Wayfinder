@@ -36,14 +36,14 @@ Im Hybrid-Mandanten-Modell (Feed-Katalog + Abos) müssen zwei Dinge sauber sein:
 - **Surfacing:** `GET /api/admin/sensor-classes` (read-only Katalog für die SPA).
 
 ### B. Abos binden an Feeds — die harte Invariante
-- Der Grant-Pfad (`adminapi.grantSubscription`, super_admin) prüft **vor**
+- Der Grant-Pfad (`adminapi.grantSubscription`, admin) prüft **vor**
   `Subscribe`: hält der Mandant bereits ≥ 1 *anderen* Feed und fehlt ihm
   `multi_feed` (WF2-50)? → **409 Conflict**, die DB wird **nicht** berührt
   (fail-early — der invalide Zustand „> 1 Feed ohne Entitlement" kann gar nicht
   erst entstehen).
 - **Idempotenz erhalten:** ein Re-Grant desselben bereits gehaltenen Feeds zählt
   nicht hoch → bleibt 204.
-- **Ehrliche super_admin-Semantik:** super_admin muss erst das `multi_feed`-
+- **Ehrliche admin-Semantik:** admin muss erst das `multi_feed`-
   Entitlement setzen (WF2-50-Endpoint), dann den zweiten Feed granten. Der
   Invariant „Feed-Anzahl ⟂ Entitlement" ist nicht umgehbar.
 - **Defense in depth:** Da der ungültige Zustand nie persistiert wird, respektiert
@@ -54,7 +54,7 @@ Im Hybrid-Mandanten-Modell (Feed-Katalog + Abos) müssen zwei Dinge sauber sein:
 - **Fail-early am Rand:** Validierung (Sensorklassen) und Invariante (Feed-Anzahl)
   greifen, bevor Daten in die DB gelangen — keine „Phantom"-Zustände im Betrieb.
 - **Cross-Tenant unberührt:** die neuen/erweiterten Grant-Routen bleiben
-  super_admin-only (`requireSuper`); der bestehende Cross-Tenant-403-Test gilt
+  admin-only (`requireAdmin`); der bestehende Cross-Tenant-403-Test gilt
   weiter.
 - Kein CAT062-/ICD-Bezug, kein Frontend-Pflicht-Visual.
 
