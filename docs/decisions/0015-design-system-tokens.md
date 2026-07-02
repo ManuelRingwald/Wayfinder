@@ -96,3 +96,33 @@ Die Chrome-Farben leben an zwei Orten (`vuetify.js` **und** `colors.css`) und
 werden manuell synchron gehalten — eine bewusste Vereinfachung, weil Vuetify
 literale Hex-Werte braucht. Ein späterer Schritt könnte die Vuetify-Theme-Werte
 generativ aus den Tokens ableiten; das ist hier nicht Teil des Fundaments.
+
+## Nachtrag (2026-07-02): Surface-Hierarchie auf tiefes Navy
+
+**Kontext:** Beim E2E-Abgleich gegen den Design-Mockup fiel auf, dass die
+umgesetzte Surface-Hierarchie **Near-Black** (`background #070b12`) ist, während
+der Mockup ein **tiefes Navy** (Blau statt Schwarz) mit erkennbar navyfarbenen
+Panels zeigt. Die ursprünglichen Token-Werte waren rückwärts aus dem *alten* Code
+abgeleitet und lagen damit unter der Mockup-Vorlage. Auf Freigabe des
+Projektverantwortlichen wird die Surface-Hierarchie auf Navy umgestellt.
+
+**Entscheidung:** Nur die **Surface-Hierarchie** wechselt auf Navy; Cyan-Primary,
+Text- und Domänen-/Track-Farben (`constants.js`) bleiben unverändert.
+
+| Token | Alt (Near-Black) | Neu (Navy) |
+|-------|------------------|------------|
+| `background` | `#070b12` | `#0a1626` |
+| `surface` | `#0e1622` | `#12233b` |
+| `surface-variant` | `#16202e` | `#1a2f4a` |
+| `surface-bright` | `#1c2c3e` | `#223a5a` |
+
+Zusätzlich Map-Style (`cmd/wayfinder/main.go`, `darkMapStyle`):
+`background-color` `#0b0f14` → `#0b1a2e`, und die CARTO-`dark_nolabels`-Rasterschicht
+auf `raster-opacity: 0.4` gedimmt, damit das Navy durchscheint und Küsten/Grenzen
+als feiner Kontext erhalten bleiben.
+
+**Umfang der Änderung (Lockstep):** `frontend/src/design/tokens/colors.css`,
+`frontend/src/plugins/vuetify.js` (`asdDarkTheme`), `cmd/wayfinder/main.go`,
+`docs/design/color-tokens.md` (v1.1.0). Weiterhin **nicht schnittstellen-relevant**
+(reine Präsentation). Die volle Mockup-Karte (echtes Vektor-Grid, Sektorgrenzen,
+Airspace/Navaids) bleibt ein separates, teils datenabhängiges Thema.

@@ -6,18 +6,20 @@ import * as directives from 'vuetify/directives'
 
 // ASD-007: Command-center color scheme derived from ASD mockup (2026-06-17).
 // Documented in docs/design/color-tokens.md.
-// Cyan primary (#23d3e6) against near-black surfaces maximises contrast between
+// Cyan primary (#23d3e6) against deep-navy surfaces maximises contrast between
 // the WebGL map, track symbols, and UI chrome — the same principle used on
 // real radar scopes. All tokens are stored here even if not yet wired up in a
 // component, so future APs can reference them without touching this file.
+// Surface hierarchy is the lockstep mirror of src/design/tokens/colors.css —
+// change BOTH together (navy palette, ADR 0015).
 const asdDarkTheme = {
   dark: true,
   colors: {
-    // Background hierarchy (darkest → lightest surface level)
-    background: '#070b12',
-    surface: '#0e1622',
-    'surface-variant': '#16202e',
-    'surface-bright': '#1c2c3e',
+    // Background hierarchy (darkest → lightest surface level), deep-navy
+    background: '#0a1626',
+    surface: '#12233b',
+    'surface-variant': '#1a2f4a',
+    'surface-bright': '#223a5a',
 
     // Primary accent — cyan, aerospace/command-center convention
     primary: '#23d3e6',
