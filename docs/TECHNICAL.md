@@ -263,6 +263,7 @@ immer aktiv — ADR 0014); statische Frontend-Routen werden ausgeliefert.
 | `/api/waypoints` | GET | Wegpunkte (GeoJSON, best-effort). **ONB-6:** mandanten-aufgelöst wie `/api/airspace` |
 | `/api/weather/radar/{z}/{x}/{y}.png` | GET | **WX-A (ADR 0016):** DWD-Radar-Kachel-Proxy — übersetzt jede XYZ-Kachel in einen DWD-WMS-`GetMap` (EPSG:3857), cacht sie ~5 min und liefert PNG. Hinter der Tenant-Middleware (nur authentifiziert erreicht den Egress). **Best-effort:** deaktiviert/unerreichbar → **transparente** Kachel (HTTP 200), nie ein Fehler; blockiert nie `/ready`. Overlay per Feature-Entitlement `weather_radar` in der UI gegated |
 | `/api/weather/qnh` | GET | **WX-B (ADR 0016):** aktuelles QNH (hPa, ganzzahlig) der konfigurierten Flugplätze aus NOAA/AWC-METAR (`{stations:[{icao,qnh_hpa,obs_time,stale}],primary?}`). QNH nur aus echtem METAR (`altim`), **nie** DWD-PMSL. Hinter der Tenant-Middleware; best-effort (leere Liste wenn aus), nie ein Fehler. Kopfzeilen-Anzeige per Entitlement `qnh` in der UI gegated |
+| `/api/weather/warnings.geojson` | GET | **WX-C (ADR 0016):** amtliche DWD-Warnpolygone aus dem GeoServer-WFS (`dwd:Warnungen_Gemeinden_vereinigt`), normalisiert (`wf_level` 1–4 + `headline`/`event`/`expires`), WGS84-GeoJSON. Hinter der Tenant-Middleware; best-effort (leere FeatureCollection wenn aus/Ausfall), nie ein Fehler. Overlay per Entitlement `weather_warnings` in der UI gegated |
 | `/api/whoami` | GET | **WF2-12.4:** rollen-agnostische Identitäts-Probe (`{subject, tenant_id, user_id, role, must_change_password, features, sensor_classes, fl_min?, fl_max?, icao?}`); hinter der Tenant-Middleware, **nicht** `requireAdmin` — die ASD-Karte entscheidet damit Login-Schirm vs. Live-Bild und gated Layer/Legende (Issues #106/#107); `401` ohne Sitzung. `sensor_classes` ist die Vereinigung der Sensor-Klassen über die abonnierten Feeds des Mandanten. `fl_min`/`fl_max` spiegeln das FL-Band der effektiven Ansicht (Standard-Ansicht oder Nutzer-Override) für den grauen Bereichs-Hinweis im FL-Filter der Sidebar (#116; `omitempty`, fehlen wenn kein Band konfiguriert). `icao` (Reskin 3a, FR-UI-020) ist das optionale **ICAO-Kürzel** der effektiven Ansicht (Sektor/FIR, z. B. `EDGG·KTG`), das die ASD-Kopfzeile zeigt — reine Anzeige-Config (kein CAT062-Feld), am View-Config gepflegt (Migration 00015, Admin-View-Editor), `omitempty`. |
 | `/api/session/renew` | POST | **WF2-12.5:** Sliding-Session — mintet das Session-Cookie mit frischer TTL neu (builtin); hinter der Tenant-Middleware, `401` ohne Sitzung. Die Karte ruft es periodisch (alle 10 min) + bei WS-Reconnect + Tab-Fokus auf, damit eine aktive Konsole nie ausgeloggt wird. **WF2-12.6:** bewahrt den Erst-Login-Zeitpunkt und antwortet `401` (kein neues Cookie), sobald das absolute Maximum `WAYFINDER_SESSION_MAX_LIFETIME` überschritten ist |
 | `/api/admin/whoami` | GET | Rollen-Probe + **effektive Feature-Flags** (`features`) als JSON; enthält seit ONB-1 `must_change_password`; rollen-gegated (WF2-32/50) |
@@ -416,6 +417,9 @@ Metrik-Familie teilen. WX-A liefert die Quelle `dwd_radar`; WX-B/C ergänzen
 | `wayfinder_weather_fetch_success_total{source="noaa_metar"}` | Counter | Erfolgreiche METAR-Polls (WX-B: NOAA/AWC) |
 | `wayfinder_weather_fetch_failures_total{source="noaa_metar"}` | Counter | Fehlgeschlagene METAR-Polls (Last-Good-Cache bleibt) |
 | `wayfinder_weather_cache_age_seconds{source="noaa_metar"}` | Gauge | Sekunden seit dem letzten erfolgreichen METAR-Poll; `-1` wenn nie. Der QNH-**Wert** wird **nicht** als Float-Gauge exponiert (Gauge ist `int64`), nur über `/api/weather/qnh` |
+| `wayfinder_weather_fetch_success_total{source="dwd_warnings"}` | Counter | Erfolgreiche Warn-Feed-Abrufe (WX-C: DWD-WFS-GeoJSON) |
+| `wayfinder_weather_fetch_failures_total{source="dwd_warnings"}` | Counter | Fehlgeschlagene Warn-Feed-Abrufe (Last-Good-Cache bleibt) |
+| `wayfinder_weather_cache_age_seconds{source="dwd_warnings"}` | Gauge | Sekunden seit dem letzten erfolgreichen Warn-Feed-Abruf; `-1` wenn nie |
 
 ### 5.5 Feature-Entitlements (Multi-Mandant, WF2-50)
 
@@ -445,6 +449,7 @@ Keys werden fail-closed verweigert und über den `unknown_key`-Zähler sichtbar.
 | `waypoints` | Wegpunkt-Overlay — ASD-003 | deny |
 | `weather_radar` | DWD-Wetter-Radar-Overlay — WX-A (ADR 0016) | deny |
 | `qnh` | QNH-Kopfzeilen-Infobox (NOAA-METAR) — WX-B (ADR 0016) | deny |
+| `weather_warnings` | DWD-Wetterwarnungen-Overlay — WX-C (ADR 0016) | deny |
 
 **UI-Gate der ASD-Karte (rein kosmetisch, kein Serverenforcement auf Aero-Daten;
 Issue #106).** Das Layer-/Filter-Panel (`LayerFilterContent.vue`) gated über die
@@ -541,6 +546,14 @@ Egress zu `aviationweather.gov` (443) muss erlaubt sein.
 | `WAYFINDER_METAR_URL` | *(NOAA AWC)* | URL | METAR-Daten-API (Default `https://aviationweather.gov/api/data/metar`) |
 | `WAYFINDER_METAR_USER_AGENT` | `Wayfinder-ASD/1.0` | string | Distinktiver User-Agent (Pflicht gegen AWC-403) |
 | `WAYFINDER_QNH_REFRESH` | `15m` | duration | METAR-Poll-Intervall |
+
+Wetterwarnungen-Overlay (WX-C). Ohne WFS-URL aus; Egress zu `maps.dwd.de` (443).
+
+| Variable | Default | Typ | Beschreibung |
+|----------|---------|-----|--------------|
+| `WAYFINDER_DWD_WARN_URL` | *(leer)* | URL | DWD-GeoServer-WFS/OWS-Basis-URL (z. B. `https://maps.dwd.de/geoserver/dwd/ows`); leer = Feature aus |
+| `WAYFINDER_DWD_WARN_LAYER` | `dwd:Warnungen_Gemeinden_vereinigt` | string | WFS-Layer (aufgelöste Gemeinde-Warnungen) |
+| `WAYFINDER_DWD_WARN_REFRESH` | `5m` | duration | Poll-Intervall des Warn-Feeds |
 
 ### 6.5 Radarabdeckungs-Overlay (Paket 6)
 

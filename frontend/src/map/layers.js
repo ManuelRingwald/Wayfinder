@@ -39,7 +39,25 @@ import {
   WEATHER_RADAR_TILES_URL,
   WEATHER_RADAR_OPACITY,
   DWD_ATTRIBUTION,
+  WEATHER_WARNINGS_SOURCE_ID,
+  WEATHER_WARNINGS_FILL_LAYER_ID,
+  WEATHER_WARNINGS_LINE_LAYER_ID,
+  WEATHER_WARNINGS_COLORS,
 } from './constants.js'
+
+// severityColorExpr builds a MapLibre 'match' on the normalised wf_level
+// (1..4), falling back to the moderate colour for any unexpected value.
+function severityColorExpr() {
+  return [
+    'match',
+    ['get', 'wf_level'],
+    1, WEATHER_WARNINGS_COLORS[1],
+    2, WEATHER_WARNINGS_COLORS[2],
+    3, WEATHER_WARNINGS_COLORS[3],
+    4, WEATHER_WARNINGS_COLORS[4],
+    WEATHER_WARNINGS_COLORS[2],
+  ]
+}
 
 // Build a MapLibre 'match' expression keyed on the OpenAIP numeric type field.
 // Each AIRSPACE_GROUP contributes one arm (array label → single value).
@@ -277,6 +295,42 @@ export function addWeatherRadarLayer(map) {
     layout: { visibility: 'none' },
     paint: { 'raster-opacity': WEATHER_RADAR_OPACITY },
   })
+}
+
+// addWeatherWarningsLayer registers the DWD weather-warnings overlay (WX-C,
+// ADR 0016): a GeoJSON source (populated via updateWeatherWarnings from the
+// backend-proxied WFS) with a translucent severity-coloured fill and a matching
+// outline. Starts hidden; toggled via the sidebar (weather_warnings entitlement).
+// Sits above the radar raster but below the aeronautical/track layers.
+export function addWeatherWarningsLayer(map) {
+  map.addSource(WEATHER_WARNINGS_SOURCE_ID, {
+    type: 'geojson',
+    data: { type: 'FeatureCollection', features: [] },
+    attribution: DWD_ATTRIBUTION,
+  })
+  map.addLayer({
+    id: WEATHER_WARNINGS_FILL_LAYER_ID,
+    type: 'fill',
+    source: WEATHER_WARNINGS_SOURCE_ID,
+    layout: { visibility: 'none' },
+    paint: { 'fill-color': severityColorExpr(), 'fill-opacity': 0.18 },
+  })
+  map.addLayer({
+    id: WEATHER_WARNINGS_LINE_LAYER_ID,
+    type: 'line',
+    source: WEATHER_WARNINGS_SOURCE_ID,
+    layout: { visibility: 'none' },
+    paint: { 'line-color': severityColorExpr(), 'line-width': 1.2, 'line-opacity': 0.7 },
+  })
+}
+
+// updateWeatherWarnings pushes a fetched warnings FeatureCollection into the
+// source. A no-op if the source isn't present yet (map still loading).
+export function updateWeatherWarnings(map, geojson) {
+  const src = map.getSource(WEATHER_WARNINGS_SOURCE_ID)
+  if (src) {
+    src.setData(geojson || { type: 'FeatureCollection', features: [] })
+  }
 }
 
 // addAirspaceLayers registers the airspace source and its fill/outline/label

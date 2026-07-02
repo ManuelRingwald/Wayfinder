@@ -86,6 +86,23 @@ export const WEATHER_RADAR_OPACITY = 0.6
 // GeoNutzV / CC BY 4.0 requires the DWD source note on any DWD-derived layer.
 export const DWD_ATTRIBUTION = '© Deutscher Wetterdienst'
 
+// WX-C (ADR 0016): DWD weather-warnings overlay. Backend-proxied WFS GeoJSON
+// (dwd:Warnungen_Gemeinden_vereinigt) served at /api/weather/warnings.geojson.
+// A fill+outline coloured by the normalised severity level (wf_level 1..4).
+export const WEATHER_WARNINGS_SOURCE_ID = 'weather-warnings'
+export const WEATHER_WARNINGS_FILL_LAYER_ID = 'weather-warnings-fill'
+export const WEATHER_WARNINGS_LINE_LAYER_ID = 'weather-warnings-line'
+export const WEATHER_WARNINGS_URL = '/api/weather/warnings.geojson'
+export const WEATHER_WARNINGS_REFRESH_MS = 5 * 60 * 1000 // 5 min (DWD warn cadence)
+// Severity colour ramp keyed on wf_level (1 minor → 4 extreme). Muted so the
+// warning reads as background context, not a track-level alert.
+export const WEATHER_WARNINGS_COLORS = {
+  1: '#f2d94e', // minor — yellow
+  2: '#f0a63a', // moderate — amber
+  3: '#e5622d', // severe — orange-red
+  4: '#c0392b', // extreme — red
+}
+
 // ASD-002: Deconfliction geometry constants (all values in screen pixels).
 // LABEL_TEXT_SIZE      : data-block text size; used as the symbol layer's "text-size".
 // LABEL_SLOT_RADIUS_PX : distance from symbol centre to label anchor candidate.

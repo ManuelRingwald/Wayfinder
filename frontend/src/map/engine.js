@@ -24,6 +24,8 @@ import {
   updateCoverageSource,
   addRangeRingsLayer,
   addWeatherRadarLayer,
+  addWeatherWarningsLayer,
+  updateWeatherWarnings,
 } from './layers.js'
 import { rangeRingsGeoJSON } from './rangerings.js'
 import { updateTracksLayer } from './tracks.js'
@@ -43,6 +45,10 @@ import {
   RANGE_RINGS_LABEL_LAYER_ID,
   HISTORY_DOTS_LAYER_ID,
   WEATHER_RADAR_LAYER_ID,
+  WEATHER_WARNINGS_FILL_LAYER_ID,
+  WEATHER_WARNINGS_LINE_LAYER_ID,
+  WEATHER_WARNINGS_URL,
+  WEATHER_WARNINGS_REFRESH_MS,
 } from './constants.js'
 
 // initMap creates a MapLibre instance on the given container element, wires
@@ -75,6 +81,8 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
   // WX-A: only offer the DWD radar toggle when the backend has a WMS source
   // configured — a switch that visibly does nothing reads as a bug.
   store.setWeatherRadarAvailable(cfg.weather_radar_available === true)
+  // WX-C: same for the DWD warnings overlay.
+  store.setWeatherWarningsAvailable(cfg.weather_warnings_available === true)
 
   const map = new maplibregl.Map({
     container,
@@ -239,6 +247,10 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
     // base map and beneath every operational overlay. Starts hidden; toggled via
     // the sidebar (gated by the weather_radar entitlement + availability).
     addWeatherRadarLayer(map)
+    // WX-C: DWD weather-warnings polygons above the radar raster but below the
+    // aeronautical/track layers. Starts hidden; toggled via the sidebar
+    // (weather_warnings entitlement + availability).
+    addWeatherWarningsLayer(map)
     // Aeronautical overlays next, so they sit beneath the track layers.
     addAeronauticalIcons(map)
     addAirspaceLayers(map, palette)
@@ -276,6 +288,18 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
 
     // Load aeronautical data and start periodic refresh.
     const aeroInterval = startAeronauticalRefresh(map)
+
+    // WX-C: load DWD warnings and refresh on the warn cadence. Best-effort — a
+    // failed/absent fetch simply leaves the (empty) overlay unchanged.
+    const loadWarnings = () => {
+      fetch(WEATHER_WARNINGS_URL)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((geojson) => { if (geojson) updateWeatherWarnings(map, geojson) })
+        .catch((err) => console.warn('weather warnings fetch failed:', err))
+    }
+    loadWarnings()
+    const warnInterval = setInterval(loadWarnings, WEATHER_WARNINGS_REFRESH_MS)
+    map._warnInterval = warnInterval
 
     // ASD-002 B2: Drag&Drop label pinning.
     setupLabelDrag(map, state, doRender)
@@ -324,6 +348,7 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
       rangeRings: [RANGE_RINGS_LAYER_ID, RANGE_RINGS_LABEL_LAYER_ID],
       historyDots: [HISTORY_DOTS_LAYER_ID],
       weatherRadar: [WEATHER_RADAR_LAYER_ID],
+      weatherWarnings: [WEATHER_WARNINGS_FILL_LAYER_ID, WEATHER_WARNINGS_LINE_LAYER_ID],
     }
     for (const [key, layerIds] of Object.entries(groups)) {
       if (key in vis) {
@@ -377,6 +402,7 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
     if (ws) ws.close()
     if (state.fadeInterval) clearInterval(state.fadeInterval)
     if (map._aeroInterval) clearInterval(map._aeroInterval)
+    if (map._warnInterval) clearInterval(map._warnInterval)
     map.remove()
   }
 

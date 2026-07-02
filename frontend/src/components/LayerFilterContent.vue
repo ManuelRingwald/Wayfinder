@@ -109,6 +109,24 @@
         Keine DWD-Radarquelle konfiguriert (WAYFINDER_DWD_WMS_URL).
       </div>
 
+      <!-- WX-C (ADR 0016): DWD weather-warnings overlay. Feature-gated per tenant
+           (weather_warnings) and disabled when no DWD WFS is configured. -->
+      <div v-if="showLayer('weather_warnings')" class="filter-row">
+        <v-switch
+          v-model="store.layerVisibility.weatherWarnings"
+          label="DWD-Wetterwarnungen"
+          color="primary"
+          density="compact"
+          hide-details
+          inset
+          :disabled="!store.weatherWarningsAvailable"
+          @update:model-value="onLayerToggle('weatherWarnings', $event)"
+        />
+      </div>
+      <div v-if="showLayer('weather_warnings') && !store.weatherWarningsAvailable" class="filter-hint">
+        Keine DWD-Warnquelle konfiguriert (WAYFINDER_DWD_WARN_URL).
+      </div>
+
       <div v-if="showLayer('history_dots')" class="filter-row">
         <v-switch
           v-model="store.layerVisibility.historyDots"
