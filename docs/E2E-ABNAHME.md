@@ -258,7 +258,7 @@ Zentrum `50.04 / 8.56` und Radius `100` NM automatisch aus der Standard-Ansicht
 |---|-----------|---------------------|-----------|
 | 5.4.1 | Im Mandanten **Demo Frankfurt** → Abschnitt **„Feed-Zuweisungen"** → bei `frankfurt-adsb` **„Zuweisen"**. | Feed ist dem Mandanten zugewiesen. | Status-Chip zeigt **„zugewiesen"**. |
 | 5.4.2 | Oben rechts **Abmelden** (Admin). Am besten ein **privates Browserfenster** öffnen. | Zurück zur Login-Maske. | Login-Maske erscheint. |
-| 5.4.3 | `http://〈VM-IP〉:8081/` öffnen, anmelden als `lotse` + Passwort. | Karte lädt, zentriert auf **Frankfurt** (50.04/8.56, Zoom 8); oben rechts der Konto-Chip `lotse`. | Kartenausschnitt = Raum Frankfurt. |
+| 5.4.3 | `http://〈VM-IP〉:8081/` öffnen, anmelden als `lotse` + Passwort. | Karte lädt, zentriert auf **Frankfurt** (50.04/8.56, Zoom 8); oben rechts der **Feed-Status-Badge** (der frühere `lotse`-Konto-Chip ist entfallen — Konto liegt in der Sidebar unter **Konto**). | Kartenausschnitt = Raum Frankfurt. |
 | 5.4.4 | Etwas warten (echter Verkehr, keine feste Zeit). | Tracks erscheinen, sobald realer ADS-B-Verkehr im Gebiet ist; oben rechts der **grüne Feed-Chip „FEED OK"** (zeigt jetzt korrekt die Feed-Gesundheit statt dauerhaft „FEED ?", Issue #117). ADS-B um Frankfurt ist dicht beflogen → sollte zuverlässig kommen. | Mindestens ein bewegtes Track-Symbol sichtbar **und** Feed-Chip grün („FEED OK"). |
 | 5.4.5 | Zurück im Admin-Fenster: im Mandanten → **„Feed-Zuweisungen"** → bei `frankfurt-adsb` **„Entziehen"**. | Feed ist dem Mandanten nicht mehr zugewiesen. | Status-Chip zeigt wieder **„—"** statt „zugewiesen". |
 

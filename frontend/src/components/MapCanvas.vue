@@ -6,8 +6,6 @@
     <MapControls
       @recenter="mapEngine?.recenter()"
     />
-    <!-- ASD-010: category filter chips top-centre -->
-    <TrackFilterChips />
     <!-- Häppchen 3: measuring status (hint + readout); the tool buttons now live
          in the navigation rail. -->
     <MeasureStatus />
@@ -24,7 +22,6 @@ import { useToolsStore } from '@/stores/tools.js'
 import { initMap } from '@/map/engine.js'
 import { createMeasure } from '@/map/measure.js'
 import MapControls from './MapControls.vue'
-import TrackFilterChips from './TrackFilterChips.vue'
 import MeasureStatus from './MeasureStatus.vue'
 import ImpersonationBar from './ImpersonationBar.vue'
 
@@ -64,12 +61,6 @@ watch(() => ({ ...store.layerVisibility }), (vis) => {
 watch(() => ({ ...store.flFilter }), () => {
   mapEngine?.updateFlFilter()
 }, { deep: true })
-
-// ASD-010: re-render when category filter changes (hiddenCategories is a
-// reactive Set; we watch its size as a proxy for any add/delete).
-watch(() => store.hiddenCategories.size, () => {
-  mapEngine?.updateFlFilter()
-})
 
 // ASD-011: apply airspace group filter once after map load (so the initial
 // state is correctly reflected) and whenever the store changes.

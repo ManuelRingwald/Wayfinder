@@ -7,6 +7,7 @@
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { PALETTES, TRACKS_LAYER_ID, AIRSPACE_GROUPS } from './constants.js'
+import { haversineNM } from './tools.js'
 import {
   addAeronauticalIcons,
   addAirspaceLayers,
@@ -75,14 +76,11 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
     zoom: cfg.zoom,
   })
 
-  // ASD-012: native MapLibre controls. ScaleControl gives an absolute distance
-  // reference (nautical miles) at any zoom; the compass-only NavigationControl
-  // shows the current bearing and resets to north on click — replacing the old
-  // hand-rolled reset-north button. Zoom stays on the custom MapControls, so
-  // showZoom is off here to avoid duplicate buttons. Reskin 3b: scale moved to
-  // bottom-RIGHT (with the vector-minutes readout), freeing bottom-left for the
-  // floating scope legend.
-  map.addControl(new maplibregl.ScaleControl({ unit: 'nautical', maxWidth: 120 }), 'bottom-right')
+  // Native MapLibre compass control. It shows the current bearing and resets to
+  // north on click (replacing the old hand-rolled reset-north button). Zoom lives
+  // on the navigation rail; showZoom is off here to avoid duplicate buttons. The
+  // absolute distance reference is the bottom-right "<width> NM Breite" readout
+  // (reportViewportWidth below), which replaced the native scale bar (design).
   map.addControl(
     new maplibregl.NavigationControl({ showZoom: false, showCompass: true, visualizePitch: false }),
     'top-left',
@@ -115,20 +113,18 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
   // Helper: build a bound renderSources call with the current store slices.
   const doRender = () => {
     if (!state.mapLoaded) return
-    renderSources(map, state, store.flFilter, state.labelPins, palette, store.hiddenCategories)
+    renderSources(map, state, store.flFilter, state.labelPins, palette)
   }
 
-  // ASD-010: derive per-category track counts from live features and push to
-  // the store so TrackFilterChips can display them reactively.
-  function updateTrackCounts() {
-    let confirmed = 0, coasting = 0, tentative = 0
-    for (const f of state.liveTrackFeatures) {
-      const p = f.properties
-      if (p.coasting) coasting++
-      else if (p.confirmed) confirmed++
-      else tentative++
-    }
-    store.setTrackCounts({ confirmed, coasting, tentative })
+  // Report the visible scope width in NM for the bottom-right "<width> NM Breite"
+  // readout (replaces the native scale bar, per the design). Measured across the
+  // viewport at the centre latitude; pushed to the store, throttled to one update
+  // per animation frame via the existing move handler below.
+  const reportViewportWidth = () => {
+    const b = map.getBounds()
+    const lat = map.getCenter().lat
+    const widthNM = haversineNM({ lat, lng: b.getWest() }, { lat, lng: b.getEast() })
+    store.setViewportWidth(Math.round(widthNM))
   }
 
   // Fade-loop management: start interval if not already running.
@@ -183,7 +179,6 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
         }
         if (state.mapLoaded) {
           updateTracksLayer(msg, state, doRender, startFadeLoop)
-          updateTrackCounts()
         } else {
           state.pendingTracks = msg
         }
@@ -252,6 +247,7 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
     addLabelsLayer(map, palette)      // ASD-002: above track circles
     state.mapLoaded = true
     store.setMapLoaded(true)
+    reportViewportWidth() // initial bottom-right "NM Breite" readout
 
     if (state.pendingTracks) {
       updateTracksLayer(state.pendingTracks, state, doRender, startFadeLoop)
@@ -273,6 +269,7 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
       deconflictFrame = requestAnimationFrame(() => {
         deconflictFrame = null
         if (state.mapLoaded) doRender()
+        reportViewportWidth() // keep the bottom-right "NM Breite" readout live
       })
     })
 

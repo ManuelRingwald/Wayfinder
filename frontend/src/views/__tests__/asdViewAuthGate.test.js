@@ -4,6 +4,8 @@
 // against the raw SFC source (project convention — no Vuetify mount).
 import { describe, it, expect } from 'vitest'
 import sfc from '../AsdView.vue?raw'
+import layerFilter from '../../components/LayerFilterContent.vue?raw'
+import rail from '../../components/NavigationRail.vue?raw'
 
 describe('AsdView auth gate (ADR 0014)', () => {
   it('probes the session on mount', () => {
@@ -27,16 +29,23 @@ describe('AsdView auth gate (ADR 0014)', () => {
     expect(sfc).toContain('<MapCanvas')
   })
 
-  it('offers a logout action wired to the session store', () => {
-    expect(sfc).toContain('async function onLogout()')
-    expect(sfc).toContain('session.logout()')
-    expect(sfc).toContain('Abmelden')
+  // The account chip that used to float top-right on the map was removed — it
+  // duplicated the sidebar. Account access now lives ONLY in the navigation
+  // sidebar, so the map itself no longer carries subject/logout.
+  it('does not duplicate account access on the map (moved to the sidebar)', () => {
+    expect(sfc).not.toContain('account-overlay')
+    expect(sfc).not.toContain('session.subject')
+    expect(sfc).not.toContain('onLogout')
   })
 
-  it('shows the logged-in subject and an admin shortcut for admins', () => {
-    expect(sfc).toContain('session.subject')
-    expect(sfc).toContain('session.isAdmin')
-    expect(sfc).toContain("{ name: 'admin' }")
+  it('keeps the logged-in subject + logout in the sidebar account section', () => {
+    expect(layerFilter).toContain('session.subject')
+    expect(layerFilter).toContain('session.logout()')
+    expect(layerFilter).toContain('Abmelden')
+  })
+
+  it('keeps the admin shortcut in the navigation rail', () => {
+    expect(rail).toContain("router.push('/admin')")
   })
 
   it('runs the sliding-session refresh only while authenticated (WF2-12.5)', () => {

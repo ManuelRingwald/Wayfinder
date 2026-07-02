@@ -108,6 +108,20 @@
     grün; `dist` neu eingebettet.
   - **Offen:** volle Mockup-Karte (Vektor-Grid, Sektorgrenzen, Airspace/Navaids)
     — separates, teils datenabhängiges Thema.
+  - **Scope-Chrome-Feinschliff (E2E-Design-Durchgang):** (a) Die 3 Status-Chips
+    oben zentriert **entfernt** — Status kommt aus der Symbolik; die
+    Kategorie-Filterfunktion wurde auf Freigabe **komplett fallen gelassen**
+    (TrackFilterChips + `hiddenCategories`/`trackCounts`-Maschinerie aus Store/
+    `render.js`/`engine.js` ausgebaut, FR-UI-010 als entfernt markiert). (b)
+    **Konto-Dopplung** aufgelöst: der `lotse`-Chip oben rechts ist weg (Konto nur
+    noch in der Sidebar), der **Feed-Status-Badge** rückt auf dessen Platz,
+    Zentrum/Vollbild rücken nach oben. (c) Rechts unten jetzt ein Pill
+    **„‹Breite› NM Breite · Vektor ‹N› min"** — die native Maßstabsleiste wurde
+    durch die aus den Kartengrenzen berechnete Viewport-Breite ersetzt
+    (`engine.js` `reportViewportWidth` → `asd`-Store `viewportWidthNM`).
+    Regressionstests `scopeChrome.test.js` + `asdViewAuthGate` angepasst. Gates:
+    **vitest 267**, `vite build`, `go test ./internal/webui` grün; `dist` neu
+    eingebettet.
 - **E2E-Testlauf-Findings #109–#121 umgesetzt (Branch
   `claude/mac-mini-e2e-network-53epgr`):** Zweiter Findings-Batch aus dem realen
   Mac-Mini-E2E-Lauf. Kurz:
