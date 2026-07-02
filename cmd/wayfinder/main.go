@@ -618,11 +618,13 @@ const defaultMapStyle = `{
 	"layers": [{"id": "osm", "type": "raster", "source": "osm"}]
 }`
 
-// darkMapStyle is the "Radar Dark Mode" base: a low-contrast dark raster
-// (CARTO dark, no labels) on a dark background. Like OSM it needs no API key,
-// which keeps the demo self-contained. The dark, label-free base lets the
-// track symbols and aeronautical overlays dominate, the way a controller's
-// radar scope does. ASD-003 Häppchen 3a.
+// darkMapStyle is the "Radar Dark Mode" base: a low-contrast CARTO dark raster
+// (no labels), dimmed (raster-opacity 0.4) over a deep-navy background so the
+// navy scope shows through while coastlines/borders remain as faint geographic
+// context. Like OSM it needs no API key, which keeps the demo self-contained.
+// The dimmed, label-free base lets the track symbols and aeronautical overlays
+// dominate, the way a controller's radar scope does. Navy palette per ADR 0015
+// (design-system tokens); ASD-003 Häppchen 3a.
 const darkMapStyle = `{
 	"version": 8,
 	"glyphs": "https://fonts.openmaptiles.org/{fontstack}/{range}.pbf",
@@ -635,8 +637,8 @@ const darkMapStyle = `{
 		}
 	},
 	"layers": [
-		{"id": "background", "type": "background", "paint": {"background-color": "#0b0f14"}},
-		{"id": "carto-dark", "type": "raster", "source": "carto-dark"}
+		{"id": "background", "type": "background", "paint": {"background-color": "#0b1a2e"}},
+		{"id": "carto-dark", "type": "raster", "source": "carto-dark", "paint": {"raster-opacity": 0.4}}
 	]
 }`
 
