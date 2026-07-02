@@ -143,6 +143,29 @@
     Pill dort; unten bleibt nur noch die Instruktion. Regressionstests
     `measureLabel.test.js` + `tools`-Store. Gates: **vitest 275**, `vite build`,
     `go test ./internal/webui` grün; `dist` neu eingebettet.
+- **E2E-Finding (diese Sitzung, gleicher Branch): Zugangsdaten-UI im Quellen-
+  Dialog quelltyp-abhängig (UX-4).** Im „Quellen"-Dialog erschien das Credential-
+  Feld (Referenz + Client-ID/Secret) für **jeden** Quelltyp — auch für **Radar**
+  (CAT048: Netz-Endpunkt ohne Auth) und **FLARM**, wo die OpenSky-Labels irre-
+  führen. Zudem musste der Operator die `cred_ref` von Hand erfinden, bevor die
+  Felder überhaupt auftauchten (Reibung: erst nach Eintippen eines Handles wurden
+  Client-ID/Secret sichtbar). Fix in `AdminFeeds.vue`:
+  - **Quelltyp-Tabelle `CREDENTIAL`** (`credInfo(type)`): nur `adsb_opensky`
+    (OpenSky Client-ID/Secret, **Pflicht**) und `flarm_aprs` (APRS-IS Rufzeichen/
+    Passcode, **optional**) tragen einen Credential-Block; **`radar_asterix`
+    zeigt keinen** — Radar authentifiziert nicht.
+  - **`cred_ref` wird automatisch vergeben** (`ensureCredRef`): eine
+    credential-tragende Quelle ohne Ref bekommt ein deterministisches Handle
+    (`secret/feed-<id>-<type>`); ein bereits gespeichertes Handle bleibt erhalten
+    (Secret bleibt verknüpft); Radar-Quellen bekommen die Ref geleert. Kein
+    Hand-Handle mehr, die zwei beschrifteten Felder erscheinen sofort.
+  - **Secret-Store aus** (`WAYFINDER_SECRET_KEY` ungesetzt): statt eines toten
+    Feldes jetzt ein klarer Hinweis-Alert (bei ADS-B mit dem 429-Kontext, bei
+    FLARM „anonym = Normalfall"). Das ist genau die Reibung, die im letzten Lauf
+    das OpenSky-429 verursacht hat.
+  - Regressionstest `adminFeedsCredentials.test.js` (`?raw`-SFC). FR-ORCH-001 im
+    Anforderungs-Register um UX-4 ergänzt. Gates: **vitest 279**, `vite build`,
+    `go test ./internal/webui` grün; `dist` neu eingebettet.
 - **E2E-Testlauf-Findings #109–#121 umgesetzt (Branch
   `claude/mac-mini-e2e-network-53epgr`):** Zweiter Findings-Batch aus dem realen
   Mac-Mini-E2E-Lauf. Kurz:
