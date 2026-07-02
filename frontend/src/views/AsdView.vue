@@ -38,6 +38,8 @@
       @layer-toggle="onLayerToggle"
       @fl-filter-change="onFlFilterChange"
       @panel-resize="onPanelResize"
+      @zoom-in="mapCanvas?.zoomIn()"
+      @zoom-out="mapCanvas?.zoomOut()"
     />
 
     <v-main style="padding: 0; position: relative">

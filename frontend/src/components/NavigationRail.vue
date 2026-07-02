@@ -18,6 +18,27 @@
 
         <!-- Rail: 56px icon strip, always visible -->
         <div class="nav-rail">
+          <!-- Häppchen 3: measurement tools (RBL/DIST/QDM), moved from the
+               floating map toolbar into the rail (design mockup). Toggle buttons
+               wired to the tools store, which drives the map's measure controller
+               (map/measure.js via MapCanvas). PROBE is intentionally omitted
+               (undefined content — no fake UI). -->
+          <div
+            v-for="t in measureTools"
+            :key="t.id"
+            class="nav-rail__btn"
+            :class="{ 'nav-rail__btn--active': tools.activeTool === t.id }"
+            role="button"
+            :aria-label="t.label"
+            :aria-pressed="tools.activeTool === t.id"
+            @click="tools.selectTool(t.id)"
+          >
+            <div class="nav-rail__pill">
+              <v-icon size="20">{{ t.icon }}</v-icon>
+            </div>
+            <span class="nav-rail__label">{{ t.label }}</span>
+          </div>
+
           <div
             v-for="s in sections"
             :key="s.id"
@@ -32,6 +53,18 @@
               <v-icon size="20">{{ s.icon }}</v-icon>
             </div>
             <span class="nav-rail__label">{{ s.label }}</span>
+          </div>
+
+          <!-- Häppchen 3: zoom controls in the rail (design mockup). Purely
+               presentational — they emit and AsdView delegates to the map engine
+               (MapCanvas.zoomIn/zoomOut), keeping the engine framework-agnostic. -->
+          <div class="nav-rail__btn" role="button" aria-label="Zoom in" @click="emit('zoom-in')">
+            <div class="nav-rail__pill"><v-icon size="20">mdi-plus</v-icon></div>
+            <span class="nav-rail__label">Zoom +</span>
+          </div>
+          <div class="nav-rail__btn" role="button" aria-label="Zoom out" @click="emit('zoom-out')">
+            <div class="nav-rail__pill"><v-icon size="20">mdi-minus</v-icon></div>
+            <span class="nav-rail__label">Zoom −</span>
           </div>
 
           <!-- Req 1: Admin entry, visible only to admins; the account section
@@ -84,6 +117,23 @@
 
     <!-- ── Mobile layout ── -->
     <template v-else>
+      <!-- Häppchen 3: measurement tools + zoom, also reachable from the mobile
+           drawer (the desktop rail hosts them as labelled icons). -->
+      <div class="nav-mobile-tools">
+        <v-btn
+          v-for="t in measureTools"
+          :key="t.id"
+          :icon="t.icon"
+          size="small"
+          variant="text"
+          :color="tools.activeTool === t.id ? 'primary' : undefined"
+          :aria-label="t.label"
+          @click="tools.selectTool(t.id)"
+        />
+        <v-divider vertical class="mx-1" />
+        <v-btn icon="mdi-plus" size="small" variant="text" aria-label="Zoom in" @click="emit('zoom-in')" />
+        <v-btn icon="mdi-minus" size="small" variant="text" aria-label="Zoom out" @click="emit('zoom-out')" />
+      </div>
       <v-list-item
         v-if="isAdmin"
         prepend-icon="mdi-shield-account"
@@ -104,14 +154,27 @@ import { ref, computed, onMounted } from 'vue'
 import { useDisplay } from 'vuetify'
 import { useRouter } from 'vue-router'
 import { useAdminStore } from '@/stores/admin.js'
+import { useToolsStore } from '@/stores/tools.js'
 import LayerFilterContent from './LayerFilterContent.vue'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: true },
 })
-const emit = defineEmits(['update:modelValue', 'layer-toggle', 'fl-filter-change', 'panel-resize'])
+const emit = defineEmits([
+  'update:modelValue', 'layer-toggle', 'fl-filter-change', 'panel-resize', 'zoom-in', 'zoom-out',
+])
 
 const { mdAndUp } = useDisplay()
+
+// Häppchen 3: the measurement tools live in the rail now. activeTool is global
+// (tools store) and drives the map's measure controller via MapCanvas, so the
+// rail only has to toggle it — no map reference needed here.
+const tools = useToolsStore()
+const measureTools = [
+  { id: 'rbl', icon: 'mdi-vector-line', label: 'RBL' },
+  { id: 'dist', icon: 'mdi-ruler', label: 'DIST' },
+  { id: 'qdm', icon: 'mdi-compass-outline', label: 'QDM' },
+]
 
 // Req 1: an Admin entry appears in the rail only for the admin role (ADR 0009).
 // We probe the identity once on mount; fail-closed — a user (or a single-tenant
@@ -166,6 +229,14 @@ function onFlFilterChange(payload) { emit('fl-filter-change', payload) }
   flex-direction: row;
   height: 100%;
   overflow: hidden;
+}
+
+/* Häppchen 3: compact tool + zoom row at the top of the mobile drawer */
+.nav-mobile-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 12px;
 }
 
 /* Rail: fixed 56px strip */

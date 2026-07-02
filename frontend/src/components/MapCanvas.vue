@@ -1,15 +1,16 @@
 <template>
   <div style="position: absolute; inset: 0">
     <div ref="mapEl" style="width: 100%; height: 100%" />
+    <!-- Häppchen 3: zoom moved to the navigation rail; MapControls keeps the
+         viewport actions (recenter / fullscreen) on the right edge. -->
     <MapControls
-      @zoom-in="mapEngine?.zoomIn()"
-      @zoom-out="mapEngine?.zoomOut()"
       @recenter="mapEngine?.recenter()"
     />
     <!-- ASD-010: category filter chips top-centre -->
     <TrackFilterChips />
-    <!-- Häppchen 4: controller measurement tools (RBL/DIST/QDM) -->
-    <MeasureToolbar />
+    <!-- Häppchen 3: measuring status (hint + readout); the tool buttons now live
+         in the navigation rail. -->
+    <MeasureStatus />
     <!-- WF2-34: admin read-only impersonation banner/switcher (ADR 0008) -->
     <ImpersonationBar />
   </div>
@@ -24,7 +25,7 @@ import { initMap } from '@/map/engine.js'
 import { createMeasure } from '@/map/measure.js'
 import MapControls from './MapControls.vue'
 import TrackFilterChips from './TrackFilterChips.vue'
-import MeasureToolbar from './MeasureToolbar.vue'
+import MeasureStatus from './MeasureStatus.vue'
 import ImpersonationBar from './ImpersonationBar.vue'
 
 const emit = defineEmits(['track-click', 'connection-change'])
@@ -94,6 +95,9 @@ watch(() => imp.reconnectNonce, () => {
 })
 
 defineExpose({
+  // Häppchen 3: zoom is driven from the navigation rail, which delegates here.
+  zoomIn: () => mapEngine?.zoomIn(),
+  zoomOut: () => mapEngine?.zoomOut(),
   setLayerVisibility: (layer, val) => mapEngine?.setLayerVisibility({ [layer]: val }),
   updateFlFilter: () => mapEngine?.updateFlFilter(),
   // #121: MapLibre must be told when its container changes size (drawer/panel
