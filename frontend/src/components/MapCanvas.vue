@@ -8,6 +8,8 @@
     />
     <!-- ASD-010: category filter chips top-centre -->
     <TrackFilterChips />
+    <!-- Häppchen 4: controller measurement tools (RBL/DIST/QDM) -->
+    <MeasureToolbar />
     <!-- WF2-34: admin read-only impersonation banner/switcher (ADR 0008) -->
     <ImpersonationBar />
   </div>
@@ -17,16 +19,21 @@
 import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { useAsdStore } from '@/stores/asd.js'
 import { useImpersonationStore } from '@/stores/impersonation.js'
+import { useToolsStore } from '@/stores/tools.js'
 import { initMap } from '@/map/engine.js'
+import { createMeasure } from '@/map/measure.js'
 import MapControls from './MapControls.vue'
 import TrackFilterChips from './TrackFilterChips.vue'
+import MeasureToolbar from './MeasureToolbar.vue'
 import ImpersonationBar from './ImpersonationBar.vue'
 
 const emit = defineEmits(['track-click', 'connection-change'])
 const store = useAsdStore()
 const imp = useImpersonationStore()
+const tools = useToolsStore()
 const mapEl = ref(null)
 let mapEngine = null
+let measure = null
 
 onMounted(async () => {
   mapEngine = await initMap(
@@ -35,9 +42,15 @@ onMounted(async () => {
     (track) => emit('track-click', track),
     (state) => emit('connection-change', state),
   )
+  // Häppchen 4: attach the measurement controller to the ready map and let the
+  // tools store drive it. The controller reports the live readout back to the store.
+  measure = createMeasure(mapEngine.map, { onReadout: (t) => tools.setReadout(t) })
+  watch(() => tools.activeTool, (kind) => measure?.setTool(kind))
 })
 
 onUnmounted(() => {
+  measure?.destroy()
+  tools.clearTool()
   mapEngine?.destroy()
 })
 

@@ -1,0 +1,63 @@
+/* ============================================================
+   Wayfinder — Typography tokens  (Design System v1, ADR 0015)
+   Material Design 3 type scale (Roboto), as rendered by Vuetify.
+   Wayfinder leans on the smaller, denser end of the scale: this
+   is an operational console, not a marketing surface. Section
+   headers are small, uppercase, wide-tracked, subdued.
+   Roboto Mono carries all numeric readouts.
+
+   Fonts are bundled offline via @fontsource (imported in
+   main.js) — NOT a runtime CDN (ATC console: no external calls).
+   ============================================================ */
+
+:root {
+  /* ---- Families ---- */
+  --wf-font-sans: 'Roboto', -apple-system, 'Segoe UI', system-ui, sans-serif;
+  --wf-font-mono: 'Roboto Mono', ui-monospace, 'SFMono-Regular', 'Menlo', monospace;
+
+  /* ---- Weights ---- */
+  --wf-weight-light: 300;
+  --wf-weight-regular: 400;
+  --wf-weight-medium: 500;   /* MD3 label/title default */
+  --wf-weight-bold: 700;
+
+  /* ---- MD3 type scale: size / line-height / tracking ---- */
+  /* Display & headline — used sparingly (login title, empty states) */
+  --wf-headline-size: 24px;      /* .text-h5 */
+  --wf-headline-line: 32px;
+  --wf-title-size: 20px;         /* .text-h6 — card titles, app-bar title */
+  --wf-title-line: 28px;
+  --wf-title-weight: 500;
+
+  /* Subtitle / body */
+  --wf-subtitle-size: 16px;
+  --wf-subtitle-line: 24px;
+  --wf-body-size: 14px;          /* default UI body */
+  --wf-body-line: 20px;
+  --wf-body-sm-size: 13px;       /* dense rows, list subtitles */
+  --wf-body-sm-line: 18px;
+
+  /* Label / caption */
+  --wf-label-size: 14px;         /* button labels */
+  --wf-label-weight: 500;
+  --wf-label-tracking: 0.02em;
+  --wf-caption-size: 12px;       /* helper text, chip counts */
+  --wf-caption-line: 16px;
+  --wf-caption-color: var(--wf-on-surface-variant);
+
+  /* Overline — the signature "section header": tiny, uppercase, wide */
+  --wf-overline-size: 10.5px;
+  --wf-overline-weight: 600;
+  --wf-overline-tracking: 0.09em;
+  --wf-overline-transform: uppercase;
+  --wf-overline-color: rgba(220, 230, 240, 0.45);
+
+  /* Nav-rail item label */
+  --wf-nav-label-size: 11px;
+  --wf-nav-label-weight: 500;
+  --wf-nav-label-tracking: 0.02em;
+
+  /* Scope data block (on the map) */
+  --wf-datablock-size: 11px;     /* LABEL_TEXT_SIZE from constants.js */
+  --wf-datablock-font: var(--wf-font-mono);
+}

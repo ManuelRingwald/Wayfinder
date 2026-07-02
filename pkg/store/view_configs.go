@@ -31,10 +31,14 @@ type ViewConfig struct {
 	FLMin     *int
 	FLMax     *int
 	Layers    map[string]bool
+	// ICAO is an optional per-tenant location indicator shown in the ASD header
+	// (e.g. "EDGG" / "EDGG·KTG"). nil = unset (the header omits it). It is display
+	// config, not track data — CAT062 carries no sector identity.
+	ICAO      *string
 	UpdatedAt time.Time
 }
 
-const viewConfigColumns = `id, tenant_id, user_id, center_lat, center_lon, zoom, aoi, fl_min, fl_max, layers, updated_at`
+const viewConfigColumns = `id, tenant_id, user_id, center_lat, center_lon, zoom, aoi, fl_min, fl_max, layers, icao, updated_at`
 
 // ViewConfigRepo provides access to the view_configs table.
 type ViewConfigRepo struct {
@@ -52,14 +56,14 @@ func (r *ViewConfigRepo) UpsertTenantDefault(ctx context.Context, tenantID int64
 	if err != nil {
 		return ViewConfig{}, wrap("upsert tenant view: marshal", err)
 	}
-	const q = `INSERT INTO view_configs (tenant_id, user_id, center_lat, center_lon, zoom, aoi, fl_min, fl_max, layers)
-		VALUES ($1, NULL, $2, $3, $4, $5::jsonb, $6, $7, $8::jsonb)
+	const q = `INSERT INTO view_configs (tenant_id, user_id, center_lat, center_lon, zoom, aoi, fl_min, fl_max, layers, icao)
+		VALUES ($1, NULL, $2, $3, $4, $5::jsonb, $6, $7, $8::jsonb, $9)
 		ON CONFLICT (tenant_id) WHERE user_id IS NULL
 		DO UPDATE SET center_lat = EXCLUDED.center_lat, center_lon = EXCLUDED.center_lon,
 			zoom = EXCLUDED.zoom, aoi = EXCLUDED.aoi, fl_min = EXCLUDED.fl_min,
-			fl_max = EXCLUDED.fl_max, layers = EXCLUDED.layers, updated_at = now()
+			fl_max = EXCLUDED.fl_max, layers = EXCLUDED.layers, icao = EXCLUDED.icao, updated_at = now()
 		RETURNING ` + viewConfigColumns
-	out, err := scanViewConfig(r.db.QueryRow(ctx, q, tenantID, vc.CenterLat, vc.CenterLon, vc.Zoom, aoi, vc.FLMin, vc.FLMax, layers))
+	out, err := scanViewConfig(r.db.QueryRow(ctx, q, tenantID, vc.CenterLat, vc.CenterLon, vc.Zoom, aoi, vc.FLMin, vc.FLMax, layers, vc.ICAO))
 	if err != nil {
 		return ViewConfig{}, wrap("upsert tenant view", err)
 	}
@@ -73,14 +77,14 @@ func (r *ViewConfigRepo) UpsertUserOverride(ctx context.Context, tenantID, userI
 	if err != nil {
 		return ViewConfig{}, wrap("upsert user view: marshal", err)
 	}
-	const q = `INSERT INTO view_configs (tenant_id, user_id, center_lat, center_lon, zoom, aoi, fl_min, fl_max, layers)
-		VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9::jsonb)
+	const q = `INSERT INTO view_configs (tenant_id, user_id, center_lat, center_lon, zoom, aoi, fl_min, fl_max, layers, icao)
+		VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9::jsonb, $10)
 		ON CONFLICT (user_id) WHERE user_id IS NOT NULL
 		DO UPDATE SET center_lat = EXCLUDED.center_lat, center_lon = EXCLUDED.center_lon,
 			zoom = EXCLUDED.zoom, aoi = EXCLUDED.aoi, fl_min = EXCLUDED.fl_min,
-			fl_max = EXCLUDED.fl_max, layers = EXCLUDED.layers, updated_at = now()
+			fl_max = EXCLUDED.fl_max, layers = EXCLUDED.layers, icao = EXCLUDED.icao, updated_at = now()
 		RETURNING ` + viewConfigColumns
-	out, err := scanViewConfig(r.db.QueryRow(ctx, q, tenantID, userID, vc.CenterLat, vc.CenterLon, vc.Zoom, aoi, vc.FLMin, vc.FLMax, layers))
+	out, err := scanViewConfig(r.db.QueryRow(ctx, q, tenantID, userID, vc.CenterLat, vc.CenterLon, vc.Zoom, aoi, vc.FLMin, vc.FLMax, layers, vc.ICAO))
 	if err != nil {
 		return ViewConfig{}, wrap("upsert user view", err)
 	}
@@ -147,7 +151,7 @@ func scanViewConfig(row rowScanner) (ViewConfig, error) {
 		layers []byte
 	)
 	if err := row.Scan(&vc.ID, &vc.TenantID, &vc.UserID, &vc.CenterLat, &vc.CenterLon, &vc.Zoom,
-		&aoi, &vc.FLMin, &vc.FLMax, &layers, &vc.UpdatedAt); err != nil {
+		&aoi, &vc.FLMin, &vc.FLMax, &layers, &vc.ICAO, &vc.UpdatedAt); err != nil {
 		return ViewConfig{}, err
 	}
 	if err := fromJSONB(aoi, &vc.AOI); err != nil {

@@ -1,0 +1,18 @@
+/* ============================================================
+   Wayfinder — Radius tokens  (Design System v1, ADR 0015)
+   Material Design 3 shape scale. Buttons/inputs use the small
+   end; chips and nav-rail indicators are pills. Cards round-lg.
+   ============================================================ */
+
+:root {
+  --wf-radius-xs: 4px;    /* text fields, small controls */
+  --wf-radius-sm: 8px;    /* buttons, cards (rounded-lg), menus */
+  --wf-radius-md: 12px;   /* larger cards, dialogs */
+  --wf-radius-lg: 16px;   /* prominent containers */
+  --wf-radius-pill: 999px;/* chips, switches, nav-rail indicator pill */
+
+  /* Specific shapes lifted from the app */
+  --wf-radius-nav-pill: 14px;  /* 36×28 indicator behind a rail icon */
+  --wf-radius-switch: 7px;     /* 28×14 switch track */
+  --wf-radius-chip: 999px;
+}

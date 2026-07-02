@@ -35,5 +35,11 @@ export function validateView(d) {
     errors.push('fl_min must be <= fl_max')
   }
 
+  // icao is the optional ASD header location label (e.g. "EDGG·KTG"); bound its
+  // length to mirror the server (maxICAOLabelLen). Content is free-form.
+  if (d.icao != null && String(d.icao).trim().length > 12) {
+    errors.push('icao label too long')
+  }
+
   return errors
 }

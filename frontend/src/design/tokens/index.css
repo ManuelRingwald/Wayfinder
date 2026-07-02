@@ -1,0 +1,16 @@
+/* ============================================================
+   Wayfinder Design System — token entry point (frontend embed)
+   Design System v1 (ADR 0015). Import this ONE file to get every
+   `--wf-*` custom property. Reverse-engineered from the Wayfinder
+   codebase via Claude Design; see docs/design/README.md.
+
+   Webfonts are bundled offline via @fontsource and imported in
+   src/main.js — deliberately NOT loaded from a runtime CDN, so an
+   air-gapped ATC deployment makes no external font call.
+   ============================================================ */
+
+@import './colors.css';
+@import './typography.css';
+@import './spacing.css';
+@import './radius.css';
+@import './elevation.css';

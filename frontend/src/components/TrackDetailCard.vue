@@ -6,11 +6,11 @@
   <v-card-text class="pb-3">
     <v-list density="compact" class="pa-0">
       <v-list-item v-if="track.flight_level_ft != null" prepend-icon="mdi-airplane-cruise">
-        <v-list-item-title>{{ flLabel }}</v-list-item-title>
+        <v-list-item-title class="wf-mono">{{ flLabel }}</v-list-item-title>
         <v-list-item-subtitle>Flugfläche</v-list-item-subtitle>
       </v-list-item>
       <v-list-item v-if="groundSpeedKt" prepend-icon="mdi-speedometer">
-        <v-list-item-title>{{ groundSpeedKt }} kt</v-list-item-title>
+        <v-list-item-title class="wf-mono">{{ groundSpeedKt }} kt</v-list-item-title>
         <v-list-item-subtitle>Bodengeschwindigkeit</v-list-item-subtitle>
       </v-list-item>
       <v-list-item v-if="provenanceLabel" prepend-icon="mdi-radar">
@@ -18,11 +18,11 @@
         <v-list-item-subtitle>Herkunft</v-list-item-subtitle>
       </v-list-item>
       <v-list-item v-if="track.mode_3a != null" prepend-icon="mdi-identifier">
-        <v-list-item-title>{{ mode3aStr }}</v-list-item-title>
+        <v-list-item-title class="wf-mono">{{ mode3aStr }}</v-list-item-title>
         <v-list-item-subtitle>Mode 3/A (Squawk)</v-list-item-subtitle>
       </v-list-item>
       <v-list-item prepend-icon="mdi-numeric">
-        <v-list-item-title>{{ track.track_num }}</v-list-item-title>
+        <v-list-item-title class="wf-mono">{{ track.track_num }}</v-list-item-title>
         <v-list-item-subtitle>Track-Nummer</v-list-item-subtitle>
       </v-list-item>
       <v-list-item prepend-icon="mdi-information-outline">

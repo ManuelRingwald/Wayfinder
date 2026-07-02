@@ -46,6 +46,10 @@
         @track-click="onTrackClick"
         @connection-change="onConnectionChange"
       />
+      <!-- Reskin 3a: top-centre header (ICAO location indicator + live UTC clock). -->
+      <div class="asd-header-overlay">
+        <AsdHeader />
+      </div>
       <!-- Account / logout: shows the logged-in principal and a logout action;
            admins also get a shortcut to the administration. -->
       <div class="account-overlay">
@@ -79,6 +83,12 @@
       <div class="feed-status-overlay">
         <FeedStatusChip />
       </div>
+      <!-- Reskin 3b: floating scope legend (bottom-left) + speed-vector readout
+           (bottom-right, above the native nautical scale bar). -->
+      <div class="scope-legend-overlay">
+        <ScopeLegend />
+      </div>
+      <div class="vector-readout-overlay wf-mono">Vektor {{ vectorMinutes }} min</div>
     </v-main>
 
     <TrackDetailPanel
@@ -93,18 +103,28 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useDisplay } from 'vuetify'
 import { useAsdStore } from '@/stores/asd.js'
 import { useSessionStore } from '@/stores/session.js'
+import { useToolsStore } from '@/stores/tools.js'
 import NavigationRail from '@/components/NavigationRail.vue'
 import MapCanvas from '@/components/MapCanvas.vue'
+import AsdHeader from '@/components/AsdHeader.vue'
+import ScopeLegend from '@/components/ScopeLegend.vue'
 import TrackDetailPanel from '@/components/TrackDetailPanel.vue'
 import FeedStatusChip from '@/components/FeedStatusChip.vue'
 import LoginCard from '@/components/LoginCard.vue'
+import { VECTOR_LOOKAHEAD_S } from '@/map/constants.js'
 
 const { mdAndUp } = useDisplay()
 const store = useAsdStore()
 const session = useSessionStore()
+const tools = useToolsStore()
 const drawerOpen = ref(true)
 const mapCanvas = ref(null)
 const loginLoading = ref(false)
+
+// Reskin 3b: speed-vector look-ahead in minutes, shown in the bottom-right
+// readout. Fixed today (VECTOR_LOOKAHEAD_S); becomes operator-tunable in the
+// tweaks panel (Häppchen 5), at which point this reads the live setting.
+const vectorMinutes = Math.round(VECTOR_LOOKAHEAD_S / 60)
 
 // Make an expiry visible: a dropped session shows "session expired" on the login
 // screen instead of a bare prompt (WF2-12.5).
@@ -175,6 +195,9 @@ function onPanelResize() {
 }
 
 function onTrackClick(track) {
+  // Häppchen 4: while a measurement tool is active, a track click feeds the tool
+  // (DIST/QDM pick it via the map controller) — don't also open the detail panel.
+  if (tools.activeTool) return
   store.selectTrack(track)
 }
 </script>
@@ -195,11 +218,48 @@ function onTrackClick(track) {
   z-index: 600;
 }
 
+/* Reskin 3a: top-centre header (ICAO + UTC clock), floated over the scope. */
+.asd-header-overlay {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 600;
+  pointer-events: none;
+}
+
 .feed-status-overlay {
   position: absolute;
   top: 50px;
   right: 12px;
   z-index: 500;
   pointer-events: none;
+}
+
+/* Reskin 3b: floating scope legend (bottom-left). pointer-events on the wrapper
+   are off; the legend itself re-enables them so its toggle stays clickable. */
+.scope-legend-overlay {
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  z-index: 600;
+  pointer-events: none;
+}
+
+/* Reskin 3b: speed-vector readout, sitting just above the native nautical scale
+   bar in the bottom-right corner so the two read as one distance/vector block. */
+.vector-readout-overlay {
+  position: absolute;
+  bottom: 34px;
+  right: 12px;
+  z-index: 600;
+  pointer-events: none;
+  font-size: 10.5px;
+  color: var(--wf-on-surface-variant);
+  background: rgba(14, 22, 34, 0.85);
+  backdrop-filter: blur(4px);
+  border: var(--wf-chrome-border);
+  border-radius: var(--wf-radius-sm);
+  padding: 3px 8px;
 }
 </style>

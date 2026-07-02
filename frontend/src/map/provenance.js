@@ -87,3 +87,33 @@ export const PROVENANCE_LABELS = {
   [PROVENANCE_SSR]: 'SSR / Mode S',
   [PROVENANCE_PSR]: 'Primär (PSR)',
 }
+
+// PROVENANCE_LEGEND: the scope's "shape = provenance" key. Each entry pairs the
+// map glyph (A/F drawn as letters, ■/○ as marks — see map/layers.js) with its
+// German label and the sensor classes that can produce it. Single source of
+// truth shared by the sidebar (LayerFilterContent) and the floating ScopeLegend;
+// both filter it to the tenant's actual feeds (session.sensorClasses, #107).
+export const PROVENANCE_LEGEND = [
+  { glyph: 'A', label: PROVENANCE_LABELS[PROVENANCE_ADSB], classes: ['ADS-B'] },
+  { glyph: 'F', label: PROVENANCE_LABELS[PROVENANCE_FLARM], classes: ['FLARM'] },
+  { glyph: '■', label: PROVENANCE_LABELS[PROVENANCE_SSR], classes: ['SSR', 'MODE_S', 'MLAT'] },
+  { glyph: '○', label: PROVENANCE_LABELS[PROVENANCE_PSR], classes: ['PSR'] },
+]
+
+// COMBINED_LEGEND (#125): the "Kombiniert" (K) key is not tied to a single sensor
+// class — it appears when ≥2 distinct sources can contribute (a fused track, the
+// highest-quality picture). Shown only then, and in the full-legend fallback.
+export const COMBINED_LEGEND = { glyph: 'K', label: PROVENANCE_LABELS[PROVENANCE_COMBINED] }
+
+// filterProvenanceLegend narrows PROVENANCE_LEGEND to the entries a tenant's
+// subscribed feeds can actually produce, and appends the COMBINED (K) key when
+// ≥2 sources are active (a genuine multi-sensor track becomes possible). An
+// empty/unknown class set (still loading, admin viewer, or no subscribed feed)
+// shows the full legend — including K — rather than an empty box.
+export function filterProvenanceLegend(sensorClasses) {
+  const active = new Set(sensorClasses || [])
+  if (active.size === 0) return [...PROVENANCE_LEGEND, COMBINED_LEGEND]
+  const entries = PROVENANCE_LEGEND.filter((e) => e.classes.some((c) => active.has(c)))
+  if (entries.length >= 2) entries.push(COMBINED_LEGEND)
+  return entries
+}

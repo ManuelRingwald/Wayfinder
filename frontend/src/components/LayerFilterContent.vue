@@ -246,6 +246,7 @@ import { ref, computed } from 'vue'
 import { useAsdStore } from '@/stores/asd.js'
 import { useSessionStore } from '@/stores/session.js'
 import { AIRSPACE_GROUPS, RANGE_RING_SPACING_OPTIONS_NM, MAX_RANGE_RING_COUNT } from '@/map/constants.js'
+import { filterProvenanceLegend } from '@/map/provenance.js'
 
 // #116: the NavigationRail opens one section at a time on desktop; the mobile
 // drawer renders all of them ('all'), with the account block last.
@@ -300,23 +301,9 @@ function onRangeRingChange() {
 // provenance (see caption). Fallback: when no sensor classes are known yet
 // (still loading / admin viewer / no subscribed feed) the full legend is shown
 // rather than an empty box.
-const PROVENANCE_LEGEND = [
-  { glyph: 'A', label: 'ADS-B (kooperativ)', classes: ['ADS-B'] },
-  { glyph: 'F', label: 'FLARM', classes: ['FLARM'] },
-  { glyph: '■', label: 'SSR / Mode S', classes: ['SSR', 'MODE_S', 'MLAT'] },
-  { glyph: '○', label: 'Primär (PSR)', classes: ['PSR'] },
-]
-// #125: "Kombiniert" (K) is not tied to one sensor class — it appears when ≥2
-// distinct sources can contribute (a fused track). Shown only then, and in the
-// full-legend fallback.
-const COMBINED_LEGEND = { glyph: 'K', label: 'Kombiniert (Mehr-Sensor)' }
-const provenanceLegend = computed(() => {
-  const active = new Set(session.sensorClasses)
-  if (active.size === 0) return [...PROVENANCE_LEGEND, COMBINED_LEGEND]
-  const entries = PROVENANCE_LEGEND.filter((e) => e.classes.some((c) => active.has(c)))
-  if (entries.length >= 2) entries.push(COMBINED_LEGEND)
-  return entries
-})
+// #125: the "Kombiniert" (K) entry is appended by filterProvenanceLegend when ≥2
+// sources can contribute (single source of truth in map/provenance.js).
+const provenanceLegend = computed(() => filterProvenanceLegend(session.sensorClasses))
 
 function onLayerToggle(layer, val) {
   store.setLayerVisibility(layer, val)
@@ -347,12 +334,13 @@ async function onLogout() {
 
 /* Section header: small, uppercase, subdued — visual separator, not interactive */
 .filter-section-header {
+  /* Design System v1: the signature "overline" section header, token-driven. */
   padding: 10px 14px 4px;
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.09em;
+  font-size: var(--wf-overline-size);
+  font-weight: var(--wf-overline-weight);
+  letter-spacing: var(--wf-overline-tracking);
   text-transform: uppercase;
-  color: rgba(var(--v-theme-on-surface), 0.45);
+  color: var(--wf-overline-color);
   line-height: 1.4;
 }
 

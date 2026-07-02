@@ -474,6 +474,63 @@ func TestWhoamiOmitsFLBandWhenUnset(t *testing.T) {
 	}
 }
 
+func TestWhoamiIncludesEffectiveICAO(t *testing.T) {
+	icao := "EDGG·KTG"
+	vs := &fakeVS{vc: store.ViewConfig{ICAO: &icao}}
+	rec := httptest.NewRecorder()
+	handlerWith(vs, fakeFeeds{}, fakeTenants{}).
+		ServeHTTP(rec, adminReq(http.MethodGet, "/api/admin/whoami", "", 7, store.RoleAdmin))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var got struct {
+		ICAO *string `json:"icao"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.ICAO == nil || *got.ICAO != "EDGG·KTG" {
+		t.Errorf("whoami icao = %v, want EDGG·KTG", got.ICAO)
+	}
+}
+
+func TestWhoamiOmitsICAOWhenUnset(t *testing.T) {
+	rec := httptest.NewRecorder()
+	handlerWith(&fakeVS{}, fakeFeeds{}, fakeTenants{}).
+		ServeHTTP(rec, adminReq(http.MethodGet, "/api/admin/whoami", "", 7, store.RoleAdmin))
+	if body := rec.Body.String(); strings.Contains(body, "icao") {
+		t.Errorf("whoami should omit icao when unset, got %s", body)
+	}
+}
+
+func TestValidateViewICAO(t *testing.T) {
+	base := viewDTO{CenterLat: 50, CenterLon: 8, Zoom: 6}
+	ok := "EDGG·KTG" // 8 runes
+	base.ICAO = &ok
+	if err := validateView(base); err != nil {
+		t.Errorf("valid icao rejected: %v", err)
+	}
+	long := "ABCDEFGHIJKLM" // 13 runes > maxICAOLabelLen
+	base.ICAO = &long
+	if err := validateView(base); err == nil {
+		t.Error("over-long icao accepted, want error")
+	}
+}
+
+func TestNormalizeICAO(t *testing.T) {
+	if normalizeICAO(nil) != nil {
+		t.Error("nil should stay nil")
+	}
+	blank := "   "
+	if normalizeICAO(&blank) != nil {
+		t.Error("blank should collapse to nil (unset)")
+	}
+	v := "  EDGG  "
+	if got := normalizeICAO(&v); got == nil || *got != "EDGG" {
+		t.Errorf("normalizeICAO = %v, want EDGG (trimmed)", got)
+	}
+}
+
 func TestWhoamiUnauthorizedWithoutIdentity(t *testing.T) {
 	rec := httptest.NewRecorder()
 	handlerWith(&fakeVS{}, fakeFeeds{}, fakeTenants{}).

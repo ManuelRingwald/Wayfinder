@@ -106,8 +106,10 @@ function toggleFullscreen() {
 }
 
 .map-controls__group {
+  /* Design System v1: floating chrome over the WebGL canvas — surface fill +
+     the faint hairline token so it separates cleanly from the map. */
   pointer-events: all;
   background: rgb(var(--v-theme-surface)) !important;
-  border: 1px solid rgba(var(--v-theme-on-surface), 0.1);
+  border: var(--wf-chrome-border);
 }
 </style>

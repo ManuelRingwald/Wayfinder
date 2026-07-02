@@ -362,6 +362,11 @@ type whoamiDTO struct {
 	// (WF2-21.2).
 	FLMin *int `json:"fl_min,omitempty"`
 	FLMax *int `json:"fl_max,omitempty"`
+	// ICAO mirrors the effective view's optional location indicator so the ASD
+	// header can show which sector/FIR this picture belongs to (e.g. "EDGG·KTG").
+	// Omitted when unset. Display config, not track data — CAT062 carries no
+	// sector identity (Vorgabe: keine Fake-UI).
+	ICAO *string `json:"icao,omitempty"`
 }
 
 // WhoamiHandler exposes the identity probe for mounting OUTSIDE the requireAdmin
@@ -381,9 +386,11 @@ func (h *Handler) whoami(w http.ResponseWriter, r *http.Request) {
 	// Effective view FL band for the sidebar's filter-range hint (#116).
 	// Fail-soft: no view config (or a backend error) simply omits the band.
 	var flMin, flMax *int
+	var icao *string
 	if h.views != nil {
 		if vc, err := h.views.GetEffective(r.Context(), id.TenantID, id.UserID); err == nil {
 			flMin, flMax = vc.FLMin, vc.FLMax
+			icao = vc.ICAO
 		}
 	}
 	writeJSON(w, http.StatusOK, whoamiDTO{
@@ -396,6 +403,7 @@ func (h *Handler) whoami(w http.ResponseWriter, r *http.Request) {
 		SensorClasses:      h.effectiveSensorClasses(r.Context(), id.TenantID),
 		FLMin:              flMin,
 		FLMax:              flMax,
+		ICAO:               icao,
 	})
 }
 
@@ -454,6 +462,9 @@ type viewDTO struct {
 	FLMin     *int            `json:"fl_min,omitempty"`
 	FLMax     *int            `json:"fl_max,omitempty"`
 	Layers    map[string]bool `json:"layers,omitempty"`
+	// ICAO is the optional per-tenant location indicator shown in the ASD header
+	// (e.g. "EDGG" / "EDGG·KTG"). Display config, not track data. Omitted/empty = unset.
+	ICAO *string `json:"icao,omitempty"`
 }
 
 // feedDTO is the catalogue-facing shape of a feed. The multicast group/port are
@@ -932,13 +943,35 @@ func validateView(d viewDTO) error {
 	if d.FLMin != nil && d.FLMax != nil && *d.FLMin > *d.FLMax {
 		return errors.New("fl_min must be <= fl_max")
 	}
+	if d.ICAO != nil && len([]rune(strings.TrimSpace(*d.ICAO))) > maxICAOLabelLen {
+		return errors.New("icao label too long")
+	}
 	return nil
+}
+
+// maxICAOLabelLen bounds the ASD header location label. A bare ICAO indicator is
+// 4 chars; the extra room allows a sector suffix ("EDGG·KTG") without letting the
+// header grow unbounded.
+const maxICAOLabelLen = 12
+
+// normalizeICAO trims the optional header label and collapses an empty string to
+// nil (unset), so a cleared field stores as SQL NULL rather than "".
+func normalizeICAO(s *string) *string {
+	if s == nil {
+		return nil
+	}
+	t := strings.TrimSpace(*s)
+	if t == "" {
+		return nil
+	}
+	return &t
 }
 
 func toViewConfig(d viewDTO) store.ViewConfig {
 	return store.ViewConfig{
 		CenterLat: d.CenterLat, CenterLon: d.CenterLon, Zoom: d.Zoom,
 		AOI: d.AOI, FLMin: d.FLMin, FLMax: d.FLMax, Layers: d.Layers,
+		ICAO: normalizeICAO(d.ICAO),
 	}
 }
 
@@ -946,6 +979,7 @@ func toViewDTO(vc store.ViewConfig) viewDTO {
 	return viewDTO{
 		CenterLat: vc.CenterLat, CenterLon: vc.CenterLon, Zoom: vc.Zoom,
 		AOI: vc.AOI, FLMin: vc.FLMin, FLMax: vc.FLMax, Layers: vc.Layers,
+		ICAO: vc.ICAO,
 	}
 }
 

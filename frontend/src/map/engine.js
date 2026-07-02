@@ -79,9 +79,10 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
   // reference (nautical miles) at any zoom; the compass-only NavigationControl
   // shows the current bearing and resets to north on click — replacing the old
   // hand-rolled reset-north button. Zoom stays on the custom MapControls, so
-  // showZoom is off here to avoid duplicate buttons. Placed on the left edge
-  // (the right edge holds the custom controls + feed chip).
-  map.addControl(new maplibregl.ScaleControl({ unit: 'nautical', maxWidth: 120 }), 'bottom-left')
+  // showZoom is off here to avoid duplicate buttons. Reskin 3b: scale moved to
+  // bottom-RIGHT (with the vector-minutes readout), freeing bottom-left for the
+  // floating scope legend.
+  map.addControl(new maplibregl.ScaleControl({ unit: 'nautical', maxWidth: 120 }), 'bottom-right')
   map.addControl(
     new maplibregl.NavigationControl({ showZoom: false, showCompass: true, visualizePitch: false }),
     'top-left',

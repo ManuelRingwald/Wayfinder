@@ -3,6 +3,13 @@
 > **Abgeleitet aus:** Militärisches ASD-Mockup (Command-Center-Ästhetik, 2026-06-17).  
 > **Zweck:** Verbindliche, einfach pflegbare Farbdefinition für alle UI-Schichten.  
 > **Aufbau:** Zwei Schichten — Chrome-Tokens (Vue/Vuetify MD3) und ASD-Domain-Farben (MapLibre-Layer).
+>
+> 🎨 **Realisiert als Design-Tokens (Design System v1, ADR 0015):** Die hier
+> beschriebenen Farben liegen jetzt als CSS-Custom-Properties (`--wf-*`) in
+> `frontend/src/design/tokens/colors.css` (zusammen mit Typo/Spacing/Radius/
+> Elevation). Maßgeblich für das Vuetify-Theme bleibt `frontend/src/plugins/vuetify.js`,
+> für die MapLibre-Paint-Ausdrücke `frontend/src/map/constants.js`.
+> Übersicht: `docs/design/README.md`.
 
 ---
 

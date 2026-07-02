@@ -219,18 +219,18 @@ function onFlFilterChange(payload) { emit('fl-filter-change', payload) }
   transition: background 0.15s;
 }
 .nav-rail__btn:hover .nav-rail__pill {
-  background: rgba(var(--v-theme-on-surface), 0.08);
+  background: var(--wf-state-hover);
 }
 .nav-rail__btn--active .nav-rail__pill {
-  background: rgba(var(--v-theme-primary), 0.16);
+  background: var(--wf-state-selected); /* primary @ 16% — MD3 indicator */
 }
 
-/* Label below icon */
+/* Label below icon (Design System v1 token: nav-rail item label) */
 .nav-rail__label {
-  font-size: 11px;
-  font-weight: 500;
+  font-size: var(--wf-nav-label-size);
+  font-weight: var(--wf-nav-label-weight);
   line-height: 1;
-  letter-spacing: 0.02em;
+  letter-spacing: var(--wf-nav-label-tracking);
 }
 
 /* Panel: fills remaining width beside rail */

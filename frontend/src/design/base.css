@@ -1,0 +1,33 @@
+/* ============================================================
+   Wayfinder Design System — base bindings  (Design System v1, ADR 0015)
+   The token files (tokens/index.css) only DECLARE `--wf-*` custom
+   properties; this file APPLIES the few that must take effect
+   app-wide. Component-level styling stays in each component and is
+   migrated onto these tokens incrementally (see docs/design/README.md).
+   Kept intentionally tiny so Häppchen 1 changes foundation, not looks.
+   ============================================================ */
+
+/* Bundled Roboto now backs Vuetify's implicit font stack; bind it on the
+   document root too so non-Vuetify DOM (map overlays, custom chips) matches. */
+body {
+  font-family: var(--wf-font-sans);
+}
+
+/* Signature readout style: tabular figures in Roboto Mono for squawk,
+   flight level, coordinates, track numbers — digit alignment matters. */
+.wf-mono {
+  font-family: var(--wf-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Signature section header: tiny, uppercase, wide-tracked, subdued.
+   Mirrors the ".filter-section-header" already used in the sidebar so
+   later chunks can converge on this one class. */
+.wf-overline {
+  font-size: var(--wf-overline-size);
+  font-weight: var(--wf-overline-weight);
+  letter-spacing: var(--wf-overline-tracking);
+  text-transform: uppercase;
+  color: var(--wf-overline-color);
+  line-height: 1.4;
+}

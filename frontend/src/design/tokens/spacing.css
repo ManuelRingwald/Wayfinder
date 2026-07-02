@@ -1,0 +1,27 @@
+/* ============================================================
+   Wayfinder — Spacing tokens  (Design System v1, ADR 0015)
+   4px base grid (Vuetify convention: pa-1 = 4px … pa-4 = 16px).
+   The console is dense: rows sit at 32–36px, panels pad 8–16px.
+   ============================================================ */
+
+:root {
+  --wf-space-0: 0;
+  --wf-space-1: 4px;
+  --wf-space-2: 8px;
+  --wf-space-3: 12px;
+  --wf-space-4: 16px;
+  --wf-space-5: 20px;
+  --wf-space-6: 24px;
+  --wf-space-8: 32px;
+  --wf-space-10: 40px;
+  --wf-space-12: 48px;
+
+  /* Component-scale rhythm observed in the app */
+  --wf-row-min-height: 36px;       /* standard filter/list row */
+  --wf-row-min-height-dense: 32px; /* indented sub-row */
+  --wf-nav-rail-width: 56px;       /* permanent icon rail */
+  --wf-nav-panel-width: 244px;     /* secondary panel beside rail */
+  --wf-panel-pad: 8px 0 16px;      /* filter panel padding */
+  --wf-card-pad: 16px;             /* pa-4 card interior */
+  --wf-overlay-gap: 12px;          /* floating overlay inset from map edge */
+}
