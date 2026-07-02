@@ -12,6 +12,9 @@ export const useAsdStore = defineStore('asd', () => {
   // Map/app state
   const mapLoaded = ref(false)
   const palette = ref('dark') // 'dark' | 'osm'
+  // Visible scope width in NM (engine reports it on every move/zoom); shown in
+  // the bottom-right "<width> NM Breite" readout that replaced the scale bar.
+  const viewportWidthNM = ref(0)
 
   // Feed health per feed (#117): feedId → 'ok' | 'degraded' | 'stale'. A tenant
   // can be subscribed to several feeds; the chip shows the WORST state so a dead
@@ -57,18 +60,6 @@ export const useAsdStore = defineStore('asd', () => {
     hide: false,
   })
 
-  // ASD-010: live track counts per status category.
-  // Updated by the engine after every WS frame; consumed by TrackFilterChips.
-  const trackCounts = reactive({
-    confirmed: 0,
-    coasting: 0,
-    tentative: 0,
-  })
-
-  // ASD-010: categories currently hidden via the filter chips.
-  // Engine's renderSources skips features in this set.
-  const hiddenCategories = reactive(new Set())
-
   // ASD-011: per-group visibility for airspace category filter.
   // All groups visible by default; MapCanvas watches this and calls
   // mapEngine.updateAirspaceFilter() to apply MapLibre setFilter.
@@ -102,27 +93,12 @@ export const useAsdStore = defineStore('asd', () => {
   }
   function resetFeedHealth() { feedHealth.value = new Map() }
   function setMapLoaded(val) { mapLoaded.value = val }
+  function setViewportWidth(nm) { viewportWidthNM.value = nm }
   function setPalette(p) { palette.value = p }
   function setLayerVisibility(layer, val) { layerVisibility[layer] = val }
   function setFlFilter(updates) { Object.assign(flFilter, updates) }
   function selectTrack(track) { selectedTrack.value = track }
   function clearTrackSelection() { selectedTrack.value = null }
-
-  // ASD-010: update live counts (called by engine after each WS frame).
-  function setTrackCounts(counts) {
-    trackCounts.confirmed = counts.confirmed ?? 0
-    trackCounts.coasting = counts.coasting ?? 0
-    trackCounts.tentative = counts.tentative ?? 0
-  }
-
-  // ASD-010: toggle a category in/out of the hidden set.
-  function toggleCategoryFilter(category) {
-    if (hiddenCategories.has(category)) {
-      hiddenCategories.delete(category)
-    } else {
-      hiddenCategories.add(category)
-    }
-  }
 
   function setLabelPin(trackNum, pin) {
     const m = new Map(labelPins.value)
@@ -136,14 +112,13 @@ export const useAsdStore = defineStore('asd', () => {
   }
 
   return {
-    mapLoaded, palette, feedStatus, feedHealth, layerVisibility, flFilter,
+    mapLoaded, palette, viewportWidthNM, feedStatus, feedHealth, layerVisibility, flFilter,
     coverageAvailable, setCoverageAvailable,
-    trackCounts, hiddenCategories,
     airspaceGroupVisibility,
     rangeRingConfig, setRangeRingConfig,
     selectedTrack, labelPins,
-    setFeedHealth, resetFeedHealth, setMapLoaded, setPalette, setLayerVisibility,
-    setFlFilter, setTrackCounts, toggleCategoryFilter,
+    setFeedHealth, resetFeedHealth, setMapLoaded, setViewportWidth, setPalette, setLayerVisibility,
+    setFlFilter,
     toggleAirspaceGroup,
     selectTrack, clearTrackSelection, setLabelPin, deleteLabelPin,
   }

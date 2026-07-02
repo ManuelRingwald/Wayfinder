@@ -52,45 +52,18 @@
       <div class="asd-header-overlay">
         <AsdHeader />
       </div>
-      <!-- Account / logout: shows the logged-in principal and a logout action;
-           admins also get a shortcut to the administration. -->
-      <div class="account-overlay">
-        <v-menu location="bottom end">
-          <template #activator="{ props }">
-            <v-chip
-              v-bind="props"
-              size="small"
-              color="primary"
-              variant="tonal"
-              append-icon="mdi-account"
-              style="cursor: pointer"
-            >{{ session.subject }}</v-chip>
-          </template>
-          <v-list density="compact">
-            <v-list-item
-              v-if="session.isAdmin"
-              :to="{ name: 'admin' }"
-              prepend-icon="mdi-cog"
-              title="Administration"
-            />
-            <v-list-item
-              prepend-icon="mdi-logout"
-              title="Abmelden"
-              @click="onLogout"
-            />
-          </v-list>
-        </v-menu>
-      </div>
-      <!-- Feed health banner (CAT065 heartbeat, bug #54). -->
+      <!-- Feed health badge (CAT065 heartbeat, bug #54). Sits top-right where the
+           account chip used to be — account access is the sidebar's "Konto" only,
+           to avoid duplication. -->
       <div class="feed-status-overlay">
         <FeedStatusChip />
       </div>
-      <!-- Reskin 3b: floating scope legend (bottom-left) + speed-vector readout
-           (bottom-right, above the native nautical scale bar). -->
+      <!-- Reskin 3b: floating scope legend (bottom-left) + bottom-right readout
+           "<width> NM Breite · Vektor N min" (replaces the native scale bar). -->
       <div class="scope-legend-overlay">
         <ScopeLegend />
       </div>
-      <div class="vector-readout-overlay wf-mono">Vektor {{ vectorMinutes }} min</div>
+      <div class="vector-readout-overlay wf-mono">{{ store.viewportWidthNM }} NM Breite · Vektor {{ vectorMinutes }} min</div>
     </v-main>
 
     <TrackDetailPanel
@@ -177,10 +150,6 @@ async function onLogin({ subject, password }) {
   }
 }
 
-async function onLogout() {
-  await session.logout()
-}
-
 function onLayerToggle({ layer, val }) {
   mapCanvas.value?.setLayerVisibility(layer, val)
 }
@@ -213,13 +182,6 @@ function onTrackClick(track) {
   background: rgba(var(--v-theme-surface), 0.9) !important;
 }
 
-.account-overlay {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  z-index: 600;
-}
-
 /* Reskin 3a: top-centre header (ICAO + UTC clock), floated over the scope. */
 .asd-header-overlay {
   position: absolute;
@@ -232,9 +194,9 @@ function onTrackClick(track) {
 
 .feed-status-overlay {
   position: absolute;
-  top: 50px;
+  top: 12px;
   right: 12px;
-  z-index: 500;
+  z-index: 600;
   pointer-events: none;
 }
 
@@ -251,11 +213,11 @@ function onTrackClick(track) {
   pointer-events: none;
 }
 
-/* Reskin 3b: speed-vector readout, sitting just above the native nautical scale
-   bar in the bottom-right corner so the two read as one distance/vector block. */
+/* Bottom-right distance/vector readout: "<width> NM Breite · Vektor N min"
+   (design). Replaces the native scale bar, which was removed in the engine. */
 .vector-readout-overlay {
   position: absolute;
-  bottom: 34px;
+  bottom: 12px;
   right: 12px;
   z-index: 600;
   pointer-events: none;
