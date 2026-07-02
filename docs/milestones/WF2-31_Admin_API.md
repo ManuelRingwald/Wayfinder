@@ -16,7 +16,7 @@ zeigen. WF2-31s Abhängigkeit „WF2-30" entfällt damit.
 ## Warum (fachlich)
 
 Mandanten-Konfiguration (Sicht-Ausschnitt, Abos) wurde bisher per DB-Poking /
-CLI gesetzt. WF2-31 gibt einem **Tenant-Admin** eine echte API, um die **eigene**
+CLI gesetzt. WF2-31 gibt einem **Admin** eine echte API, um die **eigene**
 Konfiguration zu lesen und zu ändern — die Grundlage für die Admin-UI (WF2-32) und
 das Live-Apply (WF2-33). Headline-Nutzen: ein Admin stellt den **Sicht-Ausschnitt
 seines Sektors** (Zentrum/Zoom/AOI/FL) selbst ein.
@@ -28,14 +28,14 @@ Methode+Pfad-Mustern, automatische `405`):
 
 | Methode + Pfad | Rolle | Wirkung |
 |---|---|---|
-| `GET /api/admin/view` | tenant_admin+ | Effektive Sicht des eigenen Mandanten (`view_configs.GetEffective`), `404` wenn keine. |
-| `PUT /api/admin/view` | tenant_admin+ | Tenant-Default-Sicht upserten (`UpsertTenantDefault`), **server-validiert**. |
-| `GET /api/admin/subscriptions` | tenant_admin+ | Eigene abonnierte Feeds (`ListFeedsByTenant`). |
-| `GET /api/admin/feeds` | tenant_admin+ | Feed-Katalog (read-only). |
+| `GET /api/admin/view` | admin | Effektive Sicht des eigenen Mandanten (`view_configs.GetEffective`), `404` wenn keine. |
+| `PUT /api/admin/view` | admin | Tenant-Default-Sicht upserten (`UpsertTenantDefault`), **server-validiert**. |
+| `GET /api/admin/subscriptions` | admin | Eigene abonnierte Feeds (`ListFeedsByTenant`). |
+| `GET /api/admin/feeds` | admin | Feed-Katalog (read-only). |
 
 **Isolation per Konstruktion (der Kern):** jeder Handler nimmt die `tenant_id`
 **aus der Identity** (`tenant.FromContext`, von der Middleware gesetzt) — **nie**
-aus Pfad oder Body. Ein Tenant-Admin kann damit ausschließlich die **eigene**
+aus Pfad oder Body. Ein Admin kann damit ausschließlich die **eigene**
 Mandanten-Config berühren (NFR-SEC-003). Ohne Identity → `401` (fail-closed).
 
 **Server-Validierung** (`validateView`): `center_lat ∈ [-90,90]`,
@@ -49,7 +49,7 @@ im Admin-Surface).
 
 **Verdrahtung** (`cmd/wayfinder/main.go`): `mux.Handle("/api/admin/",
 tenantMW(requireAdmin(adminapi.New(viewRepo, subRepo, feedRepo, logger))))` —
-derselbe `RequireRole(tenant_admin, super_admin)`-Gate wie `/admin` (WF2-13), nur
+derselbe `RequireRole(admin)`-Gate wie `/admin` (WF2-13), nur
 bei aktiver Multi-Tenancy. Kleine Interfaces (`ViewStore`/`SubscriptionStore`/
 `FeedStore`) machen die Handler fake-bar.
 
@@ -74,7 +74,7 @@ FR-ADMIN-001.
 ## Abgrenzung / Nächstes
 
 - **Subscription-Writes** (Feed-Grant/-Revoke) bewusst **nicht** hier: das ist
-  eine **Billing-/super_admin-Entscheidung** und cross-tenant (Ziel-Mandant aus
+  eine **Billing-/admin-Entscheidung** und cross-tenant (Ziel-Mandant aus
   Pfad statt Identity) — eigener Schritt mit eigenem Rollen-/Billing-Design.
 - **Caching (WF2-30)** kommt später (Reihenfolge-Entscheidung oben).
 - **Live-Apply:** ein `PUT view` wirkt auf **neue** Connects (der Scope wird am
@@ -82,4 +82,4 @@ FR-ADMIN-001.
   **WF2-33** re-skopiert.
 - **Nächster Schritt:** **WF2-32 — Admin-UI** (`/admin`, Vue 3 + Vuetify:
   Formulare/Slider für die View-Config auf diesem API) **oder** der
-  Subscription-Write-/super_admin-Pfad — nach Abstimmung.
+  Subscription-Write-/admin-Pfad — nach Abstimmung.

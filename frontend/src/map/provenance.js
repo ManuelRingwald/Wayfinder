@@ -7,25 +7,35 @@
 // as psr_age / ssr_age_s / mds_age_s / adsb_age_s / flarm_age_s. FLARM is
 // therefore cleanly distinguishable from ADS-B for the first time (#118).
 //
-// Precedence (most authoritative *current* cooperative source first):
+// Precedence (most authoritative first):
+//   combined — ≥2 distinct surveillance technologies are *currently fresh*
+//           (any two of ES/ADS-B, FLARM, SSR Mode A/C, Mode S). A multi-sensor
+//           fused track is the highest-quality picture, so it gets its own glyph
+//           rather than being reduced to a single source (#125, from #90).
 //   adsb  — a fresh ES (Extended Squitter) age: adsb_age_s present AND
 //           ≤ ADSB_FRESH_THRESHOLD_S. A stale age means the self-report link
 //           went quiet, so the track falls back to its remaining sources.
 //           ADS-B outranks FLARM when both are fresh (the ICAO-standardised,
 //           richer report wins the single-glyph slot).
 //   flarm — a fresh FLARM age (flarm_age_s, Firefly vendor subfield).
-//   ssr   — a cooperative secondary reply identifies the track: Mode S address
+//   ssr   — a cooperative secondary reply identifies the track: a fresh SSR /
+//           Mode S age (I062/290), or the legacy id fields Mode S address
 //           (I062/380 → icao_addr), Mode 3/A code (I062/060 → mode_3a) or a
 //           Mode S identification / callsign (I062/245).
 //   psr   — none of the above: primary-only skin paint (position without ID).
 //
 // The classification is re-derived on every WS update in tracks.js (never
 // cached on the track), so a source change corrects the glyph immediately.
+//
+// HONEST LIMIT: "combined" counts the per-technology ages Firefly actually
+// emits (ICD 2.6.0). How often it triggers depends on Firefly's emission — the
+// ≥2 threshold is the agreed definition (#90) and can be tuned against live data.
 
 export const PROVENANCE_ADSB = 'adsb'
 export const PROVENANCE_FLARM = 'flarm'
 export const PROVENANCE_SSR = 'ssr'
 export const PROVENANCE_PSR = 'psr'
+export const PROVENANCE_COMBINED = 'combined'
 
 // ADS-B freshness window in seconds. Beyond this, an ADS-B contribution is
 // considered no longer current (kept identical to the original FR-ASD-006
@@ -40,14 +50,25 @@ export function isAdsbFresh(ageS) {
   return ageS != null && ageS <= ADSB_FRESH_THRESHOLD_S
 }
 
-// trackProvenance returns 'adsb' | 'flarm' | 'ssr' | 'psr' for a WS track
-// message (see pkg/broadcast.TrackMessage). Optional contract fields are
+// trackProvenance returns 'combined' | 'adsb' | 'flarm' | 'ssr' | 'psr' for a WS
+// track message (see pkg/broadcast.TrackMessage). Optional contract fields are
 // absent (not null-valued) when not sent, so presence is tested with != null.
 export function trackProvenance(track) {
   if (track == null) return PROVENANCE_PSR
+  // Count the distinct surveillance technologies currently fresh (ICD 2.6.0
+  // per-technology ages). ≥2 → a genuine multi-sensor fusion (#125).
+  const freshTechs = [
+    track.adsb_age_s,
+    track.flarm_age_s,
+    track.ssr_age_s,
+    track.mds_age_s,
+  ].filter((age) => isAdsbFresh(age)).length
+  if (freshTechs >= 2) return PROVENANCE_COMBINED
   if (isAdsbFresh(track.adsb_age_s)) return PROVENANCE_ADSB
   if (isAdsbFresh(track.flarm_age_s)) return PROVENANCE_FLARM
   if (
+    isAdsbFresh(track.ssr_age_s) ||
+    isAdsbFresh(track.mds_age_s) ||
     track.icao_addr != null ||
     track.mode_3a != null ||
     (typeof track.callsign === 'string' && track.callsign !== '')
@@ -60,6 +81,7 @@ export function trackProvenance(track) {
 // PROVENANCE_LABELS: human-readable German labels for the detail panel and the
 // scope legend (German per project charter §4).
 export const PROVENANCE_LABELS = {
+  [PROVENANCE_COMBINED]: 'Kombiniert (Mehr-Sensor)',
   [PROVENANCE_ADSB]: 'ADS-B (kooperativ)',
   [PROVENANCE_FLARM]: 'FLARM',
   [PROVENANCE_SSR]: 'SSR / Mode S',
@@ -78,12 +100,20 @@ export const PROVENANCE_LEGEND = [
   { glyph: '○', label: PROVENANCE_LABELS[PROVENANCE_PSR], classes: ['PSR'] },
 ]
 
+// COMBINED_LEGEND (#125): the "Kombiniert" (K) key is not tied to a single sensor
+// class — it appears when ≥2 distinct sources can contribute (a fused track, the
+// highest-quality picture). Shown only then, and in the full-legend fallback.
+export const COMBINED_LEGEND = { glyph: 'K', label: PROVENANCE_LABELS[PROVENANCE_COMBINED] }
+
 // filterProvenanceLegend narrows PROVENANCE_LEGEND to the entries a tenant's
-// subscribed feeds can actually produce. An empty/unknown class set (still
-// loading, admin viewer, or no subscribed feed) shows the full legend rather
-// than an empty box.
+// subscribed feeds can actually produce, and appends the COMBINED (K) key when
+// ≥2 sources are active (a genuine multi-sensor track becomes possible). An
+// empty/unknown class set (still loading, admin viewer, or no subscribed feed)
+// shows the full legend — including K — rather than an empty box.
 export function filterProvenanceLegend(sensorClasses) {
   const active = new Set(sensorClasses || [])
-  if (active.size === 0) return PROVENANCE_LEGEND
-  return PROVENANCE_LEGEND.filter((e) => e.classes.some((c) => active.has(c)))
+  if (active.size === 0) return [...PROVENANCE_LEGEND, COMBINED_LEGEND]
+  const entries = PROVENANCE_LEGEND.filter((e) => e.classes.some((c) => active.has(c)))
+  if (entries.length >= 2) entries.push(COMBINED_LEGEND)
+  return entries
 }

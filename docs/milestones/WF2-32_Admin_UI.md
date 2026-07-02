@@ -7,13 +7,14 @@
 ## Warum (fachlich)
 
 Das gesamte Mandanten-Provisioning lag bisher nur als REST-API/DB vor — bedienbar
-nur per `curl`. Für ein SaaS untauglich. WF2-32 gibt den beiden Admin-Rollen ihre
-bedienbare Oberfläche unter `/admin`:
+nur per `curl`. Für ein SaaS untauglich. WF2-32 gibt der `admin`-Rolle ihre
+bedienbare Oberfläche unter `/admin` — in zwei Facetten (`user` hat keinen
+`/api/admin/*`-Zugriff):
 
-- **tenant_admin** — Self-Service der **eigenen** Sicht: Kartenzentrum/Zoom, **AOI-
+- **admin (self-scoped)** — Self-Service der **eigenen** Sicht: Kartenzentrum/Zoom, **AOI-
   Bounding-Box**, **FL-Band**, Standard-Layer; dazu ein Lese-Blick auf gebuchte
   Feeds und den Katalog. Kein Ticket mehr für eine AOI-Anpassung.
-- **super_admin** — **Cross-Tenant-Provisioning** über die Oberfläche: Mandanten
+- **admin (cross-tenant)** — **Cross-Tenant-Provisioning** über die Oberfläche: Mandanten
   listen, Feeds zuweisen/entziehen (grant/revoke) ohne DB-Zugriff.
 
 Damit schließt sich die Schleife Backend-API (WF2-31/31b) → menschlich bedienbares
@@ -53,21 +54,21 @@ Kontroll-Surface.
   `{ok,status,data,error}`, 401/403/network-tolerant); Actions `loadIdentity`
   (whoami), `loadView`/`saveView`, `loadFeeds`/`loadSubscriptions`,
   `loadTenants`/`loadTenantSubscriptions`/`grant`/`revoke`; Getter `role`/
-  `isSuperAdmin`/`isAuthorized`.
+  `isAdmin`/`isAuthorized`.
 - **`views/AdminView.vue`** — Shell: App-Bar (Identität + „Zur Lage"), Rollen-Probe
   beim Mount, Tabs **Ansicht / Abos & Feeds / Provisioning**. Der Provisioning-Tab
-  ist `v-if="isSuperAdmin"`-gegated. Fehler/Erfolg als schließbare Banner.
+  ist `v-if="isAdmin"`-gegated. Fehler/Erfolg als schließbare Banner.
 - **`components/admin/AdminViewConfig.vue`** — View-Editor (Zentrum/Zoom, AOI-
   Toggle+BBox, FL-Band-Toggle, Layer-Switches). **Validierungs-Parität vor dem
   PUT** über `src/admin/validateView.js` (spiegelt `pkg/adminapi.validateView`).
 - **`components/admin/AdminSubscriptions.vue`** — read-only: gebuchte Feeds +
   Katalog (mit „gebucht"-Markierung).
-- **`components/admin/AdminProvisioning.vue`** (super_admin) — Mandant wählen →
+- **`components/admin/AdminProvisioning.vue`** (admin) — Mandant wählen →
   Feed-Tabelle mit Zuweisen/Entziehen; nach jeder Aktion Re-Fetch.
 
 ### Sicherheit
 Das Rollen-Gating der UI ist **kosmetisch** — der Server erzwingt jede Grenze
-unabhängig (`requireSuper → 403`, Tenant-ID aus der Identity). Die Client-
+unabhängig (`requireAdmin → 403`, Tenant-ID aus der Identity). Die Client-
 Validierung ist eine UX-Höflichkeit, **nie** die Sicherheitsgrenze: der Server
 bleibt die Wahrheit (Defense-in-Depth).
 
@@ -79,10 +80,10 @@ bleibt die Wahrheit (Defense-in-Depth).
   wohlgeformte Config besteht; jede Server-Regel (Lat/Lon/Zoom-Bereiche, AOI
   out-of-range/invertiert, FL negativ/invertiert) wird abgelehnt.
 - **Store** (`src/stores/__tests__/admin.test.js`, Vitest, gemocktes `fetch`):
-  `loadIdentity` setzt Identität + `isSuperAdmin`; 403 → `accessError`, unautorisiert;
+  `loadIdentity` setzt Identität + `isAdmin`; 403 → `accessError`, unautorisiert;
   `saveView` PUTtet die **exakte DTO** und setzt State/Notice; 400 → Fehlerbanner;
   `grant` POSTtet `{feed_id}` an die Pfad-Route, `revoke` DELETEt; 403 aus `grant`
-  (tenant_admin-Versuch) wird gemeldet.
+  (user-Versuch) wird gemeldet.
 - **SPA-Fallback** (`internal/webui/webui_test.go`, Go): Deep-Links (`/admin`,
   `/admin/tenants/5/…`) liefern die Shell (200, HTML); echte Assets (`/favicon.svg`)
   werden **nicht** beschattet; Root liefert `index.html`.

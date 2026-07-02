@@ -10,7 +10,7 @@
     <TrackFilterChips />
     <!-- Häppchen 4: controller measurement tools (RBL/DIST/QDM) -->
     <MeasureToolbar />
-    <!-- WF2-34: super_admin read-only impersonation banner/switcher (ADR 0008) -->
+    <!-- WF2-34: admin read-only impersonation banner/switcher (ADR 0008) -->
     <ImpersonationBar />
   </div>
 </template>
@@ -85,7 +85,7 @@ watch(() => ({ ...store.rangeRingConfig }), (cfg) => {
   mapEngine?.updateRangeRings(cfg.spacingNM, cfg.count)
 }, { deep: true })
 
-// WF2-34: when the super_admin starts/switches/exits read-only impersonation
+// WF2-34: when the admin starts/switches/exits read-only impersonation
 // (ADR 0008), reconnect the WebSocket so the new grant cookie — and thus the new
 // tenant scope — takes effect immediately. loadStatus does not bump the nonce, so
 // a normal page load reconnects only via the engine's own connect.

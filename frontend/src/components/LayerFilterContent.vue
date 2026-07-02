@@ -301,6 +301,8 @@ function onRangeRingChange() {
 // provenance (see caption). Fallback: when no sensor classes are known yet
 // (still loading / admin viewer / no subscribed feed) the full legend is shown
 // rather than an empty box.
+// #125: the "Kombiniert" (K) entry is appended by filterProvenanceLegend when ≥2
+// sources can contribute (single source of truth in map/provenance.js).
 const provenanceLegend = computed(() => filterProvenanceLegend(session.sensorClasses))
 
 function onLayerToggle(layer, val) {

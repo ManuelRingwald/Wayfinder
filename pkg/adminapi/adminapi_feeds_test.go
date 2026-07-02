@@ -346,7 +346,7 @@ func TestPutFeedSourcesRoundTripAndDerivesCoverage(t *testing.T) {
 	ff := feedSourcesFixture()
 	body := `{"sources":[
 		{"type":"adsb_opensky","bbox":{"min_lat":48,"min_lon":7,"max_lat":50,"max_lon":9},"cred_ref":"secret/speyer"},
-		{"type":"radar_asterix","sac":1,"sic":4}
+		{"type":"radar_asterix","sac":1,"sic":4,"lat":50.03,"lon":8.57}
 	]}`
 	rec := httptest.NewRecorder()
 	handlerForFeeds(ff, nil).ServeHTTP(rec,
@@ -423,7 +423,7 @@ func TestPutFeedSourcesUnknownIs404(t *testing.T) {
 	rec := httptest.NewRecorder()
 	handlerForFeeds(ff, nil).ServeHTTP(rec,
 		adminReq(http.MethodPut, "/api/admin/feeds/9/sources",
-			`{"sources":[{"type":"radar_asterix","sac":1,"sic":4}]}`, 99, store.RoleAdmin))
+			`{"sources":[{"type":"radar_asterix","sac":1,"sic":4,"lat":50.03,"lon":8.57}]}`, 99, store.RoleAdmin))
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404; body=%s", rec.Code, rec.Body.String())
 	}
@@ -436,7 +436,7 @@ func TestFeedSourcesRoutesForbidNonAdmin(t *testing.T) {
 	reqs := []*http.Request{
 		adminReq(http.MethodGet, "/api/admin/feeds/3/sources", "", 99, store.RoleUser),
 		adminReq(http.MethodPut, "/api/admin/feeds/3/sources",
-			`{"sources":[{"type":"radar_asterix","sac":1,"sic":4}]}`, 99, store.RoleUser),
+			`{"sources":[{"type":"radar_asterix","sac":1,"sic":4,"lat":50.03,"lon":8.57}]}`, 99, store.RoleUser),
 	}
 	for _, req := range reqs {
 		rec := httptest.NewRecorder()

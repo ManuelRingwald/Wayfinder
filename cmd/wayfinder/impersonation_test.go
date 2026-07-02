@@ -16,7 +16,7 @@ import (
 
 var endpointKey = []byte("impersonation-endpoint-test-key-32by")
 
-func superRequest(method, body string) *http.Request {
+func adminRequest(method, body string) *http.Request {
 	var r *http.Request
 	if body != "" {
 		r = httptest.NewRequest(method, "/api/admin/impersonation", strings.NewReader(body))
@@ -42,7 +42,7 @@ func TestStartImpersonationSetsGrantCookie(t *testing.T) {
 	h := startImpersonationHandler(checker, cfg, discardLogger())
 
 	rec := httptest.NewRecorder()
-	h(rec, superRequest(http.MethodPost, `{"tenant_id":5}`))
+	h(rec, adminRequest(http.MethodPost, `{"tenant_id":5}`))
 
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want 204", rec.Code)
@@ -71,7 +71,7 @@ func TestStartImpersonationUnknownTenant(t *testing.T) {
 	h := startImpersonationHandler(checker, cfg, discardLogger())
 
 	rec := httptest.NewRecorder()
-	h(rec, superRequest(http.MethodPost, `{"tenant_id":99}`))
+	h(rec, adminRequest(http.MethodPost, `{"tenant_id":99}`))
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("unknown tenant → status %d, want 404", rec.Code)
@@ -88,7 +88,7 @@ func TestStartImpersonationBadBody(t *testing.T) {
 
 	for _, body := range []string{`{"tenant_id":0}`, `{"tenant_id":-3}`, `not json`, `{}`} {
 		rec := httptest.NewRecorder()
-		h(rec, superRequest(http.MethodPost, body))
+		h(rec, adminRequest(http.MethodPost, body))
 		if rec.Code != http.StatusBadRequest {
 			t.Errorf("body %q → status %d, want 400", body, rec.Code)
 		}
@@ -104,7 +104,7 @@ func TestStartImpersonationTenantLookupErrorFailsClosed(t *testing.T) {
 	h := startImpersonationHandler(checker, cfg, discardLogger())
 
 	rec := httptest.NewRecorder()
-	h(rec, superRequest(http.MethodPost, `{"tenant_id":5}`))
+	h(rec, adminRequest(http.MethodPost, `{"tenant_id":5}`))
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("tenant lookup error → status %d, want 500", rec.Code)
 	}
@@ -117,7 +117,7 @@ func TestStopImpersonationClearsCookie(t *testing.T) {
 	h := stopImpersonationHandler(impersonationCookieConfig{}, discardLogger())
 
 	rec := httptest.NewRecorder()
-	h(rec, superRequest(http.MethodDelete, ""))
+	h(rec, adminRequest(http.MethodDelete, ""))
 
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want 204", rec.Code)
@@ -132,7 +132,7 @@ func TestImpersonationStatusActive(t *testing.T) {
 	checker := fakeTenantChecker{existing: map[int64]bool{5: true}}
 	h := impersonationStatusHandler(checker, impersonationCookieConfig{key: endpointKey})
 
-	r := superRequest(http.MethodGet, "")
+	r := adminRequest(http.MethodGet, "")
 	r.AddCookie(&http.Cookie{Name: impersonation.CookieName, Value: impersonation.MintGrant(5, time.Hour, endpointKey)})
 	rec := httptest.NewRecorder()
 	h(rec, r)
@@ -154,7 +154,7 @@ func TestImpersonationStatusInactiveWithoutCookie(t *testing.T) {
 	h := impersonationStatusHandler(checker, impersonationCookieConfig{key: endpointKey})
 
 	rec := httptest.NewRecorder()
-	h(rec, superRequest(http.MethodGet, "")) // no grant cookie
+	h(rec, adminRequest(http.MethodGet, "")) // no grant cookie
 
 	var got struct {
 		Active bool `json:"active"`

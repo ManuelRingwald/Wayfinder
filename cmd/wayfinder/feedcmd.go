@@ -96,7 +96,7 @@ func feedAddCommand(args []string, out io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("create feed: %w", err)
 	}
-	fmt.Fprintf(out, "created feed %q (id=%d) %s:%d\n", f.Name, f.ID, f.MulticastGroup, f.Port)
+	_, _ = fmt.Fprintf(out, "created feed %q (id=%d) %s:%d\n", f.Name, f.ID, f.MulticastGroup, f.Port)
 	return nil
 }
 
@@ -120,13 +120,13 @@ func feedListCommand(args []string, out io.Writer) error {
 		return fmt.Errorf("list feeds: %w", err)
 	}
 	if len(feeds) == 0 {
-		fmt.Fprintln(out, "no feeds in catalogue")
+		_, _ = fmt.Fprintln(out, "no feeds in catalogue")
 		return nil
 	}
 	tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tNAME\tGROUP\tPORT\tSENSOR_MIX")
+	_, _ = fmt.Fprintln(tw, "ID\tNAME\tGROUP\tPORT\tSENSOR_MIX")
 	for _, f := range feeds {
-		fmt.Fprintf(tw, "%d\t%s\t%s\t%d\t%s\n", f.ID, f.Name, f.MulticastGroup, f.Port, strings.Join(f.SensorMix, ","))
+		_, _ = fmt.Fprintf(tw, "%d\t%s\t%s\t%d\t%s\n", f.ID, f.Name, f.MulticastGroup, f.Port, strings.Join(f.SensorMix, ","))
 	}
 	return tw.Flush()
 }

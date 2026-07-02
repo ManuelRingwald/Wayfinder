@@ -102,7 +102,7 @@ func TestClientsForTenantSnapshot(t *testing.T) {
 	b := discardBroadcaster()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	go b.Run(ctx)
+	go func() { _ = b.Run(ctx) }()
 
 	b.RegisterClient(make(chan Message, 10), scopeFor(7, 1, []int64{1}, nil))
 	b.RegisterClient(make(chan Message, 10), scopeFor(7, 2, []int64{1}, nil))
@@ -137,7 +137,7 @@ func TestApplyScopesShrinkAOILive(t *testing.T) {
 	b := discardBroadcaster()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	go b.Run(ctx)
+	go func() { _ = b.Run(ctx) }()
 
 	ch := make(chan Message, 10)
 	big := &ViewFilter{AOI: &BBox{MinLat: 40, MinLon: 0, MaxLat: 60, MaxLon: 20}}
@@ -170,7 +170,7 @@ func TestApplyScopesGrantAndRevokeFeedLive(t *testing.T) {
 	b := discardBroadcaster()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	go b.Run(ctx)
+	go func() { _ = b.Run(ctx) }()
 
 	ch := make(chan Message, 10)
 	c := b.RegisterClient(ch, scopeFor(7, 1, []int64{1}, nil)) // feed 1 only
@@ -205,7 +205,7 @@ func TestApplyScopesOnlyTargetClients(t *testing.T) {
 	b := discardBroadcaster()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	go b.Run(ctx)
+	go func() { _ = b.Run(ctx) }()
 
 	chA := make(chan Message, 10)
 	chB := make(chan Message, 10)
@@ -237,7 +237,7 @@ func TestApplyScopesSkipsUnknownClient(t *testing.T) {
 	b := discardBroadcaster()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	go b.Run(ctx)
+	go func() { _ = b.Run(ctx) }()
 
 	ch := make(chan Message, 10)
 	c := b.RegisterClient(ch, scopeFor(7, 1, []int64{1}, nil))
@@ -266,7 +266,7 @@ func TestApplyScopesPurgesOnFeedRevoke(t *testing.T) {
 	b := discardBroadcaster()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	go b.Run(ctx)
+	go func() { _ = b.Run(ctx) }()
 
 	ch := make(chan Message, 10)
 	c := b.RegisterClient(ch, scopeFor(7, 1, []int64{1}, nil))
@@ -295,7 +295,7 @@ func TestApplyScopesPurgeNotSentOnGrant(t *testing.T) {
 	b := discardBroadcaster()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	go b.Run(ctx)
+	go func() { _ = b.Run(ctx) }()
 
 	ch := make(chan Message, 10)
 	c := b.RegisterClient(ch, scopeFor(7, 1, []int64{1}, nil))
@@ -318,7 +318,7 @@ func TestApplyScopesPurgeNotSentOnAOIShrink(t *testing.T) {
 	b := discardBroadcaster()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	go b.Run(ctx)
+	go func() { _ = b.Run(ctx) }()
 
 	ch := make(chan Message, 10)
 	big := &ViewFilter{AOI: &BBox{MinLat: 40, MinLon: 0, MaxLat: 60, MaxLon: 20}}
@@ -346,7 +346,7 @@ func TestRescopeRaceUnderLoad(t *testing.T) {
 	b := discardBroadcaster()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	go b.Run(ctx)
+	go func() { _ = b.Run(ctx) }()
 
 	const nClients = 6
 	clients := make([]*Client, nClients)
@@ -427,7 +427,7 @@ func TestUnregisterTwiceDoesNotPanic(t *testing.T) {
 	b := discardBroadcaster()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	go b.Run(ctx)
+	go func() { _ = b.Run(ctx) }()
 
 	victim := b.RegisterClient(make(chan Message, 4), scopeFor(7, 1, []int64{1}, nil))
 	sentinel := b.RegisterClient(make(chan Message, 4), scopeFor(7, 2, []int64{1}, nil))
@@ -458,7 +458,7 @@ func TestBroadcastEvictionDoesNotSelfDeadlock(t *testing.T) {
 	b := discardBroadcaster()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	go b.Run(ctx)
+	go func() { _ = b.Run(ctx) }()
 
 	// More clients than cap(unregisterChan) (=10), each with an unbuffered,
 	// undrained send channel so every delivery hits the drop path at once.

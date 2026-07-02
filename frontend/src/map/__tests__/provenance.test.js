@@ -7,23 +7,25 @@ import {
   PROVENANCE_FLARM,
   PROVENANCE_SSR,
   PROVENANCE_PSR,
+  PROVENANCE_COMBINED,
   PROVENANCE_LABELS,
   PROVENANCE_LEGEND,
+  COMBINED_LEGEND,
   filterProvenanceLegend,
 } from '../provenance.js'
 
 describe('filterProvenanceLegend (shared sidebar + scope legend)', () => {
-  it('returns the full legend when no sensor classes are known', () => {
-    expect(filterProvenanceLegend([])).toEqual(PROVENANCE_LEGEND)
-    expect(filterProvenanceLegend(undefined)).toEqual(PROVENANCE_LEGEND)
+  it('returns the full legend plus Kombiniert (K) when no sensor classes are known', () => {
+    expect(filterProvenanceLegend([])).toEqual([...PROVENANCE_LEGEND, COMBINED_LEGEND])
+    expect(filterProvenanceLegend(undefined)).toEqual([...PROVENANCE_LEGEND, COMBINED_LEGEND])
   })
 
-  it('narrows to the entries a tenant\'s feeds can produce', () => {
+  it('narrows to the entries a tenant\'s feeds can produce and appends K when ≥2 (#125)', () => {
     const got = filterProvenanceLegend(['ADS-B', 'PSR'])
-    expect(got.map((e) => e.glyph)).toEqual(['A', '○'])
+    expect(got.map((e) => e.glyph)).toEqual(['A', '○', 'K'])
   })
 
-  it('maps Mode S / MLAT classes to the SSR entry', () => {
+  it('maps Mode S / MLAT classes to the SSR entry (single source → no K)', () => {
     expect(filterProvenanceLegend(['MODE_S']).map((e) => e.glyph)).toEqual(['■'])
     expect(filterProvenanceLegend(['MLAT']).map((e) => e.glyph)).toEqual(['■'])
   })
@@ -97,7 +99,7 @@ describe('trackProvenance', () => {
   })
 
   it('maps every provenance value to a human-readable label', () => {
-    for (const p of [PROVENANCE_ADSB, PROVENANCE_FLARM, PROVENANCE_SSR, PROVENANCE_PSR]) {
+    for (const p of [PROVENANCE_COMBINED, PROVENANCE_ADSB, PROVENANCE_FLARM, PROVENANCE_SSR, PROVENANCE_PSR]) {
       expect(typeof PROVENANCE_LABELS[p]).toBe('string')
       expect(PROVENANCE_LABELS[p].length).toBeGreaterThan(0)
     }
@@ -117,12 +119,33 @@ describe('trackProvenance — FLARM (#118)', () => {
     expect(trackProvenance({ flarm_age_s: 3, icao_addr: 0x3c6dd2 })).toBe(PROVENANCE_FLARM)
   })
 
-  it('prefers adsb when both ES and FLARM are fresh (richer standard source)', () => {
-    expect(trackProvenance({ adsb_age_s: 2, flarm_age_s: 1 })).toBe(PROVENANCE_ADSB)
-  })
-
   it('falls back from stale FLARM to ssr/psr like ADS-B does', () => {
     expect(trackProvenance({ flarm_age_s: 90, icao_addr: 0x3c6dd2 })).toBe(PROVENANCE_SSR)
     expect(trackProvenance({ flarm_age_s: 90 })).toBe(PROVENANCE_PSR)
+  })
+})
+
+// #125 (from #90): ≥2 distinct surveillance technologies currently fresh →
+// "combined" (a multi-sensor fused track), which outranks any single source.
+describe('trackProvenance — combined (#125)', () => {
+  it('returns combined when two technologies are fresh (ES + FLARM)', () => {
+    expect(trackProvenance({ adsb_age_s: 2, flarm_age_s: 1 })).toBe(PROVENANCE_COMBINED)
+  })
+
+  it('returns combined for ES + Mode S both fresh', () => {
+    expect(trackProvenance({ adsb_age_s: 3, mds_age_s: 4 })).toBe(PROVENANCE_COMBINED)
+  })
+
+  it('returns combined for SSR + Mode S both fresh', () => {
+    expect(trackProvenance({ ssr_age_s: 5, mds_age_s: 6 })).toBe(PROVENANCE_COMBINED)
+  })
+
+  it('needs at least two FRESH ages — one fresh + one stale is not combined', () => {
+    expect(trackProvenance({ adsb_age_s: 2, mds_age_s: 90 })).toBe(PROVENANCE_ADSB)
+  })
+
+  it('a single fresh SSR/Mode S age (no other) is ssr, not combined', () => {
+    expect(trackProvenance({ ssr_age_s: 4 })).toBe(PROVENANCE_SSR)
+    expect(trackProvenance({ mds_age_s: 4 })).toBe(PROVENANCE_SSR)
   })
 })
