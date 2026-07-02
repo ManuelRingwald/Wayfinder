@@ -171,10 +171,10 @@ function makeTrackIcon(shape, color) {
       ctx.stroke()
       return
     }
-    // adsb / flarm: letter glyph in the state colour with a dark outline —
-    // the source is readable at a glance (legend and symbol use the same
-    // letter, #119).
-    const letter = shape === 'adsb' ? 'A' : 'F'
+    // adsb / flarm / combined: letter glyph in the state colour with a dark
+    // outline — the source is readable at a glance (legend and symbol use the
+    // same letter: A = ADS-B #119, F = FLARM, K = kombiniert/Mehr-Sensor #125).
+    const letter = { adsb: 'A', flarm: 'F', combined: 'K' }[shape] ?? '?'
     ctx.font = 'bold 16px sans-serif'
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
@@ -186,11 +186,11 @@ function makeTrackIcon(shape, color) {
   })
 }
 
-// addTrackIcons registers the 16 provenance×state track symbols (idempotent).
+// addTrackIcons registers the 20 provenance×state track symbols (idempotent).
 // Names follow `wf-trk-<provenance>-<stateKey>`, matched by the track layer's
 // icon-image expression in addTracksLayer.
 export function addTrackIcons(map) {
-  for (const shape of ['adsb', 'flarm', 'ssr', 'psr']) {
+  for (const shape of ['adsb', 'flarm', 'combined', 'ssr', 'psr']) {
     for (const [stateKey, color] of Object.entries(TRACK_STATE_COLORS)) {
       const id = `wf-trk-${shape}-${stateKey}`
       if (!map.hasImage(id)) {

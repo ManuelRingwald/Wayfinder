@@ -306,10 +306,16 @@ const PROVENANCE_LEGEND = [
   { glyph: '■', label: 'SSR / Mode S', classes: ['SSR', 'MODE_S', 'MLAT'] },
   { glyph: '○', label: 'Primär (PSR)', classes: ['PSR'] },
 ]
+// #125: "Kombiniert" (K) is not tied to one sensor class — it appears when ≥2
+// distinct sources can contribute (a fused track). Shown only then, and in the
+// full-legend fallback.
+const COMBINED_LEGEND = { glyph: 'K', label: 'Kombiniert (Mehr-Sensor)' }
 const provenanceLegend = computed(() => {
   const active = new Set(session.sensorClasses)
-  if (active.size === 0) return PROVENANCE_LEGEND
-  return PROVENANCE_LEGEND.filter((e) => e.classes.some((c) => active.has(c)))
+  if (active.size === 0) return [...PROVENANCE_LEGEND, COMBINED_LEGEND]
+  const entries = PROVENANCE_LEGEND.filter((e) => e.classes.some((c) => active.has(c)))
+  if (entries.length >= 2) entries.push(COMBINED_LEGEND)
+  return entries
 })
 
 function onLayerToggle(layer, val) {
