@@ -199,6 +199,27 @@
               <v-text-field v-model.number="s.center_lon" type="number" label="Zentrum Länge (°)" density="compact" hide-details style="max-width: 160px" />
               <v-text-field v-model.number="s.radius_nm" type="number" label="Radius (NM)" density="compact" hide-details style="max-width: 130px" />
             </div>
+
+            <!-- Poll-Intervall (ADR 0029) — nur OpenSky (FLARM ist Push). Leer =
+                 Firefly-Default (10 s). Die Infobox erklärt die OpenSky-Grenzen,
+                 damit der Betreiber das Rate-Limit (HTTP 429) respektiert. -->
+            <div v-if="s.type === 'adsb_opensky'" class="mt-2">
+              <v-text-field
+                v-model.number="s.poll_interval_secs"
+                type="number"
+                label="Poll-Intervall (s, optional)"
+                :placeholder="`Standard ${DEFAULT_POLL_SECS}`"
+                :hint="`Leer = Firefly-Default (${DEFAULT_POLL_SECS} s). Bereich ${MIN_POLL_SECS}–${MAX_POLL_SECS} s.`"
+                persistent-hint
+                density="compact"
+                style="max-width: 240px"
+              />
+              <v-alert type="info" variant="tonal" density="compact" class="mt-2">
+                OpenSky ist ratenbegrenzt: <strong>anonym ~1 Abfrage/10 s</strong>,
+                <strong>authentifiziert ~1/5 s</strong>. Ein zu kurzes Intervall läuft in
+                HTTP&nbsp;429 — lieber am Limit bleiben oben oder Zugangsdaten hinterlegen.
+              </v-alert>
+            </div>
           </div>
 
           <!-- Real radar (radar_asterix): SAC/SIC identity + site location. CAT048
@@ -448,6 +469,14 @@ function isAreaType(t) {
   return AREA_TYPES.has(t)
 }
 
+// OpenSky poll-interval bounds (ADR 0029). Mirrors the server's write-boundary
+// range (pkg/store minPollIntervalSecs..maxPollIntervalSecs); the field is
+// optional and empty means Firefly's default. Gating is cosmetic — the server
+// enforces the range.
+const DEFAULT_POLL_SECS = 10
+const MIN_POLL_SECS = 5
+const MAX_POLL_SECS = 3600
+
 const sourcesDialog = ref(false)
 const sourcesTarget = ref(null)
 const sources = ref([])
@@ -567,7 +596,7 @@ function blankSource(type = 'adsb_opensky') {
   return {
     type, center_lat: null, center_lon: null, radius_nm: null, tenant_id: null,
     sac: null, sic: null, lat: null, lon: null, height_m: null, listen: '',
-    cred_ref: '',
+    cred_ref: '', poll_interval_secs: null,
   }
 }
 
@@ -590,6 +619,7 @@ function toFormSource(s) {
     height_m: s.height_m ?? null,
     listen: s.listen ?? '',
     cred_ref: s.cred_ref ?? '',
+    poll_interval_secs: s.poll_interval_secs ?? null,
   }
 }
 
@@ -654,6 +684,11 @@ function buildSourcesPayload() {
         const box = radiusNmToBbox(s.center_lat, s.center_lon, s.radius_nm)
         if (box) {
           out.bbox = box // already the backend wire shape (min_lat/min_lon/max_lat/max_lon)
+        }
+        // Poll interval is OpenSky-only (ADR 0029); FLARM is a push stream. Send
+        // it only when set, so an empty field keeps Firefly's default (10 s).
+        if (s.type === 'adsb_opensky' && s.poll_interval_secs != null && s.poll_interval_secs !== '') {
+          out.poll_interval_secs = Number(s.poll_interval_secs)
         }
       } else {
         out.sac = s.sac

@@ -102,6 +102,30 @@ func TestSourceConfigValidate(t *testing.T) {
 			wantErr: true, wantIdx: 0,
 		},
 		{
+			name: "valid adsb with poll_interval_secs",
+			cfg:  SourceConfig{{Type: SourceADSBOpenSky, BBox: bbox(48, 7, 50, 9), PollIntervalSecs: ptrInt(30)}},
+		},
+		{
+			name:    "poll_interval_secs on flarm rejected",
+			cfg:     SourceConfig{{Type: SourceFLARMAPRS, BBox: bbox(48, 7, 50, 9), PollIntervalSecs: ptrInt(30)}},
+			wantErr: true, wantIdx: 0,
+		},
+		{
+			name:    "poll_interval_secs on radar rejected",
+			cfg:     SourceConfig{{Type: SourceRadarASTERIX, SAC: ptrInt(1), SIC: ptrInt(4), Lat: ptrFloat(50), Lon: ptrFloat(8), PollIntervalSecs: ptrInt(30)}},
+			wantErr: true, wantIdx: 0,
+		},
+		{
+			name:    "poll_interval_secs below floor rejected",
+			cfg:     SourceConfig{{Type: SourceADSBOpenSky, BBox: bbox(48, 7, 50, 9), PollIntervalSecs: ptrInt(4)}},
+			wantErr: true, wantIdx: 0,
+		},
+		{
+			name:    "poll_interval_secs above ceiling rejected",
+			cfg:     SourceConfig{{Type: SourceADSBOpenSky, BBox: bbox(48, 7, 50, 9), PollIntervalSecs: ptrInt(3601)}},
+			wantErr: true, wantIdx: 0,
+		},
+		{
 			name: "error reports offending index",
 			cfg: SourceConfig{
 				{Type: SourceADSBOpenSky, BBox: bbox(48, 7, 50, 9)},

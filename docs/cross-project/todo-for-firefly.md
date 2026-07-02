@@ -9,6 +9,21 @@
 
 ---
 
+## OpenSky-Poll-Intervall konfigurierbar — erledigt ✅ (cross-project, kein Issue)
+
+**Beobachtung (E2E 2026-07-02):** Ein anonym pollender OpenSky-Feed lief in
+**HTTP 429**; die Poll-Kadenz war fix bei 10 s und über das Wayfinder-UI /
+`FIREFLY_SOURCES` nicht steuerbar. **Firefly-Antwort: ADR 0029** — `adsb_opensky`
+trägt optionales `poll_interval_secs` (Kontrakt v1.4.0, additiv; nur `> 0`
+überschreibt, sonst Default 10 s). **Wayfinder-Folge (umgesetzt, gleicher Batch):**
+`store.Source.PollIntervalSecs` + Schreib-Rand-Validierung (nur `adsb_opensky`,
+5..3600 s), Docker-Backend-Passthrough nach `FIREFLY_SOURCES`, UI-Feld (nur ADS-B)
++ Infobox. **Offen bleibt (separater Härtungsschritt):** echter exponentieller
+**429-Backoff** in Firefly statt fixem Intervall (4-Punkte-Liste #2 — noch **kein**
+`from-wayfinder`-Issue angelegt).
+
+---
+
 ## Stand nach Fireflys ADR 0014 (Pivot Lernprojekt → Produktion, CAT062-Konsum)
 
 Die ursprünglichen Issues #6–#10 wurden formuliert, als Wayfinder noch gegen den

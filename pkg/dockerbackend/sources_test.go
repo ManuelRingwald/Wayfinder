@@ -109,6 +109,27 @@ func TestFireflySourcesEnvRadarAndAnonymous(t *testing.T) {
 	}
 }
 
+// poll_interval_secs is passed through into the FIREFLY_SOURCES JSON for an
+// adsb_opensky source (contract v1.4.0 / ADR 0029); a source without it omits the
+// field so Firefly keeps its default.
+func TestFireflySourcesEnvPollIntervalPassthrough(t *testing.T) {
+	sources := store.SourceConfig{
+		{Type: store.SourceADSBOpenSky, BBox: &store.BBox{MinLat: 1, MinLon: 2, MaxLat: 3, MaxLon: 4}, PollIntervalSecs: ptrInt(30)},
+		{Type: store.SourceADSBOpenSky, BBox: &store.BBox{MinLat: 1, MinLon: 2, MaxLat: 3, MaxLon: 4}},
+	}
+	js, _, _ := fireflySourcesEnv(sources, nil)
+	var got []map[string]any
+	if err := json.Unmarshal([]byte(js), &got); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if got[0]["poll_interval_secs"] != 30.0 {
+		t.Errorf("poll_interval_secs = %v, want 30", got[0]["poll_interval_secs"])
+	}
+	if _, has := got[1]["poll_interval_secs"]; has {
+		t.Error("source without poll interval must omit the field (Firefly default)")
+	}
+}
+
 // cred_env names and value envs are assigned by list position.
 func TestFireflySourcesEnvCredByIndex(t *testing.T) {
 	sources := store.SourceConfig{
