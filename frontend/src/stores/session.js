@@ -49,6 +49,11 @@ export const useSessionStore = defineStore('session', () => {
   const flMin = computed(() => identity.value?.fl_min ?? null)
   const flMax = computed(() => identity.value?.fl_max ?? null)
 
+  // icao mirrors the effective view's optional location indicator (whoami) so the
+  // ASD header can show which sector/FIR this picture belongs to (e.g. "EDGG·KTG").
+  // Null when unset — the header then omits it (display config, not track data).
+  const icao = computed(() => identity.value?.icao ?? null)
+
   // probe resolves the current session via the role-agnostic identity endpoint.
   // 200 → authed; anything else (401 etc.) → anon. A transition from authed → anon
   // marks the session as expired (for the visible "session expired" hint).
@@ -122,7 +127,7 @@ export const useSessionStore = defineStore('session', () => {
 
   return {
     identity, status, error, expired, subject, role, isAdmin,
-    features, hasFeature, sensorClasses, flMin, flMax,
+    features, hasFeature, sensorClasses, flMin, flMax, icao,
     probe, login, renewNow, startRenew, stopRenew, logout,
   }
 })

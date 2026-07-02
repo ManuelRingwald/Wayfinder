@@ -61,4 +61,12 @@ describe('validateView (parity with server pkg/adminapi.validateView)', () => {
     delete d.fl_max
     expect(validateView(d)).toEqual([])
   })
+
+  it('accepts a short ICAO label', () => {
+    expect(validateView({ ...valid(), icao: 'EDGG·KTG' })).toEqual([])
+  })
+
+  it('rejects an over-long ICAO label', () => {
+    expect(validateView({ ...valid(), icao: 'ABCDEFGHIJKLM' })).toContain('icao label too long')
+  })
 })

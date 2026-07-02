@@ -46,6 +46,10 @@
         @track-click="onTrackClick"
         @connection-change="onConnectionChange"
       />
+      <!-- Reskin 3a: top-centre header (ICAO location indicator + live UTC clock). -->
+      <div class="asd-header-overlay">
+        <AsdHeader />
+      </div>
       <!-- Account / logout: shows the logged-in principal and a logout action;
            admins also get a shortcut to the administration. -->
       <div class="account-overlay">
@@ -95,6 +99,7 @@ import { useAsdStore } from '@/stores/asd.js'
 import { useSessionStore } from '@/stores/session.js'
 import NavigationRail from '@/components/NavigationRail.vue'
 import MapCanvas from '@/components/MapCanvas.vue'
+import AsdHeader from '@/components/AsdHeader.vue'
 import TrackDetailPanel from '@/components/TrackDetailPanel.vue'
 import FeedStatusChip from '@/components/FeedStatusChip.vue'
 import LoginCard from '@/components/LoginCard.vue'
@@ -193,6 +198,16 @@ function onTrackClick(track) {
   top: 12px;
   right: 12px;
   z-index: 600;
+}
+
+/* Reskin 3a: top-centre header (ICAO + UTC clock), floated over the scope. */
+.asd-header-overlay {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 600;
+  pointer-events: none;
 }
 
 .feed-status-overlay {

@@ -148,6 +148,24 @@
         <strong>Fail-open:</strong> Tracks ohne gemeldete Flugfläche (keine
         Mode-C-Höhe) werden immer zugestellt.
       </p>
+      <div class="d-flex flex-wrap ga-3 mt-3">
+        <v-text-field
+          v-model="form.icao"
+          label="ICAO-Kürzel (Kopfzeile)"
+          placeholder="z. B. EDGG·KTG"
+          variant="outlined"
+          density="compact"
+          hide-details
+          clearable
+          maxlength="12"
+          style="max-width: 220px"
+        />
+      </div>
+      <p class="text-caption text-medium-emphasis mt-2">
+        <strong>ICAO-Kürzel</strong> erscheint in der ASD-Kopfzeile (Sektor/FIR,
+        z. B. <code>EDGG·KTG</code>). Reine Anzeige — nicht im CAT062-Strom
+        enthalten. Leer = keine Anzeige.
+      </p>
       <div class="mt-3">
         <v-btn color="primary" :loading="busy" @click="save">Ansicht speichern</v-btn>
       </div>
@@ -295,6 +313,7 @@ const form = reactive({
   zoom: 8,
   flMin: null,
   flMax: null,
+  icao: '',
 })
 
 async function loadView() {
@@ -305,6 +324,7 @@ async function loadView() {
     form.zoom = r.data.zoom
     form.flMin = r.data.fl_min ?? null
     form.flMax = r.data.fl_max ?? null
+    form.icao = r.data.icao ?? ''
     if (r.data.aoi) {
       const derived = bboxToRadius(r.data.aoi)
       form.radiusNm = derived ? round(derived.radiusNm) : 0
@@ -328,6 +348,7 @@ async function save() {
   }
   if (form.flMin !== null && form.flMin !== '') dto.fl_min = form.flMin
   if (form.flMax !== null && form.flMax !== '') dto.fl_max = form.flMax
+  if (form.icao && form.icao.trim()) dto.icao = form.icao.trim()
   await admin.saveTenantView(props.tenantId, dto)
   busy.value = false
 }
