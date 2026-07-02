@@ -190,6 +190,33 @@ pkg/aeronautical.Service
 Diese Daten sind entkoppelt vom Track-Pfad: ein OpenAIP-Ausfall beeinflusst
 weder die Track-Darstellung noch den Readiness-Status.
 
+### 2.5 Feed-Gesundheit — Colorcode-Referenz
+
+Der Feed-Ampelzustand (`pkg/health.FeedSnapshot.Color()`) kennt **drei Farben**.
+Die Farbe wird **im Backend** aus dem Heartbeat-/Sensor-/Track-Zustand berechnet
+und über `/api/admin/feeds/health` (Admin-Dashboard) sowie die `feed_status`-WS-
+Nachricht (ASD-Kopf-Chip) ausgeliefert. Das Admin-UI (`admin/feedHealth.js`,
+`describeFeedHealth`) schlüsselt **Rot** zusätzlich in zwei operativ
+unterschiedliche Unter-Zustände auf — die Farbe bleibt dabei rot, nur Label/
+Tooltip unterscheiden.
+
+| Farbe | Unter-Zustand | Bedingung (Snapshot-Felder) | Bedeutung / operativer Hinweis | Quelle |
+|-------|---------------|-----------------------------|--------------------------------|--------|
+| 🟢 **grün** | OK · Verkehr | `ever_seen && !stale`, `track_count_recent > 0` | Feed lebt, Tracks fließen. | CAT065-Heartbeat frisch |
+| 🟢 **grün** | OK · leerer Himmel | `ever_seen && !stale`, `track_count_recent == 0` | Feed lebt, aber **kein** Verkehr — **kein Fehler** (leerer Himmel ≠ toter Feed). | CAT065 |
+| 🟡 **gelb** | degradiert | `ever_seen && !stale`, `0 < sensors_active < sensors_total` | Heartbeat gesund, aber **Sensor-Teilausfall** — mindestens ein Radar/Quelle ist still, die Fusion ist geschwächt. | CAT063 (ADR 0022) |
+| 🔴 **rot** | **nie gestartet** | `!ever_seen` | **Nie** ein Heartbeat empfangen — der Feed ist nie angelaufen. Prüfen: Feed einem Mandanten **zugewiesen**? Orchestrator hat die Firefly-Instanz **gespawnt**? Quelle liefert? | kein CAT065 |
+| 🔴 **rot** | **abgerissen** | `ever_seen && stale` | Heartbeat war da, ist seit `last_heartbeat_ago_s` s **weg** — der Feed lief und riss ab. Prüfen: Firefly-Instanz gestoppt/abgestürzt? Netz/Multicast unterbrochen? | Heartbeat älter als `WAYFINDER_FEED_STALE_TIMEOUT` |
+| ⚪ **default** | unbekannt | kein Snapshot | Für diesen Feed liegt (noch) keine Health-Meldung vor. | — |
+
+> **Granularität:** Die Ampel-**Farbe** ist bewusst grob (drei Zustände, „worst-
+> wins"-Aggregation im ASD-Kopf, damit ein gesunder Feed nie einen toten maskiert).
+> Der **Rot-Split** (nie gestartet vs. abgerissen) existiert nur in der Admin-
+> Ansicht als Label/Tooltip, weil er dort die Fehlersuche lenkt: „nie gestartet"
+> zeigt auf Zuweisung/Orchestrierung, „abgerissen" auf einen Ausfall zur Laufzeit.
+> „leerer Himmel" bleibt grün — die Unterscheidung „lebt, aber leer" vs. „tot" ist
+> genau der Grund für den CAT065-Heartbeat (ADR 0018).
+
 ---
 
 ## 3. Ports und Endpunkte

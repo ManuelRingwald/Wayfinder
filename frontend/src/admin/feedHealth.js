@@ -1,0 +1,59 @@
+// Shared feed-health presentation (AP4 + status granularity).
+//
+// The backend computes the traffic-light `color` (green/yellow/red) in
+// pkg/health `FeedSnapshot.Color()`; this module maps that colour to a Vuetify
+// colour plus a human `label`/`title` for the admin feed chips. It is used by
+// AdminFeeds, AdminTenantDetail and AdminTenants so the three chips read
+// identically (previously each duplicated the mapping).
+//
+// The red case is split into two operator-distinct sub-states using raw
+// snapshot fields the DTO already carries (no backend/wire change):
+//   - `!ever_seen`         → "nie gestartet": no CAT065 heartbeat has *ever*
+//     arrived. Points at assignment / orchestrator spawn / source (the feed was
+//     never live) — not at a feed that died.
+//   - `ever_seen && stale` → "abgerissen": a heartbeat was seen but has gone
+//     stale (Firefly stopped / network). `last_heartbeat_ago_s` dates it.
+// Presentation only — no colour is recomputed here.
+
+const VUETIFY_COLOR = { green: 'success', yellow: 'warning', red: 'error' }
+
+// describeFeedHealth maps a per-feed health snapshot (the admin `feedsHealth`
+// DTO entry) to { color, label, title }. A missing snapshot (feed not yet
+// reported) is "unbekannt".
+export function describeFeedHealth(h) {
+  if (!h) {
+    return { color: 'default', label: 'unbekannt', title: 'Gesundheit unbekannt' }
+  }
+  const color = VUETIFY_COLOR[h.color] ?? 'default'
+
+  if (h.color === 'green') {
+    // Healthy heartbeat: distinguish traffic from an (equally healthy) empty
+    // sky, and append the sensor share when CAT063 is present.
+    const parts = [h.track_count_recent > 0 ? `${h.track_count_recent} Tracks` : 'leerer Himmel']
+    if (h.sensors_total > 0) parts.push(`${h.sensors_active}/${h.sensors_total} Radare`)
+    return { color, label: 'OK', title: `OK · ${parts.join(' · ')}` }
+  }
+
+  if (h.color === 'yellow') {
+    return {
+      color,
+      label: 'degradiert',
+      title: h.sensors_total > 0
+        ? `Sensor-Teilausfall: ${h.sensors_active} von ${h.sensors_total} Radaren aktiv`
+        : 'Sensor-Teilausfall',
+    }
+  }
+
+  // red — split "never started" from "went stale".
+  if (!h.ever_seen) {
+    return {
+      color,
+      label: 'nie gestartet',
+      title: 'Kein Heartbeat empfangen — Feed nie angelaufen (Zuweisung/Spawn/Quelle prüfen)',
+    }
+  }
+  const ago = Number.isFinite(h.last_heartbeat_ago_s) && h.last_heartbeat_ago_s >= 0
+    ? ` — seit ${Math.round(h.last_heartbeat_ago_s)} s kein CAT065`
+    : ''
+  return { color, label: 'abgerissen', title: `Heartbeat abgerissen${ago}` }
+}

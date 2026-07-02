@@ -354,6 +354,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useAdminStore } from '@/stores/admin.js'
 import { validateCredential, combineCredential } from '@/admin/credential.js'
 import { radiusNmToBbox, bboxToRadius } from '@/admin/geo.js'
+import { describeFeedHealth } from '@/admin/feedHealth.js'
 
 const admin = useAdminStore()
 const busy = ref(false)
@@ -698,34 +699,19 @@ async function submitDelete() {
   }
 }
 
-// Health chip (AP4): map the per-feed snapshot colour to a Vuetify colour and a
-// human title; a feed with no snapshot yet shows a neutral "unbekannt".
-const HEALTH_COLORS = { green: 'success', yellow: 'warning', red: 'error' }
-
+// Health chip (AP4): the per-feed colour/label/title come from the shared
+// describeFeedHealth helper so all three admin chips read identically; red is
+// split into "nie gestartet" (!ever_seen) vs "abgerissen" (stale).
 function feedColor(feedId) {
-  return HEALTH_COLORS[admin.feedsHealth[feedId]?.color] ?? 'default'
+  return describeFeedHealth(admin.feedsHealth[feedId]).color
 }
 
 function feedLabel(feedId) {
-  const c = admin.feedsHealth[feedId]?.color
-  if (c === 'green') return 'OK'
-  if (c === 'yellow') return 'degradiert'
-  if (c === 'red') return 'inaktiv'
-  return 'unbekannt'
+  return describeFeedHealth(admin.feedsHealth[feedId]).label
 }
 
 function feedTitle(feedId) {
-  const h = admin.feedsHealth[feedId]
-  if (!h) return 'Gesundheit unbekannt'
-  if (h.color === 'green') {
-    return h.track_count_recent > 0 ? `OK · ${h.track_count_recent} Tracks` : 'OK · leerer Himmel'
-  }
-  if (h.color === 'yellow') {
-    return h.sensors_total > 0
-      ? `Sensor-Teilausfall: ${h.sensors_active} von ${h.sensors_total} Radaren aktiv`
-      : 'Sensor-Teilausfall'
-  }
-  return 'Feed inaktiv (kein Heartbeat)'
+  return describeFeedHealth(admin.feedsHealth[feedId]).title
 }
 
 onMounted(refresh)

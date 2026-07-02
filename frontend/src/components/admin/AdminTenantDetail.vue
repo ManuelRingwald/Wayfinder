@@ -284,6 +284,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useAdminStore } from '@/stores/admin.js'
 import { radiusNmToBbox, bboxToRadius } from '@/admin/geo.js'
+import { describeFeedHealth } from '@/admin/feedHealth.js'
 import AdminProvisioning from '@/components/admin/AdminProvisioning.vue'
 import AdminUsers from '@/components/admin/AdminUsers.vue'
 
@@ -429,26 +430,14 @@ async function onFeedsChanged() {
   await Promise.all([admin.loadOverview(), admin.loadFeedsHealth()])
 }
 
-const HEALTH_COLORS = { green: 'success', yellow: 'warning', red: 'error' }
-
+// Feed-health chip colour/title from the shared helper (AP4 + status
+// granularity): red splits into "nie gestartet" vs "abgerissen".
 function feedColor(feedId) {
-  return HEALTH_COLORS[admin.feedsHealth[feedId]?.color] ?? 'default'
+  return describeFeedHealth(admin.feedsHealth[feedId]).color
 }
 
 function feedTitle(feedId) {
-  const h = admin.feedsHealth[feedId]
-  if (!h) return 'Gesundheit unbekannt'
-  if (h.color === 'green') {
-    return h.track_count_recent > 0
-      ? `OK · ${h.track_count_recent} Tracks`
-      : 'OK · leerer Himmel'
-  }
-  if (h.color === 'yellow') {
-    return h.sensors_total > 0
-      ? `Sensor-Teilausfall: ${h.sensors_active} von ${h.sensors_total} Radaren aktiv`
-      : 'Sensor-Teilausfall'
-  }
-  return 'Feed inaktiv (kein Heartbeat)'
+  return describeFeedHealth(admin.feedsHealth[feedId]).title
 }
 
 onMounted(async () => {
