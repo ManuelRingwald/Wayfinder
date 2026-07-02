@@ -132,12 +132,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) readLoop(conn *websocket.Conn, client *broadcast.Client) {
 	defer func() {
 		h.broadcaster.UnregisterClient(client)
-		conn.Close()
+		_ = conn.Close()
 	}()
 
-	conn.SetReadDeadline(time.Now().Add(pongWait))
+	_ = conn.SetReadDeadline(time.Now().Add(pongWait))
 	conn.SetPongHandler(func(string) error {
-		conn.SetReadDeadline(time.Now().Add(pongWait))
+		_ = conn.SetReadDeadline(time.Now().Add(pongWait))
 		return nil
 	})
 
@@ -159,16 +159,16 @@ func (h *Handler) writeLoop(conn *websocket.Conn, sendChan <-chan broadcast.Mess
 	ticker := time.NewTicker(pingInterval)
 	defer func() {
 		ticker.Stop()
-		conn.Close()
+		_ = conn.Close()
 	}()
 
 	for {
 		select {
 		case msg, ok := <-sendChan:
-			conn.SetWriteDeadline(time.Now().Add(writeWait))
+			_ = conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if !ok {
 				// Broadcaster has closed the channel.
-				conn.WriteMessage(websocket.CloseMessage, []byte{})
+				_ = conn.WriteMessage(websocket.CloseMessage, []byte{})
 				return
 			}
 
@@ -178,7 +178,7 @@ func (h *Handler) writeLoop(conn *websocket.Conn, sendChan <-chan broadcast.Mess
 			}
 
 		case <-ticker.C:
-			conn.SetWriteDeadline(time.Now().Add(writeWait))
+			_ = conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := conn.WriteMessage(websocket.PingMessage, []byte{}); err != nil {
 				return
 			}

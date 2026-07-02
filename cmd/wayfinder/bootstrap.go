@@ -78,9 +78,9 @@ func runBootstrap(ctx context.Context, pool *pgxpool.Pool, p bootstrapParams, ou
 		if err := creds.Set(ctx, u.ID, hash); err != nil {
 			return fmt.Errorf("set credential: %w", err)
 		}
-		fmt.Fprintf(out, "set builtin password for %q\n", u.Subject)
+		_, _ = fmt.Fprintf(out, "set builtin password for %q\n", u.Subject)
 	} else {
-		fmt.Fprintf(out, "no -password given: account has no builtin credential "+
+		_, _ = fmt.Fprintf(out, "no -password given: account has no builtin credential "+
 			"(fine for proxy mode; for builtin mode re-run with -password or WAYFINDER_BOOTSTRAP_PASSWORD)\n")
 	}
 	return nil
@@ -102,7 +102,7 @@ func provisionAccount(ctx context.Context, tenants *store.TenantRepo, users *sto
 			if u, err = users.CreateAdmin(ctx, p.Subject, email); err != nil {
 				return store.User{}, fmt.Errorf("create admin: %w", err)
 			}
-			fmt.Fprintf(out, "created admin %q (id=%d)\n", u.Subject, u.ID)
+			_, _ = fmt.Fprintf(out, "created admin %q (id=%d)\n", u.Subject, u.ID)
 			return u, nil
 		case err != nil:
 			return store.User{}, fmt.Errorf("look up account: %w", err)
@@ -110,7 +110,7 @@ func provisionAccount(ctx context.Context, tenants *store.TenantRepo, users *sto
 			if u.Role != store.RoleAdmin {
 				return store.User{}, fmt.Errorf("subject %q already exists as a tenant user; refusing to convert to admin", p.Subject)
 			}
-			fmt.Fprintf(out, "admin %q already exists (id=%d)\n", u.Subject, u.ID)
+			_, _ = fmt.Fprintf(out, "admin %q already exists (id=%d)\n", u.Subject, u.ID)
 			return u, nil
 		}
 	}
@@ -126,11 +126,11 @@ func provisionAccount(ctx context.Context, tenants *store.TenantRepo, users *sto
 		if t, err = tenants.Create(ctx, p.TenantSlug, name); err != nil {
 			return store.User{}, fmt.Errorf("create tenant: %w", err)
 		}
-		fmt.Fprintf(out, "created tenant %q (id=%d)\n", t.Slug, t.ID)
+		_, _ = fmt.Fprintf(out, "created tenant %q (id=%d)\n", t.Slug, t.ID)
 	case err != nil:
 		return store.User{}, fmt.Errorf("look up tenant: %w", err)
 	default:
-		fmt.Fprintf(out, "tenant %q already exists (id=%d)\n", t.Slug, t.ID)
+		_, _ = fmt.Fprintf(out, "tenant %q already exists (id=%d)\n", t.Slug, t.ID)
 	}
 
 	u, err := users.GetBySubject(ctx, p.Subject)
@@ -139,7 +139,7 @@ func provisionAccount(ctx context.Context, tenants *store.TenantRepo, users *sto
 		if u, err = users.Create(ctx, t.ID, p.Subject, email); err != nil {
 			return store.User{}, fmt.Errorf("create user: %w", err)
 		}
-		fmt.Fprintf(out, "created user %q (id=%d)\n", u.Subject, u.ID)
+		_, _ = fmt.Fprintf(out, "created user %q (id=%d)\n", u.Subject, u.ID)
 		return u, nil
 	case err != nil:
 		return store.User{}, fmt.Errorf("look up account: %w", err)
@@ -150,7 +150,7 @@ func provisionAccount(ctx context.Context, tenants *store.TenantRepo, users *sto
 		if u.TenantID != t.ID {
 			return store.User{}, fmt.Errorf("user %q already exists under a different tenant (id=%d); refusing to re-home", p.Subject, u.TenantID)
 		}
-		fmt.Fprintf(out, "user %q already exists (id=%d)\n", u.Subject, u.ID)
+		_, _ = fmt.Fprintf(out, "user %q already exists (id=%d)\n", u.Subject, u.ID)
 		return u, nil
 	}
 }

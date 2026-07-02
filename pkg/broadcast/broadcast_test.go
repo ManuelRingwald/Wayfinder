@@ -23,7 +23,7 @@ func TestBroadcasterBasic(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 
-	go b.Run(ctx)
+	go func() { _ = b.Run(ctx) }()
 
 	// Give broadcaster time to start.
 	time.Sleep(10 * time.Millisecond)
@@ -78,7 +78,7 @@ func TestBroadcasterMultipleClients(t *testing.T) {
 	// Run broadcaster.
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
-	go b.Run(ctx)
+	go func() { _ = b.Run(ctx) }()
 
 	time.Sleep(10 * time.Millisecond)
 
@@ -112,7 +112,7 @@ func TestBroadcasterSend(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
-	go b.Run(ctx)
+	go func() { _ = b.Run(ctx) }()
 
 	time.Sleep(10 * time.Millisecond)
 
@@ -229,7 +229,7 @@ func TestBroadcastFeedIsolation(t *testing.T) {
 	b := New(slog.New(slog.NewTextHandler(io.Discard, nil)))
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	go b.Run(ctx)
+	go func() { _ = b.Run(ctx) }()
 
 	chanA := make(chan Message, 10)
 	chanB := make(chan Message, 10)
@@ -324,7 +324,7 @@ func TestBroadcastViewScoping(t *testing.T) {
 	b := New(slog.New(slog.NewTextHandler(io.Discard, nil)))
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	go b.Run(ctx)
+	go func() { _ = b.Run(ctx) }()
 
 	viewChan := make(chan Message, 10)
 	allChan := make(chan Message, 10)
@@ -366,7 +366,7 @@ func TestBroadcasterTenantMetrics(t *testing.T) {
 	b := New(slog.New(slog.NewTextHandler(io.Discard, nil)))
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	go b.Run(ctx)
+	go func() { _ = b.Run(ctx) }()
 
 	s1 := NewScope([]int64{1})
 	s1.TenantID = 1
@@ -428,7 +428,7 @@ func TestBroadcastEvictsClientWithFullSendChannel(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
-	go b.Run(ctx)
+	go func() { _ = b.Run(ctx) }()
 
 	// Unbuffered channel that nobody reads from, so the first broadcast fills it.
 	sendChan := make(chan Message)

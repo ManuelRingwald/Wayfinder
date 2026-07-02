@@ -55,7 +55,7 @@ func autoSeedDefaultAdmin(ctx context.Context, pool *pgxpool.Pool, out io.Writer
 		if t, cerr := tenants.Create(ctx, defaultAdminTenantSlug, defaultAdminTenantName); cerr != nil {
 			return fmt.Errorf("auto-seed: create default tenant: %w", cerr)
 		} else {
-			fmt.Fprintf(out, "auto-seeded default tenant %q (id=%d)\n", t.Slug, t.ID)
+			_, _ = fmt.Fprintf(out, "auto-seeded default tenant %q (id=%d)\n", t.Slug, t.ID)
 		}
 	} else if err != nil {
 		return fmt.Errorf("auto-seed: look up default tenant: %w", err)
@@ -80,6 +80,6 @@ func autoSeedDefaultAdmin(ctx context.Context, pool *pgxpool.Pool, out io.Writer
 	if err := users.SetMustChangePassword(ctx, u.ID, true); err != nil {
 		return fmt.Errorf("auto-seed: set must_change_password: %w", err)
 	}
-	fmt.Fprintf(out, "auto-seeded default admin %q (must change password at first login)\n", defaultAdminSubject)
+	_, _ = fmt.Fprintf(out, "auto-seeded default admin %q (must change password at first login)\n", defaultAdminSubject)
 	return nil
 }

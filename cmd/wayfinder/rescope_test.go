@@ -48,7 +48,7 @@ func TestRescopeTenantAppliesLive(t *testing.T) {
 	b := broadcast.New(discardLogger())
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	go b.Run(ctx)
+	go func() { _ = b.Run(ctx) }()
 
 	sendCh := make(chan broadcast.Message, 64)
 	s0, _, _, err := resolveScope(ctx, fakeFeedLister{feeds: []int64{1}}, noView, 7, 1)

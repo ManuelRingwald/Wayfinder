@@ -14,7 +14,7 @@ func get(t *testing.T, h http.Handler, target string) (int, string, string) {
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, target, nil))
 	res := rr.Result()
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 	body, _ := io.ReadAll(res.Body)
 	return res.StatusCode, res.Header.Get("Content-Type"), string(body)
 }
