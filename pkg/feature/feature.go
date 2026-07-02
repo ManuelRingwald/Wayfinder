@@ -97,7 +97,7 @@ func (s *Service) Effective(ctx context.Context, tenantID int64) (map[Key]bool, 
 // Set enables or disables a feature for a tenant. It rejects keys outside the
 // catalog with ErrUnknownFeature, so the database never accumulates flags that
 // no code reads — keeping the catalog the single source of truth for "which
-// features exist". Writing is a super_admin-only action at the admin API edge.
+// features exist". Writing is an admin-only action at the admin API edge.
 func (s *Service) Set(ctx context.Context, tenantID int64, key Key, enabled bool) error {
 	if !IsKnown(key) {
 		return ErrUnknownFeature
