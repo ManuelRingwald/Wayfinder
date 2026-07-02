@@ -241,7 +241,10 @@ function onTrackClick(track) {
 .scope-legend-overlay {
   position: absolute;
   bottom: 12px;
-  left: 12px;
+  /* Clear the 56px navigation rail (left edge) + a 12px gap, so the legend is
+     not painted over by the opaque fixed drawer. v-main spans full width
+     (padding:0), so this offset is measured from the viewport left. */
+  left: 68px;
   z-index: 600;
   pointer-events: none;
 }

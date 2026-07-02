@@ -296,9 +296,9 @@ function onRangeRingChange() {
 // WF2-40 + Issues #107/#119: track-symbol provenance legend, filtered to the
 // sensor classes the tenant's feeds can actually produce (session.sensorClasses,
 // the union across subscribed feeds). Glyphs mirror the map icons drawn in
-// layers.js — letter glyphs A (ADS-B) and F (FLARM, #119), ■ SSR/Mode S, ○
-// primary/PSR; colour is omitted on purpose — it encodes track state, not
-// provenance (see caption). Fallback: when no sensor classes are known yet
+// layers.js — ◆ ADS-B, ■ SSR/Mode S, ● primary/PSR (geometric marks per the
+// design legend), F for FLARM (#119); colour is omitted on purpose — it encodes
+// track state, not provenance (see caption). Fallback: when no sensor classes are known yet
 // (still loading / admin viewer / no subscribed feed) the full legend is shown
 // rather than an empty box.
 // #125: the "Kombiniert" (K) entry is appended by filterProvenanceLegend when ≥2

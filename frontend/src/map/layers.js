@@ -145,44 +145,74 @@ export function addAeronauticalIcons(map) {
 // antialiasing pitfalls of tinting a single SDF icon.
 const TRACK_ICON_STROKE = '#000000' // dark edge for legibility on both bases
 
-// makeTrackIcon paints one provenance symbol in the given state colour. ADS-B
-// and FLARM are letter glyphs ('A' / 'F', #119); SSR is a filled square
-// (cooperative reply, carries identity); PSR is an open ring (raw skin paint,
-// no ID) so the data-poorest source reads as "hollow" at a glance.
-function makeTrackIcon(shape, color) {
+// makeTrackIcon paints one provenance symbol in the given state colour. Shape
+// encodes the surveillance source per the design legend: ADS-B a diamond ◆, SSR
+// a filled square ■ (cooperative reply, carries identity), PSR a filled circle ●
+// (raw skin paint, no ID). FLARM/combined stay letter glyphs (F / K) — sources
+// beyond the 3-way design legend that Wayfinder still receives. When `hollow`
+// (the coasting state), the symbol is stroked as an OUTLINE with no fill, so a
+// coasting track is readable from its SHAPE, not the colour alone (matches the
+// design legend "Coasting (hohl)").
+function makeTrackIcon(shape, color, hollow) {
   return makeIconImage((ctx, s) => {
     const c = s / 2
     ctx.lineJoin = 'round'
+    // strokeOrFill paints the current path either hollow (coloured outline, no
+    // fill — the coasting look) or solid (colour fill + dark edge for legibility).
+    const strokeOrFill = () => {
+      if (hollow) {
+        ctx.strokeStyle = color
+        ctx.lineWidth = 2.5
+        ctx.stroke()
+      } else {
+        ctx.fillStyle = color
+        ctx.fill()
+        ctx.strokeStyle = TRACK_ICON_STROKE
+        ctx.lineWidth = 1.5
+        ctx.stroke()
+      }
+    }
     if (shape === 'psr') {
-      ctx.strokeStyle = color
-      ctx.lineWidth = 2.5
       ctx.beginPath()
       ctx.arc(c, c, 6, 0, 2 * Math.PI)
-      ctx.stroke()
+      strokeOrFill()
       return
     }
     if (shape === 'ssr') {
       ctx.beginPath()
       ctx.rect(c - 6, c - 6, 12, 12)
-      ctx.fillStyle = color
-      ctx.fill()
-      ctx.strokeStyle = TRACK_ICON_STROKE
-      ctx.lineWidth = 1.5
-      ctx.stroke()
+      strokeOrFill()
       return
     }
-    // adsb / flarm / combined: letter glyph in the state colour with a dark
-    // outline — the source is readable at a glance (legend and symbol use the
-    // same letter: A = ADS-B #119, F = FLARM, K = kombiniert/Mehr-Sensor #125).
-    const letter = { adsb: 'A', flarm: 'F', combined: 'K' }[shape] ?? '?'
+    if (shape === 'adsb') {
+      // Diamond (rotated square): ADS-B per the design legend.
+      ctx.beginPath()
+      ctx.moveTo(c, c - 7)
+      ctx.lineTo(c + 7, c)
+      ctx.lineTo(c, c + 7)
+      ctx.lineTo(c - 7, c)
+      ctx.closePath()
+      strokeOrFill()
+      return
+    }
+    // flarm / combined: letter glyph in the state colour (F = FLARM, K =
+    // kombiniert/Mehr-Sensor #125) — sources outside the 3-way design legend.
+    // Coasting => outline the letter (no fill) to match the hollow convention.
+    const letter = { flarm: 'F', combined: 'K' }[shape] ?? '?'
     ctx.font = 'bold 16px sans-serif'
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.strokeStyle = TRACK_ICON_STROKE
-    ctx.lineWidth = 3
-    ctx.strokeText(letter, c, c + 1)
-    ctx.fillStyle = color
-    ctx.fillText(letter, c, c + 1)
+    if (hollow) {
+      ctx.strokeStyle = color
+      ctx.lineWidth = 2
+      ctx.strokeText(letter, c, c + 1)
+    } else {
+      ctx.strokeStyle = TRACK_ICON_STROKE
+      ctx.lineWidth = 3
+      ctx.strokeText(letter, c, c + 1)
+      ctx.fillStyle = color
+      ctx.fillText(letter, c, c + 1)
+    }
   })
 }
 
@@ -194,7 +224,8 @@ export function addTrackIcons(map) {
     for (const [stateKey, color] of Object.entries(TRACK_STATE_COLORS)) {
       const id = `wf-trk-${shape}-${stateKey}`
       if (!map.hasImage(id)) {
-        map.addImage(id, makeTrackIcon(shape, color), { pixelRatio: 2 })
+        // Coasting is drawn hollow (outline) so the state reads from the shape.
+        map.addImage(id, makeTrackIcon(shape, color, stateKey === 'coasting'), { pixelRatio: 2 })
       }
     }
   }
@@ -363,12 +394,13 @@ export function addTracksLayer(map) {
       'icon-ignore-placement': true,
     },
     paint: {
-      // Opacity priority unchanged: fade > FL filter > coasting > normal.
+      // Opacity priority: fade > FL filter > normal. Coasting is no longer dimmed
+      // here — the hollow symbol (makeTrackIcon) now carries that state, so a
+      // coasting track stays at full opacity and reads crisply.
       'icon-opacity': [
         'case',
         ['has', 'fade_opacity'], ['get', 'fade_opacity'],
         ['has', 'fl_opacity'],   ['get', 'fl_opacity'],
-        ['get', 'coasting'], 0.5,
         1.0,
       ],
     },

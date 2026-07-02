@@ -19,7 +19,10 @@
       </div>
       <div class="scope-legend__section wf-overline">Farbe · Status</div>
       <div v-for="s in states" :key="s.key" class="scope-legend__row">
-        <span class="scope-legend__dot" :style="{ background: s.color }" />
+        <span
+          class="scope-legend__dot"
+          :style="s.hollow ? { border: `2px solid ${s.color}`, background: 'transparent' } : { background: s.color }"
+        />
         <span class="scope-legend__label">{{ s.label }}</span>
       </div>
     </div>
@@ -41,9 +44,11 @@ const provenance = computed(() => filterProvenanceLegend(session.sensorClasses))
 // Colour = the track lifecycle state the map paints (precedence:
 // filtered > coasting > confirmed > tentative). Only rendered states are
 // listed — no target-type colours (no wire data) and no alarm rows yet.
+// Coasting is shown as a hollow ring to mirror the map, where a coasting track
+// is drawn as an outline (hollow) rather than a filled symbol.
 const states = [
   { key: 'confirmed', label: 'Bestätigt', color: TRACK_STATE_COLORS.confirmed },
-  { key: 'coasting', label: 'Coasting', color: TRACK_STATE_COLORS.coasting },
+  { key: 'coasting', label: 'Coasting (hohl)', color: TRACK_STATE_COLORS.coasting, hollow: true },
   { key: 'tentative', label: 'Tentativ', color: TRACK_STATE_COLORS.tentative },
   { key: 'filtered', label: 'Ausgefiltert (FL)', color: TRACK_STATE_COLORS.filtered },
 ]
@@ -104,6 +109,7 @@ const states = [
   width: 10px;
   height: 10px;
   border-radius: 50%;
+  box-sizing: border-box; /* keep hollow (bordered) and filled dots the same size */
   flex-shrink: 0;
 }
 .scope-legend__label {

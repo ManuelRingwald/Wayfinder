@@ -22,7 +22,7 @@ describe('filterProvenanceLegend (shared sidebar + scope legend)', () => {
 
   it('narrows to the entries a tenant\'s feeds can produce and appends K when ≥2 (#125)', () => {
     const got = filterProvenanceLegend(['ADS-B', 'PSR'])
-    expect(got.map((e) => e.glyph)).toEqual(['A', '○', 'K'])
+    expect(got.map((e) => e.glyph)).toEqual(['◆', '●', 'K'])
   })
 
   it('maps Mode S / MLAT classes to the SSR entry (single source → no K)', () => {
