@@ -83,6 +83,15 @@ type Source struct {
 	SAC     *int       `json:"sac,omitempty"`
 	SIC     *int       `json:"sic,omitempty"`
 	CredRef *string    `json:"cred_ref,omitempty"`
+	// Radar location (radar_asterix only, Firefly contract v1.3.0 / #91): CAT048
+	// is polar *relative to the radar* and does not carry the site, so Firefly
+	// needs Lat/Lon (WGS84 degrees, required) to lift polar plots into the
+	// tracking frame. HeightM (metres above the WGS84 ellipsoid, default 0) and
+	// Listen (UDP endpoint "group:port" for the ASTERIX input) are optional.
+	Lat     *float64 `json:"lat,omitempty"`
+	Lon     *float64 `json:"lon,omitempty"`
+	HeightM *float64 `json:"height_m,omitempty"`
+	Listen  string   `json:"listen,omitempty"`
 }
 
 // SourceConfig is the ordered list of a feed's live inputs.
@@ -139,6 +148,9 @@ func (s Source) validate(idx int) error {
 		if s.SAC != nil || s.SIC != nil {
 			return &InvalidSourceError{Index: idx, Reason: fmt.Sprintf("%s has no sensor identity (sac/sic not allowed)", s.Type)}
 		}
+		if s.Lat != nil || s.Lon != nil || s.HeightM != nil || s.Listen != "" {
+			return &InvalidSourceError{Index: idx, Reason: fmt.Sprintf("%s has no radar location (lat/lon/height_m/listen not allowed)", s.Type)}
+		}
 		return nil
 	}
 
@@ -148,6 +160,18 @@ func (s Source) validate(idx int) error {
 	}
 	if *s.SAC < 0 || *s.SAC > 255 || *s.SIC < 0 || *s.SIC > 255 {
 		return &InvalidSourceError{Index: idx, Reason: "sac/sic must be in 0..255"}
+	}
+	// Radar location is required (contract v1.3.0, #91): CAT048 is polar and does
+	// not carry the site, so without it Firefly cannot geolocate the plots and
+	// the spawned instance would abort at startup — reject at the write boundary.
+	if s.Lat == nil || s.Lon == nil {
+		return &InvalidSourceError{Index: idx, Reason: "radar_asterix requires lat and lon (radar site)"}
+	}
+	if *s.Lat < -90 || *s.Lat > 90 {
+		return &InvalidSourceError{Index: idx, Reason: "radar lat out of range [-90,90]"}
+	}
+	if *s.Lon < -180 || *s.Lon > 180 {
+		return &InvalidSourceError{Index: idx, Reason: "radar lon out of range [-180,180]"}
 	}
 	return nil
 }

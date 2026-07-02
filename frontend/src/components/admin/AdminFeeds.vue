@@ -200,10 +200,28 @@
             </div>
           </div>
 
-          <!-- Real radar: SAC/SIC sensor identity -->
-          <div v-else class="d-flex ga-2">
-            <v-text-field v-model.number="s.sac" type="number" label="SAC (0–255)" density="compact" hide-details style="max-width: 150px" />
-            <v-text-field v-model.number="s.sic" type="number" label="SIC (0–255)" density="compact" hide-details style="max-width: 150px" />
+          <!-- Real radar (radar_asterix): SAC/SIC identity + site location. CAT048
+               is polar relative to the radar and does not carry the site, so Firefly
+               needs lat/lon (Pflicht, #91); Höhe/Listen-Endpoint sind optional. -->
+          <div v-else>
+            <div class="d-flex ga-2">
+              <v-text-field v-model.number="s.sac" type="number" label="SAC (0–255)" density="compact" hide-details style="max-width: 150px" />
+              <v-text-field v-model.number="s.sic" type="number" label="SIC (0–255)" density="compact" hide-details style="max-width: 150px" />
+            </div>
+            <div class="d-flex flex-wrap ga-2 mt-2">
+              <v-text-field v-model.number="s.lat" type="number" label="Radar Breite (°)" density="compact" hide-details style="max-width: 150px" />
+              <v-text-field v-model.number="s.lon" type="number" label="Radar Länge (°)" density="compact" hide-details style="max-width: 150px" />
+              <v-text-field v-model.number="s.height_m" type="number" label="Höhe (m, optional)" density="compact" hide-details style="max-width: 150px" />
+            </div>
+            <v-text-field
+              v-model="s.listen"
+              label="Listen-Endpoint (optional)"
+              hint="UDP group:port für den ASTERIX-Eingang, z. B. 239.255.0.48:8048"
+              persistent-hint
+              density="compact"
+              class="mt-2"
+              style="max-width: 320px"
+            />
           </div>
 
           <v-text-field
@@ -512,7 +530,11 @@ async function clearSecret(i) {
 // centre+radius (#109/#113; the query bbox is derived on submit); radar binds to
 // sac/sic. tenant_id backs the "adopt from tenant" dropdown (never sent).
 function blankSource(type = 'adsb_opensky') {
-  return { type, center_lat: null, center_lon: null, radius_nm: null, tenant_id: null, sac: null, sic: null, cred_ref: '' }
+  return {
+    type, center_lat: null, center_lon: null, radius_nm: null, tenant_id: null,
+    sac: null, sic: null, lat: null, lon: null, height_m: null, listen: '',
+    cred_ref: '',
+  }
 }
 
 // toFormSource maps a stored source (wire shape, still a bbox) into the form
@@ -529,6 +551,10 @@ function toFormSource(s) {
     tenant_id: null,
     sac: s.sac ?? null,
     sic: s.sic ?? null,
+    lat: s.lat ?? null,
+    lon: s.lon ?? null,
+    height_m: s.height_m ?? null,
+    listen: s.listen ?? '',
     cred_ref: s.cred_ref ?? '',
   }
 }
@@ -595,6 +621,12 @@ function buildSourcesPayload() {
       } else {
         out.sac = s.sac
         out.sic = s.sic
+        // #91: radar site — lat/lon required, height_m/listen optional.
+        if (s.lat != null && s.lat !== '') out.lat = s.lat
+        if (s.lon != null && s.lon !== '') out.lon = s.lon
+        if (s.height_m != null && s.height_m !== '') out.height_m = s.height_m
+        const listen = (s.listen || '').trim()
+        if (listen) out.listen = listen
       }
       const ref = (s.cred_ref || '').trim()
       if (ref) out.cred_ref = ref
