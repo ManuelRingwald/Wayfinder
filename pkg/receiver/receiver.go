@@ -142,7 +142,7 @@ func (r *Receiver) Run(ctx context.Context) error {
 		return fmt.Errorf("not listening; call Listen() first")
 	}
 
-	defer r.conn.Close()
+	defer func() { _ = r.conn.Close() }()
 
 	// Watchdog: unblock a read in progress as soon as the context is cancelled.
 	stopWatch := make(chan struct{})

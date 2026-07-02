@@ -36,11 +36,11 @@ func Handler(metrics ...Metric) http.HandlerFunc {
 		seen := make(map[string]bool, len(metrics))
 		for _, m := range metrics {
 			if !seen[m.name] {
-				fmt.Fprintf(w, "# HELP %s %s\n", m.name, m.help)
-				fmt.Fprintf(w, "# TYPE %s %s\n", m.name, m.typ)
+				_, _ = fmt.Fprintf(w, "# HELP %s %s\n", m.name, m.help)
+				_, _ = fmt.Fprintf(w, "# TYPE %s %s\n", m.name, m.typ)
 				seen[m.name] = true
 			}
-			fmt.Fprintf(w, "%s%s %v\n", m.name, renderLabels(m.labels), m.value)
+			_, _ = fmt.Fprintf(w, "%s%s %v\n", m.name, renderLabels(m.labels), m.value)
 		}
 	}
 }

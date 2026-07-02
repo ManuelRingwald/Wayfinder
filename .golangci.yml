@@ -1,14 +1,10 @@
 # golangci-lint configuration (v2 schema).
 #
-# Baseline: the "standard" linter set (govet, ineffassign, staticcheck, unused)
-# — the widely-agreed sensible default. errcheck is temporarily DISABLED because
-# the codebase currently has ~30 unchecked-error findings (mostly fire-and-forget
-# conn.Close / SetDeadline / w.Write); enabling it now would fail CI on legacy
-# code. Cleaning those up and re-enabling errcheck is tracked as a follow-up
-# issue — remove the disable line below once that lands.
+# The "standard" linter set (errcheck, govet, ineffassign, staticcheck, unused)
+# — the widely-agreed sensible default. errcheck (unchecked error returns) is
+# enabled: the ~30 legacy findings were cleaned up in #124 (real error paths
+# handled, deliberate fire-and-forget calls marked with `_ =`).
 version: "2"
 
 linters:
   default: standard
-  disable:
-    - errcheck

@@ -31,7 +31,7 @@ func TestReceiverLoopback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	defer recv.Close()
+	defer func() { _ = recv.Close() }()
 
 	// Listen on the ephemeral port.
 	if err := recv.Listen(); err != nil {
@@ -48,7 +48,7 @@ func TestReceiverConfigDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	defer recv.Close()
+	defer func() { _ = recv.Close() }()
 
 	if recv.group.String() != "239.255.0.62" {
 		t.Errorf("group: got %s, want 239.255.0.62", recv.group.String())
@@ -65,7 +65,7 @@ func TestReceiverDecodeErrorCountStartsAtZero(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	defer recv.Close()
+	defer func() { _ = recv.Close() }()
 
 	if got := recv.DecodeErrorCount(); got != 0 {
 		t.Errorf("DecodeErrorCount: got %d, want 0", got)
@@ -155,7 +155,7 @@ func TestReceiverRunWithoutListen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	defer recv.Close()
+	defer func() { _ = recv.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
@@ -175,7 +175,7 @@ func TestReceiverListenAndClose(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	defer recv.Close()
+	defer func() { _ = recv.Close() }()
 
 	// Listen may fail on systems without multicast support.
 	if err := recv.Listen(); err != nil {
@@ -197,7 +197,7 @@ func TestReceiverContextCancellation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	defer recv.Close()
+	defer func() { _ = recv.Close() }()
 
 	if err := recv.Listen(); err != nil {
 		t.Skipf("Listen failed: %v", err)

@@ -137,7 +137,7 @@ func TestBroadcasterIsolationProperty(t *testing.T) {
 	b := New(slog.New(slog.NewTextHandler(io.Discard, nil)))
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	go b.Run(ctx)
+	go func() { _ = b.Run(ctx) }()
 
 	const k = 8
 	type client struct {

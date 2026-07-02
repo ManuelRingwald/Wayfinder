@@ -130,7 +130,7 @@ func TestLoadConfigParsesLogLevel(t *testing.T) {
 }
 
 func TestLoadConfigLogLevelDefaultsToInfo(t *testing.T) {
-	os.Unsetenv("WAYFINDER_LOG_LEVEL")
+	_ = os.Unsetenv("WAYFINDER_LOG_LEVEL")
 
 	cfg := loadConfig()
 
@@ -242,7 +242,7 @@ func TestLoadConfigMapTheme(t *testing.T) {
 		{"nonsense", mapThemeDark}, // invalid → default
 	} {
 		if tc.env == "" {
-			os.Unsetenv("WAYFINDER_MAP_THEME")
+			_ = os.Unsetenv("WAYFINDER_MAP_THEME")
 		} else {
 			t.Setenv("WAYFINDER_MAP_THEME", tc.env)
 		}
@@ -268,7 +268,7 @@ map:
 openaip:
   radius_km: 56
 `)
-	f.Close()
+	_ = f.Close()
 
 	cfg := Config{
 		MapCenterLat:    50.0379,
@@ -306,7 +306,7 @@ func TestLoadYAMLFileInvalidYAMLIsNonFatal(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, _ = f.WriteString(":::invalid yaml:::")
-	f.Close()
+	_ = f.Close()
 
 	cfg := Config{MapCenterLat: 50.0}
 	loadYAMLFile(f.Name(), &cfg, slog.Default())
@@ -325,7 +325,7 @@ func TestLoadYAMLFilePartialOverride(t *testing.T) {
 openaip:
   radius_km: 100
 `)
-	f.Close()
+	_ = f.Close()
 
 	cfg := Config{MapCenterLat: 50.0379, MapCenterLon: 8.5622, MapZoom: 8, OpenAIPRadiusKM: 250}
 	loadYAMLFile(f.Name(), &cfg, slog.Default())
@@ -347,12 +347,12 @@ func TestLoadYAMLFileEnvVarWins(t *testing.T) {
 map:
   center_lat: 48.0
 `)
-	f.Close()
+	_ = f.Close()
 	t.Setenv("WAYFINDER_CONFIG_FILE", f.Name())
 	t.Setenv("WAYFINDER_MAP_CENTER_LAT", "51.5")
 	defer func() {
-		os.Unsetenv("WAYFINDER_CONFIG_FILE")
-		os.Unsetenv("WAYFINDER_MAP_CENTER_LAT")
+		_ = os.Unsetenv("WAYFINDER_CONFIG_FILE")
+		_ = os.Unsetenv("WAYFINDER_MAP_CENTER_LAT")
 	}()
 
 	cfg := loadConfig()
@@ -364,7 +364,7 @@ map:
 
 func TestLoadConfigSecurityEnvVarsDefaultEmpty(t *testing.T) {
 	for _, key := range []string{"WAYFINDER_ALLOWED_ORIGINS", "WAYFINDER_TLS_CERT", "WAYFINDER_TLS_KEY"} {
-		os.Unsetenv(key)
+		_ = os.Unsetenv(key)
 	}
 
 	cfg := loadConfig()
