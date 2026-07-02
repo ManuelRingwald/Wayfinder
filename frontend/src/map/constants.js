@@ -50,6 +50,13 @@ export const LABELS_LAYER_ID = 'track-labels-text'
 export const LEADER_LINES_SOURCE_ID = 'track-leader-lines'
 export const LEADER_LINES_LAYER_ID = 'track-leader-lines-lines'
 
+// ASD-007: selection halo — a cyan ring around the currently selected track
+// (design template symbolNode: r=11, stroke primary). One GeoJSON source holds
+// at most one Point (the selected track's live position); the layer draws the
+// ring under the symbols so the symbol stays crisp on top.
+export const SELECTION_SOURCE_ID = 'track-selection'
+export const SELECTION_LAYER_ID = 'track-selection-ring'
+
 // Paket 6: Sensor coverage ring overlay — radar range circles fetched from
 // /api/coverage/rings as a static GeoJSON FeatureCollection.
 export const COVERAGE_SOURCE_ID = 'coverage-rings'
@@ -78,7 +85,10 @@ export const LABEL_TEXT_SIZE = 11
 export const LABEL_SLOT_RADIUS_PX = 20
 export const LABEL_W_PX = 62
 export const LABEL_H_PX = 46
-export const SYMBOL_BBOX_R_PX = 8
+// Symbol footprint reserved so OTHER tracks' labels avoid this dot. Matches the
+// design template's deconfliction half-extent (symPad=9) and the enlarged track
+// symbols (up to 12 CSS px diameter after the ASD-007 resize).
+export const SYMBOL_BBOX_R_PX = 9
 export const LEADER_THRESHOLD_PX = 10
 
 // ASD-002: Eight candidate placement slots as normalised screen-space direction
@@ -181,6 +191,7 @@ export const PALETTES = {
     airways: '#2a8fa8',
     aeroHalo: '#000000',
     rangeRing: '#4a7d96', // ASD-012: subdued cyan-grey distance grid
+    selection: '#23d3e6', // ASD-007: selection halo — cyan primary
   },
   osm: {
     label: '#212121',
@@ -194,5 +205,6 @@ export const PALETTES = {
     airways: '#1a6a7a',
     aeroHalo: '#ffffff',
     rangeRing: '#3d6b82', // ASD-012: distance grid, readable on the bright base
+    selection: '#0097a7', // ASD-007: selection halo — deeper cyan for the bright base
   },
 }

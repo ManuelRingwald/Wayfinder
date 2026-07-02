@@ -1,6 +1,6 @@
 /* ============================================================
    Wayfinder — Color tokens  (Design System v1, ADR 0015)
-   ATC command-center dark theme. Cyan primary on deep-navy
+   ATC command-center dark theme. Cyan primary on near-black
    surfaces, mirroring a real radar scope: maximum contrast
    between the WebGL map, track symbols, and UI chrome.
 
@@ -18,11 +18,12 @@
    ============================================================ */
 
 :root {
-  /* ---- Surface hierarchy (darkest → lightest), deep-navy (ADR 0015) ---- */
-  --wf-background: #0a1626;        /* scope backdrop, app root */
-  --wf-surface: #12233b;           /* cards, drawers, app bar */
-  --wf-surface-variant: #1a2f4a;   /* raised rows, inputs, hover fills */
-  --wf-surface-bright: #223a5a;    /* highest chrome, active tiles */
+  /* ---- Surface hierarchy (darkest → lightest), near-black
+         (ADR 0015 Nachtrag-2: design-template authoritative) ---- */
+  --wf-background: #070b12;        /* scope backdrop, app root */
+  --wf-surface: #0e1622;           /* cards, drawers, app bar */
+  --wf-surface-variant: #16202e;   /* raised rows, inputs, hover fills */
+  --wf-surface-bright: #1c2c3e;    /* highest chrome, active tiles */
 
   /* ---- Primary — cyan (aerospace/command-center convention) ---- */
   --wf-primary: #23d3e6;

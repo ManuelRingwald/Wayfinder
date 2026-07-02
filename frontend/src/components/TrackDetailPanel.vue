@@ -28,9 +28,14 @@ const open = computed(() => store.selectedTrack !== null)
 <style scoped>
 .track-detail-card {
   position: fixed;
-  bottom: 16px;
-  right: 16px;
-  width: 280px;
+  /* Design template: the track detail anchors top-right below the header cluster
+     (top 64, right 12, width 292), not bottom-right — the old bottom-right spot
+     collided with the "<width> NM Breite" readout. */
+  top: 64px;
+  right: 12px;
+  width: 292px;
+  max-height: calc(100vh - 76px);
+  overflow-y: auto;
   z-index: 10;
   /* Design System v1: floating chrome over the WebGL canvas pairs elevation
      with a faint hairline so it separates cleanly from the map. */

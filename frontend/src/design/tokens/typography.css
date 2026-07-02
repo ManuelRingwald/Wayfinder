@@ -45,9 +45,12 @@
   --wf-caption-line: 16px;
   --wf-caption-color: var(--wf-on-surface-variant);
 
-  /* Overline — the signature "section header": tiny, uppercase, wide */
-  --wf-overline-size: 10.5px;
-  --wf-overline-weight: 600;
+  /* Overline — the signature "section header": tiny, uppercase, wide.
+     Matches the design template's rendered ASD section headers (ScopeLegend
+     head()/title = 10px, weight 700) rather than the export's own token file
+     (10.5/600), which the rendered screens overrode. */
+  --wf-overline-size: 10px;
+  --wf-overline-weight: 700;
   --wf-overline-tracking: 0.09em;
   --wf-overline-transform: uppercase;
   --wf-overline-color: rgba(220, 230, 240, 0.45);

@@ -23,6 +23,8 @@ import {
   LABELS_LAYER_ID,
   LEADER_LINES_SOURCE_ID,
   LEADER_LINES_LAYER_ID,
+  SELECTION_SOURCE_ID,
+  SELECTION_LAYER_ID,
   LABEL_TEXT_SIZE,
   TRACK_STATE_COLORS,
   AIRSPACE_GROUPS,
@@ -49,8 +51,11 @@ function airspaceMatchExpr(prop, fallback) {
 // makeIconImage renders a small icon onto an offscreen canvas and returns its
 // ImageData, so we need no external sprite assets (keeps Wayfinder a single
 // self-contained binary). draw(ctx, size) paints into a size×size square.
-function makeIconImage(draw) {
-  const size = 24
+// Icons are registered at pixelRatio 2 (addImage below), so an N-px canvas lays
+// out at N/2 CSS px and every canvas coordinate/stroke halves on screen. Track
+// symbols pass size=32 (a 12-CSS-px diamond needs ±12 canvas coords plus stroke
+// headroom); the smaller aeronautical marks keep the 24-px default.
+function makeIconImage(draw, size = 24) {
   const canvas = document.createElement('canvas')
   canvas.width = size
   canvas.height = size
@@ -147,12 +152,22 @@ const TRACK_ICON_STROKE = '#000000' // dark edge for legibility on both bases
 
 // makeTrackIcon paints one provenance symbol in the given state colour. Shape
 // encodes the surveillance source per the design legend: ADS-B a diamond ◆, SSR
-// a filled square ■ (cooperative reply, carries identity), PSR a filled circle ●
+// a filled square ■ (cooperative reply, carries identity), PSR a HOLLOW ring ○
 // (raw skin paint, no ID). FLARM/combined stay letter glyphs (F / K) — sources
-// beyond the 3-way design legend that Wayfinder still receives. When `hollow`
-// (the coasting state), the symbol is stroked as an OUTLINE with no fill, so a
-// coasting track is readable from its SHAPE, not the colour alone (matches the
-// design legend "Coasting (hohl)").
+// beyond the 3-way design legend that Wayfinder still receives.
+//
+// Geometry mirrors the design template (scope-tracks.jsx symbolNode, s=5):
+// diamond 12 CSS px point-to-point, square 8 CSS px side, circle 9 CSS px dia,
+// filled edge 1 CSS px, hollow outline 1.7 CSS px. Because the icon is
+// registered at pixelRatio 2 on a 32-px canvas, every value here is the template
+// CSS pixel × 2 (see makeIconImage). Earlier icons were drawn on a 24-px canvas,
+// which capped the footprint at 12 CSS px and rendered the symbols ~40% too
+// small; the 32-px canvas gives the enlarged shapes their stroke headroom.
+//
+// When `hollow` (the coasting state), non-PSR symbols are stroked as an OUTLINE
+// with no fill, so a coasting track is readable from its SHAPE, not the colour
+// alone (design legend "Coasting (hohl)"). PSR is a special case: it is ALWAYS a
+// hollow ring — its state reads from the ring COLOUR, never from a fill.
 function makeTrackIcon(shape, color, hollow) {
   return makeIconImage((ctx, s) => {
     const c = s / 2
@@ -162,35 +177,40 @@ function makeTrackIcon(shape, color, hollow) {
     const strokeOrFill = () => {
       if (hollow) {
         ctx.strokeStyle = color
-        ctx.lineWidth = 2.5
+        ctx.lineWidth = 3.4 // 1.7 CSS px
         ctx.stroke()
       } else {
         ctx.fillStyle = color
         ctx.fill()
         ctx.strokeStyle = TRACK_ICON_STROKE
-        ctx.lineWidth = 1.5
+        ctx.lineWidth = 2 // 1 CSS px
         ctx.stroke()
       }
     }
     if (shape === 'psr') {
+      // PSR is always an open ring (design template: the PSR branch ignores the
+      // fill channel). r = 4.5 CSS px, stroke 2 CSS px, in every track state.
       ctx.beginPath()
-      ctx.arc(c, c, 6, 0, 2 * Math.PI)
-      strokeOrFill()
+      ctx.arc(c, c, 9, 0, 2 * Math.PI)
+      ctx.strokeStyle = color
+      ctx.lineWidth = 4 // 2 CSS px
+      ctx.stroke()
       return
     }
     if (shape === 'ssr') {
       ctx.beginPath()
-      ctx.rect(c - 6, c - 6, 12, 12)
+      ctx.rect(c - 8, c - 8, 16, 16) // 8 CSS px side
       strokeOrFill()
       return
     }
     if (shape === 'adsb') {
-      // Diamond (rotated square): ADS-B per the design legend.
+      // Diamond (rotated square): ADS-B per the design legend. 12 CSS px
+      // point-to-point (vertices at c ± 12 canvas).
       ctx.beginPath()
-      ctx.moveTo(c, c - 7)
-      ctx.lineTo(c + 7, c)
-      ctx.lineTo(c, c + 7)
-      ctx.lineTo(c - 7, c)
+      ctx.moveTo(c, c - 12)
+      ctx.lineTo(c + 12, c)
+      ctx.lineTo(c, c + 12)
+      ctx.lineTo(c - 12, c)
       ctx.closePath()
       strokeOrFill()
       return
@@ -199,21 +219,21 @@ function makeTrackIcon(shape, color, hollow) {
     // kombiniert/Mehr-Sensor #125) — sources outside the 3-way design legend.
     // Coasting => outline the letter (no fill) to match the hollow convention.
     const letter = { flarm: 'F', combined: 'K' }[shape] ?? '?'
-    ctx.font = 'bold 16px sans-serif'
+    ctx.font = 'bold 22px sans-serif'
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
     if (hollow) {
       ctx.strokeStyle = color
-      ctx.lineWidth = 2
+      ctx.lineWidth = 3
       ctx.strokeText(letter, c, c + 1)
     } else {
       ctx.strokeStyle = TRACK_ICON_STROKE
-      ctx.lineWidth = 3
+      ctx.lineWidth = 4
       ctx.strokeText(letter, c, c + 1)
       ctx.fillStyle = color
       ctx.fillText(letter, c, c + 1)
     }
-  })
+  }, 32)
 }
 
 // addTrackIcons registers the 20 provenance×state track symbols (idempotent).
@@ -270,7 +290,7 @@ export function addAirspaceLayers(map, palette) {
     minzoom: 6,
     layout: {
       'text-field': ['coalesce', ['get', 'name'], ''],
-      'text-font': ['Open Sans Regular'],
+      'text-font': ['Roboto Mono Medium'],
       'text-size': 10,
       'symbol-placement': 'line',
     },
@@ -309,7 +329,7 @@ export function addNavaidLayers(map, palette) {
       'icon-size': 1,
       'icon-allow-overlap': true,
       'text-field': ['coalesce', ['get', 'ident'], ['get', 'name'], ''],
-      'text-font': ['Open Sans Regular'],
+      'text-font': ['Roboto Mono Medium'],
       'text-size': 10,
       'text-offset': [0, 1.1],
       'text-anchor': 'top',
@@ -340,7 +360,7 @@ export function addWaypointLayers(map, palette) {
       'icon-size': 1,
       'icon-allow-overlap': false,
       'text-field': ['coalesce', ['get', 'name'], ''],
-      'text-font': ['Open Sans Regular'],
+      'text-font': ['Roboto Mono Medium'],
       'text-size': 9,
       'text-offset': [0, 1.0],
       'text-anchor': 'top',
@@ -407,6 +427,31 @@ export function addTracksLayer(map) {
   })
 }
 
+// addSelectionLayer registers the ASD-007 selection halo: a cyan ring around the
+// currently selected track (design template symbolNode, r=11, stroke primary).
+// The source holds at most one Point (the selected track's live position, set by
+// renderSources); registered before addTracksLayer so the ring sits UNDER the
+// symbol and the symbol stays crisp on top. A hollow ring = fill opacity 0.
+export function addSelectionLayer(map, palette) {
+  map.addSource(SELECTION_SOURCE_ID, {
+    type: 'geojson',
+    data: { type: 'FeatureCollection', features: [] },
+  })
+  map.addLayer({
+    id: SELECTION_LAYER_ID,
+    type: 'circle',
+    source: SELECTION_SOURCE_ID,
+    paint: {
+      'circle-radius': 11,
+      'circle-color': 'transparent',
+      'circle-opacity': 0,
+      'circle-stroke-width': 1.4,
+      'circle-stroke-color': palette.selection,
+      'circle-stroke-opacity': 0.9,
+    },
+  })
+}
+
 // addLeaderLinesLayer registers the GeoJSON source and line layer for ASD-002
 // leader lines — thin lines from each track symbol to its deconflicted data-block
 // anchor. Registered before addTracksLayer so lines render behind the dots.
@@ -449,12 +494,17 @@ export function addLabelsLayer(map, palette) {
     source: LABELS_SOURCE_ID,
     layout: {
       'text-field': ['get', 'label'],
-      // Explicit font from the style's glyphs endpoint (fonts.openmaptiles.org).
-      // Without a glyphs source AND a served font, a symbol layer renders no text
-      // at all — which is exactly why labels were invisible while the circle and
-      // line layers (needing no glyphs) drew fine.
-      'text-font': ['Open Sans Regular'],
+      // Roboto Mono (design template data-block face), served from Wayfinder's
+      // own self-hosted glyph endpoint (/glyphs, webui.GlyphsHandler) — a symbol
+      // layer draws no text without a glyphs source AND a served font, and
+      // self-hosting keeps the scope font off any runtime CDN (air-gap, ADR 0015).
+      'text-font': ['Roboto Mono Medium'],
       'text-size': LABEL_TEXT_SIZE,
+      // Design template data-block metrics (scope-tracks.jsx): 0.02em tracking
+      // and 1.25 line-height. Both are expressible on a GL symbol layer (unlike
+      // per-line weight, which the template gets from DOM data blocks).
+      'text-letter-spacing': 0.02,
+      'text-line-height': 1.25,
       // The label point is placed at its deconflicted geo-position by
       // deconflictLabels() (Mercator approximation of the screen-space offset),
       // so the anchor is centred with no further offset.
@@ -521,7 +571,7 @@ export function addHistoryDotsLayer(map, palette) {
     type: 'circle',
     source: HISTORY_DOTS_SOURCE_ID,
     paint: {
-      'circle-radius': 2,
+      'circle-radius': 1.6, // design template: history dots r=1.6 CSS px
       'circle-color': palette.trail,
       'circle-opacity': [
         'case',
@@ -596,7 +646,7 @@ export function addRangeRingsLayer(map, palette) {
     layout: {
       visibility: 'none',
       'text-field': ['get', 'label'],
-      'text-font': ['Open Sans Regular'],
+      'text-font': ['Roboto Mono Medium'],
       'text-size': 10,
       'text-offset': [0, -0.5],
       'text-allow-overlap': false,

@@ -95,3 +95,45 @@ func TestUnknownAssetFallsBack(t *testing.T) {
 		t.Errorf("missing asset status=%d shell=%v, want 200+shell", status, strings.Contains(body, indexMarker))
 	}
 }
+
+// TestGlyphsHandlerServesPBF is the G4 guarantee: the self-hosted MapLibre glyph
+// endpoint returns the embedded Roboto Mono PBF for a generated range (so the
+// scope renders its data blocks in the monospace face with no font CDN). The
+// fontstack segment carries spaces and arrives percent-encoded from the map
+// style's {fontstack} expansion.
+func TestGlyphsHandlerServesPBF(t *testing.T) {
+	h, err := GlyphsHandler()
+	if err != nil {
+		t.Fatalf("GlyphsHandler: %v", err)
+	}
+	status, ct, body := get(t, h, "/glyphs/Roboto%20Mono%20Medium/0-255.pbf")
+	if status != http.StatusOK {
+		t.Fatalf("glyph range status = %d, want 200", status)
+	}
+	if ct != "application/x-protobuf" {
+		t.Errorf("glyph content-type = %q, want application/x-protobuf", ct)
+	}
+	if len(body) == 0 {
+		t.Errorf("glyph body is empty")
+	}
+}
+
+// TestGlyphsHandlerNotFound covers the degradation + safety paths: an
+// ungenerated range 404s (MapLibre then renders those code points blank), a
+// non-.pbf request 404s, and a traversal attempt cannot escape the embed FS.
+func TestGlyphsHandlerNotFound(t *testing.T) {
+	h, err := GlyphsHandler()
+	if err != nil {
+		t.Fatalf("GlyphsHandler: %v", err)
+	}
+	for _, target := range []string{
+		"/glyphs/Roboto%20Mono%20Medium/2048-2303.pbf", // range not generated
+		"/glyphs/Unknown%20Font/0-255.pbf",             // fontstack we do not host
+		"/glyphs/Roboto%20Mono%20Medium/0-255.txt",     // not a .pbf
+		"/glyphs/../dist/index.html",                   // traversal → cleaned, no .pbf
+	} {
+		if status, _, _ := get(t, h, target); status != http.StatusNotFound {
+			t.Errorf("%s status = %d, want 404", target, status)
+		}
+	}
+}

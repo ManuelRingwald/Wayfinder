@@ -18,10 +18,13 @@
 
         <!-- Rail: 56px icon strip, always visible -->
         <div class="nav-rail">
-          <!-- Brand glyph pinned to the top of the rail (design mockup). Static
-               for now; earmarked to become the ASD⇄EFS mode switch later. -->
+          <!-- Brand glyph pinned to the top of the rail (design template): a
+               30×30 rounded tile with the cyan radar mark on a state-selected
+               fill. Static for now; earmarked to become the ASD⇄EFS switch. -->
           <div class="nav-rail__brand" role="img" aria-label="ASD">
-            <v-icon size="26" color="primary">mdi-radar</v-icon>
+            <div class="nav-rail__brand-box">
+              <v-icon size="20" color="primary">mdi-radar</v-icon>
+            </div>
           </div>
           <div class="nav-rail__divider" role="separator" />
 
@@ -219,7 +222,8 @@ const drawerOpen = computed({
 
 const drawerWidth = computed(() => {
   if (!mdAndUp.value) return 280
-  return activePanel.value ? 300 : 56
+  // Rail 56px collapsed; open panel 248px (design template AsdFilterPanel width).
+  return activePanel.value ? 248 : 56
 })
 
 function togglePanel(id) {
@@ -269,13 +273,25 @@ function onFlFilterChange(payload) { emit('fl-filter-change', payload) }
   width: 100%;
   padding: 2px 0 4px;
 }
+/* 30×30 rounded tile with the cyan mark on a state-selected fill (template) */
+.nav-rail__brand-box {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--wf-state-selected);
+  flex-shrink: 0;
+}
 
-/* Thin horizontal separator between rail groups (design mockup) */
+/* Thin horizontal separator between rail groups (design template RailSep:
+   stretched hairline, 7px vertical / 10px horizontal margin) */
 .nav-rail__divider {
-  width: 28px;
+  align-self: stretch;
   height: 1px;
-  background: var(--wf-border-strong);
-  margin: 2px 0;
+  background: var(--wf-border);
+  margin: 7px 10px;
   flex-shrink: 0;
 }
 
@@ -312,7 +328,7 @@ function onFlFilterChange(payload) { emit('fl-filter-change', payload) }
 .nav-rail__pill {
   width: 36px;
   height: 28px;
-  border-radius: 14px;
+  border-radius: var(--wf-radius-nav-pill); /* 14px MD3 indicator pill */
   display: flex;
   align-items: center;
   justify-content: center;

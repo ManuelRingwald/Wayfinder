@@ -61,7 +61,7 @@ onUnmounted(() => {
   color: var(--wf-primary); /* cyan — the live element */
 }
 .asd-header__zone {
+  /* "UTC" suffix renders inline at the clock's 13px (design template), muted */
   color: var(--wf-on-surface-variant);
-  font-size: 11px;
 }
 </style>

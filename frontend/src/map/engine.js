@@ -15,6 +15,7 @@ import {
   addWaypointLayers,
   addTracksLayer,
   addLeaderLinesLayer,
+  addSelectionLayer,
   addLabelsLayer,
   addTrailsLayer,
   addHistoryDotsLayer,
@@ -119,7 +120,9 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
   // Helper: build a bound renderSources call with the current store slices.
   const doRender = () => {
     if (!state.mapLoaded) return
-    renderSources(map, state, store.flFilter, state.labelPins, palette)
+    // Pass the selected track number so renderSources keeps the selection halo
+    // (ASD-007) pinned to the moving symbol; undefined clears the ring.
+    renderSources(map, state, store.flFilter, state.labelPins, palette, store.selectedTrack?.track_num)
   }
 
   // Report the visible scope width in NM for the bottom-right "<width> NM Breite"
@@ -249,6 +252,7 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
     addHistoryDotsLayer(map, palette)
     addVectorsLayer(map, palette)
     addLeaderLinesLayer(map, palette) // ASD-002: under track circles
+    addSelectionLayer(map, palette)   // ASD-007: selection halo, under symbols
     addTracksLayer(map)
     addLabelsLayer(map, palette)      // ASD-002: above track circles
     state.mapLoaded = true
@@ -327,6 +331,12 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
     doRender()
   }
 
+  // ASD-007: selection changed (track picked/cleared in the UI) — re-render so
+  // the selection halo appears/moves/clears without waiting for a WS update.
+  function updateSelection() {
+    doRender()
+  }
+
   // ASD-011: update MapLibre filters on the airspace layers to reflect the
   // current airspaceGroupVisibility state. Called by MapCanvas whenever the
   // store changes (or after map load to apply the initial state).
@@ -375,5 +385,5 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
     src.setData(rangeRingsGeoJSON(cfg.center_lat, cfg.center_lon, spacingNM, count))
   }
 
-  return { map, destroy, reconnect, setLayerVisibility, updateFlFilter, updateAirspaceFilter, zoomIn, zoomOut, recenter, updateRangeRings }
+  return { map, destroy, reconnect, setLayerVisibility, updateFlFilter, updateAirspaceFilter, updateSelection, zoomIn, zoomOut, recenter, updateRangeRings }
 }

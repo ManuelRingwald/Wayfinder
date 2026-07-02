@@ -14,7 +14,22 @@
     <div v-if="open" class="scope-legend__body">
       <div class="scope-legend__section wf-overline">Form · Herkunft</div>
       <div v-for="p in provenance" :key="p.label" class="scope-legend__row">
-        <span class="scope-legend__glyph">{{ p.glyph }}</span>
+        <!-- Draw the SAME geometric mark the map paints (map/layers.js
+             makeTrackIcon): ADS-B diamond, SSR square (filled), PSR a HOLLOW
+             ring; FLARM/combined keep their letter glyph (F/K), which is how
+             the map renders those Wayfinder-superset sources too. -->
+        <svg
+          v-if="p.kind === 'adsb' || p.kind === 'ssr' || p.kind === 'psr'"
+          class="scope-legend__mark"
+          width="16"
+          height="16"
+          viewBox="0 0 16 16"
+        >
+          <path v-if="p.kind === 'adsb'" d="M8 2 L14 8 L8 14 L2 8 Z" fill="var(--wf-scope-label)" />
+          <rect v-else-if="p.kind === 'ssr'" x="2.6" y="2.6" width="10.8" height="10.8" fill="var(--wf-scope-label)" />
+          <circle v-else cx="8" cy="8" r="5.6" fill="none" stroke="var(--wf-scope-label)" stroke-width="1.8" />
+        </svg>
+        <span v-else class="scope-legend__glyph">{{ p.glyph }}</span>
         <span class="scope-legend__label">{{ p.label }}</span>
       </div>
       <div class="scope-legend__section wf-overline">Farbe · Status</div>
@@ -56,12 +71,11 @@ const states = [
 
 <style scoped>
 .scope-legend {
-  background: rgba(14, 22, 34, 0.85); /* surface @ 85% */
+  background: rgba(14, 22, 34, 0.96); /* surface @ 96% (design template legend) */
   backdrop-filter: blur(4px);
   border: var(--wf-chrome-border);
-  border-radius: var(--wf-radius-sm);
+  border-radius: var(--wf-radius-md); /* 12px (design template legend) */
   box-shadow: var(--wf-elevation-4);
-  min-width: 158px;
   pointer-events: all;
   overflow: hidden;
 }
@@ -84,7 +98,8 @@ const states = [
   opacity: 0.6;
 }
 .scope-legend__body {
-  padding: 0 10px 8px;
+  width: 232px; /* fixed open width (design template) */
+  padding: 0 12px 10px;
 }
 .scope-legend__section {
   margin-top: 8px;
@@ -93,11 +108,11 @@ const states = [
 .scope-legend__row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-height: 22px;
+  gap: 9px;
+  min-height: 20px;
 }
 .scope-legend__glyph {
-  width: 14px;
+  width: 16px;
   text-align: center;
   font-weight: 700;
   font-size: 13px;
@@ -105,15 +120,20 @@ const states = [
   color: var(--wf-on-surface);
   flex-shrink: 0;
 }
+/* Geometric provenance mark (SVG), matching the map symbols (design template) */
+.scope-legend__mark {
+  flex-shrink: 0;
+  display: block;
+}
 .scope-legend__dot {
-  width: 10px;
-  height: 10px;
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
   box-sizing: border-box; /* keep hollow (bordered) and filled dots the same size */
   flex-shrink: 0;
 }
 .scope-legend__label {
-  font-size: 12px;
+  font-size: 11.5px;
   color: var(--wf-on-surface);
   opacity: 0.9;
 }

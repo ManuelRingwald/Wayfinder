@@ -7,6 +7,7 @@ import {
   TRAILS_SOURCE_ID,
   LABELS_SOURCE_ID,
   LEADER_LINES_SOURCE_ID,
+  SELECTION_SOURCE_ID,
   FADE_DURATION_MS,
   VECTOR_LOOKAHEAD_S,
   EARTH_RADIUS_M,
@@ -37,7 +38,7 @@ function vectorEndpoint(lat, lon, vx, vy) {
 //   flFilter         — { minFL, maxFL, hide } from Pinia store
 //   labelPins        — Map<track_num, {dx, dy}> manual label overrides
 //   palette          — active foreground colour palette
-export function renderSources(map, state, flFilter, labelPins, palette) {
+export function renderSources(map, state, flFilter, labelPins, palette, selectedTrackNum) {
   const now = Date.now()
 
   // Live-track features: re-evaluate FL filter (ASD-005) each render call so
@@ -110,6 +111,24 @@ export function renderSources(map, state, flFilter, labelPins, palette) {
     type: 'FeatureCollection',
     features: [...liveTrackFeatures, ...fadingTrackFeatures],
   })
+
+  // ASD-007: selection halo — pin a single ring to the selected track's current
+  // position so it follows the moving symbol. Cleared (empty collection) when no
+  // track is selected or the selected track is no longer on the scope.
+  const selSrc = map.getSource(SELECTION_SOURCE_ID)
+  if (selSrc) {
+    const selFeature =
+      selectedTrackNum != null &&
+      [...liveTrackFeatures, ...fadingTrackFeatures].find(
+        (f) => f.properties.track_num === selectedTrackNum,
+      )
+    selSrc.setData({
+      type: 'FeatureCollection',
+      features: selFeature
+        ? [{ type: 'Feature', geometry: selFeature.geometry, properties: {} }]
+        : [],
+    })
+  }
 
   map.getSource(VECTORS_SOURCE_ID).setData({
     type: 'FeatureCollection',

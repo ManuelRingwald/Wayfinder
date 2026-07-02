@@ -24,6 +24,44 @@
   (Lazy-Guard entfernt). Regressionstest `adminFeedsTenantDropdown.test.js`
   (`?raw`-SFC). Gates: **vitest 294**, `vite build`, `go test ./internal/webui`
   grün; `dist` neu eingebettet.
+- **Design-Template-Angleichung (diese Sitzung, Branch
+  `claude/wayfinder-design-template-b1krxc`, FR-UI-023, ADR 0015 Nachtrag-2):**
+  Der Projektverantwortliche hat den Claude-Design-Export (`ASD.zip`) zum
+  **verbindlichen Template** erklärt (wie Material Design für die Komponenten).
+  Ein pixel-/hex-genauer Audit (4 parallele Prüfläufe: Farben, Symbol-Geometrie,
+  Fonts, Chrome) fand die realen Abweichungen; nach Freigabe von drei
+  Richtungsentscheidungen (Near-Black übernehmen · Basiskarte behalten +
+  angleichen · Roboto Mono jetzt selbst hosten) in 5 Häppchen umgesetzt:
+  - **G0 Farben (ADR 0015 Nachtrag-2):** Surface-Hierarchie **zurück auf
+    Near-Black** (`#070b12`/`#0e1622`/`#16202e`/`#1c2c3e`) — die einzige
+    Farb-Abweichung; Navy (Nachtrag-1) war eine Screenshot-Fehl-Lesung und ist
+    aufgehoben. Lockstep `colors.css`+`vuetify.js`; Map-Hintergrund
+    `#0b1a2e`→`#070b12` (CARTO-Raster bleibt @ 0.4 — echte Geografie bewusst).
+    Alle übrigen Farben stimmten schon hex-genau.
+  - **G1/G2 Symbole:** waren ~40 % zu klein (24 px-Canvas@pixelRatio 2 deckelt
+    auf 12 CSS-px). Canvas 32 px, Zeichen-Geometrie = Template-CSS × 2 (Raute 12,
+    Quadrat 8, Kreis-Ø 9). Zwei Korrektheits-Fehler behoben: **PSR** ist jetzt in
+    **jedem** Zustand ein **hohler Ring** (war 3/4 gefüllt), der fehlende
+    **Cyan-Auswahl-Ring** (r=11) ist als eigener MapLibre-Circle-Layer ergänzt
+    (an die Selektion gepinnt). Legende zeichnet dieselben SVG-Marken wie die
+    Karte (PSR hohl). History-Dot 1.6, Deconfliction-BBox 8→9.
+  - **G3/G4 Fonts:** Karten-Datenblöcke jetzt **Roboto Mono** — Wayfinder
+    **hostet die Glyph-PBFs selbst** (`/glyphs/{fontstack}/{range}.pbf`,
+    `go:embed`, fontnik-generiert, Ranges 0-1023); kein Font-CDN mehr auf der
+    Karte (air-gap-Schritt). Zusätzlich GL-`letter-spacing 0.02`/`line-height
+    1.25`.
+  - **G5/G6/G7 DOM-Typo + Chrome + Backdrop:** Overline 10 px/700; Track-Detail
+    **oben-rechts** (292, behebt Kollision mit dem Maßstab-Readout); Nav-Panel
+    248, Rail-Brand-Kachel 30×30, Legende 232/0.96/Radius-md; **Cyan-Mittglow**
+    über dem Scope.
+  - **Ehrliche Grenze:** Militär/Hostile/Alarme bleiben mangels Wire-Daten
+    draußen; die 700-Callsign-Zeile + 9.5px-Alarm-Zeile der Template-Datenblöcke
+    sind auf **einer** GL-Symbol-Schicht nicht darstellbar (bräuchten eine zweite
+    Schicht / DOM-Datenblöcke) — zurückgestellt. **Live-WebGL-Render nicht in
+    dieser Umgebung verifizierbar** (kein Browser-Stack); Go-Glyph-Handler +
+    Style + Symbol-Geometrie sind aber unit-getestet.
+  - Gates: **vitest 280**, `go test ./...` (28 Pakete, Integration skippt ohne
+    PG), `go vet`/`gofmt` grün, `vite build`; `dist` neu eingebettet.
 - **Neues Design (Claude Design) → Reskin gestartet (diese Sitzung, Branch
   `claude/wayfinder-design-implementation-6wbbbg`):** Ein per Claude Design
   erstellter ASD-Entwurf kam als Export (`ASD.zip`: Design-System mit Tokens +
