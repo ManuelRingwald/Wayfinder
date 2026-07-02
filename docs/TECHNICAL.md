@@ -137,9 +137,10 @@ Das Frontend leitet daraus — zusammen mit `icao_addr`/`mode_3a`/`callsign` —
 
 | Symbol | Herkunft | Bedingung |
 |--------|----------|-----------|
+| **K** (Buchstabe) | Kombiniert (Mehr-Sensor) | **≥ 2** Technologien gleichzeitig frisch (beliebige 2 aus ES/ADS-B, FLARM, SSR, Mode S) — Fusions-Track, höchste Güte (#125) |
 | **A** (Buchstabe) | ADS-B (kooperativ) | `adsb_age_s` vorhanden **und** ≤ 30 s (frisch) |
 | **F** (Buchstabe) | FLARM              | kein frisches ADS-B, aber `flarm_age_s` frisch (≤ 30 s) |
-| ▢ Quadrat (gefüllt) | SSR / Mode S     | kein frisches ADS-B/FLARM, aber `icao_addr`/`mode_3a`/Callsign |
+| ▢ Quadrat (gefüllt) | SSR / Mode S     | kein frisches ADS-B/FLARM, aber `ssr_age_s`/`mds_age_s` frisch oder `icao_addr`/`mode_3a`/Callsign |
 | ○ Ring (offen)      | Primär (PSR)     | keines der obigen — reine Skin-Paint ohne ID |
 
 Seit ICD 2.6.0 ist **FLARM erstmals sauber unterscheidbar** (eigenes `flarm_age_s`),

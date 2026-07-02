@@ -7,6 +7,7 @@ import {
   PROVENANCE_FLARM,
   PROVENANCE_SSR,
   PROVENANCE_PSR,
+  PROVENANCE_COMBINED,
   PROVENANCE_LABELS,
 } from '../provenance.js'
 
@@ -78,7 +79,7 @@ describe('trackProvenance', () => {
   })
 
   it('maps every provenance value to a human-readable label', () => {
-    for (const p of [PROVENANCE_ADSB, PROVENANCE_FLARM, PROVENANCE_SSR, PROVENANCE_PSR]) {
+    for (const p of [PROVENANCE_COMBINED, PROVENANCE_ADSB, PROVENANCE_FLARM, PROVENANCE_SSR, PROVENANCE_PSR]) {
       expect(typeof PROVENANCE_LABELS[p]).toBe('string')
       expect(PROVENANCE_LABELS[p].length).toBeGreaterThan(0)
     }
@@ -98,12 +99,33 @@ describe('trackProvenance — FLARM (#118)', () => {
     expect(trackProvenance({ flarm_age_s: 3, icao_addr: 0x3c6dd2 })).toBe(PROVENANCE_FLARM)
   })
 
-  it('prefers adsb when both ES and FLARM are fresh (richer standard source)', () => {
-    expect(trackProvenance({ adsb_age_s: 2, flarm_age_s: 1 })).toBe(PROVENANCE_ADSB)
-  })
-
   it('falls back from stale FLARM to ssr/psr like ADS-B does', () => {
     expect(trackProvenance({ flarm_age_s: 90, icao_addr: 0x3c6dd2 })).toBe(PROVENANCE_SSR)
     expect(trackProvenance({ flarm_age_s: 90 })).toBe(PROVENANCE_PSR)
+  })
+})
+
+// #125 (from #90): ≥2 distinct surveillance technologies currently fresh →
+// "combined" (a multi-sensor fused track), which outranks any single source.
+describe('trackProvenance — combined (#125)', () => {
+  it('returns combined when two technologies are fresh (ES + FLARM)', () => {
+    expect(trackProvenance({ adsb_age_s: 2, flarm_age_s: 1 })).toBe(PROVENANCE_COMBINED)
+  })
+
+  it('returns combined for ES + Mode S both fresh', () => {
+    expect(trackProvenance({ adsb_age_s: 3, mds_age_s: 4 })).toBe(PROVENANCE_COMBINED)
+  })
+
+  it('returns combined for SSR + Mode S both fresh', () => {
+    expect(trackProvenance({ ssr_age_s: 5, mds_age_s: 6 })).toBe(PROVENANCE_COMBINED)
+  })
+
+  it('needs at least two FRESH ages — one fresh + one stale is not combined', () => {
+    expect(trackProvenance({ adsb_age_s: 2, mds_age_s: 90 })).toBe(PROVENANCE_ADSB)
+  })
+
+  it('a single fresh SSR/Mode S age (no other) is ssr, not combined', () => {
+    expect(trackProvenance({ ssr_age_s: 4 })).toBe(PROVENANCE_SSR)
+    expect(trackProvenance({ mds_age_s: 4 })).toBe(PROVENANCE_SSR)
   })
 })
