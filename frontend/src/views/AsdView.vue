@@ -103,6 +103,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useDisplay } from 'vuetify'
 import { useAsdStore } from '@/stores/asd.js'
 import { useSessionStore } from '@/stores/session.js'
+import { useToolsStore } from '@/stores/tools.js'
 import NavigationRail from '@/components/NavigationRail.vue'
 import MapCanvas from '@/components/MapCanvas.vue'
 import AsdHeader from '@/components/AsdHeader.vue'
@@ -115,6 +116,7 @@ import { VECTOR_LOOKAHEAD_S } from '@/map/constants.js'
 const { mdAndUp } = useDisplay()
 const store = useAsdStore()
 const session = useSessionStore()
+const tools = useToolsStore()
 const drawerOpen = ref(true)
 const mapCanvas = ref(null)
 const loginLoading = ref(false)
@@ -193,6 +195,9 @@ function onPanelResize() {
 }
 
 function onTrackClick(track) {
+  // Häppchen 4: while a measurement tool is active, a track click feeds the tool
+  // (DIST/QDM pick it via the map controller) — don't also open the detail panel.
+  if (tools.activeTool) return
   store.selectTrack(track)
 }
 </script>
