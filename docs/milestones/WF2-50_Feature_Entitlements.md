@@ -45,7 +45,7 @@ verdrahtet**. WF2-50 baute Service, Katalog, Admin-Verwaltung und Wiring darauf.
   WF2-30-Zurückstellung; ein TTL-/Redis-Cache kommt erst bei gemessenem Bedarf
   (und brächte sonst das Invalidierungs-Problem über mehrere Instanzen).
 
-### Admin-Verwaltung (`pkg/adminapi`) — super_admin = Billing-Grenze
+### Admin-Verwaltung (`pkg/adminapi`) — admin = Billing-Grenze
 - `GET /api/admin/tenants/{tenantID}/entitlements` — die **volle** Katalog-Liste
   mit dem Zustand des Ziel-Mandanten (Default-Deny für nie gesetzte Keys), damit
   die UI jeden Toggle rendern kann.
@@ -53,7 +53,7 @@ verdrahtet**. WF2-50 baute Service, Katalog, Admin-Verwaltung und Wiring darauf.
   unbekannter Key → **400**, unbekannter Mandant → **404**. **Kein** Live-Apply-
   Rescope (anders als View/Subscription): Entitlements gaten Verfügbarkeit, nicht
   den laufenden Track-Scope.
-- Beide hinter `requireSuper` — **cross-tenant nur super_admin** (NFR-SEC-003,
+- Beide hinter `requireAdmin` — **cross-tenant nur admin** (NFR-SEC-003,
   Billing-Grenze, gespiegelt von WF2-31b).
 
 ### SPA-Schnittstelle
@@ -70,7 +70,7 @@ verdrahtet**. WF2-50 baute Service, Katalog, Admin-Verwaltung und Wiring darauf.
 ## Sicherheit / Korrektheit
 - **Fail-closed** auf allen Lesepfaden (unknown key, DB-Fehler → `false` +
   Warn-Log + Metrik), getestet.
-- **Cross-Tenant-Isolation:** `tenant_admin` erhält **403** auf beiden neuen
+- **Cross-Tenant-Isolation:** `user` erhält **403** auf beiden neuen
   Routen und erreicht den `Set`-Pfad nie (Negativtest erweitert).
 - **Katalog-Guard** beim Schreiben verhindert Garbage-Keys in der DB.
 
@@ -78,7 +78,7 @@ verdrahtet**. WF2-50 baute Service, Katalog, Admin-Verwaltung und Wiring darauf.
 - `pkg/feature/*_test.go` (DB-frei): Default-Deny, beide Fail-Closed-Pfade
   (Zähler **und** Warn-Log asserted), Katalog-Overlay/Unknown-Key-Filter,
   `Set`-Validierung, Nil-Logger-Robustheit.
-- `pkg/adminapi/adminapi_test.go`: super_admin GET/PUT, unknown-key 400,
+- `pkg/adminapi/adminapi_test.go`: admin GET/PUT, unknown-key 400,
   unknown-tenant 404, **Cross-Tenant 403** auf beiden Routen (+ `Set` nie
   erreicht), `whoami.features`.
 - `pkg/adminapi/adminapi_integration_test.go` (**real-PG**, `scripts/pg-test.sh`):

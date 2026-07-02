@@ -1,18 +1,22 @@
-// Package impersonation implements super_admin "View as Tenant X" (ADR 0008): a
+// Package impersonation implements admin "View as Tenant X" (ADR 0008): a
 // deliberate, audited, time-boxed and READ-ONLY break of cross-tenant isolation
 // (NFR-SEC-003).
 //
 // The mechanism is a separate, explicit signal that never overwrites the
 // authenticated tenant.Identity (the trust anchor) and never reaches a write
-// path. A grant is a signed, short-lived token naming a target tenant; when a
-// super_admin presents a valid grant, the WS read path (feed scope AND view)
+// path. A grant is a signed, short-lived token naming a target tenant; when an
+// admin presents a valid grant, the WS read path (feed scope AND view)
 // resolves against the target tenant instead of the caller's own — nothing else
 // changes.
 //
+// The platform-wide role is admin (ADR 0009 collapsed the earlier
+// super_admin/tenant_admin/operator model to admin/user); the ADR 0008 text and
+// its "super_admin" wording are read as "admin".
+//
 // Security rules enforced here, all fail-closed:
 //   - Only a cryptographically valid, unexpired grant carries any authority.
-//   - Such a grant activates impersonation ONLY for a super_admin caller.
-//   - A valid grant presented by a non-super_admin is DENIED loudly (ErrDenied)
+//   - Such a grant activates impersonation ONLY for an admin caller.
+//   - A valid grant presented by a non-admin is DENIED loudly (ErrDenied)
 //     so the caller can reject (403 / handshake reject) and audit it — never
 //     silently honoured, never silently ignored (ADR 0008 §3, decision 4).
 //   - An absent or invalid/expired grant yields the normal, non-impersonated
@@ -40,11 +44,11 @@ var (
 	// ErrInvalidGrant means the grant token is malformed, its signature does not
 	// verify, or it has expired. Resolve treats this as "no impersonation".
 	ErrInvalidGrant = errors.New("impersonation: invalid or expired grant")
-	// ErrDenied means a VALID grant was presented by a caller that is not a
-	// super_admin. The caller MUST fail loud (403 / handshake reject) and audit
+	// ErrDenied means a VALID grant was presented by a caller that is not an
+	// admin. The caller MUST fail loud (403 / handshake reject) and audit
 	// it — this is the spoofing/misuse signal (ADR 0008 §3).
-	ErrDenied = errors.New("impersonation: caller is not super_admin")
-	// ErrUnknownTenant means a super_admin presented a valid grant naming a
+	ErrDenied = errors.New("impersonation: caller is not admin")
+	// ErrUnknownTenant means an admin presented a valid grant naming a
 	// tenant that does not exist. The caller MUST reject (cannot impersonate a
 	// non-existent tenant).
 	ErrUnknownTenant = errors.New("impersonation: target tenant does not exist")
@@ -99,9 +103,9 @@ type Decision struct {
 //	rawGrant == ""                          → Decision{}, nil              (default path)
 //	invalid / expired / tampered grant      → Decision{}, nil              (ignored; the
 //	    caller may audit a note since rawGrant was non-empty yet !Active && err == nil)
-//	valid grant, caller NOT super_admin      → Decision{}, ErrDenied        (fail loud)
-//	valid grant, super_admin, target missing → Decision{}, ErrUnknownTenant (reject)
-//	valid grant, super_admin, target exists  → Decision{Active:true, …}, nil
+//	valid grant, caller NOT admin            → Decision{}, ErrDenied        (fail loud)
+//	valid grant, admin, target missing       → Decision{}, ErrUnknownTenant (reject)
+//	valid grant, admin, target exists        → Decision{Active:true, …}, nil
 func Resolve(ctx context.Context, rawGrant string, id tenant.Identity, key []byte, tenants TenantChecker) (Decision, error) {
 	if rawGrant == "" {
 		return Decision{}, nil // no signal → normal, non-impersonated path

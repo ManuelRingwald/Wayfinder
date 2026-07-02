@@ -203,14 +203,14 @@ getestet und beobachtbar/auditierbar.
   /api/admin/view` (server-validiert), `GET /api/admin/subscriptions`, `GET
   /api/admin/feeds`; `tenant_id` **immer aus der Identity** (Isolation per
   Konstruktion).
-- **WF2-31b ✅** — super_admin-Provisioning (cross-tenant): `GET /api/admin/tenants`,
+- **WF2-31b ✅** — admin-Provisioning (cross-tenant): `GET /api/admin/tenants`,
   `GET/POST /api/admin/tenants/{id}/subscriptions`, `DELETE …/{feedID}` — Ziel aus
-  dem **Pfad**, Doppel-Gate (`RequireRole` + in-handler `requireSuper`); **einzige**
-  cross-tenant-schreibende Rolle. Cross-Tenant-Negativtest (tenant_admin → 403) +
+  dem **Pfad**, Doppel-Gate (`RequireRole` + in-handler `requireAdmin`); **einzige**
+  cross-tenant-schreibende Rolle. Cross-Tenant-Negativtest (user → 403) +
   real-PG grant→list→revoke. **→ Admin-Backend komplett.**
 - **WF2-32 ✅** — Admin-UI (`/admin`, Vue 3 + Vuetify, **History-Mode**): View-Editor
-  mit Client-Validierungs-Parität vor dem PUT, Abos/Feeds read-only, super_admin-
-  Provisioning (grant/revoke) hinter `isSuperAdmin`-Gate. **Eigenständige View, kein
+  mit Client-Validierungs-Parität vor dem PUT, Abos/Feeds read-only, admin-
+  Provisioning (grant/revoke) hinter `isAdmin`-Gate. **Eigenständige View, kein
   Overlay** — auf `/admin` wird die ASD-Karte unmountet (Kurskorrektur). Backend-
   Namespace bereinigt: Rollen-Probe nach `GET /api/admin/whoami`, **SPA-History-
   Fallback** in `webui.Handler`. Vitest (Validierung + Store) + Go (SPA-Fallback +
@@ -262,9 +262,9 @@ Details & Begründung: Konzept §7/§8.
 ### Stufe 3 — Dynamische Konfiguration & Admin-UI
 | AP | Inhalt | Stufe · Modell | Abh. | Status |
 |----|--------|----------------|------|--------|
-| **WF2-31** 🔒 | Admin-API (REST, tenant-skopiert, server-validiert: Zentrum/Radius/FL/Abos) | **S3 · Sonnet 4.6** | WF2-13 | ✅ **erledigt** (view GET/PUT + subs/feeds read + super_admin grant/revoke cross-tenant) |
+| **WF2-31** 🔒 | Admin-API (REST, tenant-skopiert, server-validiert: Zentrum/Radius/FL/Abos) | **S3 · Sonnet 4.6** | WF2-13 | ✅ **erledigt** (view GET/PUT + subs/feeds read + admin grant/revoke cross-tenant) |
 | **WF2-30** | Config-Service (Hot-Reload aus DB, In-Proc-TTL/Redis, ohne Neustart) | **S3–S4 · Sonnet 4.6 / Opus 4.8** | WF2-10 | ⏸️ **zurückgestellt** (erst bei gemessenem Cache-Bedarf, nach WF2-31-Entscheid) |
-| **WF2-32** | Admin-UI (`/admin`, Vue 3 + Vuetify, History-Mode, kompletter Komponenten-Austausch; Validierungs-Parität, Rollen-Gating) | **S3 · Sonnet 4.6** | WF2-31 | ✅ **erledigt** (View-Editor + Abos/Feeds + super_admin-Provisioning; `whoami`→`/api/admin/whoami`; SPA-History-Fallback; Live-Apply → WF2-33) |
+| **WF2-32** | Admin-UI (`/admin`, Vue 3 + Vuetify, History-Mode, kompletter Komponenten-Austausch; Validierungs-Parität, Rollen-Gating) | **S3 · Sonnet 4.6** | WF2-31 | ✅ **erledigt** (View-Editor + Abos/Feeds + admin-Provisioning; `whoami`→`/api/admin/whoami`; SPA-History-Fallback; Live-Apply → WF2-33) |
 | **WF2-33** 🔒 | Live-Apply auf der Datenebene (laufende Subscription re-skopieren, kein Reconnect) | **S4 · Opus 4.8** | WF2-21, WF2-31 | ✅ **erledigt** (Re-Scope via Actor-Kommando, `-race`-bewiesen; Shrink → Frontend-Coast; `whoami`-Stufe-3 komplett) |
 
 ### Stufe 4 — Sensor-/Stream-Management (innerhalb der CAT062-Realität)
@@ -418,7 +418,7 @@ Details & Begründung: Konzept §7/§8.
 ### Stufe 5 — Monetarisierung & HA-Betrieb (optional / zuletzt)
 | AP | Inhalt | Stufe · Modell | Abh. | Status |
 |----|--------|----------------|------|--------|
-| **WF2-50** | Feature-Entitlement-Service (`tenant.HasFeature(...)`, Flags als Daten) | **S3 · Sonnet 4.6** | WF2-10 | ✅ **erledigt** (`pkg/feature` fail-closed über vorhandenen `EntitlementRepo`; Katalog `stca`/`multi_feed`/`premium_layers`; super_admin GET/PUT entitlements; `whoami.features` + `hasFeature()`; Fail-Closed-Metrik; real-PG-Test) |
+| **WF2-50** | Feature-Entitlement-Service (`tenant.HasFeature(...)`, Flags als Daten) | **S3 · Sonnet 4.6** | WF2-10 | ✅ **erledigt** (`pkg/feature` fail-closed über vorhandenen `EntitlementRepo`; Katalog `stca`/`multi_feed`/`premium_layers`; admin GET/PUT entitlements; `whoami.features` + `hasFeature()`; Fail-Closed-Metrik; real-PG-Test) |
 | **WF2-51** 🔒 | Billing-Adapter (Stripe) als separate Plane (Webhook→Entitlement) | **S3 · Sonnet 4.6** (+🔒-Review) | WF2-50 | **ruht** (Kommerz-Entscheid §0) |
 | **WF2-52** | Stateless-Härtung & horizontale Skalierung (kein node-lokaler State; LB ohne Sticky) | **S4–S5 · Opus 4.8 / Fable 5** | WF2-21 | geplant |
 | **WF2-53** | Ingest-Gateway produktiv + HA (mcast→Stream, kein SPOF am Eingang) | **S4–S5 · Opus 4.8 / Fable 5** | WF2-02 | geplant |
@@ -540,8 +540,8 @@ Architektur-Wirkung — nicht auf dem kritischen Pfad, aber jederzeit wertstifte
 - ✅ **WF2-23.1 — Audit-Log** (`cmd/wayfinder.logScopeAudit` + `newScopeResolver`-Logger: strukturiertes `slog`-Event `component=audit`/`ws_connect` mit tenant_id/user_id/subject/role/feeds/aoi/fl beim `/ws`-Connect; 12-Factor, keine DB; hochkardinale Identität nur im Audit-Log). `TestScopeResolverEmitsAudit`. Milestone `docs/milestones/WF2-23.1_Audit_Log.md`.
 - ✅ **WF2-23.2 — Pro-Mandant-Metriken** (`pkg/metrics` Label-Support `Metric.With`/Escaping; `broadcast` per-Tenant-Counter + `TenantMetrics`; `main.go` `/metrics` `wayfinder_tenant_ws_clients_connected{tenant}`/`…_tracks_delivered_total{tenant}`, nur stabile `tenant_id`). Tests `TestHandlerRendersLabels` + `TestBroadcasterTenantMetrics` (race-clean). **→ WF2-23 + STUFE 2 komplett.** Milestone `docs/milestones/WF2-23.2_Per_Tenant_Metrics.md`.
 - ✅ **WF2-31 — Tenant-skopiertes Admin-API** (`pkg/adminapi`: `GET/PUT /api/admin/view` server-validiert, `GET /api/admin/subscriptions`, `GET /api/admin/feeds`; `tenant_id` aus Identity → Isolation per Konstruktion; hinter `RequireRole`). DB-freie Tenant-Scoping-/Validierungs-Tests + real-PG `TestIntegrationAdminAPI`. **Beginn Stufe 3** (Reihenfolge-Entscheid: Admin-API vor Config-Cache WF2-30). Milestone `docs/milestones/WF2-31_Admin_API.md`.
-- ✅ **WF2-31b — Subscription-Grants (super_admin, cross-tenant)** (`pkg/adminapi`: `GET /api/admin/tenants`, `GET/POST/DELETE /api/admin/tenants/{id}/subscriptions[/{feedID}]`; Ziel aus dem Pfad; Doppel-Gate `RequireRole`+`requireSuper`; `TenantStore`/`Subscribe`/`Unsubscribe`/`FeedStore.GetByID`). Cross-Tenant-Negativtest `TestCrossTenantRoutesForbidTenantAdmin` (tenant_admin → 403) + real-PG grant→list→revoke. **→ Admin-Backend komplett.** Milestone `docs/milestones/WF2-31b_Subscription_Grants.md`.
-- ✅ **WF2-32 — Admin-UI** (Frontend, Vue 3 + Vuetify, `vue-router` **History-Mode**): Browser-Route `/admin` als **eigenständige View** (ASD-Karte wird unmountet, kein Overlay — Kurskorrektur), `App.vue`→Shell + `views/AsdView.vue`/`views/AdminView.vue`; View-Editor mit **Client-Validierungs-Parität** (`src/admin/validateView.js` ↔ Server-`validateView`) vor dem PUT, Abos/Feeds read-only, **super_admin-Provisioning** (grant/revoke) hinter `isSuperAdmin`-Gate; Pinia-Store `stores/admin.js`. Backend-Namespace bereinigt: Rollen-Probe `/admin`→`GET /api/admin/whoami`, **SPA-History-Fallback** in `internal/webui/webui.go`. Tests: Vitest (`validateView`/Store, 62 grün) + Go (`webui_test.go` SPA-Fallback, `adminapi` whoami). Neue Frontend-Dep `vue-router`; kein Schema-Change. Milestone `docs/milestones/WF2-32_Admin_UI.md`. **→ Admin-Backend + UI komplett.**
+- ✅ **WF2-31b — Subscription-Grants (admin, cross-tenant)** (`pkg/adminapi`: `GET /api/admin/tenants`, `GET/POST/DELETE /api/admin/tenants/{id}/subscriptions[/{feedID}]`; Ziel aus dem Pfad; Doppel-Gate `RequireRole`+`requireAdmin`; `TenantStore`/`Subscribe`/`Unsubscribe`/`FeedStore.GetByID`). Cross-Tenant-Negativtest `TestCrossTenantRoutesForbidUser` (user → 403) + real-PG grant→list→revoke. **→ Admin-Backend komplett.** Milestone `docs/milestones/WF2-31b_Subscription_Grants.md`.
+- ✅ **WF2-32 — Admin-UI** (Frontend, Vue 3 + Vuetify, `vue-router` **History-Mode**): Browser-Route `/admin` als **eigenständige View** (ASD-Karte wird unmountet, kein Overlay — Kurskorrektur), `App.vue`→Shell + `views/AsdView.vue`/`views/AdminView.vue`; View-Editor mit **Client-Validierungs-Parität** (`src/admin/validateView.js` ↔ Server-`validateView`) vor dem PUT, Abos/Feeds read-only, **admin-Provisioning** (grant/revoke) hinter `isAdmin`-Gate; Pinia-Store `stores/admin.js`. Backend-Namespace bereinigt: Rollen-Probe `/admin`→`GET /api/admin/whoami`, **SPA-History-Fallback** in `internal/webui/webui.go`. Tests: Vitest (`validateView`/Store, 62 grün) + Go (`webui_test.go` SPA-Fallback, `adminapi` whoami). Neue Frontend-Dep `vue-router`; kein Schema-Change. Milestone `docs/milestones/WF2-32_Admin_UI.md`. **→ Admin-Backend + UI komplett.**
 - ✅ **WF2-33 — Live-Apply (laufende Subscriptions re-skopieren, ohne Reconnect)** (`pkg/broadcast`: `Scope.UserID` + immutable Client-Identity, `ClientsForTenant`/`ApplyScopes`/`rescopeChan` + Run-Case; `cmd/wayfinder`: `resolveScope`-Refactor + `rescopeTenant`; `pkg/adminapi`: `RescopeFunc`-Hook auf `putView`/`grant`/`revoke`). **Thread-Safety per Konstruktion** — Scope-Tausch als Kommando durch den Single-Goroutine-Actor, kein Lock am heißen Pfad, Run-Loop nie blockiert; `TestRescopeRaceUnderLoad` unter `-race`. **Per-User-korrekt** (gleiche Auflösung wie Connect). **Shrink** ohne Delete-Signal (Frontend-Coast, keep it simple). Tests: `pkg/broadcast/rescope_test.go` (Shrink/Grant/Revoke/Target-only/Skip-unknown/Race), `cmd/wayfinder/rescope_test.go` (Ende-zu-Ende), `pkg/adminapi` (Trigger + kein-Trigger-bei-400). Kein Schema-Change, keine neue Dep. Milestone `docs/milestones/WF2-33_Live_Apply.md`. **→ Stufe 3 komplett.**
 
 **Cross-Project / Firefly:**
