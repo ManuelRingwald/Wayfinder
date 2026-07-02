@@ -71,6 +71,17 @@
   5.3.3/5.3.5/5.3.7) und beim Editieren gespeicherter Area-Quellen (`toFormSource`).
   Gates: **vitest 244**, `vite build`, `go build`/`go test ./internal/webui` grün;
   `dist` neu eingebettet.
+- **E2E-Finding (diese Sitzung, gleicher Branch): Kopf-Feed-Chips im Mandanten-
+  Detail aktualisierten sich nicht beim Zuweisen/Entziehen eines Feeds.** Die
+  Chips oben in der „Feeds"-Karte stammen aus `admin.overview` (einmalig geladen),
+  die Zuweisungstabelle (`AdminProvisioning`) lud nach `grant`/`revoke` nur ihren
+  lokalen `tenantSubs` neu → Chip und Tabelle drifteten auseinander (Screenshot:
+  Kopf zeigte `frankfurt-adsb`, Tabelle `frankfurt-flarm` zugewiesen). Fix:
+  `AdminProvisioning` emittiert nach Erfolg ein `changed`-Event; `AdminTenantDetail`
+  lädt darauf `loadOverview()` + `loadFeedsHealth()` neu (analog zu `toggleStatus`,
+  das die overview schon nachlud). Kein Backend-Change. Regressionstest im `?raw`-
+  SFC-Stil. Gates: **vitest 248**, `vite build`, `go build`/`go test ./internal/webui`
+  grün; `dist` neu eingebettet.
 - **E2E-Testlauf-Findings #109–#121 umgesetzt (Branch
   `claude/mac-mini-e2e-network-53epgr`):** Zweiter Findings-Batch aus dem realen
   Mac-Mini-E2E-Lauf. Kurz:

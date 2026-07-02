@@ -75,6 +75,12 @@ const props = defineProps({
   tenantId: { type: Number, default: null },
 })
 
+// 'changed' fires after a successful grant/revoke so an embedding parent (the AP3
+// tenant detail page) can refresh state derived from the tenant's feed set —
+// e.g. its overview-sourced header feed chips, which would otherwise go stale
+// while this table already shows the new assignment.
+const emit = defineEmits(['changed'])
+
 const admin = useAdminStore()
 const selectedTenant = ref(null)
 const tenantSubs = ref([])
@@ -95,14 +101,20 @@ async function refreshTenantSubs() {
 async function grant(feed) {
   busy.value = true
   const r = await admin.grant(effectiveTenant.value, feed.id)
-  if (r.ok) await refreshTenantSubs()
+  if (r.ok) {
+    await refreshTenantSubs()
+    emit('changed')
+  }
   busy.value = false
 }
 
 async function revoke(feed) {
   busy.value = true
   const r = await admin.revoke(effectiveTenant.value, feed.id)
-  if (r.ok) await refreshTenantSubs()
+  if (r.ok) {
+    await refreshTenantSubs()
+    emit('changed')
+  }
   busy.value = false
 }
 
