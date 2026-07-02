@@ -144,9 +144,9 @@ docker compose logs --since 1h wayfinder   # letzte Stunde
 | `event` | Bedeutung |
 |---------|-----------|
 | `ws_connect` | Ein Nutzer hat das Lagebild geöffnet — mit Mandant, Nutzer und freigeschaltetem Umfang (Feeds, Gebiet, Flugflächen-Band) |
-| `impersonation_start` | Ein `super_admin` hat einen **Read-Only-Einblick** in einen Mandanten gestartet (`impersonated_tenant_id`) |
+| `impersonation_start` | Ein `admin` hat einen **Read-Only-Einblick** in einen Mandanten gestartet (`impersonated_tenant_id`) |
 | `impersonation_end` | …und wieder beendet |
-| `impersonation_denied` | **Abgewiesener** Einblicks-Versuch (Nicht-`super_admin` mit Grant, oder unbekannter Ziel-Mandant) — **sicherheitsrelevant, prüfen!** |
+| `impersonation_denied` | **Abgewiesener** Einblicks-Versuch (Nicht-`admin` mit Grant, oder unbekannter Ziel-Mandant) — **sicherheitsrelevant, prüfen!** |
 
 Beispiel — alle Impersonation-Ereignisse der letzten Tage heraussuchen:
 ```bash
@@ -223,7 +223,7 @@ Erst danach darf Mandant 2 mehr als einen Feed halten.
 
 ### 5.7 Read-Only-Einblick beaufsichtigen
 Der „View as Tenant"-Einblick (Bedienung: `INSTALLATION.md` Schritt 5.11) ist ein
-**Support-Werkzeug für `super_admin`**. Betrieblich gilt: Jeder Einblick steht im
+**Support-Werkzeug für `admin`**. Betrieblich gilt: Jeder Einblick steht im
 **Audit-Log** (`impersonation_start`/`_end`), läuft nach 30 min ab und ist
 **read-only**. Abgewiesene Versuche (`impersonation_denied`) regelmäßig prüfen
 (Abschnitt 6.5).
@@ -403,7 +403,7 @@ Wayfinder reagiert auf das Stopp-Signal und schließt alle Verbindungen sauber;
 | **Banner „FEED STALE"** | Quelle gerade stumm | Firefly/Sensorlage prüfen; `wayfinder_feed_stale` im Monitoring |
 | **Nutzer sieht nichts (Multi-Tenant)** | Mandant hat **keinen Feed** zugewiesen (gewollt fail-closed) | Zuweisung nachholen (5.4) |
 | **Login schlägt fehl (401)** | Passwort falsch **oder** `WAYFINDER_SESSION_KEY` fehlt/zu kurz | Key setzen (6.2), Container neu starten, ggf. `bootstrap` erneut |
-| **„Als Mandant ansehen" fehlt** | Nutzer ist nicht `super_admin` **oder** kein Signing-Key gesetzt | Rolle prüfen; `WAYFINDER_SESSION_KEY` setzen |
+| **„Als Mandant ansehen" fehlt** | Nutzer ist nicht `admin` **oder** kein Signing-Key gesetzt | Rolle prüfen; `WAYFINDER_SESSION_KEY` setzen |
 | **Viele `clients_evicted`** | Langsame Clients / Netzengpass | Netz/Client-Last prüfen; ist erwartetes Schutzverhalten (kein Absturz) |
 | **`feature_check_failclosed` steigt** | DB-Problem oder unbekannter Feature-Key | DB-Erreichbarkeit prüfen; Logs ansehen |
 | **Port belegt (`address already in use`)** | Anderer Dienst nutzt 8080/8081 | Port-Abbildung in der Compose ändern (z. B. `9091:8081`) |
