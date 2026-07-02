@@ -13,7 +13,34 @@
 ## 🎯 Stand 2026-07-02
 
 - **Zuletzt aktualisiert:** 2026-07-02
-- **E2E-Testlauf-Findings #109–#121 umgesetzt (diese Sitzung, Branch
+- **Neues Design (Claude Design) → Reskin gestartet (diese Sitzung, Branch
+  `claude/wayfinder-design-implementation-6wbbbg`):** Ein per Claude Design
+  erstellter ASD-Entwurf kam als Export (`ASD.zip`: Design-System mit Tokens +
+  ASD-Ziel-Screens als **React/JSX** + Screenshots). Das Design-System ist
+  **rückwärts aus dem Wayfinder-Code abgeleitet** — Tokens decken sich mit
+  `vuetify.js`/`constants.js`. Vorgehen: **inkrementeller Reskin auf Vue/Vuetify**
+  (kein JSX-Code übernehmen), nur Elemente, die wir **heute datenseitig stützen**
+  (Vorgabe: keine Fake-UI).
+  - **Audit gegen den realen WS-Payload** (`pkg/broadcast` `TrackMessage`): vorhanden
+    sind Position/vx-vy/confirmed/coasting/ended/Provenienz-Alter (ADS-B/SSR/MDS/
+    FLARM)/accuracy/mode_3a/icao/FL/callsign + Feed-Status. **Nicht** vorhanden:
+    Ziel-Typ mil/hostile/neutral, Zuständigkeit/Sektor-Eigentum, STCA/APW.
+  - **6-Häppchen-Plan (Thema→Häppchen):** **1** Fundament (Tokens+ADR) · **2**
+    Chrome-Reskin (Rail/Sidebar/Track-Detail/Feed-Chip/Provenienz) · **3** Kopfzeile
+    (**ICAO-Kürzel** aus Feed/View-Config, UTC-Uhr), schwebende Legende, Maßstab/
+    Vektor-Readout, optional Graticule · **4** Werkzeuge RBL/DIST/QDM(/PROBE) ·
+    **5** Tweaks-Panel (Vektor-min, History-Dots-Anzahl, Label-Variante, Tag/Nacht,
+    Toolbar-Position) · **6** Safety-Nets EMG+DUP (aus `mode_3a`). **Bewusst raus (C):**
+    Typ-Farben mil/hostile/neutral, Zuständigkeits-Dimming, STCA, Sektorgrenzen/
+    Airways/Terrain/Runways/Ext-Centerlines-Layer, APW (geparkt).
+  - **Häppchen 1 erledigt (ADR 0015, FR-UI-019):** Design-Tokens als
+    CSS-Custom-Properties (`--wf-*`) in `frontend/src/design/tokens/` +
+    `base.css`; **Roboto/Roboto Mono self-hosted via `@fontsource`** (nur
+    latin/latin-ext, kein Laufzeit-CDN), Import in `main.js`. Reines Fundament —
+    kein Umstyling, Karten-Engine unberührt. Gates: **vitest 218**, `vite build`,
+    `go build ./...`, `go test ./internal/webui/...` (eingebettetes `dist` neu) grün.
+    **Nächster Schritt:** Häppchen 2 (Chrome-Reskin) — vorher ankündigen/freigeben.
+- **E2E-Testlauf-Findings #109–#121 umgesetzt (Branch
   `claude/mac-mini-e2e-network-53epgr`):** Zweiter Findings-Batch aus dem realen
   Mac-Mini-E2E-Lauf. Kurz:
   - **#110** Runbook-Wording (View-Config → **Standard-Ansicht**), **#109/#113**

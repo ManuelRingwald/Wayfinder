@@ -1,0 +1,91 @@
+/* ============================================================
+   Wayfinder — Color tokens  (Design System v1, ADR 0015)
+   ATC command-center dark theme. Cyan primary on near-black
+   surfaces, mirroring a real radar scope: maximum contrast
+   between the WebGL map, track symbols, and UI chrome.
+
+   Authority seams (single-source-of-truth notes):
+   - CHROME tokens below mirror `src/plugins/vuetify.js`
+     (`asdDarkTheme.colors`). Vuetify needs literal hex at theme
+     build time, so the two are kept in lock-step by hand; when a
+     chrome colour changes, change BOTH. These `--wf-*` vars are
+     what non-Vuetify DOM (map overlays, custom chips) should read.
+   - DOMAIN / scope colours are AUTHORITATIVELY defined in
+     `src/map/constants.js` (they drive MapLibre GL paint
+     expressions, which cannot read CSS vars). The domain section
+     here is a DOM-side mirror for legend swatches only — keep it
+     aligned with constants.js.
+   ============================================================ */
+
+:root {
+  /* ---- Surface hierarchy (darkest → lightest) ---- */
+  --wf-background: #070b12;        /* scope backdrop, app root */
+  --wf-surface: #0e1622;           /* cards, drawers, app bar */
+  --wf-surface-variant: #16202e;   /* raised rows, inputs, hover fills */
+  --wf-surface-bright: #1c2c3e;    /* highest chrome, active tiles */
+
+  /* ---- Primary — cyan (aerospace/command-center convention) ---- */
+  --wf-primary: #23d3e6;
+  --wf-primary-darken-1: #0e8a9c;
+  --wf-on-primary: #04141a;
+
+  /* ---- Secondary — muted steel blue (inactive nav, secondary actions) ---- */
+  --wf-secondary: #5b7a9d;
+  --wf-on-secondary: #dce6f0;
+
+  /* ---- Foreground / text ---- */
+  --wf-on-background: #dce6f0;      /* primary text on the backdrop */
+  --wf-on-surface: #dce6f0;         /* primary text on surfaces */
+  --wf-on-surface-variant: #8a9bb0; /* secondary / muted text, captions */
+
+  /* ---- Semantic status — ATC-conventional, clearly distinguishable ---- */
+  --wf-error: #ff4338;
+  --wf-warning: #ffb02e;
+  --wf-success: #3ecf6b;
+  --wf-info: #3d9be0;
+  --wf-on-error: #ffffff;
+  --wf-on-warning: #1a0a00;
+  --wf-on-success: #021a0a;
+  --wf-on-info: #ffffff;
+
+  /* ---- Borders / hairlines (opacity-driven, MD3 style) ---- */
+  --wf-border: rgba(220, 230, 240, 0.12);   /* default hairline */
+  --wf-border-strong: rgba(220, 230, 240, 0.24);
+  --wf-outline: rgba(220, 230, 240, 0.38);   /* input outlines */
+
+  /* ---- State overlays (compose onto on-surface) ---- */
+  --wf-state-hover: rgba(220, 230, 240, 0.08);
+  --wf-state-pressed: rgba(220, 230, 240, 0.12);
+  --wf-state-selected: rgba(35, 211, 230, 0.16);  /* primary @ 16% — MD3 indicator */
+
+  /* ============================================================
+     Domain palette — the ASD scope (MIRROR of src/map/constants.js).
+     These encode operational meaning on the map and must stay
+     distinguishable on both dark and bright base maps. MapLibre
+     reads constants.js; these vars exist for DOM-side legend
+     swatches only. Keep aligned with constants.js.
+     ============================================================ */
+
+  /* Track symbol colours by ICAO target type (I062 correlation).
+     NOTE: today Firefly emits only civil tracks; the other types are
+     reserved and are NOT surfaced in the UI yet (no wire data). */
+  --wf-track-civil: #41c4e8;      /* cyan  — civil confirmed */
+
+  /* Track lifecycle state (precedence: filtered > coasting > confirmed > tentative) */
+  --wf-state-filtered: #455a64;   /* blue-grey — outside FL filter */
+  --wf-state-coasting: #ff9800;   /* orange — no recent update */
+  --wf-state-confirmed: #4caf50;  /* green — confirmed track */
+  --wf-state-tentative: #9e9e9e;  /* grey — tentative track */
+
+  /* Airspace category groups (OpenAIP overlay) */
+  --wf-airspace-ctr: #e040fb;         /* magenta — control zones */
+  --wf-airspace-tma: #448aff;         /* blue — controlled upper airspace */
+  --wf-airspace-restricted: #ff6d00;  /* orange — restricted/danger/prohibited */
+  --wf-airspace-info: #607d8b;        /* blue-grey — advisory (FIS/RMZ/TMZ) */
+
+  /* Scope overlay lines (dark base) */
+  --wf-scope-label: #dce6f0;      /* data-block text */
+  --wf-scope-vector: #9ec8de;     /* speed-vector line (SVL) */
+  --wf-scope-trail: #3a5a72;      /* history trail (subdued) */
+  --wf-scope-range-ring: #4a7d96; /* distance grid */
+}

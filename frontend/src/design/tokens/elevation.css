@@ -1,0 +1,22 @@
+/* ============================================================
+   Wayfinder — Elevation tokens  (Design System v1, ADR 0015)
+   On a near-black theme, elevation reads through shadow depth
+   plus a faint hairline, not through lightening (surfaces are
+   already dark). Values approximate Vuetify's elevation-1/4/8.
+   Floating map controls use elevation-4 + a 10%-on-surface border.
+   ============================================================ */
+
+:root {
+  --wf-elevation-0: none;
+  --wf-elevation-1: 0 1px 2px rgba(0, 0, 0, 0.45), 0 1px 3px rgba(0, 0, 0, 0.30);
+  --wf-elevation-2: 0 2px 4px rgba(0, 0, 0, 0.50), 0 1px 5px rgba(0, 0, 0, 0.32);
+  --wf-elevation-4: 0 4px 8px rgba(0, 0, 0, 0.55), 0 2px 4px rgba(0, 0, 0, 0.36);
+  --wf-elevation-8: 0 8px 16px rgba(0, 0, 0, 0.60), 0 4px 8px rgba(0, 0, 0, 0.40);
+
+  /* A floating chrome surface (map controls, menus) pairs elevation
+     with a subtle hairline so it separates from the WebGL canvas. */
+  --wf-chrome-border: 1px solid rgba(220, 230, 240, 0.10);
+
+  /* Focus ring — cyan, used on keyboard focus of interactive controls */
+  --wf-focus-ring: 0 0 0 2px var(--wf-background), 0 0 0 4px var(--wf-primary);
+}
