@@ -20,11 +20,17 @@ import (
 // the min_lat/min_lon/max_lat/max_lon JSON tags the contract expects), optional
 // SAC/SIC for a radar, and cred_env — the *name* of the env carrying the secret.
 type fireflySource struct {
-	Type    string      `json:"type"`
-	BBox    *store.BBox `json:"bbox,omitempty"`
-	SAC     *int        `json:"sac,omitempty"`
-	SIC     *int        `json:"sic,omitempty"`
-	CredEnv string      `json:"cred_env,omitempty"`
+	Type string      `json:"type"`
+	BBox *store.BBox `json:"bbox,omitempty"`
+	SAC  *int        `json:"sac,omitempty"`
+	SIC  *int        `json:"sic,omitempty"`
+	// Radar location (radar_asterix, contract v1.3.0 / #91): pass-through of the
+	// stored site so Firefly can lift CAT048 polar plots into the tracking frame.
+	Lat     *float64 `json:"lat,omitempty"`
+	Lon     *float64 `json:"lon,omitempty"`
+	HeightM *float64 `json:"height_m,omitempty"`
+	Listen  string   `json:"listen,omitempty"`
+	CredEnv string   `json:"cred_env,omitempty"`
 }
 
 // credEnvName is the deterministic env name carrying the resolved credential for
@@ -52,10 +58,14 @@ func fireflySourcesEnv(sources store.SourceConfig, resolved map[string]string) (
 	out := make([]fireflySource, 0, len(sources))
 	for i, s := range sources {
 		fs := fireflySource{
-			Type: string(s.Type),
-			BBox: s.BBox,
-			SAC:  s.SAC,
-			SIC:  s.SIC,
+			Type:    string(s.Type),
+			BBox:    s.BBox,
+			SAC:     s.SAC,
+			SIC:     s.SIC,
+			Lat:     s.Lat,
+			Lon:     s.Lon,
+			HeightM: s.HeightM,
+			Listen:  s.Listen,
 		}
 		if s.CredRef != nil {
 			if v, found := resolved[*s.CredRef]; found && v != "" {

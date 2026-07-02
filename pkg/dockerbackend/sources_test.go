@@ -8,8 +8,9 @@ import (
 	"github.com/manuelringwald/wayfinder/pkg/store"
 )
 
-func ptrInt(v int) *int       { return &v }
-func ptrStr(v string) *string { return &v }
+func ptrInt(v int) *int           { return &v }
+func ptrStr(v string) *string     { return &v }
+func ptrFloat(v float64) *float64 { return &v }
 
 // An empty source list renders nothing (ok=false) so the caller can fall back to
 // the placeholder scene.
@@ -74,12 +75,12 @@ func TestFireflySourcesEnvUnresolvedCredentialIsAnonymous(t *testing.T) {
 	}
 }
 
-// A radar source carries sac/sic and no bbox/cred_env; an anonymous source omits
-// cred_env entirely.
+// A radar source carries sac/sic + location (lat/lon/listen, contract v1.3.0 /
+// #91) and no bbox/cred_env; an anonymous source omits cred_env entirely.
 func TestFireflySourcesEnvRadarAndAnonymous(t *testing.T) {
 	sources := store.SourceConfig{
 		{Type: store.SourceADSBOpenSky, BBox: &store.BBox{MinLat: 1, MinLon: 2, MaxLat: 3, MaxLon: 4}},
-		{Type: store.SourceRadarASTERIX, SAC: ptrInt(1), SIC: ptrInt(4)},
+		{Type: store.SourceRadarASTERIX, SAC: ptrInt(1), SIC: ptrInt(4), Lat: ptrFloat(50.03), Lon: ptrFloat(8.57), Listen: "239.255.0.48:8048"},
 	}
 	js, credEnvs, _ := fireflySourcesEnv(sources, nil)
 	var got []map[string]any
@@ -92,8 +93,16 @@ func TestFireflySourcesEnvRadarAndAnonymous(t *testing.T) {
 	if got[1]["type"] != "radar_asterix" || got[1]["sac"] != 1.0 || got[1]["sic"] != 4.0 {
 		t.Errorf("radar entry = %v", got[1])
 	}
+	// #91: radar site is serialized so Firefly can geolocate CAT048 polar plots.
+	if got[1]["lat"] != 50.03 || got[1]["lon"] != 8.57 || got[1]["listen"] != "239.255.0.48:8048" {
+		t.Errorf("radar location = lat:%v lon:%v listen:%v", got[1]["lat"], got[1]["lon"], got[1]["listen"])
+	}
 	if _, has := got[1]["bbox"]; has {
 		t.Error("radar source must omit bbox")
+	}
+	// An area source (no location) omits the radar fields entirely.
+	if _, has := got[0]["lat"]; has {
+		t.Error("area source must omit lat")
 	}
 	if len(credEnvs) != 0 {
 		t.Errorf("no creds expected, got %v", credEnvs)

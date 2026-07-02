@@ -6,8 +6,9 @@ import (
 	"testing"
 )
 
-func ptrInt(v int) *int       { return &v }
-func ptrStr(v string) *string { return &v }
+func ptrInt(v int) *int           { return &v }
+func ptrStr(v string) *string     { return &v }
+func ptrFloat(v float64) *float64 { return &v }
 func bbox(minLat, minLon, maxLat, maxLon float64) *BBox {
 	return &BBox{MinLat: minLat, MinLon: minLon, MaxLat: maxLat, MaxLon: maxLon}
 }
@@ -30,14 +31,14 @@ func TestSourceConfigValidate(t *testing.T) {
 			cfg:  SourceConfig{{Type: SourceADSBOpenSky, BBox: bbox(48, 7, 50, 9), CredRef: ptrStr("secret/speyer")}},
 		},
 		{
-			name: "valid radar with sac/sic, no bbox",
-			cfg:  SourceConfig{{Type: SourceRadarASTERIX, SAC: ptrInt(1), SIC: ptrInt(4)}},
+			name: "valid radar with sac/sic + location, no bbox",
+			cfg:  SourceConfig{{Type: SourceRadarASTERIX, SAC: ptrInt(1), SIC: ptrInt(4), Lat: ptrFloat(50.03), Lon: ptrFloat(8.57), Listen: "239.255.0.48:8048"}},
 		},
 		{
 			name: "valid mixed config",
 			cfg: SourceConfig{
 				{Type: SourceADSBOpenSky, BBox: bbox(48, 7, 50, 9)},
-				{Type: SourceRadarASTERIX, SAC: ptrInt(1), SIC: ptrInt(4)},
+				{Type: SourceRadarASTERIX, SAC: ptrInt(1), SIC: ptrInt(4), Lat: ptrFloat(50.03), Lon: ptrFloat(8.57)},
 			},
 		},
 		{
@@ -67,7 +68,22 @@ func TestSourceConfigValidate(t *testing.T) {
 		},
 		{
 			name:    "radar sac out of range",
-			cfg:     SourceConfig{{Type: SourceRadarASTERIX, SAC: ptrInt(256), SIC: ptrInt(4)}},
+			cfg:     SourceConfig{{Type: SourceRadarASTERIX, SAC: ptrInt(256), SIC: ptrInt(4), Lat: ptrFloat(50), Lon: ptrFloat(8)}},
+			wantErr: true, wantIdx: 0,
+		},
+		{
+			name:    "radar without lat/lon rejected (#91)",
+			cfg:     SourceConfig{{Type: SourceRadarASTERIX, SAC: ptrInt(1), SIC: ptrInt(4)}},
+			wantErr: true, wantIdx: 0,
+		},
+		{
+			name:    "radar lat out of range",
+			cfg:     SourceConfig{{Type: SourceRadarASTERIX, SAC: ptrInt(1), SIC: ptrInt(4), Lat: ptrFloat(91), Lon: ptrFloat(8)}},
+			wantErr: true, wantIdx: 0,
+		},
+		{
+			name:    "area source with radar location rejected",
+			cfg:     SourceConfig{{Type: SourceADSBOpenSky, BBox: bbox(48, 7, 50, 9), Lat: ptrFloat(50), Lon: ptrFloat(8)}},
 			wantErr: true, wantIdx: 0,
 		},
 		{
