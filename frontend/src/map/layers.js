@@ -290,7 +290,7 @@ export function addAirspaceLayers(map, palette) {
     minzoom: 6,
     layout: {
       'text-field': ['coalesce', ['get', 'name'], ''],
-      'text-font': ['Open Sans Regular'],
+      'text-font': ['Roboto Mono Medium'],
       'text-size': 10,
       'symbol-placement': 'line',
     },
@@ -329,7 +329,7 @@ export function addNavaidLayers(map, palette) {
       'icon-size': 1,
       'icon-allow-overlap': true,
       'text-field': ['coalesce', ['get', 'ident'], ['get', 'name'], ''],
-      'text-font': ['Open Sans Regular'],
+      'text-font': ['Roboto Mono Medium'],
       'text-size': 10,
       'text-offset': [0, 1.1],
       'text-anchor': 'top',
@@ -360,7 +360,7 @@ export function addWaypointLayers(map, palette) {
       'icon-size': 1,
       'icon-allow-overlap': false,
       'text-field': ['coalesce', ['get', 'name'], ''],
-      'text-font': ['Open Sans Regular'],
+      'text-font': ['Roboto Mono Medium'],
       'text-size': 9,
       'text-offset': [0, 1.0],
       'text-anchor': 'top',
@@ -494,11 +494,11 @@ export function addLabelsLayer(map, palette) {
     source: LABELS_SOURCE_ID,
     layout: {
       'text-field': ['get', 'label'],
-      // Explicit font from the style's glyphs endpoint (fonts.openmaptiles.org).
-      // Without a glyphs source AND a served font, a symbol layer renders no text
-      // at all — which is exactly why labels were invisible while the circle and
-      // line layers (needing no glyphs) drew fine.
-      'text-font': ['Open Sans Regular'],
+      // Roboto Mono (design template data-block face), served from Wayfinder's
+      // own self-hosted glyph endpoint (/glyphs, webui.GlyphsHandler) — a symbol
+      // layer draws no text without a glyphs source AND a served font, and
+      // self-hosting keeps the scope font off any runtime CDN (air-gap, ADR 0015).
+      'text-font': ['Roboto Mono Medium'],
       'text-size': LABEL_TEXT_SIZE,
       // Design template data-block metrics (scope-tracks.jsx): 0.02em tracking
       // and 1.25 line-height. Both are expressible on a GL symbol layer (unlike
@@ -646,7 +646,7 @@ export function addRangeRingsLayer(map, palette) {
     layout: {
       visibility: 'none',
       'text-field': ['get', 'label'],
-      'text-font': ['Open Sans Regular'],
+      'text-font': ['Roboto Mono Medium'],
       'text-size': 10,
       'text-offset': [0, -0.5],
       'text-allow-overlap': false,

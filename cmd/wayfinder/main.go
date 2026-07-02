@@ -350,6 +350,14 @@ func main() {
 		os.Exit(1)
 	}
 	mux.Handle("/", frontend)
+	// Self-hosted MapLibre glyph PBFs (Roboto Mono) — the scope's data-block
+	// font, served from the binary so no runtime font CDN is needed (air-gap).
+	glyphs, err := webui.GlyphsHandler()
+	if err != nil {
+		logger.Error("create glyphs handler", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+	mux.Handle("/glyphs/", glyphs)
 	mux.HandleFunc("/api/map-config", mapConfigHandler(cfg))
 
 	// Aeronautical GeoJSON endpoints (/api/airspace, /api/navaids,
@@ -601,12 +609,14 @@ func (c Config) authConfig(sessions auth.SessionResolver) auth.Config {
 
 // defaultMapStyle is a minimal MapLibre style using OpenStreetMap raster
 // tiles. It needs no API key, which keeps the demo self-contained. The "glyphs"
-// endpoint (keyless fonts.openmaptiles.org) is required for any text to render:
-// a symbol layer with a text-field draws nothing without a font source. For a
-// fully air-gapped deployment, self-host glyphs and tiles via WAYFINDER_MAP_STYLE_URL.
+// endpoint is served BY WAYFINDER ITSELF (/glyphs/…, webui.GlyphsHandler,
+// embedded Roboto Mono PBFs) — a symbol layer with a text-field draws nothing
+// without a font source, and self-hosting keeps the scope font off any runtime
+// CDN (air-gap; ADR 0015). The raster tiles are still external; a fully
+// air-gapped deployment self-hosts those too via WAYFINDER_MAP_STYLE_URL.
 const defaultMapStyle = `{
 	"version": 8,
-	"glyphs": "https://fonts.openmaptiles.org/{fontstack}/{range}.pbf",
+	"glyphs": "/glyphs/{fontstack}/{range}.pbf",
 	"sources": {
 		"osm": {
 			"type": "raster",
@@ -630,7 +640,7 @@ const defaultMapStyle = `{
 // synthetic scope in the design export is a standalone-demo artefact).
 const darkMapStyle = `{
 	"version": 8,
-	"glyphs": "https://fonts.openmaptiles.org/{fontstack}/{range}.pbf",
+	"glyphs": "/glyphs/{fontstack}/{range}.pbf",
 	"sources": {
 		"carto-dark": {
 			"type": "raster",
