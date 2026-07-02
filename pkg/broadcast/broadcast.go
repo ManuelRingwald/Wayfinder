@@ -181,9 +181,17 @@ type TrackMessage struct {
 	// Present only for tracks with an ADS-B component (Firefly ADR 0019); its
 	// presence is what the frontend uses to show the ADS-B badge.
 	AdsbAgeS *float64 `json:"adsb_age_s,omitempty"`
-	Accuracy float64  `json:"accuracy"`
-	Mode3A   *uint16  `json:"mode_3a,omitempty"`
-	ICAOAddr *uint32  `json:"icao_addr,omitempty"`
+	// SSRAgeS, MDSAgeS and FlarmAgeS are the remaining per-technology update
+	// ages from I062/290 (ICD 2.6.0, Firefly ADR 0027): SSR = Mode A/C, MDS =
+	// Mode S, FLARM = Firefly's vendor subfield. Present only when the track
+	// has been updated by that technology; together with AdsbAgeS they let the
+	// frontend derive an authoritative provenance (A = ADS-B, F = FLARM, …).
+	SSRAgeS   *float64 `json:"ssr_age_s,omitempty"`
+	MDSAgeS   *float64 `json:"mds_age_s,omitempty"`
+	FlarmAgeS *float64 `json:"flarm_age_s,omitempty"`
+	Accuracy  float64  `json:"accuracy"`
+	Mode3A    *uint16  `json:"mode_3a,omitempty"`
+	ICAOAddr  *uint32  `json:"icao_addr,omitempty"`
 	// FlightLevelFt is the measured barometric flight level in feet (I062/136),
 	// present only for tracks carrying a Mode C reply.
 	FlightLevelFt *float64 `json:"flight_level_ft,omitempty"`
@@ -478,6 +486,9 @@ func (b *Broadcaster) tracksToMessage(batch TrackBatch) Message {
 			Ended:         track.Status.Ended,
 			PSRAge:        track.UpdateAge.PSRAge,
 			AdsbAgeS:      track.UpdateAge.ESAge,
+			SSRAgeS:       track.UpdateAge.SSRAge,
+			MDSAgeS:       track.UpdateAge.MDSAge,
+			FlarmAgeS:     track.UpdateAge.FLARMAge,
 			Accuracy:      track.Accuracy.APC,
 			Mode3A:        track.Mode3A,
 			ICAOAddr:      track.ICAOAddr,

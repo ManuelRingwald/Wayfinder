@@ -10,6 +10,30 @@
 
 ---
 
+## 🎯 Stand 2026-07-02
+
+- **Zuletzt aktualisiert:** 2026-07-02
+- **E2E-Testlauf-Findings #109–#121 umgesetzt (diese Sitzung, Branch
+  `claude/mac-mini-e2e-network-53epgr`):** Zweiter Findings-Batch aus dem realen
+  Mac-Mini-E2E-Lauf. Kurz:
+  - **#110** Runbook-Wording (View-Config → **Standard-Ansicht**), **#109/#113**
+    Quell-Abdeckung als **Zentrum+Radius** + **Mandanten-Dropdown**, **#112**
+    Feed-Refetch nach Quellen-Speichern, **#111** Erfolgs-Badges nach 5 s weg
+    (FR-ORCH-009).
+  - **#114/#115/#116/#121** Sidebar-Neugliederung (Layer/Filter/Nutzer-Account,
+    Default eingeklappt, FL-Band-Hinweis, Radarabdeckung-Gate, Resize-Fix)
+    (FR-UI-018).
+  - **#117** Feed-Status-Fix (color→state-Mapping + worst-wins-Aggregation, behebt
+    dauerhaftes „FEED ?"), **#118/#119** Per-Technologie-Alter im CAT062-Decoder
+    (SSR/MDS/**FLARM**, ICD 2.6.0) + **A/F-Glyphen** und distinkte FLARM-Provenienz
+    (FR-DATA-007).
+  - **#120** (kombinierter ADS-B+FLARM-Feed ohne Tracks) **root-caused + gefixt in
+    Firefly**: FLARM stempelte Mitternachts-Sekunden statt Unix-Epoch → der
+    gemeinsame Datenzeit-Wasserstand verwarf FLARM-Plots. Fix im FLARM-Adapter
+    (Epoch-Zeit), siehe Firefly-STATUS + `docs/milestones/FLARM-Epoch-Time_Multi-Source-Fusion.md`.
+  - Gates grün: `go test/vet/gofmt` (Wayfinder), `cargo test --workspace`/clippy/fmt
+    (Firefly), **218 vitest**, `vite build` (dist neu eingebettet).
+
 ## 🎯 Stand 2026-07-01
 
 - **Zuletzt aktualisiert:** 2026-07-01

@@ -111,7 +111,8 @@ pkg/broadcast.Broadcaster
     ├─► WebSocket /ws  (Port 8081)
     │       └─► JSON TrackMessage  {feed_id, track_num, lat, lon, vx, vy,
     │                                flight_level_ft, callsign, mode_3a,
-    │                                icao_addr, adsb_age_s,
+    │                                icao_addr, adsb_age_s, ssr_age_s,
+    │                                mds_age_s, flarm_age_s,
     │                                coasting, ended, ...}
     └─► (Eviction bei vollem Send-Channel, Warn-Log)
 ```
@@ -120,30 +121,37 @@ Jeder verbundene Browser-Client erhält dieselben Track-Updates. Der
 Broadcaster hält keine Track-History — jedes Update ist ein vollständiges
 Snapshot-Frame (alle aktuell bekannten Tracks).
 
-**ADS-B-Anteil (`adsb_age_s`, ICD 2.4.0, AP9.9):** Das Feld `adsb_age_s`
-ist nur vorhanden (`omitempty`), wenn Firefly den Track zuletzt mit einem
-ADS-B-Selbstbericht aktualisiert hat. Der Wert gibt das Alter dieses Updates
-in Sekunden an (Auflösung 1/4 s, aus I062/290 ES-Age). Fehlt das Feld, ist
-der Track ein reiner Radar-Track.
+**Per-Technologie-Alter (`*_age_s`, ICD 2.4.0/2.6.0):** Die Felder `adsb_age_s`
+(ES), `ssr_age_s`, `mds_age_s` und `flarm_age_s` sind jeweils nur vorhanden
+(`omitempty`), wenn Firefly den Track zuletzt mit einem Treffer der jeweiligen
+Technologie aktualisiert hat. Der Wert ist das Alter dieses Updates in Sekunden
+(Auflösung 1/4 s, aus I062/290 per-Technologie-Alter, ICD 2.6.0 / Firefly ADR
+0027). Fehlen alle, ist der Track ein reiner Radar-Track. Der Decoder liest
+I062/290 positionsbasiert über das Primary-Subfeld (tolerant gegen unbekannte
+Bits), siehe `pkg/cat062/decoder.go`.
 
 Das Frontend leitet daraus — zusammen mit `icao_addr`/`mode_3a`/`callsign` — die
-**track-abgeleitete Herkunft** ab und kodiert sie als **Symbol-Form** (WF2-40).
-Die **Farbe** des Symbols bleibt dabei der Track-Zustand
+**track-abgeleitete Herkunft** ab und kodiert sie als **Symbol-Glyph** (WF2-40,
+#118/#119). Die **Farbe** des Symbols bleibt dabei der Track-Zustand
 (confirmed/coasting/tentative/filtered):
 
 | Symbol | Herkunft | Bedingung |
 |--------|----------|-----------|
-| ◆ Karo (gefüllt)    | ADS-B (kooperativ) | `adsb_age_s` vorhanden **und** ≤ 30 s (frisch) |
-| ▢ Quadrat (gefüllt) | SSR / Mode S       | kein frisches ADS-B, aber `icao_addr`/`mode_3a`/Callsign |
-| ○ Ring (offen)      | Primär (PSR)       | keines der obigen — reine Skin-Paint ohne ID |
+| **A** (Buchstabe) | ADS-B (kooperativ) | `adsb_age_s` vorhanden **und** ≤ 30 s (frisch) |
+| **F** (Buchstabe) | FLARM              | kein frisches ADS-B, aber `flarm_age_s` frisch (≤ 30 s) |
+| ▢ Quadrat (gefüllt) | SSR / Mode S     | kein frisches ADS-B/FLARM, aber `icao_addr`/`mode_3a`/Callsign |
+| ○ Ring (offen)      | Primär (PSR)     | keines der obigen — reine Skin-Paint ohne ID |
 
-Die 30-Sekunden-Frische-Schwelle (`ADSB_FRESH_THRESHOLD_S`) und die Klassifikation
-liegen in `frontend/src/map/provenance.js` (`trackProvenance`, `isAdsbFresh`); die
-Symbole werden in `frontend/src/map/layers.js` (`addTrackIcons`) zur Laufzeit
-gezeichnet. Das **Track-Detail-Panel** zeigt die Herkunft im Klartext, die
-**Sidebar** eine Form-Legende. **Ehrliche Grenze:** track-abgeleitet, keine
-zertifizierte Per-Plot-Provenienz — CAT062 trägt keine explizite Sensor-Quelle
-pro Plot (offen als WF2-42).
+Seit ICD 2.6.0 ist **FLARM erstmals sauber unterscheidbar** (eigenes `flarm_age_s`),
+statt wie zuvor unter ADS-B/SSR zu verschwinden (#118). Die 30-Sekunden-Frische-
+Schwelle (`ADSB_FRESH_THRESHOLD_S`) und die Klassifikation liegen in
+`frontend/src/map/provenance.js` (`trackProvenance`, `isAdsbFresh`); sie wird bei
+**jedem WS-Update neu berechnet** (kein Caching am Track), sodass ein Quellwechsel
+den Glyph sofort korrigiert. Die Symbole werden in `frontend/src/map/layers.js`
+(`addTrackIcons`) zur Laufzeit gezeichnet (A/F als Buchstaben-Glyph). Das
+**Track-Detail-Panel** zeigt die Herkunft im Klartext, die **Sidebar** (Sektion
+„Layer") eine Glyph-Legende. **Ehrliche Grenze:** track-abgeleitet, keine
+zertifizierte Per-Plot-Provenienz.
 
 > **Hinweis (Regression behoben):** Bis WF2-40 war ein ADS-B-`◆`-Badge nur im
 > **Data-Block-Label** vorgesehen (frühere `internal/webui/static/app.js`); es
@@ -156,6 +164,16 @@ pro Plot (offen als WF2-42).
 Der Feed-Status (`feed_status`-Nachricht) wird separat gesendet, wenn sich
 die Liveness des Feeds ändert (ok → stale, stale → ok, erster Heartbeat).
 Er löscht **nicht** das Lagebild im Browser.
+
+Die Nachricht trägt pro Feed ein **Ampel-`color`-Feld** (`green`/`yellow`/`red`,
+`pkg/broadcast.FeedStatusMessage`). Das Frontend (`stores/asd.js`, #117) mappt es
+auf Chip-Zustände (`green→ok`, `yellow→degraded`, `red→stale`) und **aggregiert
+über alle abonnierten Feeds nach „worst-wins"** — so maskiert ein gesunder Feed
+nie einen toten. `FeedStatusChip` zeigt daraus `FEED OK` / `SENSOR AUSFALL` /
+`FEED STALE` bzw. `FEED ?` (noch kein Heartbeat). Bei WS-(Re)Connect wird der
+Per-Feed-Zustand zurückgesetzt (`resetFeedHealth`), damit ein alter Scope nicht
+nachhängt. (Zuvor las das Frontend fälschlich ein nicht existentes `state`-Feld →
+dauerhaft „FEED ?", #117.)
 
 ### 2.4 Aeronautische Daten (best-effort)
 
@@ -201,7 +219,7 @@ immer aktiv — ADR 0014); statische Frontend-Routen werden ausgeliefert.
 | `/api/airspace` | GET | Luftraumstrukturen (GeoJSON, best-effort). **ONB-6 (ADR 0011):** hinter der Tenant-Middleware; liefert den **Cache des Request-Mandanten** (eigener Schlüssel/AOI, Fallback auf den globalen Cache) |
 | `/api/navaids` | GET | VOR/NDB-Beacons (GeoJSON, best-effort). **ONB-6:** mandanten-aufgelöst wie `/api/airspace` |
 | `/api/waypoints` | GET | Wegpunkte (GeoJSON, best-effort). **ONB-6:** mandanten-aufgelöst wie `/api/airspace` |
-| `/api/whoami` | GET | **WF2-12.4:** rollen-agnostische Identitäts-Probe (`{subject, tenant_id, user_id, role, must_change_password, features, sensor_classes}`); hinter der Tenant-Middleware, **nicht** `requireAdmin` — die ASD-Karte entscheidet damit Login-Schirm vs. Live-Bild und gated Layer/Legende (Issues #106/#107); `401` ohne Sitzung. `sensor_classes` ist die Vereinigung der Sensor-Klassen über die abonnierten Feeds des Mandanten. |
+| `/api/whoami` | GET | **WF2-12.4:** rollen-agnostische Identitäts-Probe (`{subject, tenant_id, user_id, role, must_change_password, features, sensor_classes, fl_min?, fl_max?}`); hinter der Tenant-Middleware, **nicht** `requireAdmin` — die ASD-Karte entscheidet damit Login-Schirm vs. Live-Bild und gated Layer/Legende (Issues #106/#107); `401` ohne Sitzung. `sensor_classes` ist die Vereinigung der Sensor-Klassen über die abonnierten Feeds des Mandanten. `fl_min`/`fl_max` spiegeln das FL-Band der effektiven Ansicht (Standard-Ansicht oder Nutzer-Override) für den grauen Bereichs-Hinweis im FL-Filter der Sidebar (#116; `omitempty`, fehlen wenn kein Band konfiguriert). |
 | `/api/session/renew` | POST | **WF2-12.5:** Sliding-Session — mintet das Session-Cookie mit frischer TTL neu (builtin); hinter der Tenant-Middleware, `401` ohne Sitzung. Die Karte ruft es periodisch (alle 10 min) + bei WS-Reconnect + Tab-Fokus auf, damit eine aktive Konsole nie ausgeloggt wird. **WF2-12.6:** bewahrt den Erst-Login-Zeitpunkt und antwortet `401` (kein neues Cookie), sobald das absolute Maximum `WAYFINDER_SESSION_MAX_LIFETIME` überschritten ist |
 | `/api/admin/whoami` | GET | Rollen-Probe + **effektive Feature-Flags** (`features`) als JSON; enthält seit ONB-1 `must_change_password`; rollen-gegated (WF2-32/50) |
 | `/api/admin/me` | GET | **ONB-1 (ADR 0011):** eigenes Konto (`{user_id, tenant_id, subject, role, must_change_password}`); **rollen-unabhängig** (kein `requireAdmin`) |
@@ -455,6 +473,11 @@ Auflösung (höchste Priorität zuerst):
 
 **Endpoint:** `GET /api/coverage/rings` → `application/geo+json` FeatureCollection.
 Wird einmal beim Frontend-Load abgerufen. Leere Collection wenn kein Sensor konfiguriert.
+
+`/api/map-config` meldet zusätzlich `coverage_sensor_count`. Ist der Wert `0`
+(keine Coverage-Sensoren konfiguriert), **deaktiviert** die Sidebar den
+Schalter „Radarabdeckung" mit erklärendem Hinweis, statt einen wirkungslosen
+Toggle anzubieten (#114; `store.coverageAvailable`, gesetzt in `map/engine.js`).
 
 ### 6.6 Range-Ring-Overlay & Karten-Controls (ASD-012)
 

@@ -173,12 +173,31 @@
             <v-btn size="small" color="error" variant="text" icon="mdi-delete" @click="removeSource(i)" />
           </div>
 
-          <!-- Area-bounded sources: query bbox -->
-          <div v-if="isAreaType(s.type)" class="d-flex flex-wrap ga-2">
-            <v-text-field v-model.number="s.bbox.min_lat" type="number" label="min lat" density="compact" hide-details style="max-width: 120px" />
-            <v-text-field v-model.number="s.bbox.min_lon" type="number" label="min lon" density="compact" hide-details style="max-width: 120px" />
-            <v-text-field v-model.number="s.bbox.max_lat" type="number" label="max lat" density="compact" hide-details style="max-width: 120px" />
-            <v-text-field v-model.number="s.bbox.max_lon" type="number" label="max lon" density="compact" hide-details style="max-width: 120px" />
+          <!-- Area-bounded sources: centre + radius (#109/#113). The tenant
+               dropdown fills these from that tenant's Standard-Ansicht; the query
+               bbox is derived on save (radiusNmToBbox), so the admin reasons in the
+               same centre+radius terms as the tenant view rather than four corners. -->
+          <div v-if="isAreaType(s.type)">
+            <v-select
+              v-model="s.tenant_id"
+              :items="tenantOptions"
+              item-title="name"
+              item-value="id"
+              label="Aus Mandant übernehmen (optional)"
+              hint="Füllt Zentrum + Radius aus der Standard-Ansicht des gewählten Mandanten."
+              persistent-hint
+              density="compact"
+              clearable
+              class="mb-2"
+              style="max-width: 340px"
+              :loading="tenantAreaBusy === i"
+              @update:model-value="applyTenantArea(i, $event)"
+            />
+            <div class="d-flex flex-wrap ga-2">
+              <v-text-field v-model.number="s.center_lat" type="number" label="Zentrum Breite (°)" density="compact" hide-details style="max-width: 160px" />
+              <v-text-field v-model.number="s.center_lon" type="number" label="Zentrum Länge (°)" density="compact" hide-details style="max-width: 160px" />
+              <v-text-field v-model.number="s.radius_nm" type="number" label="Radius (NM)" density="compact" hide-details style="max-width: 130px" />
+            </div>
           </div>
 
           <!-- Real radar: SAC/SIC sensor identity -->
@@ -309,9 +328,37 @@
 import { ref, computed, onMounted } from 'vue'
 import { useAdminStore } from '@/stores/admin.js'
 import { validateCredential, combineCredential } from '@/admin/credential.js'
+import { radiusNmToBbox, bboxToRadius } from '@/admin/geo.js'
 
 const admin = useAdminStore()
 const busy = ref(false)
+
+// #113: tenant options for the source dialog's "adopt from tenant" dropdown.
+// Loaded lazily when a source dialog opens; each option carries the tenant id
+// and name, and selecting one fills the source's centre+radius from that
+// tenant's Standard-Ansicht (applyTenantArea).
+const tenantOptions = computed(() =>
+  admin.tenants.map((t) => ({ id: t.id, name: t.name })),
+)
+const tenantAreaBusy = ref(-1)
+
+async function applyTenantArea(i, tenantId) {
+  if (tenantId == null) return
+  tenantAreaBusy.value = i
+  const r = await admin.loadTenantView(tenantId)
+  tenantAreaBusy.value = -1
+  if (!r.ok || !r.data) {
+    sourcesError.value = 'Der Mandant hat noch keine Standard-Ansicht.'
+    return
+  }
+  const s = sources.value[i]
+  s.center_lat = r.data.center_lat
+  s.center_lon = r.data.center_lon
+  // Prefer the stored AOI radius; fall back to a sensible default when the
+  // tenant view carries no AOI (centre only), so the fields are never left half-set.
+  const derived = r.data.aoi ? bboxToRadius(r.data.aoi) : null
+  s.radius_nm = derived ? Math.round(derived.radiusNm) : (s.radius_nm ?? null)
+}
 
 const createDialog = ref(false)
 const deleteDialog = ref(false)
@@ -461,23 +508,35 @@ async function clearSecret(i) {
   }
 }
 
-// blankSource returns a fresh form entry of the given type with the shape the
-// per-type inputs bind to (bbox always present so v-model has a target; unused
-// fields are stripped on submit).
+// blankSource returns a fresh form entry of the given type. Area sources bind to
+// centre+radius (#109/#113; the query bbox is derived on submit); radar binds to
+// sac/sic. tenant_id backs the "adopt from tenant" dropdown (never sent).
 function blankSource(type = 'adsb_opensky') {
-  return { type, bbox: { min_lat: null, min_lon: null, max_lat: null, max_lon: null }, sac: null, sic: null, cred_ref: '' }
+  return { type, center_lat: null, center_lon: null, radius_nm: null, tenant_id: null, sac: null, sic: null, cred_ref: '' }
 }
 
-// toFormSource maps a stored source (wire shape) into the form model, ensuring a
-// bbox object exists for the inputs even when the stored source had none.
+// toFormSource maps a stored source (wire shape, still a bbox) into the form
+// model, converting the persisted bbox back into centre+radius so the operator
+// edits the same terms as the tenant view (#109). A missing/degenerate bbox
+// leaves the centre+radius fields empty.
 function toFormSource(s) {
+  const cr = s.bbox ? bboxToRadius(s.bbox) : null
   return {
     type: s.type,
-    bbox: s.bbox ? { ...s.bbox } : { min_lat: null, min_lon: null, max_lat: null, max_lon: null },
+    center_lat: cr ? round(cr.centerLat) : null,
+    center_lon: cr ? round(cr.centerLon) : null,
+    radius_nm: cr ? Math.round(cr.radiusNm) : null,
+    tenant_id: null,
     sac: s.sac ?? null,
     sic: s.sic ?? null,
     cred_ref: s.cred_ref ?? '',
   }
+}
+
+// round keeps the centre coordinates readable (5 decimals ≈ 1 m) when a stored
+// bbox is converted back to centre+radius for display.
+function round(n) {
+  return Math.round(n * 1e5) / 1e5
 }
 
 async function openSources(f) {
@@ -487,6 +546,9 @@ async function openSources(f) {
   coveragePreview.value = ''
   sourcesDialog.value = true
   busy.value = true
+  // #113: make sure the tenant dropdown has options (lazy — only when a source
+  // dialog is actually opened). Ignored if already loaded.
+  if (!admin.tenants.length) admin.loadTenants()
   secretStoreEnabled.value = false
   secretRefs.value = new Set()
   secretUser.value = {}
@@ -518,14 +580,17 @@ function formatBBox(b) {
 
 // buildSourcesPayload strips each form entry down to the fields its type uses, so
 // the server never sees an area source carrying sac/sic (which it would reject).
+// Area sources are edited as centre+radius (#109) and converted to the query
+// bbox the wire contract still expects (radiusNmToBbox); a missing/zero radius
+// yields no bbox (the server treats it as unbounded, as before).
 function buildSourcesPayload() {
   return {
     sources: sources.value.map((s) => {
       const out = { type: s.type }
       if (isAreaType(s.type)) {
-        out.bbox = {
-          min_lat: s.bbox.min_lat, min_lon: s.bbox.min_lon,
-          max_lat: s.bbox.max_lat, max_lon: s.bbox.max_lon,
+        const box = radiusNmToBbox(s.center_lat, s.center_lon, s.radius_nm)
+        if (box) {
+          out.bbox = { min_lat: box.minLat, min_lon: box.minLon, max_lat: box.maxLat, max_lon: box.maxLon }
         }
       } else {
         out.sac = s.sac
@@ -542,13 +607,16 @@ async function submitSources() {
   sourcesError.value = ''
   busy.value = true
   const r = await admin.saveFeedSources(sourcesTarget.value.id, buildSourcesPayload())
-  busy.value = false
   if (r.ok) {
     sources.value = (r.data.sources || []).map(toFormSource)
     coveragePreview.value = formatBBox(r.data.coverage_bbox)
+    // #112: the feed row's sensor-mix chips are derived from its sources; reload
+    // the catalogue so the change shows immediately, without a manual tab switch.
+    await admin.loadFeeds()
   } else {
     sourcesError.value = r.error || 'Speichern fehlgeschlagen.'
   }
+  busy.value = false
 }
 
 async function submitDelete() {

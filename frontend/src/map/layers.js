@@ -135,26 +135,20 @@ export function addAeronauticalIcons(map) {
   )
 }
 
-// WF2-40: Provenance track symbols. The SHAPE encodes the surveillance source
-// (◆ ADS-B, ▢ SSR/Mode S, ○ primary/PSR); the fill (or ring) COLOUR encodes the
-// track state — the same colours the old circle layer used, so no state
-// information is lost. Icons are pre-rendered per (shape × state) combination
-// and selected at runtime by a data-driven icon-image expression, which avoids
-// the antialiasing pitfalls of tinting a single SDF icon.
+// WF2-40/#119: Provenance track symbols. The GLYPH encodes the surveillance
+// source (A = ADS-B, F = FLARM, ▢ SSR/Mode S, ○ primary/PSR); the fill (or
+// ring/letter) COLOUR encodes the track state — the same colours the old
+// circle layer used, so no state information is lost. Letter glyphs (#119)
+// make the cooperative self-report sources directly readable on the scope.
+// Icons are pre-rendered per (shape × state) combination and selected at
+// runtime by a data-driven icon-image expression, which avoids the
+// antialiasing pitfalls of tinting a single SDF icon.
 const TRACK_ICON_STROKE = '#000000' // dark edge for legibility on both bases
 
-function drawDiamond(ctx, c, r) {
-  ctx.beginPath()
-  ctx.moveTo(c, c - r)
-  ctx.lineTo(c + r, c)
-  ctx.lineTo(c, c + r)
-  ctx.lineTo(c - r, c)
-  ctx.closePath()
-}
-
 // makeTrackIcon paints one provenance symbol in the given state colour. ADS-B
-// and SSR are filled (cooperative, carry identity); PSR is an open ring (raw
-// skin paint, no ID) so the data-poorer source reads as "hollow" at a glance.
+// and FLARM are letter glyphs ('A' / 'F', #119); SSR is a filled square
+// (cooperative reply, carries identity); PSR is an open ring (raw skin paint,
+// no ID) so the data-poorest source reads as "hollow" at a glance.
 function makeTrackIcon(shape, color) {
   return makeIconImage((ctx, s) => {
     const c = s / 2
@@ -167,26 +161,36 @@ function makeTrackIcon(shape, color) {
       ctx.stroke()
       return
     }
-    if (shape === 'adsb') {
-      drawDiamond(ctx, c, 8)
-    } else {
-      // ssr: axis-aligned square
+    if (shape === 'ssr') {
       ctx.beginPath()
       ctx.rect(c - 6, c - 6, 12, 12)
+      ctx.fillStyle = color
+      ctx.fill()
+      ctx.strokeStyle = TRACK_ICON_STROKE
+      ctx.lineWidth = 1.5
+      ctx.stroke()
+      return
     }
-    ctx.fillStyle = color
-    ctx.fill()
+    // adsb / flarm: letter glyph in the state colour with a dark outline —
+    // the source is readable at a glance (legend and symbol use the same
+    // letter, #119).
+    const letter = shape === 'adsb' ? 'A' : 'F'
+    ctx.font = 'bold 16px sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
     ctx.strokeStyle = TRACK_ICON_STROKE
-    ctx.lineWidth = 1.5
-    ctx.stroke()
+    ctx.lineWidth = 3
+    ctx.strokeText(letter, c, c + 1)
+    ctx.fillStyle = color
+    ctx.fillText(letter, c, c + 1)
   })
 }
 
-// addTrackIcons registers the 12 provenance×state track symbols (idempotent).
+// addTrackIcons registers the 16 provenance×state track symbols (idempotent).
 // Names follow `wf-trk-<provenance>-<stateKey>`, matched by the track layer's
 // icon-image expression in addTracksLayer.
 export function addTrackIcons(map) {
-  for (const shape of ['adsb', 'ssr', 'psr']) {
+  for (const shape of ['adsb', 'flarm', 'ssr', 'psr']) {
     for (const [stateKey, color] of Object.entries(TRACK_STATE_COLORS)) {
       const id = `wf-trk-${shape}-${stateKey}`
       if (!map.hasImage(id)) {
@@ -319,10 +323,10 @@ export function addWaypointLayers(map, palette) {
 }
 
 // addTracksLayer registers a GeoJSON source and a symbol layer for rendering
-// tracks. WF2-40: the icon SHAPE encodes provenance (◆ ADS-B / ▢ SSR / ○ PSR)
-// while the baked-in colour encodes track state (the old circle-color
-// semantics). ASD-004b/4c: icon-opacity uses data-driven expressions to dim
-// coasting tracks and fade TSE tracks to transparency.
+// tracks. WF2-40/#119: the icon GLYPH encodes provenance (A ADS-B / F FLARM /
+// ▢ SSR / ○ PSR) while the baked-in colour encodes track state (the old
+// circle-color semantics). ASD-004b/4c: icon-opacity uses data-driven
+// expressions to dim coasting tracks and fade TSE tracks to transparency.
 export function addTracksLayer(map) {
   addTrackIcons(map)
 

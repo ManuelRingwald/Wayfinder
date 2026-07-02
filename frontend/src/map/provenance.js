@@ -1,26 +1,29 @@
-// Track provenance (WF2-40): infer the surveillance source of a system track
-// from the CAT062 fields Wayfinder already decodes, so the scope can show the
-// data origin at a glance (symbol SHAPE; the colour keeps encoding track state).
+// Track provenance (WF2-40, #118): infer the surveillance source of a system
+// track from the CAT062 fields Wayfinder decodes, so the scope can show the
+// data origin at a glance (symbol GLYPH; the colour keeps encoding track state).
 //
-// HONEST LIMIT: this is a *track-derived* classification, not a certified
-// per-plot provenance — CAT062 does not carry an explicit per-sensor source on
-// the wire (that would need a Firefly ICD change, tracked as WF2-42). We only
-// reason from the items the contract already gives us.
+// Since ICD 2.6.0 (Firefly ADR 0027) I062/290 carries authoritative
+// per-technology update ages (PSR/SSR/MDS/ES/FLARM), broadcast to the browser
+// as psr_age / ssr_age_s / mds_age_s / adsb_age_s / flarm_age_s. FLARM is
+// therefore cleanly distinguishable from ADS-B for the first time (#118).
 //
 // Precedence (most authoritative *current* cooperative source first):
-//   adsb — an ADS-B (Extended Squitter) component is currently feeding the
-//          track: I062/290 ES-age subfield present (adsb_age_s, ICD 2.4.0) AND
-//          fresh (≤ ADSB_FRESH_THRESHOLD_S). A stale ADS-B age means the
-//          self-report link went quiet, so the track falls back to its
-//          remaining cooperative/primary source — this mirrors the freshness
-//          rule of the original ADS-B data-block badge (former FR-ASD-006,
-//          which WF2-40 reinstates as a symbol shape).
-//   ssr  — a cooperative secondary reply identifies the track: Mode S address
-//          (I062/380 → icao_addr), Mode 3/A code (I062/060 → mode_3a) or a
-//          Mode S identification / callsign (I062/245).
-//   psr  — none of the above: primary-only skin paint (position without ID).
+//   adsb  — a fresh ES (Extended Squitter) age: adsb_age_s present AND
+//           ≤ ADSB_FRESH_THRESHOLD_S. A stale age means the self-report link
+//           went quiet, so the track falls back to its remaining sources.
+//           ADS-B outranks FLARM when both are fresh (the ICAO-standardised,
+//           richer report wins the single-glyph slot).
+//   flarm — a fresh FLARM age (flarm_age_s, Firefly vendor subfield).
+//   ssr   — a cooperative secondary reply identifies the track: Mode S address
+//           (I062/380 → icao_addr), Mode 3/A code (I062/060 → mode_3a) or a
+//           Mode S identification / callsign (I062/245).
+//   psr   — none of the above: primary-only skin paint (position without ID).
+//
+// The classification is re-derived on every WS update in tracks.js (never
+// cached on the track), so a source change corrects the glyph immediately.
 
 export const PROVENANCE_ADSB = 'adsb'
+export const PROVENANCE_FLARM = 'flarm'
 export const PROVENANCE_SSR = 'ssr'
 export const PROVENANCE_PSR = 'psr'
 
@@ -29,19 +32,21 @@ export const PROVENANCE_PSR = 'psr'
 // data-block badge threshold so behaviour stays consistent across the port).
 export const ADSB_FRESH_THRESHOLD_S = 30
 
-// isAdsbFresh reports whether an adsb_age_s value (seconds since the last ADS-B
-// hit) is present and still within the freshness window. Presence is tested
-// with != null so that a zero age (a brand-new ADS-B update) counts as fresh.
-export function isAdsbFresh(adsbAgeS) {
-  return adsbAgeS != null && adsbAgeS <= ADSB_FRESH_THRESHOLD_S
+// isAdsbFresh reports whether an age value (seconds since the last hit of that
+// technology) is present and still within the freshness window. Presence is
+// tested with != null so that a zero age (a brand-new update) counts as fresh.
+// Used for both the ES/ADS-B and the FLARM age (same window).
+export function isAdsbFresh(ageS) {
+  return ageS != null && ageS <= ADSB_FRESH_THRESHOLD_S
 }
 
-// trackProvenance returns 'adsb' | 'ssr' | 'psr' for a WS track message
-// (see pkg/broadcast.TrackMessage). Optional contract fields are absent (not
-// null-valued) when not sent, so presence is tested with != null.
+// trackProvenance returns 'adsb' | 'flarm' | 'ssr' | 'psr' for a WS track
+// message (see pkg/broadcast.TrackMessage). Optional contract fields are
+// absent (not null-valued) when not sent, so presence is tested with != null.
 export function trackProvenance(track) {
   if (track == null) return PROVENANCE_PSR
   if (isAdsbFresh(track.adsb_age_s)) return PROVENANCE_ADSB
+  if (isAdsbFresh(track.flarm_age_s)) return PROVENANCE_FLARM
   if (
     track.icao_addr != null ||
     track.mode_3a != null ||
@@ -56,6 +61,7 @@ export function trackProvenance(track) {
 // scope legend (German per project charter §4).
 export const PROVENANCE_LABELS = {
   [PROVENANCE_ADSB]: 'ADS-B (kooperativ)',
+  [PROVENANCE_FLARM]: 'FLARM',
   [PROVENANCE_SSR]: 'SSR / Mode S',
   [PROVENANCE_PSR]: 'Primär (PSR)',
 }

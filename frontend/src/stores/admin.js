@@ -1,6 +1,10 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { apiFetch } from '@/api.js'
+
+// #111: transient success notices auto-dismiss after this delay. Errors are
+// left sticky on purpose (the operator must acknowledge a failure).
+const NOTICE_TIMEOUT_MS = 5000
 
 // useAdminStore backs the WF2-32 admin dashboard. It consumes the WF2-31 admin
 // REST API; the role gating it exposes (isAdmin) is cosmetic — the server
@@ -16,6 +20,17 @@ export const useAdminStore = defineStore('admin', () => {
   const overview = ref([])       // AP3: aggregated per-tenant dashboard rows
   const error = ref(null)        // last action error (banner)
   const notice = ref(null)       // last success message (banner)
+
+  // #111: auto-dismiss a success notice after NOTICE_TIMEOUT_MS so the "…
+  // gespeichert" badges do not linger. Any new notice resets the timer; clearing
+  // it (or an error taking over) cancels the pending dismissal.
+  let noticeTimer = null
+  watch(notice, (val) => {
+    if (noticeTimer) { clearTimeout(noticeTimer); noticeTimer = null }
+    if (val) {
+      noticeTimer = setTimeout(() => { notice.value = null; noticeTimer = null }, NOTICE_TIMEOUT_MS)
+    }
+  })
 
   const role = computed(() => identity.value?.role ?? null)
   // Admin-rail visibility (Req 1, ADR 0009): only admin may reach /admin.

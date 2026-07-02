@@ -4,6 +4,7 @@ import {
   isAdsbFresh,
   ADSB_FRESH_THRESHOLD_S,
   PROVENANCE_ADSB,
+  PROVENANCE_FLARM,
   PROVENANCE_SSR,
   PROVENANCE_PSR,
   PROVENANCE_LABELS,
@@ -77,9 +78,32 @@ describe('trackProvenance', () => {
   })
 
   it('maps every provenance value to a human-readable label', () => {
-    for (const p of [PROVENANCE_ADSB, PROVENANCE_SSR, PROVENANCE_PSR]) {
+    for (const p of [PROVENANCE_ADSB, PROVENANCE_FLARM, PROVENANCE_SSR, PROVENANCE_PSR]) {
       expect(typeof PROVENANCE_LABELS[p]).toBe('string')
       expect(PROVENANCE_LABELS[p].length).toBeGreaterThan(0)
     }
+  })
+})
+
+// #118 / ICD 2.6.0: FLARM carries its own age subfield (flarm_age_s) — a FLARM
+// track is no longer misclassified as ADS-B or SSR.
+describe('trackProvenance — FLARM (#118)', () => {
+  it('returns flarm for a fresh FLARM age', () => {
+    expect(trackProvenance({ flarm_age_s: 0 })).toBe(PROVENANCE_FLARM)
+    expect(trackProvenance({ flarm_age_s: 12 })).toBe(PROVENANCE_FLARM)
+  })
+
+  it('prefers flarm over a cooperative id when only FLARM is fresh', () => {
+    // OGN targets often carry a pseudo ICAO address — FLARM still wins.
+    expect(trackProvenance({ flarm_age_s: 3, icao_addr: 0x3c6dd2 })).toBe(PROVENANCE_FLARM)
+  })
+
+  it('prefers adsb when both ES and FLARM are fresh (richer standard source)', () => {
+    expect(trackProvenance({ adsb_age_s: 2, flarm_age_s: 1 })).toBe(PROVENANCE_ADSB)
+  })
+
+  it('falls back from stale FLARM to ssr/psr like ADS-B does', () => {
+    expect(trackProvenance({ flarm_age_s: 90, icao_addr: 0x3c6dd2 })).toBe(PROVENANCE_SSR)
+    expect(trackProvenance({ flarm_age_s: 90 })).toBe(PROVENANCE_PSR)
   })
 })
