@@ -341,12 +341,13 @@ async function onLogout() {
 
 /* Section header: small, uppercase, subdued — visual separator, not interactive */
 .filter-section-header {
+  /* Design System v1: the signature "overline" section header, token-driven. */
   padding: 10px 14px 4px;
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.09em;
+  font-size: var(--wf-overline-size);
+  font-weight: var(--wf-overline-weight);
+  letter-spacing: var(--wf-overline-tracking);
   text-transform: uppercase;
-  color: rgba(var(--v-theme-on-surface), 0.45);
+  color: var(--wf-overline-color);
   line-height: 1.4;
 }
 
