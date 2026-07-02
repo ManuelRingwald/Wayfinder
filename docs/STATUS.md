@@ -136,6 +136,13 @@
     ausgelassen (kein Inhalt). Regressionstests `scopeFixups.test.js`. Gates:
     **vitest 271**, `vite build`, `go test ./internal/webui` grün; `dist` neu
     eingebettet.
+  - **Mess-Readout an der Linie (E2E-Wunsch):** Distanz/Peilung schwebt jetzt als
+    Label **an der RBL/DIST/QDM-Linie** (Anker = A–B-Mittelpunkt, in `map/measure.js`
+    per `map.project` nach Bildschirm-Pixeln projiziert und bei Drag **und** Karten-
+    Move reprojiziert → `tools`-Store `readoutAt`). `MeasureStatus.vue` rendert das
+    Pill dort; unten bleibt nur noch die Instruktion. Regressionstests
+    `measureLabel.test.js` + `tools`-Store. Gates: **vitest 275**, `vite build`,
+    `go test ./internal/webui` grün; `dist` neu eingebettet.
 - **E2E-Testlauf-Findings #109–#121 umgesetzt (Branch
   `claude/mac-mini-e2e-network-53epgr`):** Zweiter Findings-Batch aus dem realen
   Mac-Mini-E2E-Lauf. Kurz:

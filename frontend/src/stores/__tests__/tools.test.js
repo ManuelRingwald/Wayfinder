@@ -47,4 +47,14 @@ describe('tools store — controller measurement tools (Häppchen 4)', () => {
     expect(s.readout).toBe(null)
     expect(s.hint).toBe(null)
   })
+
+  it('setReadout carries the screen anchor for the floating label', () => {
+    const s = useToolsStore()
+    s.selectTool('rbl')
+    s.setReadout('12.3 NM · 087°', { x: 100, y: 60 })
+    expect(s.readoutAt).toEqual({ x: 100, y: 60 })
+    // switching/clearing drops the anchor with the readout
+    s.selectTool('dist')
+    expect(s.readoutAt).toBe(null)
+  })
 })
