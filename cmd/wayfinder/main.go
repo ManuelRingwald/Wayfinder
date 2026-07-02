@@ -38,6 +38,7 @@ import (
 	"github.com/manuelringwald/wayfinder/pkg/secret"
 	"github.com/manuelringwald/wayfinder/pkg/store"
 	"github.com/manuelringwald/wayfinder/pkg/tenant"
+	"github.com/manuelringwald/wayfinder/pkg/weather"
 	"github.com/manuelringwald/wayfinder/pkg/weathertiles"
 	"github.com/manuelringwald/wayfinder/pkg/ws"
 )
@@ -113,6 +114,15 @@ func main() {
 	if cfg.DWDWMSURL == "" {
 		logger.Warn("weather radar overlay disabled (no WAYFINDER_DWD_WMS_URL); map will show no DWD radar")
 	}
+
+	// QNH infobox (WX-B, ADR 0016): best-effort NOAA/AWC METAR poller. Enabled
+	// only when stations are configured. Polls in its own goroutine; the header
+	// reads /api/weather/qnh. Never touches the track path or readiness.
+	weatherQNH := weather.NewService(
+		weather.NewClient(&http.Client{Timeout: 15 * time.Second}, cfg.MetarURL, cfg.MetarUserAgent),
+		weather.Config{Enabled: len(cfg.MetarStations) > 0, Stations: cfg.MetarStations, Refresh: cfg.QNHRefresh},
+		logger,
+	)
 
 	// broadcastFeedSnapshot pushes the per-feed health snapshot to clients
 	// subscribed to that feed (Option B, WF-3). Color is derived from the
@@ -301,6 +311,10 @@ func main() {
 	// mode this Service is the global fallback cache behind the per-tenant registry.
 	go aeroService.Run(ctx)
 
+	// Start the QNH METAR poller (best-effort, WX-B, ADR 0016). No-op when no
+	// stations are configured. Bound to the shutdown context.
+	go weatherQNH.Run(ctx)
+
 	// OpenAIP per tenant (ONB-6, ADR 0011): each tenant fetches OpenAIP with its own
 	// key (or the global fallback) against its own area of interest. The registry
 	// supervises one Service per tenant alongside the global fallback; a tenant
@@ -339,7 +353,7 @@ func main() {
 	// OpenAIP fetch counters (ONB-6): sum across every per-tenant Service plus the
 	// global one so the process-wide counter stays meaningful as tenants come and go.
 	aeroCounts := func() (int64, int64) { return aeroRegistry.FetchSuccessCount(), aeroRegistry.FetchFailureCount() }
-	go startProbeServer(logger, &blockCount, &trackCount, &tracksCurrent, &heartbeatCount, broadcaster, decodeErrors, feedRegistry, aeroService, aeroCounts, weatherRadar, &lastError, featSvc, sessionRepo)
+	go startProbeServer(logger, &blockCount, &trackCount, &tracksCurrent, &heartbeatCount, broadcaster, decodeErrors, feedRegistry, aeroService, aeroCounts, weatherRadar, weatherQNH, &lastError, featSvc, sessionRepo)
 
 	// Start WebSocket server.
 	mux := http.NewServeMux()
@@ -396,6 +410,12 @@ func main() {
 	// UI via the weather_radar entitlement. A disabled/unreachable source serves
 	// transparent tiles, never an error.
 	mux.Handle("GET /api/weather/radar/{z}/{x}/{y}", tenantMW(weatherRadar.TileHandler()))
+
+	// QNH infobox (WX-B, ADR 0016): the header polls this for the current QNH of
+	// the configured aerodrome(s). Behind the tenant middleware; best-effort JSON
+	// (empty station list when disabled), never an error. UI-gated per tenant via
+	// the qnh entitlement.
+	mux.Handle("GET /api/weather/qnh", tenantMW(weatherQNH.Handler()))
 
 	// Builtin-mode login/logout (WF2-12.3): only when the auth mode is builtin
 	// (proxy mints no local sessions). These routes are intentionally
@@ -582,6 +602,14 @@ type Config struct {
 	DWDRadarLayer string        // WAYFINDER_DWD_RADAR_LAYER (default dwd:Niederschlagsradar)
 	DWDRefresh    time.Duration // WAYFINDER_DWD_REFRESH (radar tile cache TTL, default 5m)
 
+	// QNH infobox (WX-B, ADR 0016): best-effort NOAA/AWC METAR poller. QNH is not
+	// in the CAT062 contract and not in open DWD data; the open source is NOAA
+	// METAR (altim field, hPa). Enabled only when at least one station is set.
+	MetarURL       string        // WAYFINDER_METAR_URL (NOAA AWC METAR data API, default aviationweather.gov)
+	MetarStations  []string      // WAYFINDER_METAR_STATIONS (comma list of ICAO aerodromes, priority order; empty = feature off)
+	MetarUserAgent string        // WAYFINDER_METAR_USER_AGENT (required distinctive UA; default Wayfinder-ASD/1.0)
+	QNHRefresh     time.Duration // WAYFINDER_QNH_REFRESH (METAR poll interval, default 15m)
+
 	// SecretKey is the deployment-managed AES-256 key (32 bytes, base64) that seals
 	// per-feed source credentials at rest (ORCH-2c, ADR 0012 §6). Unset disables the
 	// write-only secret admin routes (they return 503); the same key is configured
@@ -758,6 +786,7 @@ func loadConfig() Config {
 		OpenAIPRadiusKM:  250,
 		DWDRadarLayer:    "dwd:Niederschlagsradar",
 		DWDRefresh:       5 * time.Minute,
+		QNHRefresh:       15 * time.Minute,
 		ImpersonationTTL: 30 * time.Minute,
 	}
 
@@ -879,6 +908,22 @@ func loadConfig() Config {
 	if v := os.Getenv("WAYFINDER_DWD_REFRESH"); v != "" {
 		if d, err := time.ParseDuration(v); err == nil && d > 0 {
 			cfg.DWDRefresh = d
+		}
+	}
+
+	// QNH infobox (WX-B, ADR 0016). Feature enabled only when stations are set.
+	cfg.MetarURL = os.Getenv("WAYFINDER_METAR_URL")
+	cfg.MetarUserAgent = os.Getenv("WAYFINDER_METAR_USER_AGENT")
+	if v := os.Getenv("WAYFINDER_METAR_STATIONS"); v != "" {
+		for _, s := range strings.Split(v, ",") {
+			if s = strings.TrimSpace(s); s != "" {
+				cfg.MetarStations = append(cfg.MetarStations, s)
+			}
+		}
+	}
+	if v := os.Getenv("WAYFINDER_QNH_REFRESH"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			cfg.QNHRefresh = d
 		}
 	}
 
@@ -1290,7 +1335,7 @@ func coverageRingsHandler(cfg Config) http.HandlerFunc {
 }
 
 // startProbeServer starts an HTTP server for health, readiness and metrics.
-func startProbeServer(logger *slog.Logger, blockCount, trackCount, tracksCurrent, heartbeatCount *atomic.Int64, broadcaster *broadcast.Broadcaster, decodeErrors func() int64, feedRegistry *health.Registry, aeroService *aeronautical.Service, aeroCounts func() (success, failure int64), weatherRadar *weathertiles.Service, lastError *atomic.Pointer[string], featSvc *feature.Service, sessionRepo *store.SessionRepo) {
+func startProbeServer(logger *slog.Logger, blockCount, trackCount, tracksCurrent, heartbeatCount *atomic.Int64, broadcaster *broadcast.Broadcaster, decodeErrors func() int64, feedRegistry *health.Registry, aeroService *aeronautical.Service, aeroCounts func() (success, failure int64), weatherRadar *weathertiles.Service, weatherQNH *weather.Service, lastError *atomic.Pointer[string], featSvc *feature.Service, sessionRepo *store.SessionRepo) {
 	mux := http.NewServeMux()
 
 	// /health — liveness check (always ready unless startup failed).
@@ -1353,6 +1398,14 @@ func startProbeServer(logger *slog.Logger, blockCount, trackCount, tracksCurrent
 				metrics.Counter("wayfinder_weather_fetch_success_total", "Total successful weather-source fetches, by source.", weatherRadar.FetchSuccessCount()).With(radar),
 				metrics.Counter("wayfinder_weather_fetch_failures_total", "Total failed weather-source fetches, by source.", weatherRadar.FetchFailureCount()).With(radar),
 				metrics.Gauge("wayfinder_weather_cache_age_seconds", "Seconds since the last successful weather-source fetch, or -1 if never, by source.", weatherRadar.CacheAgeSeconds(time.Now())).With(radar),
+			)
+		}
+		if weatherQNH != nil {
+			metar := metrics.Label{Name: "source", Value: "noaa_metar"}
+			mset = append(mset,
+				metrics.Counter("wayfinder_weather_fetch_success_total", "Total successful weather-source fetches, by source.", weatherQNH.FetchSuccessCount()).With(metar),
+				metrics.Counter("wayfinder_weather_fetch_failures_total", "Total failed weather-source fetches, by source.", weatherQNH.FetchFailureCount()).With(metar),
+				metrics.Gauge("wayfinder_weather_cache_age_seconds", "Seconds since the last successful weather-source fetch, or -1 if never, by source.", weatherQNH.CacheAgeSeconds(time.Now())).With(metar),
 			)
 		}
 		// Active-session gauge (AP7): a live count from the registry at scrape time,
