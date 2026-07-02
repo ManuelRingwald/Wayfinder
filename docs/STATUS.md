@@ -122,6 +122,20 @@
     Regressionstests `scopeChrome.test.js` + `asdViewAuthGate` angepasst. Gates:
     **vitest 267**, `vite build`, `go test ./internal/webui` grün; `dist` neu
     eingebettet.
+  - **Scope-Fix-ups (E2E, Folge-Durchgang):** (1) **RBL/DIST/QDM waren tot** —
+    `createMeasure` lief in `MapCanvas` **vor** dem Map-`load` (initMap kehrt vor
+    `load` zurück), `addSource` warf → `measure` blieb `null`. Fix: Controller erst
+    bei `load` erzeugen (`map.loaded()`/`map.once('load')`), Tool-Vorwahl nachziehen.
+    Bestand seit Häppchen 4, nie end-to-end getestet. (2) **OSM-Attribution kompakt**
+    (`attributionControl:false` + `AttributionControl({compact:true})`) — der lange
+    Credit-Text lag unter dem Readout, ist jetzt ein einklappbares ⓘ (Credit bleibt).
+    (3) **Rail**: ASD-Brand-Glyph (`mdi-radar`, primary) oben + horizontale
+    Trennlinien zwischen den Gruppen (Vorlage-Screenshot; Brand später ASD⇄EFS-
+    Switch). (4) **Kopfzeile** (ICAO/EDLV + UTC) von oben-zentriert nach **oben
+    rechts neben den Feed-Badge** (gemeinsamer `top-right-cluster`). PROBE weiterhin
+    ausgelassen (kein Inhalt). Regressionstests `scopeFixups.test.js`. Gates:
+    **vitest 271**, `vite build`, `go test ./internal/webui` grün; `dist` neu
+    eingebettet.
 - **E2E-Testlauf-Findings #109–#121 umgesetzt (Branch
   `claude/mac-mini-e2e-network-53epgr`):** Zweiter Findings-Batch aus dem realen
   Mac-Mini-E2E-Lauf. Kurz:

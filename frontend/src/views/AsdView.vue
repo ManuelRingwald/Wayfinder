@@ -48,14 +48,12 @@
         @track-click="onTrackClick"
         @connection-change="onConnectionChange"
       />
-      <!-- Reskin 3a: top-centre header (ICAO location indicator + live UTC clock). -->
-      <div class="asd-header-overlay">
+      <!-- Top-right cluster: the ICAO/sector + live UTC header sits next to the
+           feed-health badge (CAT065 heartbeat, bug #54). The account chip that
+           used to be here was removed — account access is the sidebar's "Konto"
+           only, to avoid duplication. -->
+      <div class="top-right-cluster">
         <AsdHeader />
-      </div>
-      <!-- Feed health badge (CAT065 heartbeat, bug #54). Sits top-right where the
-           account chip used to be — account access is the sidebar's "Konto" only,
-           to avoid duplication. -->
-      <div class="feed-status-overlay">
         <FeedStatusChip />
       </div>
       <!-- Reskin 3b: floating scope legend (bottom-left) + bottom-right readout
@@ -182,21 +180,16 @@ function onTrackClick(track) {
   background: rgba(var(--v-theme-surface), 0.9) !important;
 }
 
-/* Reskin 3a: top-centre header (ICAO + UTC clock), floated over the scope. */
-.asd-header-overlay {
-  position: absolute;
-  top: 12px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 600;
-  pointer-events: none;
-}
-
-.feed-status-overlay {
+/* Top-right cluster: ICAO/sector + UTC header next to the feed-status badge,
+   right-aligned so the badge stays at the corner and the header extends left. */
+.top-right-cluster {
   position: absolute;
   top: 12px;
   right: 12px;
   z-index: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   pointer-events: none;
 }
 

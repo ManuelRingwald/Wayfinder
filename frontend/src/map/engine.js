@@ -74,7 +74,13 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
     style: cfg.style,
     center: [cfg.center_lon, cfg.center_lat],
     zoom: cfg.zoom,
+    // Suppress the default expanded attribution: it printed "© OpenStreetMap …"
+    // bottom-right, right under our distance/vector readout. We add a compact
+    // attribution below (collapses to an ⓘ, expands on click) — the credit stays
+    // (OSM/CARTO terms) but no longer overlaps the readout.
+    attributionControl: false,
   })
+  map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right')
 
   // Native MapLibre compass control. It shows the current bearing and resets to
   // north on click (replacing the old hand-rolled reset-north button). Zoom lives
