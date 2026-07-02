@@ -13,6 +13,17 @@
 ## 🎯 Stand 2026-07-02
 
 - **Zuletzt aktualisiert:** 2026-07-02
+- **E2E-Finding (diese Sitzung, gleicher Branch): „Zugang anlegen" scheiterte
+  stumm bei doppeltem Benutzernamen.** Der Anlegen-Dialog (`AdminUsers.vue`)
+  schloss bei Erfolg, tat bei Fehler aber **nichts** — kein Hinweis, warum. Ursache
+  fachlich: Subjects sind **mandantenübergreifend eindeutig**, der Server meldet
+  korrekt `409 "subject already exists"` (Backend unverändert), aber das Frontend
+  zeigte die Meldung nicht. Fix: Dialog rendert jetzt einen `v-alert` mit klarer
+  deutscher Begründung (`createErrorMessage`): 409 → „Benutzername bereits vergeben,
+  mandantenübergreifend eindeutig — evtl. in einem anderen Mandanten"; Passwort-zu-
+  kurz übersetzt; sonst Server-Detail/Fallback. Regressionstest
+  `adminUsersCreateError.test.js` (`?raw`-SFC). Gates: **vitest 297**, `vite build`,
+  `go test ./internal/webui` grün; `dist` neu eingebettet.
 - **E2E-Finding (diese Sitzung, gleicher Branch): Mandanten-Dropdown im Quellen-
   Dialog zeigte neu angelegte Mandanten nicht.** Das „Aus Mandant übernehmen"-
   Dropdown (`AdminFeeds.vue`) liest `admin.tenants` (Cross-Mandanten-Liste), die

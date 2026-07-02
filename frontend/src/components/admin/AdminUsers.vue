@@ -111,6 +111,11 @@
     <v-card>
       <v-card-title class="text-subtitle-1">Zugang anlegen</v-card-title>
       <v-card-text>
+        <!-- Surface why a save was refused (most often a globally-unique subject
+             clash) instead of failing silently. -->
+        <v-alert v-if="createError" type="error" variant="tonal" density="compact" class="mb-3">
+          {{ createError }}
+        </v-alert>
         <v-text-field v-model="form.subject" label="Benutzername" autofocus class="mb-2" />
         <v-text-field v-model="form.email" label="E-Mail (optional)" class="mb-2" />
         <v-text-field
@@ -233,6 +238,7 @@ const showPassword = ref(false)
 const target = ref(null)
 const newPassword = ref('')
 const form = ref({ subject: '', email: '', password: '' })
+const createError = ref('')
 const limitValue = ref(0)
 const limitUseDefault = ref(true)
 const limitError = ref('')
@@ -282,12 +288,15 @@ async function toggleUser(u) {
 function openCreate() {
   form.value = { subject: '', email: '', password: '' }
   showPassword.value = false
+  createError.value = ''
   createDialog.value = true
 }
 
 async function submitCreate() {
+  createError.value = ''
   busy.value = true
-  const payload = { subject: form.value.subject.trim() }
+  const subject = form.value.subject.trim()
+  const payload = { subject }
   if (form.value.email.trim()) payload.email = form.value.email.trim()
   if (form.value.password) payload.password = form.value.password
   const r = await admin.createUser(effectiveTenant.value, payload)
@@ -295,7 +304,26 @@ async function submitCreate() {
   if (r.ok) {
     createDialog.value = false
     await refresh()
+    return
   }
+  // The dialog previously closed on success but did nothing on failure, so a
+  // refused save (e.g. a subject already used in ANOTHER tenant — subjects are
+  // globally unique) looked like a silent no-op. Explain what went wrong.
+  createError.value = createErrorMessage(r, subject)
+}
+
+// createErrorMessage turns the API failure into a clear German reason. A 409 is
+// the common case — the subject is taken; because subjects are unique across all
+// tenants, the clash may live in a different tenant than the one being edited.
+function createErrorMessage(r, subject) {
+  if (r.status === 409) {
+    return `Der Benutzername „${subject}" ist bereits vergeben. Benutzernamen sind `
+      + 'mandantenübergreifend eindeutig — er wird evtl. in einem anderen Mandanten verwendet.'
+  }
+  if (r.status === 400 && /password too short/i.test(r.error || '')) {
+    return 'Das Passwort ist zu kurz (mindestens 8 Zeichen).'
+  }
+  return r.error || 'Der Zugang konnte nicht angelegt werden.'
 }
 
 function openPassword(u) {
