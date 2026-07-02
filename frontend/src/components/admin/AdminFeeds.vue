@@ -168,6 +168,7 @@
               density="compact"
               hide-details
               style="max-width: 260px"
+              @update:model-value="ensureCredRef(s)"
             />
             <v-spacer />
             <v-btn size="small" color="error" variant="text" icon="mdi-delete" @click="removeSource(i)" />
@@ -224,44 +225,50 @@
             />
           </div>
 
-          <v-text-field
-            v-model="s.cred_ref"
-            label="Credential-Referenz (optional)"
-            hint="Verweis auf ein Pro-Feed-Secret, z. B. secret/speyer-opensky — nie der Schlüssel selbst."
-            persistent-hint
-            density="compact"
-            class="mt-2"
-          />
-
-          <!-- Secret value (ORCH-2c 3a; ORCH-5b-2): set/clear the credential the
-               cred_ref points at. Two fields — username + password — are combined
-               into one "user:pass" value (UX-2); the server splits at the first
-               colon. Write-only: the server reports only whether a value is
-               configured, never the value. Hidden when the secret store is off. -->
-          <div v-if="secretStoreEnabled && (s.cred_ref || '').trim()" class="mt-2">
+          <!-- Credentials (UX-4) — only for source types that authenticate. Radar
+               (CAT048) is a network endpoint with no auth, so it gets NO credential
+               UI. The credential reference is auto-managed (ensureCredRef), so the
+               operator no longer has to invent a handle; the two fields combine into
+               the single "id:secret" value the store keeps (credential.js). -->
+          <div v-if="credInfo(s.type)" class="mt-2">
             <div class="d-flex align-center ga-2 mb-1">
+              <span class="text-caption text-medium-emphasis">{{ credInfo(s.type).title }}</span>
               <v-chip
+                v-if="secretStoreEnabled"
                 size="x-small"
-                :color="isSecretConfigured(s.cred_ref) ? 'success' : 'warning'"
+                :color="isSecretConfigured(s.cred_ref) ? 'success' : (credInfo(s.type).required ? 'warning' : 'default')"
                 variant="tonal"
               >
-                {{ isSecretConfigured(s.cred_ref) ? 'Secret hinterlegt' : 'Kein Secret' }}
+                {{ isSecretConfigured(s.cred_ref) ? 'hinterlegt' : 'nicht gesetzt' }}
               </v-chip>
             </div>
-            <div class="d-flex align-start ga-2">
+
+            <!-- Secret store off: nothing can be stored — explain instead of showing
+                 a dead reference field (the recurring stumbling block). -->
+            <v-alert v-if="!secretStoreEnabled" type="warning" variant="tonal" density="compact">
+              Secret-Store deaktiviert (kein <code>WAYFINDER_SECRET_KEY</code> gesetzt) — hier lässt sich kein Zugang hinterlegen.
+              <template v-if="credInfo(s.type).required">
+                Ohne Zugang läuft OpenSky <strong>anonym</strong> und wird schnell rate-limitiert (HTTP&nbsp;429).
+              </template>
+              <template v-else>
+                Die Quelle läuft dann anonym (bei FLARM/APRS-IS der Normalfall).
+              </template>
+            </v-alert>
+
+            <div v-else class="d-flex align-start ga-2">
               <v-text-field
                 v-model="secretUser[i]"
                 type="text"
                 autocomplete="off"
-                label="Client-ID"
-                hint="z. B. OpenSky-Client-ID (OAuth2) — kein Doppelpunkt"
+                :label="credInfo(s.type).user"
                 density="compact"
+                hide-details
               />
               <v-text-field
                 v-model="secretPass[i]"
                 type="password"
                 autocomplete="new-password"
-                :label="isSecretConfigured(s.cred_ref) ? 'Client-Secret (ersetzt)' : 'Client-Secret'"
+                :label="isSecretConfigured(s.cred_ref) ? credInfo(s.type).pass + ' (ersetzt)' : credInfo(s.type).pass"
                 density="compact"
                 hide-details
               />
@@ -289,7 +296,7 @@
               </v-btn>
             </div>
             <v-alert
-              v-if="secretError(i)"
+              v-if="secretStoreEnabled && secretError(i)"
               type="warning"
               variant="tonal"
               density="compact"
@@ -461,6 +468,32 @@ const secretUser = ref({})
 const secretPass = ref({})
 const secretBusy = ref(-1)
 
+// Credential applicability + operator-facing labels per source type (UX-4). Radar
+// (CAT048) is a network endpoint with no auth → no credential UI. ADS-B needs an
+// OpenSky OAuth2 client (required); FLARM/APRS-IS is optional (anonymous read-only
+// works, or a callsign + passcode for an account). Both fields still combine into
+// the single "id:secret" value the store keeps (credential.js).
+const CREDENTIAL = {
+  adsb_opensky: { required: true, title: 'OpenSky-Zugang (OAuth2)', user: 'OpenSky Client-ID', pass: 'OpenSky Client-Secret' },
+  flarm_aprs: { required: false, title: 'APRS-IS-Zugang (optional)', user: 'APRS-IS Rufzeichen', pass: 'APRS-IS Passcode' },
+}
+function credInfo(type) { return CREDENTIAL[type] || null }
+
+// ensureCredRef auto-manages a source's credential reference so the operator no
+// longer has to invent a handle (UX-4): a credentialled source with no ref gets a
+// deterministic one derived from the feed; a non-credentialled source (radar) has
+// its ref cleared. An already-persisted ref is kept, so a stored secret stays
+// linked to its source.
+function ensureCredRef(s) {
+  if (credInfo(s.type)) {
+    if (!(s.cred_ref || '').trim()) {
+      s.cred_ref = `secret/feed-${sourcesTarget.value?.id ?? 'new'}-${s.type}`
+    }
+  } else {
+    s.cred_ref = ''
+  }
+}
+
 function isSecretConfigured(ref) {
   return secretRefs.value.has((ref || '').trim())
 }
@@ -582,6 +615,7 @@ async function openSources(f) {
   const r = await admin.loadFeedSources(f.id)
   if (r.ok) {
     sources.value = (r.data.sources || []).map(toFormSource)
+    sources.value.forEach(ensureCredRef) // UX-4: auto-manage the credential ref
     coveragePreview.value = formatBBox(r.data.coverage_bbox)
     await loadFeedSecretsState(f.id)
   } else {
@@ -591,7 +625,9 @@ async function openSources(f) {
 }
 
 function addSource() {
-  sources.value.push(blankSource())
+  const s = blankSource()
+  ensureCredRef(s)
+  sources.value.push(s)
 }
 
 function removeSource(i) {
@@ -641,6 +677,7 @@ async function submitSources() {
   const r = await admin.saveFeedSources(sourcesTarget.value.id, buildSourcesPayload())
   if (r.ok) {
     sources.value = (r.data.sources || []).map(toFormSource)
+    sources.value.forEach(ensureCredRef) // UX-4: auto-manage the credential ref
     coveragePreview.value = formatBBox(r.data.coverage_bbox)
     // #112: the feed row's sensor-mix chips are derived from its sources; reload
     // the catalogue so the change shows immediately, without a manual tab switch.
