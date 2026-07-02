@@ -42,8 +42,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
   /* sit just above the midpoint so the pill doesn't cover the line */
   transform: translate(-50%, calc(-100% - 8px));
   z-index: 10;
-  font-size: 11px;
-  font-weight: 700;
+  font-size: 10.5px; /* design template ToolsOverlay readout: mono 10.5, no bold */
   color: var(--wf-primary);
   background: rgba(14, 22, 34, 0.9);
   backdrop-filter: blur(4px);

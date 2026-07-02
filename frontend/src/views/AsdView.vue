@@ -48,6 +48,11 @@
         @track-click="onTrackClick"
         @connection-change="onConnectionChange"
       />
+      <!-- ASD-007 (design template 'nacht' scheme): a faint cyan radar-scope
+           bloom at the display centre. Sits above the map tiles but below the
+           chrome and the interactive map controls; 5% alpha, so it tints the
+           picture imperceptibly. -->
+      <div class="scope-glow-overlay" aria-hidden="true" />
       <!-- Top-right cluster: the ICAO/sector + live UTC header sits next to the
            feed-health badge (CAT065 heartbeat, bug #54). The account chip that
            used to be here was removed — account access is the sidebar's "Konto"
@@ -188,9 +193,22 @@ function onTrackClick(track) {
   right: 12px;
   z-index: 600;
   display: flex;
-  align-items: center;
+  /* Design template: header (ICAO/UTC) and the feed badge stack vertically,
+     right-aligned, so the feed badge sits on its own line under the clock. */
+  flex-direction: column;
+  align-items: flex-end;
   gap: 8px;
   pointer-events: none;
+}
+
+/* ASD-007: cyan radar-scope centre bloom (design template 'nacht' glow). Above
+   the map tiles, below the chrome (z 600) and the map controls (z 10). */
+.scope-glow-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: radial-gradient(circle at 50% 46%, rgba(35, 211, 230, 0.05), transparent 55%);
 }
 
 /* Reskin 3b: floating scope legend (bottom-left). pointer-events on the wrapper

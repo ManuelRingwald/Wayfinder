@@ -71,12 +71,11 @@ const states = [
 
 <style scoped>
 .scope-legend {
-  background: rgba(14, 22, 34, 0.85); /* surface @ 85% */
+  background: rgba(14, 22, 34, 0.96); /* surface @ 96% (design template legend) */
   backdrop-filter: blur(4px);
   border: var(--wf-chrome-border);
-  border-radius: var(--wf-radius-sm);
+  border-radius: var(--wf-radius-md); /* 12px (design template legend) */
   box-shadow: var(--wf-elevation-4);
-  min-width: 158px;
   pointer-events: all;
   overflow: hidden;
 }
@@ -99,7 +98,8 @@ const states = [
   opacity: 0.6;
 }
 .scope-legend__body {
-  padding: 0 10px 8px;
+  width: 232px; /* fixed open width (design template) */
+  padding: 0 12px 10px;
 }
 .scope-legend__section {
   margin-top: 8px;
@@ -108,8 +108,8 @@ const states = [
 .scope-legend__row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-height: 22px;
+  gap: 9px;
+  min-height: 20px;
 }
 .scope-legend__glyph {
   width: 16px;
@@ -133,7 +133,7 @@ const states = [
   flex-shrink: 0;
 }
 .scope-legend__label {
-  font-size: 12px;
+  font-size: 11.5px;
   color: var(--wf-on-surface);
   opacity: 0.9;
 }
