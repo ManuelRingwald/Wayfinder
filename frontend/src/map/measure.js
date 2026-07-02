@@ -24,7 +24,16 @@ const EMPTY = { type: 'FeatureCollection', features: [] }
 const MEASURE_COLOR = '#23d3e6'
 
 export function createMeasure(map, { onReadout } = {}) {
-  const report = (t) => { if (onReadout) onReadout(t) }
+  const report = (t, at) => { if (onReadout) onReadout(t, at) }
+
+  // labelAnchor projects the A–B midpoint to map-canvas pixels, so the readout
+  // label can float at the line (screenshot request). Reprojected on drag and on
+  // map move so it stays glued while the viewport changes.
+  function labelAnchor() {
+    if (!(a && b)) return null
+    const p = map.project([(a.lng + b.lng) / 2, (a.lat + b.lat) / 2])
+    return { x: p.x, y: p.y }
+  }
 
   if (!map.getSource(SRC)) {
     map.addSource(SRC, { type: 'geojson', data: EMPTY })
@@ -72,7 +81,7 @@ export function createMeasure(map, { onReadout } = {}) {
     }
     const src = map.getSource(SRC)
     if (src) src.setData({ type: 'FeatureCollection', features: feats })
-    report(a && b ? measureText(a, b) : null)
+    report(a && b ? measureText(a, b) : null, labelAnchor())
   }
 
   function reset() {
@@ -131,10 +140,15 @@ export function createMeasure(map, { onReadout } = {}) {
     }
   }
 
+  // Keep the floating readout label glued to the line while the map pans/zooms
+  // (DIST/QDM leave panning enabled; RBL disables it during its own drag).
+  function reproject() { if (a && b) report(measureText(a, b), labelAnchor()) }
+
   map.on('mousedown', onDown)
   map.on('mousemove', onMove)
   map.on('mouseup', onUp)
   map.on('click', onClick)
+  map.on('move', reproject)
 
   function setTool(kind) {
     reset()
@@ -150,6 +164,7 @@ export function createMeasure(map, { onReadout } = {}) {
     map.off('mousemove', onMove)
     map.off('mouseup', onUp)
     map.off('click', onClick)
+    map.off('move', reproject)
     map.dragPan.enable()
     map.getCanvas().style.cursor = ''
     if (map.getLayer(LINE)) map.removeLayer(LINE)

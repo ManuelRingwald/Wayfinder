@@ -47,7 +47,7 @@ onMounted(async () => {
   // and left the tools dead (RBL/DIST/QDM did nothing). Defer to 'load'.
   const map = mapEngine.map
   const setupMeasure = () => {
-    measure = createMeasure(map, { onReadout: (t) => tools.setReadout(t) })
+    measure = createMeasure(map, { onReadout: (t, at) => tools.setReadout(t, at) })
     measure.setTool(tools.activeTool) // honour a tool selected before load
   }
   if (map.loaded()) setupMeasure()

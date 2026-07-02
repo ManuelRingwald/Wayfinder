@@ -1,13 +1,16 @@
 <template>
-  <!-- Häppchen 3: the measurement tools (RBL/DIST/QDM) moved into the navigation
-       rail (design mockup), replacing the old floating toolbar. What stays over
-       the map is the live measuring status: a bottom-centre instruction + readout
-       shown while a tool is active. The keyboard shortcuts (R/D/Q select, Esc
-       ends) live here because this component is always mounted with the map. -->
-  <div v-if="activeTool" class="measure-hint wf-mono">
-    <span class="measure-hint__text">{{ hint }}</span>
-    <span v-if="readout" class="measure-hint__readout">{{ readout }}</span>
-  </div>
+  <!-- Live measuring status over the map. The distance/bearing readout floats as
+       a label AT the measure line (anchored to the A–B midpoint, projected to
+       screen pixels in map/measure.js); only the one-line instruction stays at
+       the bottom. The keyboard shortcuts (R/D/Q select, Esc ends) live here
+       because this component is always mounted with the map. -->
+  <div
+    v-if="activeTool && readout && readoutAt"
+    class="measure-label wf-mono"
+    :style="{ left: readoutAt.x + 'px', top: readoutAt.y + 'px' }"
+  >{{ readout }}</div>
+
+  <div v-if="activeTool" class="measure-hint wf-mono">{{ hint }}</div>
 </template>
 
 <script setup>
@@ -16,7 +19,7 @@ import { storeToRefs } from 'pinia'
 import { useToolsStore } from '@/stores/tools.js'
 
 const store = useToolsStore()
-const { activeTool, hint, readout } = storeToRefs(store)
+const { activeTool, hint, readout, readoutAt } = storeToRefs(store)
 
 // Keyboard shortcuts: R/D/Q select, Esc ends. Ignored while typing in a field.
 function onKey(e) {
@@ -33,15 +36,31 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
 </script>
 
 <style scoped>
+/* Floating readout pill at the measure line's midpoint (screen-anchored). */
+.measure-label {
+  position: absolute;
+  /* sit just above the midpoint so the pill doesn't cover the line */
+  transform: translate(-50%, calc(-100% - 8px));
+  z-index: 10;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--wf-primary);
+  background: rgba(14, 22, 34, 0.9);
+  backdrop-filter: blur(4px);
+  border: 1px solid var(--wf-primary); /* cyan outline, distinct from track chrome */
+  border-radius: var(--wf-radius-sm);
+  padding: 2px 8px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* Bottom-centre instruction while a tool is active. */
 .measure-hint {
   position: absolute;
   bottom: 12px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 10;
-  display: flex;
-  gap: 10px;
-  align-items: center;
   font-size: 11px;
   color: var(--wf-primary);
   background: rgba(14, 22, 34, 0.85);
@@ -50,9 +69,5 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
   border-radius: var(--wf-radius-sm);
   padding: 4px 10px;
   pointer-events: none;
-}
-.measure-hint__readout {
-  color: var(--wf-on-surface);
-  font-weight: 700;
 }
 </style>
