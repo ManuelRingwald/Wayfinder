@@ -58,6 +58,16 @@ type UpdateAge struct {
 	// track leaves it nil. Its presence is what tells the ASD a track carries
 	// an ADS-B component (Firefly ADR 0019).
 	ESAge *float64 // optional, I062/290 ES (Extended Squitter / ADS-B) age, seconds
+
+	// SSRAge, MDSAge and FLARMAge are the remaining per-technology update ages
+	// from I062/290 (ICD 2.6.0, Firefly ADR 0027): SSR = Mode A/C replies,
+	// MDS = Mode S, FLARM = the Firefly vendor subfield (no EUROCONTROL
+	// standard bit). Like ESAge they are present only when the track has been
+	// updated by that technology; together they give the ASD an authoritative
+	// per-track provenance instead of the old frontend heuristic.
+	SSRAge   *float64 // optional, I062/290 SSR (Mode A/C) age, seconds
+	MDSAge   *float64 // optional, I062/290 MDS (Mode S) age, seconds
+	FLARMAge *float64 // optional, I062/290 FLARM (vendor subfield) age, seconds
 }
 
 // PositionAccuracy is I062/500: estimated 1-sigma position uncertainty, in meters.

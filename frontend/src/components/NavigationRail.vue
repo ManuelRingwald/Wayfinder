@@ -34,7 +34,8 @@
             <span class="nav-rail__label">{{ s.label }}</span>
           </div>
 
-          <!-- Req 1: Admin entry, pinned to the bottom, visible only to admins -->
+          <!-- Req 1: Admin entry, visible only to admins; the account section
+               (#116) sits below it at the very bottom of the rail. -->
           <div
             v-if="isAdmin"
             class="nav-rail__btn nav-rail__btn--admin"
@@ -47,6 +48,21 @@
             </div>
             <span class="nav-rail__label">Admin</span>
           </div>
+
+          <!-- #116: Nutzer-Account, pinned to the very bottom -->
+          <div
+            class="nav-rail__btn nav-rail__btn--account"
+            :class="{ 'nav-rail__btn--bottom': !isAdmin, 'nav-rail__btn--active': activePanel === 'account' }"
+            role="button"
+            aria-label="Konto"
+            :aria-pressed="activePanel === 'account'"
+            @click="togglePanel('account')"
+          >
+            <div class="nav-rail__pill">
+              <v-icon size="20">mdi-account</v-icon>
+            </div>
+            <span class="nav-rail__label">Konto</span>
+          </div>
         </div>
 
         <!-- Divider + panel (appear only when a section is active) -->
@@ -55,6 +71,7 @@
             <v-divider vertical />
             <div class="nav-panel__body">
               <LayerFilterContent
+                :section="activePanel"
                 @layer-toggle="onLayerToggle"
                 @fl-filter-change="onFlFilterChange"
               />
@@ -74,6 +91,7 @@
         @click="goAdmin"
       />
       <LayerFilterContent
+        section="all"
         @layer-toggle="onLayerToggle"
         @fl-filter-change="onFlFilterChange"
       />
@@ -91,7 +109,7 @@ import LayerFilterContent from './LayerFilterContent.vue'
 const props = defineProps({
   modelValue: { type: Boolean, default: true },
 })
-const emit = defineEmits(['update:modelValue', 'layer-toggle', 'fl-filter-change'])
+const emit = defineEmits(['update:modelValue', 'layer-toggle', 'fl-filter-change', 'panel-resize'])
 
 const { mdAndUp } = useDisplay()
 
@@ -109,11 +127,16 @@ onMounted(() => {
 
 function goAdmin() { router.push('/admin') }
 
+// #116: three sections — Layer (toggles + legend), Filter (FL band) and, at the
+// bottom of the rail, the Nutzer-Account (logout). Each opens its own panel.
 const sections = [
-  { id: 'layers', icon: 'mdi-filter-outline', label: 'Filter' },
+  { id: 'layers', icon: 'mdi-layers-outline', label: 'Layer' },
+  { id: 'filters', icon: 'mdi-filter-outline', label: 'Filter' },
 ]
 
-const activePanel = ref('layers')
+// #115: the panel starts COLLAPSED — only the rail (sidecar) is visible, so the
+// map gets the full width until the operator opens a section.
+const activePanel = ref(null)
 
 const drawerOpen = computed({
   get: () => props.modelValue,
@@ -127,6 +150,9 @@ const drawerWidth = computed(() => {
 
 function togglePanel(id) {
   activePanel.value = activePanel.value === id ? null : id
+  // #121: the drawer width changes (56 ↔ 300 px) — tell the map to resize once
+  // the CSS transition settles, or it leaves a dead strip where the panel was.
+  emit('panel-resize')
 }
 
 function onLayerToggle(payload) { emit('layer-toggle', payload) }
@@ -153,11 +179,17 @@ function onFlFilterChange(payload) { emit('fl-filter-change', payload) }
   gap: 4px;
 }
 
-/* Req 1: Admin entry sits at the bottom of the rail (auto top margin pushes it
-   down past the section items). */
+/* Req 1 + #116: Admin (when present) and the account entry sit at the bottom of
+   the rail; the auto top margin on the FIRST bottom item pushes the group down
+   past the section items. The account entry is always last. */
 .nav-rail__btn--admin {
   margin-top: auto;
+}
+.nav-rail__btn--account {
   margin-bottom: 12px;
+}
+.nav-rail__btn--bottom {
+  margin-top: auto;
 }
 
 /* MD3 Navigation Rail item: icon + label, centred in the 56px column */

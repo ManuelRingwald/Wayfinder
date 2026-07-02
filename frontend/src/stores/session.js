@@ -43,6 +43,12 @@ export const useSessionStore = defineStore('session', () => {
   // loaded — the legend then falls back to showing all entries.
   const sensorClasses = computed(() => identity.value?.sensor_classes ?? [])
 
+  // flMin/flMax mirror the effective view's flight-level band (Standard-Ansicht
+  // or per-user override, from whoami). The sidebar greys them into the FL
+  // filter inputs as the admissible-range hint (#116). Null when unset.
+  const flMin = computed(() => identity.value?.fl_min ?? null)
+  const flMax = computed(() => identity.value?.fl_max ?? null)
+
   // probe resolves the current session via the role-agnostic identity endpoint.
   // 200 → authed; anything else (401 etc.) → anon. A transition from authed → anon
   // marks the session as expired (for the visible "session expired" hint).
@@ -116,7 +122,7 @@ export const useSessionStore = defineStore('session', () => {
 
   return {
     identity, status, error, expired, subject, role, isAdmin,
-    features, hasFeature, sensorClasses,
+    features, hasFeature, sensorClasses, flMin, flMax,
     probe, login, renewNow, startRenew, stopRenew, logout,
   }
 })

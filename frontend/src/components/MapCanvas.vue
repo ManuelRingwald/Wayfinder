@@ -83,6 +83,9 @@ watch(() => imp.reconnectNonce, () => {
 defineExpose({
   setLayerVisibility: (layer, val) => mapEngine?.setLayerVisibility({ [layer]: val }),
   updateFlFilter: () => mapEngine?.updateFlFilter(),
+  // #121: MapLibre must be told when its container changes size (drawer/panel
+  // collapse), otherwise a dead, unpainted strip is left where the panel was.
+  resize: () => mapEngine?.map?.resize(),
 })
 </script>
 

@@ -438,6 +438,42 @@ func TestWhoamiIncludesEffectiveFeatures(t *testing.T) {
 	}
 }
 
+// #116: whoami surfaces the effective view's FL band so the ASD sidebar can
+// grey-hint the admissible filter range. A view with no band omits the fields.
+func TestWhoamiIncludesEffectiveFLBand(t *testing.T) {
+	flMin, flMax := 50, 300
+	vs := &fakeVS{vc: store.ViewConfig{FLMin: &flMin, FLMax: &flMax}}
+	rec := httptest.NewRecorder()
+	handlerWith(vs, fakeFeeds{}, fakeTenants{}).
+		ServeHTTP(rec, adminReq(http.MethodGet, "/api/admin/whoami", "", 7, store.RoleAdmin))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var got struct {
+		FLMin *int `json:"fl_min"`
+		FLMax *int `json:"fl_max"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.FLMin == nil || *got.FLMin != 50 || got.FLMax == nil || *got.FLMax != 300 {
+		t.Errorf("whoami FL band = %v/%v, want 50/300", got.FLMin, got.FLMax)
+	}
+}
+
+func TestWhoamiOmitsFLBandWhenUnset(t *testing.T) {
+	rec := httptest.NewRecorder()
+	handlerWith(&fakeVS{}, fakeFeeds{}, fakeTenants{}).
+		ServeHTTP(rec, adminReq(http.MethodGet, "/api/admin/whoami", "", 7, store.RoleAdmin))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	// omitempty: the keys must be absent, not null, when no band is configured.
+	if body := rec.Body.String(); strings.Contains(body, "fl_min") || strings.Contains(body, "fl_max") {
+		t.Errorf("whoami should omit fl_min/fl_max when unset, got %s", body)
+	}
+}
+
 func TestWhoamiUnauthorizedWithoutIdentity(t *testing.T) {
 	rec := httptest.NewRecorder()
 	handlerWith(&fakeVS{}, fakeFeeds{}, fakeTenants{}).

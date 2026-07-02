@@ -355,6 +355,13 @@ type whoamiDTO struct {
 	// legend entries its feeds can actually produce. Empty when nothing is
 	// subscribed. Cosmetic, like Features — the server enforces scope independently.
 	SensorClasses []string `json:"sensor_classes"`
+	// FLMin/FLMax mirror the effective view's flight-level band (the tenant's
+	// Standard-Ansicht, or the user's override) so the sidebar can grey-hint the
+	// admissible FL filter range (#116). Nil when no view config or no band is
+	// configured. Cosmetic — the server enforces the view filter independently
+	// (WF2-21.2).
+	FLMin *int `json:"fl_min,omitempty"`
+	FLMax *int `json:"fl_max,omitempty"`
 }
 
 // WhoamiHandler exposes the identity probe for mounting OUTSIDE the requireAdmin
@@ -371,6 +378,14 @@ func (h *Handler) whoami(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
+	// Effective view FL band for the sidebar's filter-range hint (#116).
+	// Fail-soft: no view config (or a backend error) simply omits the band.
+	var flMin, flMax *int
+	if h.views != nil {
+		if vc, err := h.views.GetEffective(r.Context(), id.TenantID, id.UserID); err == nil {
+			flMin, flMax = vc.FLMin, vc.FLMax
+		}
+	}
 	writeJSON(w, http.StatusOK, whoamiDTO{
 		Subject:            id.Subject,
 		TenantID:           id.TenantID,
@@ -379,6 +394,8 @@ func (h *Handler) whoami(w http.ResponseWriter, r *http.Request) {
 		MustChangePassword: id.MustChangePassword,
 		Features:           h.effectiveFeatures(r.Context(), id.TenantID),
 		SensorClasses:      h.effectiveSensorClasses(r.Context(), id.TenantID),
+		FLMin:              flMin,
+		FLMax:              flMax,
 	})
 }
 

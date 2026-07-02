@@ -1,14 +1,36 @@
 import { defineStore } from 'pinia'
-import { ref, reactive } from 'vue'
+import { ref, reactive, computed } from 'vue'
 import { DEFAULT_RANGE_RING_SPACING_NM, DEFAULT_RANGE_RING_COUNT } from '@/map/constants.js'
+
+// The broadcast FeedStatusMessage carries a per-feed traffic-light *color*
+// (green/yellow/red, pkg/broadcast); the chip speaks in states. Mapping the
+// vocabulary here (not in the chip) keeps the wire contract in one place (#117).
+const FEED_COLOR_TO_STATE = { green: 'ok', yellow: 'degraded', red: 'stale' }
+const FEED_STATE_RANK = { ok: 0, degraded: 1, stale: 2 }
 
 export const useAsdStore = defineStore('asd', () => {
   // Map/app state
   const mapLoaded = ref(false)
   const palette = ref('dark') // 'dark' | 'osm'
 
-  // Feed health: 'unknown' | 'ok' | 'stale'
-  const feedStatus = ref('unknown')
+  // Feed health per feed (#117): feedId → 'ok' | 'degraded' | 'stale'. A tenant
+  // can be subscribed to several feeds; the chip shows the WORST state so a dead
+  // feed is never masked by a healthy one. 'unknown' until the first status.
+  const feedHealth = ref(new Map())
+  const feedStatus = computed(() => {
+    let worst = null
+    for (const state of feedHealth.value.values()) {
+      if (worst === null || FEED_STATE_RANK[state] > FEED_STATE_RANK[worst]) worst = state
+    }
+    return worst ?? 'unknown'
+  })
+
+  // #114: whether server-side coverage sensors are configured at all. The
+  // sidebar disables the "Radarabdeckung" toggle when there is no data — a
+  // switch that visibly does nothing reads as a bug. Set by the engine from
+  // /api/map-config (coverage_sensor_count).
+  const coverageAvailable = ref(false)
+  function setCoverageAvailable(v) { coverageAvailable.value = !!v }
 
   // Layer visibility
   const layerVisibility = reactive({
@@ -67,7 +89,18 @@ export const useAsdStore = defineStore('asd', () => {
   // Label pins: Map<track_num, {dx, dy}>
   const labelPins = ref(new Map())
 
-  function setFeedStatus(status) { feedStatus.value = status }
+  // setFeedHealth records one feed's health from a WS feed_status message. An
+  // unknown color is ignored (fail-safe: never corrupt the chip on a newer
+  // server vocabulary). resetFeedHealth clears all entries — called on WS
+  // (re)connect so statuses from a previous scope never linger.
+  function setFeedHealth(feedId, color) {
+    const state = FEED_COLOR_TO_STATE[color]
+    if (!state) return
+    const m = new Map(feedHealth.value)
+    m.set(feedId ?? 0, state)
+    feedHealth.value = m
+  }
+  function resetFeedHealth() { feedHealth.value = new Map() }
   function setMapLoaded(val) { mapLoaded.value = val }
   function setPalette(p) { palette.value = p }
   function setLayerVisibility(layer, val) { layerVisibility[layer] = val }
@@ -103,12 +136,13 @@ export const useAsdStore = defineStore('asd', () => {
   }
 
   return {
-    mapLoaded, palette, feedStatus, layerVisibility, flFilter,
+    mapLoaded, palette, feedStatus, feedHealth, layerVisibility, flFilter,
+    coverageAvailable, setCoverageAvailable,
     trackCounts, hiddenCategories,
     airspaceGroupVisibility,
     rangeRingConfig, setRangeRingConfig,
     selectedTrack, labelPins,
-    setFeedStatus, setMapLoaded, setPalette, setLayerVisibility,
+    setFeedHealth, resetFeedHealth, setMapLoaded, setPalette, setLayerVisibility,
     setFlFilter, setTrackCounts, toggleCategoryFilter,
     toggleAirspaceGroup,
     selectTrack, clearTrackSelection, setLabelPin, deleteLabelPin,

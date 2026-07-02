@@ -37,6 +37,7 @@
       v-model="drawerOpen"
       @layer-toggle="onLayerToggle"
       @fl-filter-change="onFlFilterChange"
+      @panel-resize="onPanelResize"
     />
 
     <v-main style="padding: 0; position: relative">
@@ -164,6 +165,13 @@ function onLayerToggle({ layer, val }) {
 
 function onFlFilterChange() {
   mapCanvas.value?.updateFlFilter()
+}
+
+// #121: after the sidebar panel opens/closes the drawer width animates
+// (56 ↔ 300 px); MapLibre must re-measure its container once the transition
+// settles or a dead, unpainted strip remains where the panel was.
+function onPanelResize() {
+  setTimeout(() => mapCanvas.value?.resize(), 250)
 }
 
 function onTrackClick(track) {

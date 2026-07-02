@@ -336,6 +336,112 @@ func TestDecodeNoAdsbAge(t *testing.T) {
 	if tracks[0].UpdateAge.ESAge != nil {
 		t.Errorf("ESAge mismatch: expected nil for radar-only track, got %v", *tracks[0].UpdateAge.ESAge)
 	}
+	if tracks[0].UpdateAge.SSRAge != nil || tracks[0].UpdateAge.MDSAge != nil || tracks[0].UpdateAge.FLARMAge != nil {
+		t.Errorf("per-technology ages mismatch: expected all nil for radar-only track, got SSR=%v MDS=%v FLARM=%v",
+			tracks[0].UpdateAge.SSRAge, tracks[0].UpdateAge.MDSAge, tracks[0].UpdateAge.FLARMAge)
+	}
+}
+
+// TestDecodePerTechnologyAges decodes a record whose I062/290 carries all five
+// per-technology age subfields (ICD 2.6.0, Firefly ADR 0027). The byte-exact
+// vector mirrors Firefly's encoder test
+// `update_ages_appends_per_technology_subfields_in_priority_order`: primary
+// subfield 0x7C (PSR|SSR|MDS|ES|FLARM), age octets 08 0C 10 14 18 in MSB→LSB
+// bit priority → PSR 2 s, SSR 3 s, MDS 4 s, ES 5 s, FLARM 6 s. The FSPEC is
+// unchanged (the new ages ride inside the already-present I062/290, FRN 14 —
+// additive, no wire-format break for radar-only tracks).
+func TestDecodePerTechnologyAges(t *testing.T) {
+	data := []byte{
+		0x3E,
+		0x00, 0x2C, // LEN = 44 (PSR-only reference + 4 extra age octets)
+		0x9F, 0x0F, 0x01, 0x04,
+		0x19, 0x02,
+		0x00, 0x06, 0x00,
+		0x00, 0x80, 0x00, 0x00,
+		0x00, 0x20, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x01, 0x90,
+		0xFF, 0x38,
+		0x00, 0x01,
+		0x00,
+		0x7C, 0x08, 0x0C, 0x10, 0x14, 0x18, // I062/290 PSR|SSR|MDS|ES|FLARM = 2/3/4/5/6 s
+		0x80, 0x00, 0xC8, 0x00, 0xC8,
+	}
+
+	tracks, err := DecodeDataBlock(data)
+	if err != nil {
+		t.Fatalf("DecodeDataBlock failed: %v", err)
+	}
+	if len(tracks) != 1 {
+		t.Fatalf("expected 1 track, got %d", len(tracks))
+	}
+
+	track := tracks[0]
+	if track.UpdateAge.PSRAge < 1.99 || track.UpdateAge.PSRAge > 2.01 {
+		t.Errorf("PSRAge mismatch: expected ≈2.0, got %v", track.UpdateAge.PSRAge)
+	}
+	assertAge := func(name string, got *float64, want float64) {
+		t.Helper()
+		if got == nil {
+			t.Fatalf("%s mismatch: expected ≈%v, got nil", name, want)
+		}
+		if *got < want-0.01 || *got > want+0.01 {
+			t.Errorf("%s mismatch: expected ≈%v, got %v", name, want, *got)
+		}
+	}
+	assertAge("SSRAge", track.UpdateAge.SSRAge, 3.0)
+	assertAge("MDSAge", track.UpdateAge.MDSAge, 4.0)
+	assertAge("ESAge", track.UpdateAge.ESAge, 5.0)
+	assertAge("FLARMAge", track.UpdateAge.FLARMAge, 6.0)
+	// The items after the longer I062/290 must still decode correctly.
+	if track.TrackNum != 1 {
+		t.Errorf("TrackNum mismatch: expected 1, got %d", track.TrackNum)
+	}
+	if track.Accuracy.APC < 99.9 || track.Accuracy.APC > 100.1 {
+		t.Errorf("Accuracy mismatch: expected ≈100 m, got %v", track.Accuracy.APC)
+	}
+}
+
+// TestDecodeUpdateAgesUnknownBit confirms the tolerant-decoder contract
+// (charter §2/§7): an unknown primary-subfield bit (here 0x80, the standard
+// TRK slot Firefly does not emit) consumes its one age octet and is skipped,
+// while the known subfields around it still decode correctly.
+func TestDecodeUpdateAgesUnknownBit(t *testing.T) {
+	data := []byte{
+		0x3E,
+		0x00, 0x2A, // LEN = 42 (PSR-only reference + 2 extra age octets)
+		0x9F, 0x0F, 0x01, 0x04,
+		0x19, 0x02,
+		0x00, 0x06, 0x00,
+		0x00, 0x80, 0x00, 0x00,
+		0x00, 0x20, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x01, 0x90,
+		0xFF, 0x38,
+		0x00, 0x01,
+		0x00,
+		0xC4, 0xFF, 0x08, 0x18, // I062/290 unknown(0x80)=skipped, PSR=2 s, FLARM=6 s
+		0x80, 0x00, 0xC8, 0x00, 0xC8,
+	}
+
+	tracks, err := DecodeDataBlock(data)
+	if err != nil {
+		t.Fatalf("DecodeDataBlock failed: %v", err)
+	}
+	track := tracks[0]
+	if track.UpdateAge.PSRAge < 1.99 || track.UpdateAge.PSRAge > 2.01 {
+		t.Errorf("PSRAge mismatch: expected ≈2.0, got %v", track.UpdateAge.PSRAge)
+	}
+	if track.UpdateAge.FLARMAge == nil || *track.UpdateAge.FLARMAge < 5.99 || *track.UpdateAge.FLARMAge > 6.01 {
+		t.Errorf("FLARMAge mismatch: expected ≈6.0, got %v", track.UpdateAge.FLARMAge)
+	}
+	if track.UpdateAge.SSRAge != nil || track.UpdateAge.MDSAge != nil || track.UpdateAge.ESAge != nil {
+		t.Errorf("expected SSR/MDS/ES nil, got %v/%v/%v",
+			track.UpdateAge.SSRAge, track.UpdateAge.MDSAge, track.UpdateAge.ESAge)
+	}
+	if track.TrackNum != 1 {
+		t.Errorf("TrackNum mismatch: expected 1, got %d", track.TrackNum)
+	}
 }
 
 // BenchmarkDecode benchmarks the decoder on a single record.

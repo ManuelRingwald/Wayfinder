@@ -63,6 +63,11 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
   const palette = PALETTES[cfg.theme] || PALETTES.dark
   store.setPalette(cfg.theme || 'dark')
 
+  // #114: the coverage-ring layer only ever has data when coverage sensors are
+  // configured server-side; expose that so the sidebar can disable the toggle
+  // (a switch that visibly does nothing reads as a bug).
+  store.setCoverageAvailable((cfg.coverage_sensor_count ?? 0) > 0)
+
   const map = new maplibregl.Map({
     container,
     style: cfg.style,
@@ -152,6 +157,10 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
 
     socket.addEventListener('open', () => {
       console.log('WebSocket connected')
+      // A (re)connect may carry a different feed scope (e.g. impersonation,
+      // ADR 0008) — drop stale per-feed health so the chip reflects only this
+      // connection's feeds. Fresh statuses arrive with the next heartbeats.
+      store.resetFeedHealth()
       if (reconnectTimer) {
         clearTimeout(reconnectTimer)
         reconnectTimer = null
@@ -164,9 +173,11 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
         const msg = JSON.parse(event.data)
         // Feed-health updates (CAT065 heartbeat) are separate from the track
         // stream; route them to the store and never through the track layer,
-        // so a heartbeat message doesn't clear the air picture.
+        // so a heartbeat message doesn't clear the air picture. The wire field
+        // is the per-feed `color` (green/yellow/red, pkg/broadcast); the store
+        // maps it to chip states and aggregates across feeds (#117).
         if (msg.feed_status) {
-          store.setFeedStatus(msg.feed_status.state)
+          store.setFeedHealth(msg.feed_status.feed_id, msg.feed_status.color)
           return
         }
         if (state.mapLoaded) {

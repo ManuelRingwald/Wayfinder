@@ -214,29 +214,43 @@ sauber voneinander isoliert.
 ### 5.3 Sicht setzen + drei Feeds anlegen
 
 Wir legen jetzt **drei Feeds** im globalen Feed-Katalog an (Tab **Feeds**) — sie
-werden erst in 5.4–5.6 einzeln dem Mandanten zugewiesen. Für alle drei gilt
-dieselbe grobzügige **BBox Frankfurt**: min lat `48.5`, min lon `6.5`, max lat
-`51.5`, max lon `10.5`.
+werden erst in 5.4–5.6 einzeln dem Mandanten zugewiesen. Die Quell-Abdeckung
+wird — konsistent mit der Standard-Ansicht — als **Zentrum + Radius** eingegeben
+(die interne Query-BBox leitet der Server daraus ab, Issue #109). Am einfachsten
+per Dropdown **„Aus Mandant übernehmen"** → **Demo Frankfurt**: dann werden
+Zentrum `50.04 / 8.56` und Radius `100` NM automatisch aus der Standard-Ansicht
+übernommen (Issue #113).
 
 | # | UI-Aktion | Erwartetes Ergebnis | ✅ Prüfung |
 |---|-----------|---------------------|-----------|
-| 5.3.1 | Im Mandanten **Demo Frankfurt** → **View-Config**: Zentrum `50.04` / `8.56`, Radius `100` (NM), Zoom `8`, FL `0`–`450`. Speichern. | Sicht gespeichert. | Werte stehen nach Reload unverändert da. |
+| 5.3.1 | Im Mandanten **Demo Frankfurt** → **Standard-Ansicht**: Zentrum `50.04` / `8.56`, Radius `100` (NM), Zoom `8`, FL `0`–`450`. Speichern. | Sicht gespeichert. | Werte stehen nach Reload unverändert da. |
 | 5.3.2 | Tab **Feeds** → **„Feed anlegen"**: Feld „Name" = `frankfurt-adsb`; Schalter **„Multicast-Endpoint automatisch zuweisen"** = **AN** lassen; Feld **„Sensor-Mix (optional)"** **leer** lassen; **„Anlegen"**. | Feed erscheint mit **automatisch** vergebener Adresse. | Feed-Zeile zeigt eine `239.255.0.x:8600`-Adresse. |
-| 5.3.3 | In der Feed-Zeile von `frankfurt-adsb`: Button **„Quellen"** → **„Quelle hinzufügen"** → **Quell-Typ** = **„ADS-B (OpenSky)"**; BBox-Felder (min lat/min lon/max lat/max lon) mit den Frankfurt-Werten oben füllen; **„Speichern"**. | Quelle ist dem Feed zugeordnet. | Dialog „Quellen — frankfurt-adsb" zeigt eine Zeile mit Typ ADS-B (OpenSky) und der BBox. |
+| 5.3.3 | In der Feed-Zeile von `frankfurt-adsb`: Button **„Quellen"** → **„Quelle hinzufügen"** → **Quell-Typ** = **„ADS-B (OpenSky)"**; Dropdown **„Aus Mandant übernehmen"** = **Demo Frankfurt** (füllt Zentrum `50.04`/`8.56` + Radius `100`); **„Speichern"**. | Quelle ist dem Feed zugeordnet. | Dialog „Quellen — frankfurt-adsb" zeigt eine Zeile mit Typ ADS-B (OpenSky) und Zentrum/Radius. |
 | 5.3.4 | Wie 5.3.2, aber Name `frankfurt-flarm`. | Zweiter Feed erscheint mit eigener automatischer Adresse. | Feed-Zeile `frankfurt-flarm` mit eigener `239.255.0.x:8600`-Adresse. |
-| 5.3.5 | Wie 5.3.3, aber am Feed `frankfurt-flarm`, Quell-Typ **„FLARM (OGN/APRS)"**, gleiche Frankfurt-BBox. | Quelle ist dem Feed zugeordnet. | Dialog „Quellen — frankfurt-flarm" zeigt eine Zeile mit Typ FLARM (OGN/APRS) und der BBox. |
+| 5.3.5 | Wie 5.3.3, aber am Feed `frankfurt-flarm`, Quell-Typ **„FLARM (OGN/APRS)"**, gleiches Zentrum + Radius (wieder per **„Aus Mandant übernehmen"** = Demo Frankfurt). | Quelle ist dem Feed zugeordnet. | Dialog „Quellen — frankfurt-flarm" zeigt eine Zeile mit Typ FLARM (OGN/APRS) und Zentrum/Radius. |
 | 5.3.6 | Wie 5.3.2, aber Name `frankfurt-kombiniert`. | Dritter Feed erscheint mit eigener automatischer Adresse. | Feed-Zeile `frankfurt-kombiniert` mit eigener `239.255.0.x:8600`-Adresse. |
-| 5.3.7 | Am Feed `frankfurt-kombiniert`: Button **„Quellen"** → **zwei** Quellen nacheinander mit **„Quelle hinzufügen"** anlegen — einmal Quell-Typ **„ADS-B (OpenSky)"**, einmal **„FLARM (OGN/APRS)"**, beide mit der Frankfurt-BBox; einmal **„Speichern"** für beide. | Beide Quellen sind dem Feed zugeordnet. | Dialog „Quellen — frankfurt-kombiniert" zeigt **zwei** Zeilen (ADS-B und FLARM). |
+| 5.3.7 | Am Feed `frankfurt-kombiniert`: Button **„Quellen"** → **zwei** Quellen nacheinander mit **„Quelle hinzufügen"** anlegen — einmal Quell-Typ **„ADS-B (OpenSky)"**, einmal **„FLARM (OGN/APRS)"**, bei beiden **„Aus Mandant übernehmen"** = Demo Frankfurt; einmal **„Speichern"** für beide. | Beide Quellen sind dem Feed zugeordnet. | Dialog „Quellen — frankfurt-kombiniert" zeigt **zwei** Zeilen (ADS-B und FLARM). |
 
 > **„Sensor-Mix (optional)" bewusst leer lassen.** Der Sensor-Mix ist eine
-> reine Anzeige-Eigenschaft und wird künftig automatisch aus den Quellen
-> abgeleitet (Issue #102) — von Hand pflegen ist überflüssig und kann veralten.
+> reine Anzeige-Eigenschaft und wird automatisch aus den Quellen abgeleitet
+> (Issue #102) — von Hand pflegen ist überflüssig und kann veralten. Nach dem
+> **Speichern der Quellen** erscheint der abgeleitete Sensor-Mix **sofort** in
+> der Feed-Zeile (Issue #112), ohne Tab-Wechsel.
 >
 > **Warum „Multicast-Endpoint automatisch zuweisen" = AN richtig ist:** Der
 > Orchestrator startet die Firefly-Instanz **genau auf der vergebenen Adresse**,
 > und der ASD-Server hört dort zu. (Nur im VM-losen
 > [Anhang A](#anhang-a--schnell-check-ohne-vm-nur-auf-dem-mac) muss man den
 > Endpoint **fest** eintragen.)
+
+> **Neue Sidebar-Gliederung (Issues #115/#116).** In der Lotsen-Sicht ist die
+> Sidebar links **standardmäßig eingeklappt** — nur die schmale Icon-Leiste
+> (Sidecar) ist sichtbar, die Karte bekommt die volle Fläche. Über die Icons
+> öffnet man je eine Sektion: **Layer** (Layer-Schalter + Legende „Spurherkunft"),
+> **Filter** (FL-Filter; der zulässige FL-Bereich der Standard-Ansicht steht grau
+> als Hinweis darunter) und ganz unten **Konto** (Abmelden). Der Layer
+> **„Radarabdeckung"** ist bei ADS-B/FLARM-Feeds **deaktiviert** (kein Radar →
+> keine Abdeckungsdaten, Issue #114) — das ist erwartungsgemäß.
 
 ### 5.4 Feed 1 — nur ADS-B prüfen
 
@@ -245,7 +259,7 @@ dieselbe grobzügige **BBox Frankfurt**: min lat `48.5`, min lon `6.5`, max lat
 | 5.4.1 | Im Mandanten **Demo Frankfurt** → Abschnitt **„Feed-Zuweisungen"** → bei `frankfurt-adsb` **„Zuweisen"**. | Feed ist dem Mandanten zugewiesen. | Status-Chip zeigt **„zugewiesen"**. |
 | 5.4.2 | Oben rechts **Abmelden** (Admin). Am besten ein **privates Browserfenster** öffnen. | Zurück zur Login-Maske. | Login-Maske erscheint. |
 | 5.4.3 | `http://〈VM-IP〉:8081/` öffnen, anmelden als `lotse` + Passwort. | Karte lädt, zentriert auf **Frankfurt** (50.04/8.56, Zoom 8); oben rechts der Konto-Chip `lotse`. | Kartenausschnitt = Raum Frankfurt. |
-| 5.4.4 | Etwas warten (echter Verkehr, keine feste Zeit). | Tracks erscheinen, sobald realer ADS-B-Verkehr im Gebiet ist; oben links ein **grüner Banner „FEED OK"**. ADS-B um Frankfurt ist dicht beflogen → sollte zuverlässig kommen. | Mindestens ein bewegtes Track-Symbol sichtbar **und** Banner grün. |
+| 5.4.4 | Etwas warten (echter Verkehr, keine feste Zeit). | Tracks erscheinen, sobald realer ADS-B-Verkehr im Gebiet ist; oben rechts der **grüne Feed-Chip „FEED OK"** (zeigt jetzt korrekt die Feed-Gesundheit statt dauerhaft „FEED ?", Issue #117). ADS-B um Frankfurt ist dicht beflogen → sollte zuverlässig kommen. | Mindestens ein bewegtes Track-Symbol sichtbar **und** Feed-Chip grün („FEED OK"). |
 | 5.4.5 | Zurück im Admin-Fenster: im Mandanten → **„Feed-Zuweisungen"** → bei `frankfurt-adsb` **„Entziehen"**. | Feed ist dem Mandanten nicht mehr zugewiesen. | Status-Chip zeigt wieder **„—"** statt „zugewiesen". |
 
 ### 5.5 Feed 2 — nur FLARM prüfen
@@ -264,7 +278,7 @@ dieselbe grobzügige **BBox Frankfurt**: min lat `48.5`, min lon `6.5`, max lat
 | 5.6.1 | Im Mandanten → **„Feed-Zuweisungen"** → bei `frankfurt-kombiniert` **„Zuweisen"**. | Feed ist dem Mandanten zugewiesen. | Status-Chip zeigt **„zugewiesen"**. |
 | 5.6.2 | Als `lotse` (Seite neu laden). | Karte lädt wie zuvor. | Kartenausschnitt = Raum Frankfurt. |
 | 5.6.3 | Etwas warten. | Tracks aus **beiden** Quellen können erscheinen — ADS-B üblicherweise zuverlässig, FLARM wetter-/tageszeitabhängig (siehe 5.5.3). | Banner grün; mindestens die ADS-B-Tracks aus 5.4 sollten wieder erscheinen. |
-| 5.6.4 | In der Legende **„Spurherkunft"** nachsehen (Karten-Werkzeugleiste). | Die Legende ist **dynamisch** (Issue #107): sie zeigt **nur** die Herkünfte, die die abonnierten Feeds liefern. Beim kombinierten Feed also **ADS-B** (◆) **und FLARM** (◆); beim reinen ADS-B-Feed nur ADS-B, beim reinen FLARM-Feed nur FLARM. | Legende zeigt genau die zum Feed passenden Einträge. |
+| 5.6.4 | In der **Sidebar** links die Sektion **„Layer"** öffnen und unten die Legende **„Spurherkunft"** ansehen. | Die Legende ist **dynamisch** (Issue #107): sie zeigt **nur** die Herkünfte, die die abonnierten Feeds liefern. Beim kombinierten Feed also **ADS-B** (Symbol **`A`**) **und FLARM** (Symbol **`F`**) — die beiden sind jetzt eindeutig unterscheidbar (Issues #118/#119); beim reinen ADS-B-Feed nur `A`, beim reinen FLARM-Feed nur `F`. | Legende zeigt genau die zum Feed passenden Einträge; FLARM-Tracks tragen auf der Karte ein **`F`**, ADS-B ein **`A`** (kein Reload nötig). |
 | 5.6.5 | Zurück im Admin-Fenster: im Mandanten → **„Feed-Zuweisungen"** → bei `frankfurt-kombiniert` **„Entziehen"**. | Feed ist dem Mandanten nicht mehr zugewiesen. | Status-Chip zeigt wieder **„—"**. |
 
 ### 5.7 OpenAIP-Layer aktivieren und prüfen
