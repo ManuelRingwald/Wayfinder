@@ -344,7 +344,7 @@ async function save() {
   }
   const aoi = radiusNmToBbox(form.centerLat, form.centerLon, form.radiusNm)
   if (aoi) {
-    dto.aoi = { min_lat: aoi.minLat, min_lon: aoi.minLon, max_lat: aoi.maxLat, max_lon: aoi.maxLon }
+    dto.aoi = aoi // already the backend wire shape (min_lat/min_lon/max_lat/max_lon)
   }
   if (form.flMin !== null && form.flMin !== '') dto.fl_min = form.flMin
   if (form.flMax !== null && form.flMax !== '') dto.fl_max = form.flMax
