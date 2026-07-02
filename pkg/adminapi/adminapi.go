@@ -124,7 +124,7 @@ type TenantAeroLifecycle interface {
 // (satisfied by *feature.Service). Effective lists the full catalog with each
 // key's state (default-deny); Set persists one flag, rejecting unknown keys
 // (WF2-50). Setting entitlements is the billing/provisioning boundary, so the
-// routes using it are super_admin-only.
+// routes using it are admin-only.
 type EntitlementService interface {
 	Effective(ctx context.Context, tenantID int64) (map[feature.Key]bool, error)
 	Set(ctx context.Context, tenantID int64, key feature.Key, enabled bool) error

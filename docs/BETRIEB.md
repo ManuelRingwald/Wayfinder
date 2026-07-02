@@ -173,11 +173,10 @@ WAYFINDER_BOOTSTRAP_PASSWORD='StartPasswort!' \
 docker compose run --rm -e WAYFINDER_BOOTSTRAP_PASSWORD \
   wayfinder bootstrap \
     -tenant kunde-sued -tenant-name "Kunde Süd GmbH" \
-    -subject ben -role tenant_admin
+    -subject ben -role admin
 ```
-- `-role`: `operator` (nur sehen), `tenant_admin` (eigenen Mandanten verwalten),
-  `super_admin` (alles verwalten). Der Befehl ist **idempotent** — erneut
-  ausführen setzt nur das Passwort neu.
+- `-role`: `user` (nur sehen) oder `admin` (Plattform verwalten); Default `admin`.
+  Der Befehl ist **idempotent** — erneut ausführen setzt nur das Passwort neu.
 
 ### 5.2 Weiteren Nutzer in einem bestehenden Mandanten anlegen
 Gleicher Befehl, gleicher `-tenant`, anderer `-subject`/`-role`.
@@ -191,9 +190,9 @@ docker compose run --rm wayfinder feed list
 - `-sensor-mix` nur aus `PSR, SSR, MODE_S, ADS-B, MLAT, FLARM` (gängige
   Schreibweisen werden korrigiert; **Unbekanntes wird abgelehnt**).
 
-### 5.4 Feed einem Mandanten zuweisen / entziehen (nur `super_admin`)
+### 5.4 Feed einem Mandanten zuweisen / entziehen (nur `admin`)
 **Am einfachsten** über die Oberfläche **/admin** → Provisioning-Bereich.
-Alternativ per Befehl (als angemeldeter `super_admin`; `{tenant}`/`feed_id` aus
+Alternativ per Befehl (als angemeldeter `admin`; `{tenant}`/`feed_id` aus
 `feed list` bzw. der Admin-Liste):
 ```bash
 # zuweisen
@@ -208,12 +207,12 @@ curl -X DELETE http://localhost:8081/api/admin/tenants/2/subscriptions/1
   halten — ein zweiter Zuweisungsversuch wird mit **409** abgelehnt (siehe 5.6).
 
 ### 5.5 Sicht eines Mandanten einstellen (Zentrum/Gebiet/Flugflächen)
-Der jeweilige `tenant_admin` setzt seine Sicht (Kartenzentrum, Interessengebiet
+Der `admin` setzt die Sicht eines Mandanten (Kartenzentrum, Interessengebiet
 **AOI**, Flugflächen-Band) in **/admin**. Das begrenzt **serverseitig**, was
 überhaupt an dessen Browser geht (Datensparsamkeit/Bandbreite). Ohne Eintrag
 sieht der Mandant den ganzen abonnierten Feed.
 
-### 5.6 Funktions-Freischaltungen (Entitlements) setzen (nur `super_admin`)
+### 5.6 Funktions-Freischaltungen (Entitlements) setzen (nur `admin`)
 Feature-Flags als Daten (z. B. `multi_feed`, `stca`, `premium_layers`):
 ```bash
 curl -X PUT http://localhost:8081/api/admin/tenants/2/entitlements/multi_feed \
@@ -460,7 +459,7 @@ Volume zurücksetzen (`down -v`) und die Sicherung einspielen.
 **Monatlich**
 - [ ] Restore-Probe auf einem Testsystem (7.3).
 - [ ] Verfügbare Updates sichten; Update mit vorheriger Sicherung einspielen (8).
-- [ ] Nutzer-/Rollen-Inventur (wer hat `super_admin`?).
+- [ ] Nutzer-/Rollen-Inventur (wer hat `admin`?).
 
 **Bei jeder Konfig-Änderung**
 - [ ] Vorher Datenbank sichern.

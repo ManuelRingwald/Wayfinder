@@ -268,7 +268,7 @@ immer aktiv — ADR 0014); statische Frontend-Routen werden ausgeliefert.
 > **abgewiesen** (`feed add` → Fehler). **Abos binden an Feeds:** ein Mandant
 > **ohne** `multi_feed`-Entitlement hält **höchstens einen** Feed — ein zweiter
 > distinkter Grant wird mit **409 Conflict** abgewiesen, *bevor* er die DB
-> erreicht (harte Invariante; super_admin muss erst `multi_feed` setzen).
+> erreicht (harte Invariante; admin muss erst `multi_feed` setzen).
 
 > **SPA-History-Fallback (WF2-32):** `webui.Handler` liefert für jeden nicht als
 > Datei auflösbaren Pfad die `index.html`-Shell aus (Client-Router übernimmt) —
@@ -592,23 +592,23 @@ die per-Mandant-Route `/api/admin/tenants/{id}/users` verwaltet ausschließlich
 Nutzer. Der **„letzter aktiver Admin"-Guard** (`wouldOrphanAdmins` →
 `CountActiveAdmins`) schützt Pausieren/Löschen von Admins (409) — dieselbe
 Invariante wie beim Boot-Seed und `DELETE /api/admin/me`.
-**`/admin`-Gate:** `tenant.RequireRole(tenant_admin, super_admin)` hinter der
+**`/admin`-Gate:** `tenant.RequireRole(admin)` hinter der
 Tenant-Middleware (fail-closed `403` ohne passende Rolle/Identität); liefert eine
 minimale whoami-JSON-Antwort, Admin-UI folgt WF2-32.
 
 **Admin-API (WF2-31, `pkg/adminapi`):** tenant-skopiertes REST unter `/api/admin/*`
-hinter `tenantMW`+`RequireRole(tenant_admin, super_admin)`. Die `tenant_id` kommt
+hinter `tenantMW`+`RequireRole(admin)`. Die `tenant_id` kommt
 **aus der Identity**, nie aus Pfad/Body (Isolation per Konstruktion). `GET/PUT
 /api/admin/view` (Tenant-Default-Sicht, **server-validiert** in `validateView`:
 Lat/Lon/Zoom-Bereiche, AOI wohlgeformt, `fl_min ≤ fl_max`), `GET
 /api/admin/subscriptions` (eigene Feeds), `GET /api/admin/feeds` (Katalog,
 read-only). DTOs verbergen Infra-Felder (multicast_group/port).
 
-**super_admin-Provisioning (WF2-31b, cross-tenant):** `GET /api/admin/tenants`,
+**admin-Provisioning (WF2-31b, cross-tenant):** `GET /api/admin/tenants`,
 `GET/POST /api/admin/tenants/{tenantID}/subscriptions`, `DELETE
 /api/admin/tenants/{tenantID}/subscriptions/{feedID}` — Ziel-`tenant_id` aus dem
-**Pfad**. Doppel-Gate: äußerer `RequireRole(tenant_admin, super_admin)` +
-in-handler `requireSuper` (`Identity.Role == super_admin`, sonst `403`) — die
+**Pfad**. Doppel-Gate: äußerer `RequireRole(admin)` +
+in-handler `requireAdmin` (`Identity.Role == admin`, sonst `403`) — `admin` ist die
 einzige cross-tenant-schreibende Rolle (Billing-/Entitlement-Grenze). Validierung:
 Ziel-Tenant/Feed müssen existieren (`404`), Body/Pfad-IDs wohlgeformt (`400`);
 Grant/Revoke idempotent (`204`). Der Config-Cache (WF2-30) folgt später.
