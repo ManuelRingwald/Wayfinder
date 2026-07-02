@@ -244,6 +244,7 @@ immer aktiv — ADR 0014); statische Frontend-Routen werden ausgeliefert.
 | `/admin` | GET | Admin-Oberfläche (Vue-SPA-Route, History-Mode; nur sinnvoll bei Multi-Tenancy) — WF2-32 |
 | `/ws` | GET → Upgrade | WebSocket — Track- und Feed-Status-Updates |
 | `/api/map-config` | GET | Kartentheme und Startkonfiguration als JSON |
+| `/glyphs/{fontstack}/{range}.pbf` | GET | **FR-UI-023 (ADR 0015 Nachtrag-2):** selbst-gehostete MapLibre-Glyph-PBFs (**Roboto Mono Medium**, aus dem Binary via `go:embed`) — die Datenblock-Schrift der Karte. Kein Font-CDN mehr auf der Karte (air-gap-Schritt; die UI-Fonts sind bereits offline via `@fontsource`). `application/x-protobuf`, `immutable`-Cache; nicht generierte Ranges/Traversal → 404. Beide eingebauten Kartenstile zeigen mit `"glyphs": "/glyphs/{fontstack}/{range}.pbf"` hierher |
 | `/api/airspace` | GET | Luftraumstrukturen (GeoJSON, best-effort). **ONB-6 (ADR 0011):** hinter der Tenant-Middleware; liefert den **Cache des Request-Mandanten** (eigener Schlüssel/AOI, Fallback auf den globalen Cache) |
 | `/api/navaids` | GET | VOR/NDB-Beacons (GeoJSON, best-effort). **ONB-6:** mandanten-aufgelöst wie `/api/airspace` |
 | `/api/waypoints` | GET | Wegpunkte (GeoJSON, best-effort). **ONB-6:** mandanten-aufgelöst wie `/api/airspace` |
