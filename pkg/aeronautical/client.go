@@ -127,7 +127,7 @@ func (c *Client) Fetch(ctx context.Context, kind Kind, bbox BoundingBox) (Featur
 	if err != nil {
 		return EmptyCollection(), fmt.Errorf("aeronautical: fetch %s: %w", kind, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return EmptyCollection(), fmt.Errorf("aeronautical: fetch %s: unexpected status %d", kind, resp.StatusCode)

@@ -26,10 +26,10 @@ cd frontend && npm run build && cd .. && git add internal/webui/dist && git comm
 ```
 
 ### golangci-lint & errcheck
-`.golangci.yml` nutzt das Standard-Linter-Set. Der Linter **errcheck** (prüft
-ungeprüfte Fehler-Rückgaben) ist **vorübergehend aus**, weil der Bestand ~30
-solcher Stellen hat (meist harmlose `conn.Close()`/`SetDeadline`). Das Aufräumen
-+ Wieder-Einschalten ist als eigenes Issue erfasst.
+`.golangci.yml` nutzt das Standard-Linter-Set inkl. **errcheck** (prüft
+ungeprüfte Fehler-Rückgaben). Die anfänglichen ~30 Alt-Befunde wurden in #124
+aufgeräumt (echte Fehlerpfade behandelt, bewusste fire-and-forget-Aufrufe mit
+`_ =` markiert), danach wurde errcheck scharf geschaltet.
 
 ## `main` schützen (einmalig im GitHub-Web-UI)
 
@@ -55,4 +55,3 @@ ohne grüne CI auf `main`.
 ### Später verschärfen (wenn ein Team dazukommt)
 - Approvals auf **1** (Vier-Augen-Prinzip).
 - **Require conversation resolution** + ggf. **Require linear history**.
-- errcheck-Issue abarbeiten und den Linter wieder einschalten.

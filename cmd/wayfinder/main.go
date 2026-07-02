@@ -1235,7 +1235,7 @@ func startProbeServer(logger *slog.Logger, blockCount, trackCount, tracksCurrent
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"status":"ok"}`))
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	})
 
 	// /ready — readiness check. Ready once we have clients or blocks received,
@@ -1250,11 +1250,11 @@ func startProbeServer(logger *slog.Logger, blockCount, trackCount, tracksCurrent
 		healthy := !status.EverSeen || !status.Stale
 		if (count > 0 || clients > 0) && healthy {
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(`{"status":"ready","blocks":` + strconv.FormatInt(count, 10) + `,"clients":` + strconv.Itoa(clients) + `,"feed_stale":` + strconv.FormatBool(status.Stale) + `}`))
+			_, _ = w.Write([]byte(`{"status":"ready","blocks":` + strconv.FormatInt(count, 10) + `,"clients":` + strconv.Itoa(clients) + `,"feed_stale":` + strconv.FormatBool(status.Stale) + `}`))
 			return
 		}
 		w.WriteHeader(http.StatusServiceUnavailable)
-		w.Write([]byte(`{"status":"not_ready","blocks":` + strconv.FormatInt(count, 10) + `,"clients":` + strconv.Itoa(clients) + `,"feed_stale":` + strconv.FormatBool(status.Stale) + `}`))
+		_, _ = w.Write([]byte(`{"status":"not_ready","blocks":` + strconv.FormatInt(count, 10) + `,"clients":` + strconv.Itoa(clients) + `,"feed_stale":` + strconv.FormatBool(status.Stale) + `}`))
 	})
 
 	// /metrics — Prometheus text exposition (REQ NFR-OBS-002): track
