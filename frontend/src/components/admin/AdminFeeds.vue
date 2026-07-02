@@ -636,9 +636,12 @@ async function openSources(f) {
   coveragePreview.value = ''
   sourcesDialog.value = true
   busy.value = true
-  // #113: make sure the tenant dropdown has options (lazy — only when a source
-  // dialog is actually opened). Ignored if already loaded.
-  if (!admin.tenants.length) admin.loadTenants()
+  // #113: populate the "adopt from tenant" dropdown when the dialog opens. Always
+  // reload (not just when empty) so a tenant created after the list was first
+  // fetched still appears — the earlier lazy guard showed a stale set, missing
+  // newly-created tenants. `admin.tenants` (cross-tenant list) is distinct from
+  // `admin.overview` (dashboard rows), so it does not refresh on tenant creation.
+  admin.loadTenants()
   secretStoreEnabled.value = false
   secretRefs.value = new Set()
   secretUser.value = {}

@@ -13,6 +13,17 @@
 ## 🎯 Stand 2026-07-02
 
 - **Zuletzt aktualisiert:** 2026-07-02
+- **E2E-Finding (diese Sitzung, gleicher Branch): Mandanten-Dropdown im Quellen-
+  Dialog zeigte neu angelegte Mandanten nicht.** Das „Aus Mandant übernehmen"-
+  Dropdown (`AdminFeeds.vue`) liest `admin.tenants` (Cross-Mandanten-Liste), die
+  Mandanten-Übersicht dagegen `admin.overview` (Dashboard-Zeilen) — **zwei
+  getrennte Quellen**. `openSources` lud `admin.tenants` nur **lazy**
+  (`if (!admin.tenants.length)`), sodass ein **nach** dem ersten Laden angelegter
+  Mandant (Hamburg) nie im Dropdown erschien (die Übersicht zeigte ihn, weil sie
+  `overview` neu lädt). Fix: `openSources` lädt die Mandantenliste **immer** neu
+  (Lazy-Guard entfernt). Regressionstest `adminFeedsTenantDropdown.test.js`
+  (`?raw`-SFC). Gates: **vitest 294**, `vite build`, `go test ./internal/webui`
+  grün; `dist` neu eingebettet.
 - **Neues Design (Claude Design) → Reskin gestartet (diese Sitzung, Branch
   `claude/wayfinder-design-implementation-6wbbbg`):** Ein per Claude Design
   erstellter ASD-Entwurf kam als Export (`ASD.zip`: Design-System mit Tokens +
