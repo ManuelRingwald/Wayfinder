@@ -165,7 +165,25 @@
     das OpenSky-429 verursacht hat.
   - Regressionstest `adminFeedsCredentials.test.js` (`?raw`-SFC). FR-ORCH-001 im
     Anforderungs-Register um UX-4 ergänzt. Gates: **vitest 279**, `vite build`,
-    `go test ./internal/webui` grün; `dist` neu eingebettet.
+    `go test ./internal/webui` grün; `dist` neu eingebettet. **PR #141 gemergt.**
+- **E2E-Finding (diese Sitzung, gleicher Branch): Feed-Status feiner
+  aufgeschlüsselt + Colorcode-Referenztabelle (4-Punkte-Liste #1).** Ein toter
+  Feed zeigte nur pauschal **rot „inaktiv"** — ununterscheidbar, ob er **nie
+  angelaufen** ist (`!ever_seen`) oder **lief und abriss** (`ever_seen && stale`).
+  Operativ ein Unterschied: „nie gestartet" zeigt auf Zuweisung/Orchestrierung
+  (genau der Fall „war nicht zugewiesen"), „abgerissen" auf einen Laufzeit-Ausfall.
+  - **Gemeinsamer Helper `admin/feedHealth.js`** (`describeFeedHealth` → {color,
+    label, title}) ersetzt die **dreifach duplizierte** `feedColor`/`feedTitle`/
+    `feedLabel`-Logik in `AdminFeeds.vue`/`AdminTenantDetail.vue`/`AdminTenants.vue`.
+  - **Rot-Split** (rein presentational, Wire-Farbe bleibt rot): `!ever_seen` →
+    Label **„nie gestartet"**; `ever_seen && stale` → **„abgerissen"** mit
+    `seit ‹N› s kein CAT065` aus `last_heartbeat_ago_s`. Grün trägt zusätzlich
+    `aktiv/total Radare` (CAT063), wenn bekannt.
+  - **Doku:** Colorcode-Referenztabelle in `docs/TECHNICAL.md §2.5` (alle Farben +
+    Unter-Zustände + treibende Snapshot-Felder). FR-OPS-004 im Register ergänzt.
+  - **Kein** Backend/DTO/Wire-Change (DTO trug die Felder schon). Reiner Helper-
+    Unit-Test `admin/__tests__/feedHealth.test.js` (8 Tests). Gates: **vitest 287**,
+    `vite build`, `go test ./internal/webui` grün; `dist` neu eingebettet.
 - **E2E-Testlauf-Findings #109–#121 umgesetzt (Branch
   `claude/mac-mini-e2e-network-53epgr`):** Zweiter Findings-Batch aus dem realen
   Mac-Mini-E2E-Lauf. Kurz:
