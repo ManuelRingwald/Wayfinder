@@ -40,9 +40,18 @@ onMounted(async () => {
     (track) => emit('track-click', track),
     (state) => emit('connection-change', state),
   )
-  // Häppchen 4: attach the measurement controller to the ready map and let the
-  // tools store drive it. The controller reports the live readout back to the store.
-  measure = createMeasure(mapEngine.map, { onReadout: (t) => tools.setReadout(t) })
+  // Häppchen 4: attach the measurement controller and let the tools store drive
+  // it (reporting the live readout back to the store). createMeasure adds a
+  // source + layers, so it MUST run after the style has loaded — initMap returns
+  // before the map's 'load' event, so calling it eagerly threw "style not loaded"
+  // and left the tools dead (RBL/DIST/QDM did nothing). Defer to 'load'.
+  const map = mapEngine.map
+  const setupMeasure = () => {
+    measure = createMeasure(map, { onReadout: (t) => tools.setReadout(t) })
+    measure.setTool(tools.activeTool) // honour a tool selected before load
+  }
+  if (map.loaded()) setupMeasure()
+  else map.once('load', setupMeasure)
   watch(() => tools.activeTool, (kind) => measure?.setTool(kind))
 })
 

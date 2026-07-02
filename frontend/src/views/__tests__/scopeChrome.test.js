@@ -46,8 +46,11 @@ describe('bottom-right readout: "<width> NM Breite · Vektor N min"', () => {
 })
 
 describe('feed badge takes the top-right (account chip removed)', () => {
-  it('AsdView drops the account overlay and keeps the feed-status overlay', () => {
+  it('AsdView drops the account overlay and groups header + feed top-right', () => {
     expect(asdView).not.toContain('account-overlay')
-    expect(asdView).toContain('feed-status-overlay')
+    // header (ICAO/UTC) now sits next to the feed badge in one top-right cluster
+    expect(asdView).toContain('top-right-cluster')
+    expect(asdView).toContain('<FeedStatusChip')
+    expect(asdView).toContain('<AsdHeader')
   })
 })

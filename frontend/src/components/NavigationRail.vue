@@ -18,6 +18,13 @@
 
         <!-- Rail: 56px icon strip, always visible -->
         <div class="nav-rail">
+          <!-- Brand glyph pinned to the top of the rail (design mockup). Static
+               for now; earmarked to become the ASD⇄EFS mode switch later. -->
+          <div class="nav-rail__brand" role="img" aria-label="ASD">
+            <v-icon size="26" color="primary">mdi-radar</v-icon>
+          </div>
+          <div class="nav-rail__divider" role="separator" />
+
           <!-- Häppchen 3: measurement tools (RBL/DIST/QDM), moved from the
                floating map toolbar into the rail (design mockup). Toggle buttons
                wired to the tools store, which drives the map's measure controller
@@ -39,6 +46,8 @@
             <span class="nav-rail__label">{{ t.label }}</span>
           </div>
 
+          <div class="nav-rail__divider" role="separator" />
+
           <div
             v-for="s in sections"
             :key="s.id"
@@ -54,6 +63,8 @@
             </div>
             <span class="nav-rail__label">{{ s.label }}</span>
           </div>
+
+          <div class="nav-rail__divider" role="separator" />
 
           <!-- Häppchen 3: zoom controls in the rail (design mockup). Purely
                presentational — they emit and AsdView delegates to the map engine
@@ -248,6 +259,24 @@ function onFlFilterChange(payload) { emit('fl-filter-change', payload) }
   align-items: center;
   padding-top: 12px;
   gap: 4px;
+}
+
+/* Brand glyph at the top of the rail (future ASD⇄EFS switch) */
+.nav-rail__brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 2px 0 4px;
+}
+
+/* Thin horizontal separator between rail groups (design mockup) */
+.nav-rail__divider {
+  width: 28px;
+  height: 1px;
+  background: var(--wf-border-strong);
+  margin: 2px 0;
+  flex-shrink: 0;
 }
 
 /* Req 1 + #116: Admin (when present) and the account entry sit at the bottom of
