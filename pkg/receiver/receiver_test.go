@@ -42,6 +42,26 @@ func TestReceiverLoopback(t *testing.T) {
 	t.Skip("full loopback test pending: requires exposing receiver port or mock transport")
 }
 
+// TestAcceptsGroup verifies the per-feed isolation guard: a wildcard-bound
+// socket that receives several feeds' groups on the shared port must keep only
+// its own group's datagrams (else it leaks another feed's tracks). A nil
+// destination (control message unavailable) falls back to accept.
+func TestAcceptsGroup(t *testing.T) {
+	recv, err := New(Config{Group: "239.255.0.7", Port: 8600})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if !recv.acceptsGroup(net.ParseIP("239.255.0.7")) {
+		t.Error("own group must be accepted")
+	}
+	if recv.acceptsGroup(net.ParseIP("239.255.0.8")) {
+		t.Error("another feed's group must be dropped (isolation)")
+	}
+	if !recv.acceptsGroup(nil) {
+		t.Error("nil destination (no control message) must fall back to accept")
+	}
+}
+
 // TestReceiverConfigDefaults verifies configuration defaults.
 func TestReceiverConfigDefaults(t *testing.T) {
 	recv, err := New(Config{})
