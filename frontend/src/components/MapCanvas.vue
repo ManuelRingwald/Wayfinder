@@ -71,6 +71,12 @@ watch(() => ({ ...store.flFilter }), () => {
   mapEngine?.updateFlFilter()
 }, { deep: true })
 
+// ASD-007: selection halo — re-render when the selected track changes so the
+// cyan ring appears/moves/clears immediately (not only on the next WS update).
+watch(() => store.selectedTrack?.track_num, () => {
+  mapEngine?.updateSelection()
+})
+
 // ASD-011: apply airspace group filter once after map load (so the initial
 // state is correctly reflected) and whenever the store changes.
 watch(() => store.mapLoaded, (loaded) => {
