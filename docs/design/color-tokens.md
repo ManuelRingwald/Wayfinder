@@ -19,9 +19,10 @@ Das ASD zeigt eine Karte mit Live-Tracks im Vordergrund. Das Farbschema ist desh
 konsequent auf **maximalen Kontrast zwischen Track-Symbolen und Kartenhintergrund**
 ausgerichtet:
 
-- **Hintergrund tiefes Navy** (`#0a1626`) — Blau statt Schwarz (Mockup-Vorlage,
-  2026-07-02); die leuchtenden Track-Farben (Cyan, Amber) springen weiterhin
-  sofort ins Auge, das Bild wirkt aber weniger „tot-schwarz".
+- **Hintergrund Near-Black** (`#070b12`) — maßgeblich ist der Claude-Design-Export
+  (ADR 0015 Nachtrag-2, 2026-07-02); die leuchtenden Track-Farben (Cyan, Amber)
+  springen maximal ins Auge. (Der frühere Navy-Versuch aus Nachtrag-1 beruhte auf
+  einer Fehl-Lesung des Screenshots und ist aufgehoben.)
 - **Primärfarbe Cyan** (`#23d3e6`) — aerospace/command-center-Standard, lässt sich
   auf dark surfaces gut ablesen und korrespondiert mit dem Friendly-Civil-Track-Cyan.
 - **Semantische Farben klar unterscheidbar**: Error-Rot (`#ff4338`) ≠ Warning-Amber
@@ -37,10 +38,10 @@ als `asdDarkTheme.colors` hinterlegt.
 
 | Token | Hex | Verwendung |
 |-------|-----|-----------|
-| `background` | `#0a1626` | App-Root-Hintergrund (hinter der Karte) |
-| `surface` | `#12233b` | Panels, Karten, Navigation Rail, Bottom Sheets |
-| `surface-variant` | `#1a2f4a` | Leicht gehobene Flächen (z. B. ausgewählte Nav-Items) |
-| `surface-bright` | `#223a5a` | Hover-States, Tooltips, aktive Chips |
+| `background` | `#070b12` | App-Root-Hintergrund (hinter der Karte) |
+| `surface` | `#0e1622` | Panels, Karten, Navigation Rail, Bottom Sheets |
+| `surface-variant` | `#16202e` | Leicht gehobene Flächen (z. B. ausgewählte Nav-Items) |
+| `surface-bright` | `#1c2c3e` | Hover-States, Tooltips, aktive Chips |
 | `primary` | `#23d3e6` | Haupt-Akzent (aktive Icons, Schalter, Outline-Inputs) |
 | `primary-darken-1` | `#0e8a9c` | Pressed-State, Focused-Outline |
 | `on-primary` | `#04141a` | Text/Icons auf primärem Hintergrund |
@@ -56,7 +57,7 @@ als `asdDarkTheme.colors` hinterlegt.
 
 | Token | Hex | Vorgesehen für |
 |-------|-----|---------------|
-| `surface-bright` | `#223a5a` | ASD-010 Filter-Chips aktiv |
+| `surface-bright` | `#1c2c3e` | ASD-010 Filter-Chips aktiv |
 | `primary-darken-1` | `#0e8a9c` | ASD-009 Karten-Controls Pressed |
 
 ---
@@ -106,11 +107,11 @@ der Karte. Sie sind in `frontend/src/map/constants.js` als `PALETTES` und
 ## 4. Farbsystem-Übersicht (visuell)
 
 ```
-Dunkel → Hell (Hintergrund-Hierarchie, Navy):
-  #0a1626  background        ████████████
-  #12233b  surface           ████████████
-  #1a2f4a  surface-variant   ████████████
-  #223a5a  surface-bright    ████████████
+Dunkel → Hell (Hintergrund-Hierarchie, Near-Black):
+  #070b12  background        ████████████
+  #0e1622  surface           ████████████
+  #16202e  surface-variant   ████████████
+  #1c2c3e  surface-bright    ████████████
 
 Primär / Akzent (Cyan):
   #23d3e6  primary           ████████████
@@ -138,3 +139,4 @@ Track-Domain:
 |---------|-------|--------|
 | 1.0.0 | 2026-06-17 | Initiale Ableitung aus ASD-Mockup (Command-Center-Ästhetik, Cyan-Primary), implementiert in ASD-007 |
 | 1.1.0 | 2026-07-02 | Surface-Hierarchie von Near-Black auf **tiefes Navy** umgestellt (`background #0a1626`, `surface #12233b`, `surface-variant #1a2f4a`, `surface-bright #223a5a`), passend zum Design-Mockup; Map-Hintergrund `#0b1a2e` + CARTO-Raster auf `raster-opacity 0.4` gedimmt (`cmd/wayfinder/main.go`). Cyan-Primary, Text- und Domain-/Track-Farben unverändert. |
+| 1.2.0 | 2026-07-02 | **Zurück auf Near-Black** (ADR 0015 Nachtrag-2): Der Claude-Design-Export ist verbindliches Template; seine maßgeblichen Token-Werte sind Near-Black (`background #070b12`, `surface #0e1622`, `surface-variant #16202e`, `surface-bright #1c2c3e`). Nachtrag-1 (Navy) war eine Screenshot-Fehl-Lesung und ist aufgehoben. Map-Hintergrund `#070b12`; CARTO-Raster bleibt bei `raster-opacity 0.4` (echte Geografie ist bewusst gewollt). Cyan-Primary/Text/Domain-Farben unverändert. |

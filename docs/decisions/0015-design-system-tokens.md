@@ -126,3 +126,43 @@ als feiner Kontext erhalten bleiben.
 `docs/design/color-tokens.md` (v1.1.0). Weiterhin **nicht schnittstellen-relevant**
 (reine Präsentation). Die volle Mockup-Karte (echtes Vektor-Grid, Sektorgrenzen,
 Airspace/Navaids) bleibt ein separates, teils datenabhängiges Thema.
+
+## Nachtrag-2 (2026-07-02): Zurück auf Near-Black — Design-Export ist maßgeblich
+
+**Kontext:** Der Nachtrag-1 stellte die Surface-Hierarchie auf Navy um, weil ein
+Blick auf den Mockup-Screenshot navyfarben *wirkte*. Der Projektverantwortliche
+hat den **Claude-Design-Export** (`ASD.zip`: Design-System mit Tokens + ASD-Ziel-
+Screens als JSX + Screenshots) inzwischen ausdrücklich zum **verbindlichen
+Template** von Wayfinder erklärt — „genau so, wie wir Material Design für die
+Komponenten verwenden". Die **maßgeblichen Token-Werte** dieses Exports
+(`_ds/.../tokens/colors.css`) sind **Near-Black**, nicht Navy. Damit war die
+Navy-Annahme aus Nachtrag-1 eine Fehl-Lesung des Screenshots; der Token-Satz des
+Exports ist die Grundwahrheit.
+
+**Entscheidung:** Die Surface-Hierarchie geht **zurück auf Near-Black**; sie
+**hebt Nachtrag-1 auf**. Cyan-Primary, Text-, Semantik- und Domänen-/Track-Farben
+bleiben unverändert (sie stimmten hex-genau mit dem Export überein).
+
+| Token | Nachtrag-1 (Navy) | Nachtrag-2 (Near-Black, = Export) |
+|-------|-------------------|-----------------------------------|
+| `background` | `#0a1626` | `#070b12` |
+| `surface` | `#12233b` | `#0e1622` |
+| `surface-variant` | `#1a2f4a` | `#16202e` |
+| `surface-bright` | `#223a5a` | `#1c2c3e` |
+
+Map-Style (`cmd/wayfinder/main.go`, `darkMapStyle`): `background-color`
+`#0b1a2e` → `#070b12`. **Die CARTO-`dark_nolabels`-Rasterschicht bleibt** bei
+`raster-opacity: 0.4` — echte Küstenlinien/Geografie unter den Tracks ist eine
+bewusste Produkt-Entscheidung; der reine synthetische Scope des Design-Exports
+ist ein Standalone-Demo-Artefakt (der Export rendert gar keine echte Karte).
+Zusätzlich wird ein zarter **Cyan-Mittglow** (`radial-gradient`,
+`rgba(35,211,230,0.05)`) über dem Scope ergänzt (Export-`nacht`-Schema).
+
+**Nebeneffekt (Konsistenz):** Die schwebenden Overlay-Panels (Header, Legende,
+Mess-Readout) nutzten bereits hartkodiert `rgba(14,22,34,0.85)` = Export-Surface
+`#0e1622` @ 85%. Mit Nachtrag-2 sind Vuetify-Surface und Overlay-Chrome wieder
+**dieselbe** Farbe (unter Navy waren sie auseinandergelaufen).
+
+**Umfang (Lockstep, unverändert):** `colors.css`, `vuetify.js`,
+`cmd/wayfinder/main.go`, `docs/design/color-tokens.md`. Weiterhin **nicht
+schnittstellen-relevant**.
