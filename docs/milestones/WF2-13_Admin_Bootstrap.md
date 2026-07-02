@@ -24,7 +24,7 @@ Schranke, hinter der die Admin-API/-UI (WF2-31/32) baut.
 
 **Bootstrap-Subcommand** (`cmd/wayfinder/bootstrap.go`):
 - `wayfinder bootstrap -tenant … -subject … [-tenant-name …] [-email …]
-  [-role operator|tenant_admin|super_admin] [-password …]`. Mit **keinem**
+  [-role user|admin] [-password …]`. Mit **keinem**
   Subcommand startet wie bisher der Server (Dispatch in `main()` über
   `os.Args[1] == "bootstrap"`).
 - `runBootstrap(ctx, pool, params, out)` — der testbare Kern: **idempotentes**
@@ -45,7 +45,7 @@ Schranke, hinter der die Admin-API/-UI (WF2-31/32) baut.
   `403`, `next` wird nie erreicht. **fail-closed:** ohne Identity im Context
   (Gate ohne vorgelagerte `Middleware`) → ebenfalls `403`.
 - Verdrahtung in `main.go`: bei aktiver Multi-Tenancy wird `/admin` als
-  `tenantMW(RequireRole(tenant_admin, super_admin)(whoami))` gemountet. Der
+  `tenantMW(RequireRole(admin)(whoami))` gemountet. Der
   `adminWhoamiHandler` liefert die eigene Identity als JSON — eine minimale,
   ehrliche Zugriffsprüfung; die echte Admin-Oberfläche folgt WF2-31/32.
 
@@ -57,8 +57,8 @@ vorhandenen Tabellen/Repos.
 - **DB-frei:**
   - `cmd/wayfinder/bootstrap_test.go` — `bootstrapParams.validate` (Pflichtfelder,
     Rollen-Gültigkeit).
-  - `pkg/tenant/authz_test.go` — `RequireRole`: `tenant_admin`/`super_admin`
-    erlaubt (200, `next` erreicht), `operator`/leere Rolle/**keine Identität** →
+  - `pkg/tenant/authz_test.go` — `RequireRole`: `admin`
+    erlaubt (200, `next` erreicht), `user`/leere Rolle/**keine Identität** →
     `403` (`next` nie erreicht).
 - **Real gegen PostgreSQL 16** (`scripts/pg-test.sh`):
   - `cmd/wayfinder/bootstrap_integration_test.go::TestIntegrationBootstrap` —

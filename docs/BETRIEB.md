@@ -144,9 +144,9 @@ docker compose logs --since 1h wayfinder   # letzte Stunde
 | `event` | Bedeutung |
 |---------|-----------|
 | `ws_connect` | Ein Nutzer hat das Lagebild geöffnet — mit Mandant, Nutzer und freigeschaltetem Umfang (Feeds, Gebiet, Flugflächen-Band) |
-| `impersonation_start` | Ein `super_admin` hat einen **Read-Only-Einblick** in einen Mandanten gestartet (`impersonated_tenant_id`) |
+| `impersonation_start` | Ein `admin` hat einen **Read-Only-Einblick** in einen Mandanten gestartet (`impersonated_tenant_id`) |
 | `impersonation_end` | …und wieder beendet |
-| `impersonation_denied` | **Abgewiesener** Einblicks-Versuch (Nicht-`super_admin` mit Grant, oder unbekannter Ziel-Mandant) — **sicherheitsrelevant, prüfen!** |
+| `impersonation_denied` | **Abgewiesener** Einblicks-Versuch (Nicht-`admin` mit Grant, oder unbekannter Ziel-Mandant) — **sicherheitsrelevant, prüfen!** |
 
 Beispiel — alle Impersonation-Ereignisse der letzten Tage heraussuchen:
 ```bash
@@ -173,11 +173,10 @@ WAYFINDER_BOOTSTRAP_PASSWORD='StartPasswort!' \
 docker compose run --rm -e WAYFINDER_BOOTSTRAP_PASSWORD \
   wayfinder bootstrap \
     -tenant kunde-sued -tenant-name "Kunde Süd GmbH" \
-    -subject ben -role tenant_admin
+    -subject ben -role admin
 ```
-- `-role`: `operator` (nur sehen), `tenant_admin` (eigenen Mandanten verwalten),
-  `super_admin` (alles verwalten). Der Befehl ist **idempotent** — erneut
-  ausführen setzt nur das Passwort neu.
+- `-role`: `user` (nur sehen) oder `admin` (Plattform verwalten); Default `admin`.
+  Der Befehl ist **idempotent** — erneut ausführen setzt nur das Passwort neu.
 
 ### 5.2 Weiteren Nutzer in einem bestehenden Mandanten anlegen
 Gleicher Befehl, gleicher `-tenant`, anderer `-subject`/`-role`.
@@ -191,9 +190,9 @@ docker compose run --rm wayfinder feed list
 - `-sensor-mix` nur aus `PSR, SSR, MODE_S, ADS-B, MLAT, FLARM` (gängige
   Schreibweisen werden korrigiert; **Unbekanntes wird abgelehnt**).
 
-### 5.4 Feed einem Mandanten zuweisen / entziehen (nur `super_admin`)
+### 5.4 Feed einem Mandanten zuweisen / entziehen (nur `admin`)
 **Am einfachsten** über die Oberfläche **/admin** → Provisioning-Bereich.
-Alternativ per Befehl (als angemeldeter `super_admin`; `{tenant}`/`feed_id` aus
+Alternativ per Befehl (als angemeldeter `admin`; `{tenant}`/`feed_id` aus
 `feed list` bzw. der Admin-Liste):
 ```bash
 # zuweisen
@@ -208,12 +207,12 @@ curl -X DELETE http://localhost:8081/api/admin/tenants/2/subscriptions/1
   halten — ein zweiter Zuweisungsversuch wird mit **409** abgelehnt (siehe 5.6).
 
 ### 5.5 Sicht eines Mandanten einstellen (Zentrum/Gebiet/Flugflächen)
-Der jeweilige `tenant_admin` setzt seine Sicht (Kartenzentrum, Interessengebiet
+Der `admin` setzt die Sicht eines Mandanten (Kartenzentrum, Interessengebiet
 **AOI**, Flugflächen-Band) in **/admin**. Das begrenzt **serverseitig**, was
 überhaupt an dessen Browser geht (Datensparsamkeit/Bandbreite). Ohne Eintrag
 sieht der Mandant den ganzen abonnierten Feed.
 
-### 5.6 Funktions-Freischaltungen (Entitlements) setzen (nur `super_admin`)
+### 5.6 Funktions-Freischaltungen (Entitlements) setzen (nur `admin`)
 Feature-Flags als Daten (z. B. `multi_feed`, `stca`, `premium_layers`):
 ```bash
 curl -X PUT http://localhost:8081/api/admin/tenants/2/entitlements/multi_feed \
@@ -223,7 +222,7 @@ Erst danach darf Mandant 2 mehr als einen Feed halten.
 
 ### 5.7 Read-Only-Einblick beaufsichtigen
 Der „View as Tenant"-Einblick (Bedienung: `INSTALLATION.md` Schritt 5.11) ist ein
-**Support-Werkzeug für `super_admin`**. Betrieblich gilt: Jeder Einblick steht im
+**Support-Werkzeug für `admin`**. Betrieblich gilt: Jeder Einblick steht im
 **Audit-Log** (`impersonation_start`/`_end`), läuft nach 30 min ab und ist
 **read-only**. Abgewiesene Versuche (`impersonation_denied`) regelmäßig prüfen
 (Abschnitt 6.5).
@@ -403,7 +402,7 @@ Wayfinder reagiert auf das Stopp-Signal und schließt alle Verbindungen sauber;
 | **Banner „FEED STALE"** | Quelle gerade stumm | Firefly/Sensorlage prüfen; `wayfinder_feed_stale` im Monitoring |
 | **Nutzer sieht nichts (Multi-Tenant)** | Mandant hat **keinen Feed** zugewiesen (gewollt fail-closed) | Zuweisung nachholen (5.4) |
 | **Login schlägt fehl (401)** | Passwort falsch **oder** `WAYFINDER_SESSION_KEY` fehlt/zu kurz | Key setzen (6.2), Container neu starten, ggf. `bootstrap` erneut |
-| **„Als Mandant ansehen" fehlt** | Nutzer ist nicht `super_admin` **oder** kein Signing-Key gesetzt | Rolle prüfen; `WAYFINDER_SESSION_KEY` setzen |
+| **„Als Mandant ansehen" fehlt** | Nutzer ist nicht `admin` **oder** kein Signing-Key gesetzt | Rolle prüfen; `WAYFINDER_SESSION_KEY` setzen |
 | **Viele `clients_evicted`** | Langsame Clients / Netzengpass | Netz/Client-Last prüfen; ist erwartetes Schutzverhalten (kein Absturz) |
 | **`feature_check_failclosed` steigt** | DB-Problem oder unbekannter Feature-Key | DB-Erreichbarkeit prüfen; Logs ansehen |
 | **Port belegt (`address already in use`)** | Anderer Dienst nutzt 8080/8081 | Port-Abbildung in der Compose ändern (z. B. `9091:8081`) |
@@ -460,7 +459,7 @@ Volume zurücksetzen (`down -v`) und die Sicherung einspielen.
 **Monatlich**
 - [ ] Restore-Probe auf einem Testsystem (7.3).
 - [ ] Verfügbare Updates sichten; Update mit vorheriger Sicherung einspielen (8).
-- [ ] Nutzer-/Rollen-Inventur (wer hat `super_admin`?).
+- [ ] Nutzer-/Rollen-Inventur (wer hat `admin`?).
 
 **Bei jeder Konfig-Änderung**
 - [ ] Vorher Datenbank sichern.
