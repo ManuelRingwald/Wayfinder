@@ -33,13 +33,31 @@
     Toolbar-Position) · **6** Safety-Nets EMG+DUP (aus `mode_3a`). **Bewusst raus (C):**
     Typ-Farben mil/hostile/neutral, Zuständigkeits-Dimming, STCA, Sektorgrenzen/
     Airways/Terrain/Runways/Ext-Centerlines-Layer, APW (geparkt).
-  - **Häppchen 1 erledigt (ADR 0015, FR-UI-019):** Design-Tokens als
-    CSS-Custom-Properties (`--wf-*`) in `frontend/src/design/tokens/` +
-    `base.css`; **Roboto/Roboto Mono self-hosted via `@fontsource`** (nur
-    latin/latin-ext, kein Laufzeit-CDN), Import in `main.js`. Reines Fundament —
-    kein Umstyling, Karten-Engine unberührt. Gates: **vitest 218**, `vite build`,
-    `go build ./...`, `go test ./internal/webui/...` (eingebettetes `dist` neu) grün.
-    **Nächster Schritt:** Häppchen 2 (Chrome-Reskin) — vorher ankündigen/freigeben.
+  - **Häppchen 1–4 umgesetzt (PR #130, ADR 0015, FR-UI-019…022):**
+    - **1 Fundament:** Design-Tokens (`--wf-*`) in `frontend/src/design/tokens/` +
+      `base.css`; **Roboto/Roboto Mono self-hosted via `@fontsource`** (latin/
+      latin-ext, kein Laufzeit-CDN). Karten-Engine unberührt.
+    - **2 Chrome-Reskin:** Mono-Readouts (Track-Detail), tonaler Feed-Badge,
+      Floating-Chrome-Hairlines; Token-Konvergenz Rail/Sidebar/Map-Controls. Die
+      Komponenten waren aus dem Design rückwärts abgeleitet → optisch nah, jetzt
+      token-getrieben.
+    - **3a Kopfzeile:** **ICAO-Kürzel per-Mandant** (Migration 00015
+      `view_configs.icao`, `whoami.icao`, Admin-View-Editor) + Live-UTC-Uhr
+      (`AsdHeader.vue`). Ehrlich: ICAO ist Config, kein CAT062-Feld.
+    - **3b Legende/Readout:** schwebende, ausklappbare `ScopeLegend.vue` (Glyph-
+      Provenienz gefiltert + reale Zustandsfarben; **keine** Typ-Farben/Alarm-
+      Zeile), Vektor-Minuten-Readout, native ScaleControl nach unten-rechts.
+      Provenienz-Legende als eine Quelle in `map/provenance.js`.
+    - **4 Werkzeuge:** RBL/DIST/QDM — `map/tools.js` (Großkreis-Geometrie, 10
+      Tests), `map/measure.js` (MapLibre-Controller), `stores/tools.js`,
+      `MeasureToolbar.vue` (Tastenkürzel R/D/Q/Esc).
+    - **Bewusst zurückgestellt:** Graticule-Layer (optional; dyn. Grid-Regen,
+      hier nicht verifizierbar) und **PROBE** (Inhalt undefiniert).
+    - Gates: **vitest 238**, `vite build`, `go build/test ./...` (28 Pakete ok,
+      Integration skippt ohne PG), `go vet`/`gofmt` grün; `dist` neu eingebettet.
+  - **Nächster Schritt:** Häppchen 5 (Tweaks-Panel) + 6 (Safety-Nets EMG/DUP) —
+    vorher ankündigen/freigeben. Optik/Funktion von 1–4 wird im **E2E-Lauf**
+    geprüft (Anhang beim nächsten realen Durchlauf).
 - **E2E-Testlauf-Findings #109–#121 umgesetzt (Branch
   `claude/mac-mini-e2e-network-53epgr`):** Zweiter Findings-Batch aus dem realen
   Mac-Mini-E2E-Lauf. Kurz:
