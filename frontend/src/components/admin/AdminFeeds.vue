@@ -616,7 +616,7 @@ function buildSourcesPayload() {
       if (isAreaType(s.type)) {
         const box = radiusNmToBbox(s.center_lat, s.center_lon, s.radius_nm)
         if (box) {
-          out.bbox = { min_lat: box.minLat, min_lon: box.minLon, max_lat: box.maxLat, max_lon: box.maxLon }
+          out.bbox = box // already the backend wire shape (min_lat/min_lon/max_lat/max_lon)
         }
       } else {
         out.sac = s.sac

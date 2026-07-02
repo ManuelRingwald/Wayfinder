@@ -58,6 +58,19 @@
   - **Nächster Schritt:** Häppchen 5 (Tweaks-Panel) + 6 (Safety-Nets EMG/DUP) —
     vorher ankündigen/freigeben. Optik/Funktion von 1–4 wird im **E2E-Lauf**
     geprüft (Anhang beim nächsten realen Durchlauf).
+- **E2E-Finding (diese Sitzung, Branch `claude/wayfinder-tenant-radius-bug-w99r8q`):
+  Mandanten-Radius wurde nach Reload nicht angezeigt (E2E 5.3.1).** Ursache:
+  `src/admin/geo.js` rechnete intern in **camelCase** (`minLat`…), der Backend-
+  Wire-Vertrag (`store.BBox`) ist aber **snake_case** (`min_lat`…). Speichern
+  mappte von Hand korrekt; beim Laden bekam `bboxToRadius` die snake_case-AOI
+  direkt → `null` → Radius sprang auf 0 (wirkte „nicht gespeichert"), und das
+  nächste Speichern überschrieb die AOI mit `NULL` (Datenverlust). Fix:
+  `radiusNmToBbox`/`bboxToRadius` sprechen jetzt durchgängig die Wire-Form; die
+  zwei Hand-Mappings in `AdminTenantDetail.vue`/`AdminFeeds.vue` entfielen. Behebt
+  denselben Bruch auch bei „Aus Mandant übernehmen" (`applyTenantArea`, E2E
+  5.3.3/5.3.5/5.3.7) und beim Editieren gespeicherter Area-Quellen (`toFormSource`).
+  Gates: **vitest 244**, `vite build`, `go build`/`go test ./internal/webui` grün;
+  `dist` neu eingebettet.
 - **E2E-Testlauf-Findings #109–#121 umgesetzt (Branch
   `claude/mac-mini-e2e-network-53epgr`):** Zweiter Findings-Batch aus dem realen
   Mac-Mini-E2E-Lauf. Kurz:

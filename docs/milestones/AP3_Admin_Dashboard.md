@@ -49,7 +49,13 @@ Beide Routen sind `requireAdmin`-gegated (Defence-in-Depth zum äußeren
   (Issue-Formel: `lat_delta=R/60`, `lon_delta=R/(60·cos φ)`); Pol-Singularität
   geklemmt, Rückrichtung aus der Breiten-Halbhöhe (round-trip-stabil). **Das
   Backend bleibt AOI-basiert** (WF2-21.2 unberührt) — die Umrechnung ist UX vor
-  dem PUT.
+  dem PUT. Beide Funktionen sprechen die **Backend-Wire-Form** der Bbox
+  (`min_lat`/`min_lon`/`max_lat`/`max_lon`, wie `store.BBox` sie serialisiert) auf
+  beiden Enden, damit die AOI ohne Schlüssel-Umbenennung an den Aufrufstellen
+  gespeichert **und** zurückgelesen wird. (Ein früherer camelCase/snake_case-Bruch
+  ließ `bboxToRadius` beim Laden `null` liefern → der Radius sprang nach Reload auf
+  0 und wirkte „nicht gespeichert"; beim nächsten Speichern wurde die AOI zudem
+  auf `NULL` überschrieben.)
 - **`AdminTenants.vue`** (neu): Übersichtstabelle aus `loadOverview()`; Spalten
   Mandant/Status/Features/Feeds/Zugänge + „Konfigurieren" (emittiert `select`).
 - **`AdminTenantDetail.vue`** (neu): pro Mandant Status-Umschalter, Standard-
@@ -87,8 +93,10 @@ Geo-Umrechnung und das UI-Gating sind kosmetisch).
   2 Feeds, stca+multi_feed) + tenant-view PUT→GET-Round-Trip.
 
 ### Vitest
-- `geo.test.js` (8): Breiten-Halbhöhe, Längen-Spreizung mit `1/cos φ`,
-  null bei nicht-positivem/nicht-endlichem Radius, Pol-Clamp, Round-Trip.
+- `geo.test.js` (10): Breiten-Halbhöhe, Längen-Spreizung mit `1/cos φ`,
+  null bei nicht-positivem/nicht-endlichem Radius, Pol-Clamp, Round-Trip,
+  **Wire-Form (snake_case) auf beiden Enden** (Regressions-Schutz gegen den
+  Radius-Reset).
 - `admin.test.js` AP3-Block (8): `loadOverview` (Erfolg + Fehler),
   `loadTenantView` (200 + 404), `saveTenantView` (DTO + Validierungsfehler),
   `loadTenantEntitlements`, `setTenantEntitlement`.
