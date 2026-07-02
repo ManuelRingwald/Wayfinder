@@ -40,6 +40,16 @@ func (t SourceType) isAreaBounded() bool {
 	return t == SourceADSBOpenSky || t == SourceFLARMAPRS
 }
 
+// Poll-interval bounds for an adsb_opensky source (ADR 0029 in Firefly). The
+// floor is OpenSky's fastest authenticated cadence (~5 s) — below it even an
+// authenticated client risks HTTP 429; the ceiling (1 h) rejects a nonsensically
+// slow poll. Firefly itself stays lenient (any value > 0, else its 10 s default);
+// this tighter range is enforced here, at the operator's write boundary.
+const (
+	minPollIntervalSecs = 5
+	maxPollIntervalSecs = 3600
+)
+
 // sensorClassBySourceType maps each live source kind to the surveillance sensor
 // class it contributes, so a feed's sensor mix (feed metadata, pkg/sensorclass)
 // can be DERIVED from its configured sources instead of hand-maintained
@@ -83,6 +93,13 @@ type Source struct {
 	SAC     *int       `json:"sac,omitempty"`
 	SIC     *int       `json:"sic,omitempty"`
 	CredRef *string    `json:"cred_ref,omitempty"`
+	// PollIntervalSecs overrides the OpenSky poll cadence for an adsb_opensky
+	// source (whole seconds; Firefly contract v1.4.0, ADR 0029 there). It only
+	// applies to adsb_opensky — FLARM/APRS is a push stream and radar has its own
+	// scan period — so the write boundary rejects it for any other type. Absent →
+	// Firefly's default (10 s). The operator sets it to respect OpenSky's rate
+	// limit (anonymous ~10 s, authenticated ~5 s) and avoid HTTP 429.
+	PollIntervalSecs *int `json:"poll_interval_secs,omitempty"`
 	// Radar location (radar_asterix only, Firefly contract v1.3.0 / #91): CAT048
 	// is polar *relative to the radar* and does not carry the site, so Firefly
 	// needs Lat/Lon (WGS84 degrees, required) to lift polar plots into the
@@ -138,6 +155,16 @@ func (s Source) validate(idx int) error {
 		}
 		if len(ref) > 200 {
 			return &InvalidSourceError{Index: idx, Reason: "cred_ref too long"}
+		}
+	}
+
+	// poll_interval_secs applies only to the polled OpenSky source (ADR 0029).
+	if s.PollIntervalSecs != nil {
+		if s.Type != SourceADSBOpenSky {
+			return &InvalidSourceError{Index: idx, Reason: fmt.Sprintf("poll_interval_secs only applies to %s", SourceADSBOpenSky)}
+		}
+		if *s.PollIntervalSecs < minPollIntervalSecs || *s.PollIntervalSecs > maxPollIntervalSecs {
+			return &InvalidSourceError{Index: idx, Reason: fmt.Sprintf("poll_interval_secs must be in %d..%d", minPollIntervalSecs, maxPollIntervalSecs)}
 		}
 	}
 

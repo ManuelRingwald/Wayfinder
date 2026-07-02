@@ -183,7 +183,27 @@
     Unter-Zustände + treibende Snapshot-Felder). FR-OPS-004 im Register ergänzt.
   - **Kein** Backend/DTO/Wire-Change (DTO trug die Felder schon). Reiner Helper-
     Unit-Test `admin/__tests__/feedHealth.test.js` (8 Tests). Gates: **vitest 287**,
-    `vite build`, `go test ./internal/webui` grün; `dist` neu eingebettet.
+    `vite build`, `go test ./internal/webui` grün; `dist` neu eingebettet. **PR #142
+    gemergt.**
+- **E2E-Finding (diese Sitzung, gleicher Branch): Konfigurierbares OpenSky-Poll-
+  Intervall (4-Punkte-Liste #3, cross-project mit Firefly ADR 0029).** Der E2E-Feed
+  lief anonym in **HTTP 429**, weil die OpenSky-Poll-Kadenz fix bei 10 s lag und
+  über das Wayfinder-UI nicht steuerbar war. Jetzt trägt eine `adsb_opensky`-Quelle
+  ein optionales **`poll_interval_secs`**:
+  - **Firefly-Seite (PR #48 gemergt):** `FIREFLY_SOURCES`-Kontrakt v1.4.0 (ADR 0029)
+    — `SourceSpec.poll_interval_secs` (additiv, nur `> 0` überschreibt, sonst
+    Default 10 s). Bidirektional kompatibel (kein `deny_unknown_fields`).
+  - **Wayfinder-Seite (dieser PR):** `store.Source.PollIntervalSecs` + Validierung
+    am Schreib-Rand (**nur** `adsb_opensky`, Bereich 5..3600 s, sonst 400-mit-Index);
+    `dockerbackend.fireflySource` reicht es additiv nach `FIREFLY_SOURCES` durch;
+    **UI-Feld nur bei ADS-B** (leer = Default 10 s) + **Infobox** zum OpenSky-Rate-
+    Limit (429). Nur presentational sichtbar; Firefly bleibt tolerant (Bereich am
+    Wayfinder-Rand erzwungen).
+  - **Kein** DTO-Change nötig (Admin-API nutzt `store.SourceConfig` direkt). Tests:
+    `feed_sources_test.go` (+5 Fälle), `sources_test.go` (Passthrough),
+    `adminFeedsPollInterval.test.js` (5). FR-ORCH-001 (UX-5) + `docs/TECHNICAL.md`.
+    Gates: **vitest 292**, `go test ./pkg/... ./internal/webui`, `vite build` grün;
+    `dist` neu eingebettet.
 - **E2E-Testlauf-Findings #109–#121 umgesetzt (Branch
   `claude/mac-mini-e2e-network-53epgr`):** Zweiter Findings-Batch aus dem realen
   Mac-Mini-E2E-Lauf. Kurz:
