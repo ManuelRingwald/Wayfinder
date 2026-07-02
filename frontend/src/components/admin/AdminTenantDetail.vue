@@ -267,7 +267,7 @@
       </span>
     </v-card-title>
     <v-card-text>
-      <AdminProvisioning :tenant-id="tenantId" />
+      <AdminProvisioning :tenant-id="tenantId" @changed="onFeedsChanged" />
     </v-card-text>
   </v-card>
 
@@ -418,6 +418,15 @@ async function submitDelete() {
 
 function round(n) {
   return Math.round(n * 10) / 10
+}
+
+// onFeedsChanged reacts to a grant/revoke in the embedded provisioning table.
+// The header feed chips derive from admin.overview (loaded once by the parent),
+// so without this refresh they drift out of sync with the assignment table below
+// (chips still show the old feed set). Reload the overview (chips) and feed health
+// (chip colour/title) so the whole Feeds card reflects the new assignment at once.
+async function onFeedsChanged() {
+  await Promise.all([admin.loadOverview(), admin.loadFeedsHealth()])
 }
 
 const HEALTH_COLORS = { green: 'success', yellow: 'warning', red: 'error' }
