@@ -4,39 +4,8 @@
        and let MapCanvas delegate to the map engine, keeping the engine
        framework-agnostic. -->
   <div class="map-controls">
-    <v-btn-group
-      direction="vertical"
-      density="compact"
-      color="surface"
-      variant="flat"
-      class="map-controls__group elevation-4 rounded-lg"
-    >
-      <!-- Zoom in -->
-      <v-btn
-        icon="mdi-plus"
-        size="small"
-        :ripple="false"
-        @click="$emit('zoom-in')"
-      >
-        <v-icon>mdi-plus</v-icon>
-        <v-tooltip activator="parent" location="left" text="Zoom in" />
-      </v-btn>
-
-      <!-- Zoom out -->
-      <v-btn
-        icon="mdi-minus"
-        size="small"
-        :ripple="false"
-        @click="$emit('zoom-out')"
-      >
-        <v-icon>mdi-minus</v-icon>
-        <v-tooltip activator="parent" location="left" text="Zoom out" />
-      </v-btn>
-    </v-btn-group>
-
-    <!-- Spacer -->
-    <div class="my-2" />
-
+    <!-- Häppchen 3: zoom moved to the navigation rail; these are the viewport
+         actions (recenter to configured centre, fullscreen toggle). -->
     <v-btn-group
       direction="vertical"
       density="compact"
@@ -72,7 +41,7 @@
 <script setup>
 import { ref } from 'vue'
 
-defineEmits(['zoom-in', 'zoom-out', 'recenter'])
+defineEmits(['recenter'])
 
 const isFullscreen = ref(false)
 

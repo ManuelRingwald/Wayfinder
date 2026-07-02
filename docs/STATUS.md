@@ -97,9 +97,17 @@
     `map/provenance.js`; Regressionstests. **Militär-Caret/Alarme bleiben draußen**
     (keine Wire-Daten). Gates: **vitest 254**, `vite build`, `go build`/`go test
     ./internal/webui` grün; `dist` neu eingebettet.
-  - **Offen (nächstes Häppchen):** Werkzeuge (RBL/DIST/QDM/Zoom) in die linke
-    Leiste holen (wie Mockup); volle Mockup-Karte (Vektor-Grid, Sektorgrenzen,
-    Airspace/Navaids) separat + teils datenabhängig.
+  - **Häppchen 3 — Werkzeuge in die Leiste**: RBL/DIST/QDM sind jetzt **Rail-Icons**
+    (`NavigationRail.vue`, Toggle → `tools`-Store, der `map/measure.js` treibt);
+    die schwebende Mess-Toolbar entfällt, der Hinweis/Readout + Tastenkürzel
+    R/D/Q/Esc bleiben in `MeasureStatus.vue` (umbenannt aus `MeasureToolbar.vue`).
+    **Zoom +/−** ebenfalls in die Rail (aus `MapControls` entfernt, Recenter/Vollbild
+    bleiben rechts), delegiert über `AsdView`→`MapCanvas.zoomIn/zoomOut`. PROBE
+    bleibt draußen (kein Inhalt). Auch im Mobil-Drawer erreichbar. Regressionstest
+    `railTools.test.js`. Gates: **vitest 260**, `vite build`, `go test ./internal/webui`
+    grün; `dist` neu eingebettet.
+  - **Offen:** volle Mockup-Karte (Vektor-Grid, Sektorgrenzen, Airspace/Navaids)
+    — separates, teils datenabhängiges Thema.
 - **E2E-Testlauf-Findings #109–#121 umgesetzt (Branch
   `claude/mac-mini-e2e-network-53epgr`):** Zweiter Findings-Batch aus dem realen
   Mac-Mini-E2E-Lauf. Kurz:
