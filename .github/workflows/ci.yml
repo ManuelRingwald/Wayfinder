@@ -1,0 +1,116 @@
+# Continuous Integration — Wayfinder (Go backend + embedded Vue frontend).
+#
+# Runs the charter's quality gates (CLAUDE.md §6) on every push to main and every
+# pull request against main, split into three independently-reportable jobs so
+# branch protection can require each one:
+#   * go       — build, vet, gofmt check, unit tests
+#   * lint     — golangci-lint (standard set; see .golangci.yml)
+#   * frontend — vitest + production build, and a check that the committed,
+#                embedded bundle (internal/webui/dist) is up to date.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Least privilege: CI only needs to read the repository.
+permissions:
+  contents: read
+
+# A newer push to the same ref cancels the older, still-running CI.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    name: Go (build · vet · fmt · test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: gofmt (no diffs)
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "::error::gofmt found unformatted files:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go build
+        run: go build ./...
+
+      - name: go test
+        run: go test ./...
+
+  lint:
+    name: golangci-lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # Pin golangci-lint to a known version via the official install script, so
+      # CI is reproducible and does not silently drift when a new release lands.
+      - name: Install golangci-lint
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh \
+            | sh -s -- -b "$(go env GOPATH)/bin" v2.5.0
+
+      - name: Run golangci-lint
+        run: "$(go env GOPATH)/bin/golangci-lint run ./..."
+
+  frontend:
+    name: Frontend (test · build · dist)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies (npm ci)
+        run: npm ci
+
+      - name: Unit tests (vitest)
+        run: npm run test
+
+      - name: Production build
+        run: npm run build
+
+      # The Go binary embeds internal/webui/dist. A stale committed bundle would
+      # silently ship an outdated UI, so fail if a fresh build differs from what
+      # is committed. Fix locally with `npm run build` in frontend/ and commit.
+      - name: Verify embedded dist is up to date
+        working-directory: ${{ github.workspace }}
+        run: |
+          if [ -n "$(git status --porcelain internal/webui/dist)" ]; then
+            echo "::error::internal/webui/dist is stale — run 'npm run build' in frontend/ and commit the result."
+            git status --porcelain internal/webui/dist
+            git --no-pager diff -- internal/webui/dist | head -200
+            exit 1
+          fi
