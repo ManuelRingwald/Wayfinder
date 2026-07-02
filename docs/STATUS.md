@@ -82,6 +82,24 @@
   das die overview schon nachlud). Kein Backend-Change. Regressionstest im `?raw`-
   SFC-Stil. Gates: **vitest 248**, `vite build`, `go build`/`go test ./internal/webui`
   grün; `dist` neu eingebettet.
+- **E2E-Finding (diese Sitzung, gleicher Branch): Design-Abgleich gegen den
+  Mockup — der Reskin (#130) war hinter dem Mockup zurück.** In freigegebenen
+  Häppchen nachgezogen:
+  - **Häppchen 1 — Navy-Farbschema** (ADR 0015 Nachtrag): Surface-Hierarchie von
+    Near-Black auf tiefes Navy (`background #0a1626` …), Map-Hintergrund `#0b1a2e`
+    + CARTO-Raster `raster-opacity 0.4`. Tokens + `vuetify.js` im Lockstep.
+  - **Häppchen 2 — Track-Symbolik**: Formen an den Mockup — **◆ ADS-B, ● PSR**
+    (gefüllt), **■ SSR** (FLARM `F`/combined `K` bleiben, Wayfinder-Superset);
+    **Coasting wird hohl** gezeichnet (Umriss statt Füllung) statt nur gedimmt, so
+    ist der Zustand an der Form erkennbar. Legende spiegelt das (Coasting = hohler
+    Ring) und der **z-index-Bug** (Legende verschwand hinter der 56 px-Leiste) ist
+    behoben (`left: 68px`). Symbolik in `map/layers.js`, Glyphen in
+    `map/provenance.js`; Regressionstests. **Militär-Caret/Alarme bleiben draußen**
+    (keine Wire-Daten). Gates: **vitest 254**, `vite build`, `go build`/`go test
+    ./internal/webui` grün; `dist` neu eingebettet.
+  - **Offen (nächstes Häppchen):** Werkzeuge (RBL/DIST/QDM/Zoom) in die linke
+    Leiste holen (wie Mockup); volle Mockup-Karte (Vektor-Grid, Sektorgrenzen,
+    Airspace/Navaids) separat + teils datenabhängig.
 - **E2E-Testlauf-Findings #109–#121 umgesetzt (Branch
   `claude/mac-mini-e2e-network-53epgr`):** Zweiter Findings-Batch aus dem realen
   Mac-Mini-E2E-Lauf. Kurz:
