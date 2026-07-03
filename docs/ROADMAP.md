@@ -416,6 +416,14 @@ Details & Begründung: Konzept §7/§8.
 > Grenzen".
 
 ### Stufe 5 — Monetarisierung & HA-Betrieb (optional / zuletzt)
+
+> 📊 **Ist-/Gap-Analyse Service-Orientierung & HA (2026-07-03):**
+> `docs/design/gap-analyse-service-orientierung-ha.md` — verortet WF2-52/53,
+> ORCH-6 und Fireflys SDPS-002 im Gesamtbild (System-Ebene bereits
+> service-orientiert; Binnen-Ebene bewusst modulare Monolithen) und empfiehlt
+> die Reihenfolge: ASD-Multi-Replica (WF2-52) → Firefly-Zustands-Story
+> (Recorder/Snapshot) → Feed-Redundanz (ADR, beidseitig) → K8s (ORCH-6).
+
 | AP | Inhalt | Stufe · Modell | Abh. | Status |
 |----|--------|----------------|------|--------|
 | **WF2-50** | Feature-Entitlement-Service (`tenant.HasFeature(...)`, Flags als Daten) | **S3 · Sonnet 4.6** | WF2-10 | ✅ **erledigt** (`pkg/feature` fail-closed über vorhandenen `EntitlementRepo`; Katalog `stca`/`multi_feed`/`premium_layers`; admin GET/PUT entitlements; `whoami.features` + `hasFeature()`; Fail-Closed-Metrik; real-PG-Test) |
@@ -477,7 +485,9 @@ von #18 angekündigt, abgestimmt und versioniert. Diese Entscheidung bleibt unte
   `from-wayfinder`-Issue **erst bei Erreichen von Stufe 4** erstellen.
 - **Feed-pro-Mandant** (Hybrid-Modell) — betrifft Fireflys Multicast-Gruppen-/
   Instanz-Modell; bei Stufe 2 (WF2-20) abstimmen.
-- **Ende-zu-Ende-HA** — Wayfinder WF2-52/53 ↔ Firefly #20.
+- **Ende-zu-Ende-HA** — Wayfinder WF2-52/53 ↔ Firefly #20. Gesamtbild &
+  empfohlene Reihenfolge: `docs/design/gap-analyse-service-orientierung-ha.md`
+  (Ist-/Gap-Analyse 2026-07-03).
 
 ---
 
