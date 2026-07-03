@@ -30,7 +30,7 @@ func testPool(t *testing.T) *pgxpool.Pool {
 		t.Fatalf("migrate: %v", err)
 	}
 	if _, err := pool.Exec(ctx,
-		`TRUNCATE tenants, users, sessions, feeds, subscriptions, view_configs, entitlements RESTART IDENTITY CASCADE`,
+		`TRUNCATE tenants, users, sessions, feeds, subscriptions, view_configs, entitlements, aeronautical_cache, platform_settings RESTART IDENTITY CASCADE`,
 	); err != nil {
 		t.Fatalf("truncate: %v", err)
 	}
@@ -486,5 +486,42 @@ func TestIntegrationAeroCacheRepo(t *testing.T) {
 	}
 	if _, ok, _ := repo.Load(ctx, nil, "airspace"); !ok {
 		t.Error("the global cache row must survive a tenant delete")
+	}
+}
+
+func TestIntegrationSettingsRepo(t *testing.T) {
+	pool := testPool(t)
+	ctx := context.Background()
+	repo := NewSettingsRepo(pool)
+
+	// Missing key → not ok.
+	if _, ok, err := repo.Get(ctx, "openaip_global_key"); err != nil || ok {
+		t.Fatalf("initial get: ok=%v err=%v, want miss", ok, err)
+	}
+
+	if err := repo.Set(ctx, "openaip_global_key", "sealed-blob-1"); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	if v, ok, err := repo.Get(ctx, "openaip_global_key"); err != nil || !ok || v != "sealed-blob-1" {
+		t.Fatalf("get after set = (%q, %v, %v), want sealed-blob-1", v, ok, err)
+	}
+
+	// Upsert overwrites in place.
+	if err := repo.Set(ctx, "openaip_global_key", "sealed-blob-2"); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	if v, _, _ := repo.Get(ctx, "openaip_global_key"); v != "sealed-blob-2" {
+		t.Errorf("after upsert = %q, want sealed-blob-2", v)
+	}
+
+	// Delete is idempotent (deleting a missing key is not an error).
+	if err := repo.Delete(ctx, "openaip_global_key"); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if _, ok, _ := repo.Get(ctx, "openaip_global_key"); ok {
+		t.Error("key should be gone after delete")
+	}
+	if err := repo.Delete(ctx, "openaip_global_key"); err != nil {
+		t.Errorf("deleting a missing key should be a no-op, got %v", err)
 	}
 }

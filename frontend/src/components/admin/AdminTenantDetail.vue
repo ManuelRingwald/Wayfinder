@@ -217,7 +217,7 @@
   <v-card variant="tonal" class="mb-4">
     <v-card-title class="text-subtitle-1">OpenAIP-Konfiguration</v-card-title>
     <v-card-text>
-      <div class="d-flex align-center ga-2 mb-3">
+      <div class="d-flex align-center ga-2 mb-3 flex-wrap">
         <span>Eigener Schlüssel:</span>
         <v-chip
           :color="openaipConfigured ? 'success' : 'default'"
@@ -226,6 +226,22 @@
         >
           {{ openaipConfigured ? 'gesetzt' : 'nicht gesetzt (globaler Schlüssel)' }}
         </v-chip>
+        <!-- AERO-1/2: cache freshness for this tenant + a "refresh now" button. -->
+        <v-chip v-if="openaipFetchedAt" size="small" variant="text" prepend-icon="mdi-clock-outline">
+          zuletzt geholt: {{ formatFetchedAt(openaipFetchedAt) }} · {{ openaipFeatureCount }} Objekte
+        </v-chip>
+        <v-chip v-else size="small" variant="text" class="text-medium-emphasis">
+          noch nichts gecacht
+        </v-chip>
+        <v-btn
+          size="small"
+          variant="tonal"
+          prepend-icon="mdi-refresh"
+          :loading="busy"
+          @click="refreshOpenAIP"
+        >
+          Jetzt aktualisieren
+        </v-btn>
       </div>
       <div class="d-flex flex-wrap ga-3 align-center">
         <v-text-field
@@ -318,6 +334,9 @@ const deleteDialog = ref(false) // ONB-4: delete-tenant confirmation
 const openaipConfigured = ref(false)
 const openaipKey = ref('')
 const showKey = ref(false)
+// AERO-1/2: persistent-cache freshness for this tenant + refresh button.
+const openaipFetchedAt = ref(null)
+const openaipFeatureCount = ref(0)
 
 // The tenant header (name/status) comes from the overview the parent loaded.
 const tenant = computed(() => admin.overview.find((t) => t.id === props.tenantId) || null)
@@ -384,10 +403,34 @@ async function toggleFeature(e, enabled) {
   busy.value = false
 }
 
-// ONB-6: load whether this tenant has its own OpenAIP key (status only).
+// ONB-6/AERO-1: load whether this tenant has its own OpenAIP key (status only) plus
+// the persistent-cache freshness (last fetch time + cached feature count).
 async function loadOpenAIP() {
   const r = await admin.loadTenantOpenAIP(props.tenantId)
-  openaipConfigured.value = r.ok ? !!r.data.configured : false
+  if (r.ok && r.data) {
+    openaipConfigured.value = !!r.data.configured
+    openaipFetchedAt.value = r.data.fetched_at ?? null
+    openaipFeatureCount.value = r.data.feature_count ?? 0
+  } else {
+    openaipConfigured.value = false
+    openaipFetchedAt.value = null
+    openaipFeatureCount.value = 0
+  }
+}
+
+// AERO-2: force a fresh OpenAIP fetch for this tenant, then reload the status so the
+// timestamp updates once the (async) fetch has had a moment to land.
+async function refreshOpenAIP() {
+  busy.value = true
+  const r = await admin.refreshTenantOpenAIP(props.tenantId)
+  busy.value = false
+  if (r.ok) await loadOpenAIP()
+}
+
+// formatFetchedAt renders an ISO/RFC3339 timestamp in the operator's locale.
+function formatFetchedAt(ts) {
+  const d = new Date(ts)
+  return Number.isNaN(d.getTime()) ? String(ts) : d.toLocaleString()
 }
 
 async function saveOpenAIPKey() {

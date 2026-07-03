@@ -19,9 +19,10 @@ import (
 // (ONB-6), so the tests can prove live-apply is triggered on key change and
 // teardown on tenant delete.
 type fakeAeroLife struct {
-	applied   []int64
-	refreshed []int64
-	stopped   []int64
+	applied    []int64
+	refreshed  []int64
+	refreshAll int
+	stopped    []int64
 }
 
 func (l *fakeAeroLife) Apply(_ context.Context, tenantID int64) {
@@ -30,7 +31,8 @@ func (l *fakeAeroLife) Apply(_ context.Context, tenantID int64) {
 func (l *fakeAeroLife) Refresh(_ context.Context, tenantID int64) {
 	l.refreshed = append(l.refreshed, tenantID)
 }
-func (l *fakeAeroLife) Stop(tenantID int64) { l.stopped = append(l.stopped, tenantID) }
+func (l *fakeAeroLife) RefreshAll(_ context.Context) { l.refreshAll++ }
+func (l *fakeAeroLife) Stop(tenantID int64)          { l.stopped = append(l.stopped, tenantID) }
 
 func handlerForOpenAIP(ft fakeTenants, aero TenantAeroLifecycle) *Handler {
 	return New(&fakeVS{}, &fakeVS{}, fakeFeeds{}, ft, &fakeUserStore{}, &fakeCredStore{},
@@ -194,6 +196,122 @@ func TestSetTenantOpenAIPInvalidBodyIs400(t *testing.T) {
 		`not json`, 1, store.RoleAdmin))
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+}
+
+// fakeGlobalAero is a stub GlobalOpenAIPStore (AERO-2).
+type fakeGlobalAero struct {
+	available  bool
+	configured bool
+	setKey     string
+	setCalls   int
+}
+
+func (f *fakeGlobalAero) Available() bool                            { return f.available }
+func (f *fakeGlobalAero) Configured(_ context.Context) (bool, error) { return f.configured, nil }
+func (f *fakeGlobalAero) SetKey(_ context.Context, key string) error {
+	f.setCalls++
+	f.setKey = key
+	return nil
+}
+
+func TestGetGlobalOpenAIPStatus(t *testing.T) {
+	ft := fakeTenants{byID: map[int64]store.Tenant{}}
+	h := handlerForOpenAIP(ft, nil).WithGlobalOpenAIP(&fakeGlobalAero{available: true, configured: true})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, adminReq(http.MethodGet, "/api/admin/openaip", "", 1, store.RoleAdmin))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var got struct {
+		Configured          bool `json:"configured"`
+		EncryptionAvailable bool `json:"encryption_available"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &got)
+	if !got.Configured || !got.EncryptionAvailable {
+		t.Errorf("status = %+v, want both true", got)
+	}
+}
+
+func TestSetGlobalOpenAIPRequiresCipher(t *testing.T) {
+	ft := fakeTenants{byID: map[int64]store.Tenant{}}
+	gs := &fakeGlobalAero{available: false}
+	aero := &fakeAeroLife{}
+	h := handlerForOpenAIP(ft, aero).WithGlobalOpenAIP(gs)
+
+	// Setting a key without encryption → 503, nothing stored, no fetch-all.
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, adminReq(http.MethodPut, "/api/admin/openaip", `{"api_key":"k"}`, 1, store.RoleAdmin))
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503", rec.Code)
+	}
+	if gs.setCalls != 0 || aero.refreshAll != 0 {
+		t.Errorf("503 must not store or fetch-all (setCalls=%d refreshAll=%d)", gs.setCalls, aero.refreshAll)
+	}
+
+	// Clearing is allowed even without encryption (no secret to store).
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, adminReq(http.MethodPut, "/api/admin/openaip", `{"api_key":null}`, 1, store.RoleAdmin))
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("clear status = %d, want 204", rec.Code)
+	}
+	if gs.setCalls != 1 || gs.setKey != "" {
+		t.Errorf("clear should call SetKey(\"\"), got calls=%d key=%q", gs.setCalls, gs.setKey)
+	}
+}
+
+func TestSetGlobalOpenAIPStoresAndFetchAll(t *testing.T) {
+	ft := fakeTenants{byID: map[int64]store.Tenant{}}
+	gs := &fakeGlobalAero{available: true}
+	aero := &fakeAeroLife{}
+	h := handlerForOpenAIP(ft, aero).WithGlobalOpenAIP(gs)
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, adminReq(http.MethodPut, "/api/admin/openaip", `{"api_key":"  glob-key  "}`, 1, store.RoleAdmin))
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204", rec.Code)
+	}
+	if gs.setCalls != 1 || gs.setKey != "glob-key" {
+		t.Errorf("SetKey = (%d, %q), want (1, trimmed \"glob-key\")", gs.setCalls, gs.setKey)
+	}
+	if aero.refreshAll != 1 {
+		t.Errorf("setting the global key must trigger a fetch-all, got %d", aero.refreshAll)
+	}
+}
+
+func TestGlobalOpenAIPRefreshAll(t *testing.T) {
+	ft := fakeTenants{byID: map[int64]store.Tenant{}}
+	aero := &fakeAeroLife{}
+	h := handlerForOpenAIP(ft, aero).WithGlobalOpenAIP(&fakeGlobalAero{available: true})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, adminReq(http.MethodPost, "/api/admin/openaip/refresh", "", 1, store.RoleAdmin))
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want 202", rec.Code)
+	}
+	if aero.refreshAll != 1 {
+		t.Errorf("refresh-all calls = %d, want 1", aero.refreshAll)
+	}
+}
+
+func TestRefreshTenantOpenAIP(t *testing.T) {
+	ft := fakeTenants{byID: map[int64]store.Tenant{5: {ID: 5}}}
+	aero := &fakeAeroLife{}
+	h := handlerForOpenAIP(ft, aero)
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, adminReq(http.MethodPost, "/api/admin/tenants/5/openaip/refresh", "", 1, store.RoleAdmin))
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want 202", rec.Code)
+	}
+	if len(aero.refreshed) != 1 || aero.refreshed[0] != 5 {
+		t.Errorf("refresh calls = %v, want [5]", aero.refreshed)
+	}
+
+	// Unknown tenant → 404, no refresh.
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, adminReq(http.MethodPost, "/api/admin/tenants/9/openaip/refresh", "", 1, store.RoleAdmin))
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("unknown tenant status = %d, want 404", rec.Code)
 	}
 }
 

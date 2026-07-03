@@ -786,6 +786,20 @@ Ohne `WAYFINDER_OPENAIP_API_KEY` ist das Feature aus (Warn-Log, kein Fehler).
 > Die Endpunkte `/api/airspace`, `/api/navaids`, `/api/waypoints` liefern damit im
 > Multi-Mandanten-Betrieb je Anmeldung die Daten des **eigenen** Mandanten.
 
+> **Globaler Schlüssel via UI + Refresh-Buttons (AERO-2, ADR 0018).** Der
+> **globale** Rückfall-Schlüssel lässt sich zur Laufzeit über die Admin-UI setzen
+> (Kopf-Navigation **„OpenAIP"**), statt nur über die Env `WAYFINDER_OPENAIP_API_KEY`.
+> Er wird **verschlüsselt** gespeichert (AES-256-GCM) und braucht dafür einen
+> gesetzten **`WAYFINDER_SECRET_KEY`** — ohne ihn ist die UI-Route bewusst
+> deaktiviert (`503`, kein Klartext-Geheimnis in der DB); die Env bleibt dann der
+> einzige Weg. Ein UI-gesetzter Schlüssel **gewinnt** über die Env und greift
+> **sofort**; das Setzen löst automatisch einen **Abruf für alle Mandanten** aus.
+> Zusätzlich gibt es Refresh-Buttons **global** („Alle Mandanten aktualisieren")
+> und **pro Mandant** („Jetzt aktualisieren", z. B. zum AIRAC-Stichtag), plus die
+> Anzeige „zuletzt geholt / N Objekte" je Mandant. *(Die per-Mandant-Schlüssel
+> liegen weiterhin unverschlüsselt in der DB — deren Versiegelung ist ein möglicher
+> Folge-Schritt.)*
+
 ### 7.4 Wetter-Overlays & QNH (DWD/NOAA, optional)
 
 Best-effort Wetter-Kontext aus offenen Quellen (ADR 0016). Der Track-Pfad
@@ -929,7 +943,11 @@ ohne gültigen, einem Mandanten zugeordneten Nutzer → `401`).
 | `POST /api/admin/tenants/{id}/subscriptions` | Feed zuweisen (`{"feed_id":…}`), idempotent | admin |
 | `DELETE /api/admin/tenants/{id}/subscriptions/{feedID}` | Feed entziehen | admin |
 | `GET /api/admin/tenants/{id}/openaip` | OpenAIP-Status: Schlüssel gesetzt? + Cache-Frische (`{"configured":bool, "fetched_at"?, "feature_count"?}`, AERO-1) | admin |
-| `PUT /api/admin/tenants/{id}/openaip` | OpenAIP-Schlüssel setzen/löschen | admin |
+| `PUT /api/admin/tenants/{id}/openaip` | OpenAIP-Schlüssel setzen/löschen (erzwingt Fetch) | admin |
+| `POST /api/admin/tenants/{id}/openaip/refresh` | OpenAIP für **einen** Mandanten neu holen (AERO-2) → 202 | admin |
+| `GET /api/admin/openaip` | Globaler-Schlüssel-Status (`{"configured":bool, "encryption_available":bool}`, AERO-2) | admin |
+| `PUT /api/admin/openaip` | Globalen Schlüssel setzen/löschen (versiegelt; `503` ohne `WAYFINDER_SECRET_KEY`; löst Fetch-all aus) | admin |
+| `POST /api/admin/openaip/refresh` | OpenAIP für **alle** Mandanten neu holen (AERO-2) → 202 | admin |
 
 > 🔒 **Mandanten-Isolation:** Ein `/ws`-Client sieht **nur** Tracks aus den Feeds,
 > die sein Mandant **abonniert** hat. Kein Abo → keine Tracks (fail-closed).

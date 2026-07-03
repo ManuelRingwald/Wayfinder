@@ -122,7 +122,22 @@ type TenantAeroLifecycle interface {
 	// used after a key change (and by the AERO-2 refresh buttons). Unlike Apply it
 	// fetches even when the key/AOI are unchanged.
 	Refresh(ctx context.Context, tenantID int64)
+	// RefreshAll forces a re-fetch for every tenant (AERO-2), used after the global
+	// key changes and by the "refresh all" admin button.
+	RefreshAll(ctx context.Context)
 	Stop(tenantID int64)
+}
+
+// GlobalOpenAIPStore manages the platform-wide (global fallback) OpenAIP key set at
+// runtime through the admin UI (AERO-2, ADR 0018). The key is a secret: it is set
+// here but never read back to the browser. Available reports whether encryption is
+// configured (WAYFINDER_SECRET_KEY) — without it the PUT route returns 503 rather
+// than storing a plaintext secret. A nil store disables the global-key routes.
+// Satisfied by an adapter over the settings store + cipher (main.go).
+type GlobalOpenAIPStore interface {
+	Available() bool
+	Configured(ctx context.Context) (bool, error)
+	SetKey(ctx context.Context, key string) error
 }
 
 // AeroCacheStatusReader reports a tenant's persisted OpenAIP cache freshness for
@@ -187,6 +202,7 @@ type Handler struct {
 	feedLife   FeedLifecycle         // may be nil; disables live receiver join/leave (ONB-5)
 	aeroLife   TenantAeroLifecycle   // may be nil; disables live per-tenant OpenAIP apply (ONB-6)
 	aeroCache  AeroCacheStatusReader // may be nil; omits OpenAIP cache freshness from the status route (AERO-1)
+	globalAero GlobalOpenAIPStore    // may be nil; disables the global OpenAIP key routes (AERO-2)
 	secrets    SecretService         // may be nil; disables the per-feed secret routes (503) when no key is configured (ORCH-2c 3a)
 	sessions   SessionRevoker        // may be nil; disables eager session revocation on pause (AP7)
 	rescope    RescopeFunc
@@ -199,6 +215,14 @@ type Handler struct {
 // Nil-safe by omission — without it the status route just omits those fields.
 func (h *Handler) WithAeroCache(r AeroCacheStatusReader) *Handler {
 	h.aeroCache = r
+	return h
+}
+
+// WithGlobalOpenAIP wires the platform-wide OpenAIP key store (AERO-2, ADR 0018) so
+// the global-key + fetch-all admin routes are active. Nil-safe by omission — without
+// it those routes report 404 (feature unavailable).
+func (h *Handler) WithGlobalOpenAIP(s GlobalOpenAIPStore) *Handler {
+	h.globalAero = s
 	return h
 }
 
@@ -310,6 +334,15 @@ func New(views ViewStore, subs SubscriptionStore, feeds FeedStore, tenants Tenan
 	// tenant's per-tenant OpenAIP refresh live (no restart).
 	mux.HandleFunc("GET /api/admin/tenants/{tenantID}/openaip", h.requireAdmin(h.getTenantOpenAIP))
 	mux.HandleFunc("PUT /api/admin/tenants/{tenantID}/openaip", h.requireAdmin(h.setTenantOpenAIP))
+	// AERO-2 (ADR 0018): force a fresh OpenAIP fetch for one tenant (the per-tenant
+	// "refresh now" button — for an AIRAC update).
+	mux.HandleFunc("POST /api/admin/tenants/{tenantID}/openaip/refresh", h.requireAdmin(h.refreshTenantOpenAIP))
+	// AERO-2 (ADR 0018): the platform-wide (global fallback) OpenAIP key, set at
+	// runtime through the UI and sealed at rest (never returned). PUT triggers a
+	// fetch-all; the refresh route re-fetches every tenant on demand.
+	mux.HandleFunc("GET /api/admin/openaip", h.requireAdmin(h.getGlobalOpenAIP))
+	mux.HandleFunc("PUT /api/admin/openaip", h.requireAdmin(h.setGlobalOpenAIP))
+	mux.HandleFunc("POST /api/admin/openaip/refresh", h.requireAdmin(h.refreshAllOpenAIP))
 	// Platform-admin management (ONB-3, ADR 0011): admins are global (no tenant)
 	// and managed through a dedicated surface, strictly separated from the
 	// per-tenant user routes below. The "last active admin" guard (409) lives in
@@ -638,6 +671,14 @@ func (h *Handler) triggerAeroApply(ctx context.Context, tenantID int64) {
 func (h *Handler) triggerAeroRefresh(ctx context.Context, tenantID int64) {
 	if h.aeroLife != nil {
 		h.aeroLife.Refresh(ctx, tenantID)
+	}
+}
+
+// triggerAeroRefreshAll forces a re-fetch for every tenant (AERO-2), used after the
+// global key changes and by the "refresh all" button. No-op when not wired.
+func (h *Handler) triggerAeroRefreshAll(ctx context.Context) {
+	if h.aeroLife != nil {
+		h.aeroLife.RefreshAll(ctx)
 	}
 }
 

@@ -369,19 +369,42 @@ func main() {
 	// no WFS URL is configured. Bound to the shutdown context.
 	go weatherWarn.Run(ctx)
 
+	// Shared AES-256-GCM cipher (WAYFINDER_SECRET_KEY) for at-rest secrets: per-feed
+	// source credentials (ORCH-2c) and the global OpenAIP key (AERO-2). nil when the
+	// key is unset/invalid — the dependent write paths then fail closed (503) rather
+	// than store a plaintext secret. Built once and reused.
+	var aeroCipher *secret.Cipher
+	if len(cfg.SecretKey) == secret.KeySize {
+		if c, err := secret.NewCipher(cfg.SecretKey); err == nil {
+			aeroCipher = c
+		} else {
+			logger.Warn("WAYFINDER_SECRET_KEY rejected — at-rest encryption disabled", slog.String("error", err.Error()))
+		}
+	} else if os.Getenv("WAYFINDER_SECRET_KEY") != "" {
+		logger.Warn("WAYFINDER_SECRET_KEY set but invalid (need base64-encoded 32 bytes) — at-rest encryption disabled")
+	}
+	// Global OpenAIP key (AERO-2, ADR 0018): runtime-set via the platform UI, sealed
+	// at rest with the cipher above; the env WAYFINDER_OPENAIP_API_KEY is the keyless
+	// fallback. A true-nil interface when no cipher, so Available() reports false.
+	var aeroCipherIface secretCipher
+	if aeroCipher != nil {
+		aeroCipherIface = aeroCipher
+	}
+	globalAero := newGlobalOpenAIP(store.NewSettingsRepo(dbPool), aeroCipherIface, cfg.OpenAIPAPIKey, logger)
+
 	// OpenAIP per tenant (ONB-6, ADR 0011): each tenant fetches OpenAIP with its own
 	// key (or the global fallback) against its own area of interest. The registry
 	// holds one Service per tenant alongside the global fallback; a tenant without
 	// its own service falls back to the global cache. Since AERO-1 (ADR 0018) each
 	// per-tenant Service reads/writes the shared persistent cache and fetches
-	// once/on-demand (no ticker).
+	// once/on-demand (no ticker). The global fallback key is dynamic (AERO-2).
 	aeroRegistry := aeronautical.NewRegistry(ctx, aeroService, newAeroClientFactory(cfg.OpenAIPBaseURL), aeroCache, logger)
 	defer aeroRegistry.StopAll()
 	aeroLifeImpl := tenantAeroLifecycle{
 		reg:       aeroRegistry,
 		tenants:   store.NewTenantRepo(dbPool),
 		views:     store.NewViewConfigRepo(dbPool),
-		globalKey: cfg.OpenAIPAPIKey,
+		globalKey: globalAero.effectiveKey,
 		radiusKM:  cfg.OpenAIPRadiusKM,
 		fallback:  aeronautical.BoundingBoxFromCenter(cfg.MapCenterLat, cfg.MapCenterLon, cfg.OpenAIPRadiusKM),
 		logger:    logger,
@@ -550,26 +573,20 @@ func main() {
 	// Feed lifecycle (ONB-5): the admin API joins/leaves multicast groups live
 	// via the feed manager, and forgets a deleted feed's health (adapter below).
 	feedLife := feedLifecycle{mgr: feedManager, registry: feedRegistry}
-	// Per-feed source-credential sealing (ORCH-2c 3a, ADR 0012 §6). Wired only
-	// when a valid WAYFINDER_SECRET_KEY is configured; otherwise the secret routes
-	// stay disabled (503) rather than storing credentials unencrypted. A set but
-	// malformed key is logged loudly so a typo does not silently downgrade.
+	// Per-feed source-credential sealing (ORCH-2c 3a, ADR 0012 §6). Wired only when
+	// the shared cipher above is available; otherwise the secret routes stay disabled
+	// (503) rather than storing credentials unencrypted.
 	var secretSvc adminapi.SecretService
-	if len(cfg.SecretKey) == secret.KeySize {
-		if cipher, err := secret.NewCipher(cfg.SecretKey); err == nil {
-			secretSvc = orchestrator.NewSecretSealer(store.NewSecretRepo(dbPool), cipher)
-			logger.Info("per-feed source-credential encryption enabled (ORCH-2c)",
-				slog.String("path", "/api/admin/feeds/{id}/secrets"))
-		} else {
-			logger.Warn("WAYFINDER_SECRET_KEY rejected — secret routes disabled", slog.String("error", err.Error()))
-		}
-	} else if os.Getenv("WAYFINDER_SECRET_KEY") != "" {
-		logger.Warn("WAYFINDER_SECRET_KEY set but invalid (need base64-encoded 32 bytes) — secret routes disabled")
+	if aeroCipher != nil {
+		secretSvc = orchestrator.NewSecretSealer(store.NewSecretRepo(dbPool), aeroCipher)
+		logger.Info("per-feed source-credential encryption enabled (ORCH-2c)",
+			slog.String("path", "/api/admin/feeds/{id}/secrets"))
 	}
 	feedRepo := store.NewFeedRepo(dbPool).WithMulticastPool(cfg.feedPool())
 	adminAPI := adminapi.New(viewRepo, subRepo, feedRepo, store.NewTenantRepo(dbPool),
 		store.NewUserRepo(dbPool), store.NewCredentialRepo(dbPool), featSvc, feedRegistry, feedLife, aeroLife, secretSvc, logger, rescope).
-		WithAeroCache(aeroCache) // AERO-1: expose OpenAIP cache freshness on the status route
+		WithAeroCache(aeroCache).     // AERO-1: expose OpenAIP cache freshness on the status route
+		WithGlobalOpenAIP(globalAero) // AERO-2: platform-wide OpenAIP key + fetch-all
 	// AP7: pausing an access or tenant revokes its live sessions immediately. Only
 	// in builtin mode (registry present); the counting adapter feeds the metric.
 	if sessionRepo != nil {
