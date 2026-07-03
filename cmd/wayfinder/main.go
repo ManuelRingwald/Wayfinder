@@ -475,6 +475,15 @@ func main() {
 	aeroRegistry.Register(mux, tenantMW, func(r *http.Request) (int64, bool) {
 		id, ok := tenant.FromContext(r.Context())
 		return id.TenantID, ok
+	}, func(ctx context.Context, tenantID int64, kind aeronautical.Kind) bool {
+		// Server-enforced feature gate: a tenant whose airspaces/vor_ndb/waypoints
+		// entitlement is off receives an empty collection for that kind (the overlay
+		// does not appear). The frontend toggle is cosmetic; the server is the boundary.
+		key, ok := aeroFeatureKey(kind)
+		if !ok {
+			return true // unmapped kind → not gated
+		}
+		return featSvc.HasFeature(ctx, tenantID, key)
 	})
 
 	// Coverage rings: static GeoJSON computed once from config, served to the

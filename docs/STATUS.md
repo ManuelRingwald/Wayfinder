@@ -32,6 +32,20 @@
 ## 🎯 Stand 2026-07-02
 
 - **Zuletzt aktualisiert:** 2026-07-02
+- **E2E-Finding (diese Sitzung, gleicher Branch): Luftraum-Overlays trotz
+  ausgeschaltetem Feature-Toggle (Teil 1).** Nach dem Setzen des OpenAIP-Keys
+  erschienen Luftraum-/Navaid-/Wegpunkt-Layer, obwohl das `airspaces`-Feature
+  des Mandanten **aus** war. Ursache: `/api/airspace|navaids|waypoints` lagen zwar
+  hinter der Tenant-Middleware, prüften aber **nicht** das Entitlement — der
+  Frontend-Toggle (`showLayer`) blendet nur die Sidebar-Zeile aus, die Karte holte
+  die Daten trotzdem (`layerVisibility.airspace` default `true`), und der Server
+  lieferte sie ungeprüft. Fix (server-seitig, die eigentliche Grenze): injizierter
+  `aeronautical.FeatureGate` (`aeroFeatureKey` Kind→Feature; `featSvc.HasFeature`)
+  → ohne Feature **leere** Collection, Overlay erscheint nicht. Handhabt auch das
+  **Live-Toggle-Aus** (nächster Refresh liefert leer → Overlay geräumt); **kein**
+  Frontend-Change nötig. Test `TestRegistryHandlerFeatureGateDeniesServesEmpty`;
+  FR-ADMIN-009 + TECHNICAL.md ergänzt. Gates: `go test`/`vet`/`gofmt` grün.
+  **Teil 2 (Radius/AOI) offen — hängt an Rückfrage (Viewing-/Speicher-Kontext).**
 - **E2E-Finding (diese Sitzung, gleicher Branch): Multi-Feed-Multicast-Crosstalk
   → Cross-Tenant-Leck + Feed-Chip-Flackern.** Mit **zwei** Feeds auf einem Host
   flackerte der Feed-Chip (grün↔gelb) im ~2-s-Takt, und — gravierender — ein

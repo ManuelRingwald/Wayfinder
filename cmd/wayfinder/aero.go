@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/manuelringwald/wayfinder/pkg/aeronautical"
+	"github.com/manuelringwald/wayfinder/pkg/feature"
 	"github.com/manuelringwald/wayfinder/pkg/store"
 )
 
@@ -69,6 +70,23 @@ func (a aeroCacheStore) AeroCacheStatus(ctx context.Context, tenantID int64) (*t
 func (a aeroCacheStore) TenantAeroCacheChanges(ctx context.Context, tenantID int64) ([]store.AeroCacheChange, error) {
 	tid := tenantID
 	return a.repo.Changes(ctx, &tid)
+}
+
+// aeroFeatureKey maps an aeronautical overlay kind to the tenant feature that
+// gates it. A tenant whose feature is off must receive no data for that kind —
+// the overlay must not appear, regardless of the (cosmetic) frontend toggle. The
+// second return is false for a kind with no mapped feature (then it is not gated).
+func aeroFeatureKey(kind aeronautical.Kind) (feature.Key, bool) {
+	switch kind {
+	case aeronautical.KindAirspace:
+		return feature.Airspaces, true
+	case aeronautical.KindNavaid:
+		return feature.VorNdb, true
+	case aeronautical.KindWaypoint:
+		return feature.Waypoints, true
+	default:
+		return "", false
+	}
 }
 
 // OpenAIP per tenant (ONB-6, ADR 0011). This file wires the aeronautical Registry
