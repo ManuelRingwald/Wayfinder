@@ -148,6 +148,13 @@ type AeroCacheStatusReader interface {
 	AeroCacheStatus(ctx context.Context, tenantID int64) (fetchedAt *time.Time, featureCount int, ok bool, err error)
 }
 
+// AeroChangesReader reports the per-kind change-impact of a tenant's last OpenAIP
+// refresh (AERO-3, ADR 0018). nil disables the changes route (404). Satisfied by an
+// adapter over store.AeroCacheRepo (main.go).
+type AeroChangesReader interface {
+	TenantAeroCacheChanges(ctx context.Context, tenantID int64) ([]store.AeroCacheChange, error)
+}
+
 // EntitlementService is the per-tenant feature surface the admin API needs
 // (satisfied by *feature.Service). Effective lists the full catalog with each
 // key's state (default-deny); Set persists one flag, rejecting unknown keys
@@ -191,23 +198,24 @@ type SessionRevoker interface {
 
 // Handler routes the /api/admin/* endpoints.
 type Handler struct {
-	views      ViewStore
-	subs       SubscriptionStore
-	feeds      FeedStore
-	tenants    TenantStore
-	users      UserStore
-	creds      CredentialStore
-	feats      EntitlementService
-	feedHealth FeedHealthSource      // may be nil; AP4 health endpoint returns empty list
-	feedLife   FeedLifecycle         // may be nil; disables live receiver join/leave (ONB-5)
-	aeroLife   TenantAeroLifecycle   // may be nil; disables live per-tenant OpenAIP apply (ONB-6)
-	aeroCache  AeroCacheStatusReader // may be nil; omits OpenAIP cache freshness from the status route (AERO-1)
-	globalAero GlobalOpenAIPStore    // may be nil; disables the global OpenAIP key routes (AERO-2)
-	secrets    SecretService         // may be nil; disables the per-feed secret routes (503) when no key is configured (ORCH-2c 3a)
-	sessions   SessionRevoker        // may be nil; disables eager session revocation on pause (AP7)
-	rescope    RescopeFunc
-	logger     *slog.Logger
-	mux        *http.ServeMux
+	views       ViewStore
+	subs        SubscriptionStore
+	feeds       FeedStore
+	tenants     TenantStore
+	users       UserStore
+	creds       CredentialStore
+	feats       EntitlementService
+	feedHealth  FeedHealthSource      // may be nil; AP4 health endpoint returns empty list
+	feedLife    FeedLifecycle         // may be nil; disables live receiver join/leave (ONB-5)
+	aeroLife    TenantAeroLifecycle   // may be nil; disables live per-tenant OpenAIP apply (ONB-6)
+	aeroCache   AeroCacheStatusReader // may be nil; omits OpenAIP cache freshness from the status route (AERO-1)
+	aeroChanges AeroChangesReader     // may be nil; disables the OpenAIP changes route (AERO-3)
+	globalAero  GlobalOpenAIPStore    // may be nil; disables the global OpenAIP key routes (AERO-2)
+	secrets     SecretService         // may be nil; disables the per-feed secret routes (503) when no key is configured (ORCH-2c 3a)
+	sessions    SessionRevoker        // may be nil; disables eager session revocation on pause (AP7)
+	rescope     RescopeFunc
+	logger      *slog.Logger
+	mux         *http.ServeMux
 }
 
 // WithAeroCache wires the OpenAIP persistent-cache status reader (AERO-1, ADR 0018)
@@ -223,6 +231,14 @@ func (h *Handler) WithAeroCache(r AeroCacheStatusReader) *Handler {
 // it those routes report 404 (feature unavailable).
 func (h *Handler) WithGlobalOpenAIP(s GlobalOpenAIPStore) *Handler {
 	h.globalAero = s
+	return h
+}
+
+// WithAeroChanges wires the OpenAIP change-impact reader (AERO-3, ADR 0018) so the
+// per-tenant changes route is active. Nil-safe by omission — without it that route
+// reports 404.
+func (h *Handler) WithAeroChanges(r AeroChangesReader) *Handler {
+	h.aeroChanges = r
 	return h
 }
 
@@ -343,6 +359,10 @@ func New(views ViewStore, subs SubscriptionStore, feeds FeedStore, tenants Tenan
 	mux.HandleFunc("GET /api/admin/openaip", h.requireAdmin(h.getGlobalOpenAIP))
 	mux.HandleFunc("PUT /api/admin/openaip", h.requireAdmin(h.setGlobalOpenAIP))
 	mux.HandleFunc("POST /api/admin/openaip/refresh", h.requireAdmin(h.refreshAllOpenAIP))
+	// AERO-3 (ADR 0018): the AIRAC calendar (deterministic, no external data) and the
+	// per-tenant change-impact of the last OpenAIP refresh (what changed, per layer).
+	mux.HandleFunc("GET /api/admin/airac", h.requireAdmin(h.getAirac))
+	mux.HandleFunc("GET /api/admin/tenants/{tenantID}/openaip/changes", h.requireAdmin(h.getTenantOpenAIPChanges))
 	// Platform-admin management (ONB-3, ADR 0011): admins are global (no tenant)
 	// and managed through a dedicated surface, strictly separated from the
 	// per-tenant user routes below. The "last active admin" guard (409) lives in

@@ -243,6 +243,21 @@
           Jetzt aktualisieren
         </v-btn>
       </div>
+      <!-- AERO-3: change-impact of the last refresh, per layer. Robuster
+           Count-Delta; +hinzu/−entfernt ist Churn (In-Place-Edit zählt als −1/+1). -->
+      <div v-if="openaipChanges.length" class="mb-3">
+        <div class="text-caption text-medium-emphasis mb-1">Letzte Änderung je Ebene:</div>
+        <div class="d-flex flex-wrap ga-2">
+          <v-chip v-for="c in openaipChanges" :key="c.kind" size="small" variant="tonal">
+            {{ layerLabel(c.kind) }}:
+            <template v-if="c.prev_feature_count != null">
+              {{ c.prev_feature_count }} → {{ c.feature_count }}
+              <span :class="churnClass(c)" class="ml-1">(+{{ c.added ?? 0 }}/−{{ c.removed ?? 0 }})</span>
+            </template>
+            <template v-else>{{ c.feature_count }} (Erstbefüllung)</template>
+          </v-chip>
+        </div>
+      </div>
       <div class="d-flex flex-wrap ga-3 align-center">
         <v-text-field
           v-model="openaipKey"
@@ -337,6 +352,16 @@ const showKey = ref(false)
 // AERO-1/2: persistent-cache freshness for this tenant + refresh button.
 const openaipFetchedAt = ref(null)
 const openaipFeatureCount = ref(0)
+// AERO-3: per-layer change-impact of the last refresh.
+const openaipChanges = ref([])
+
+const LAYER_LABELS = { airspace: 'Luftraum', navaid: 'Navaids', waypoint: 'Wegpunkte' }
+function layerLabel(kind) {
+  return LAYER_LABELS[kind] || kind
+}
+function churnClass(c) {
+  return (c.added ?? 0) + (c.removed ?? 0) > 0 ? 'text-warning' : 'text-medium-emphasis'
+}
 
 // The tenant header (name/status) comes from the overview the parent loaded.
 const tenant = computed(() => admin.overview.find((t) => t.id === props.tenantId) || null)
@@ -416,6 +441,8 @@ async function loadOpenAIP() {
     openaipFetchedAt.value = null
     openaipFeatureCount.value = 0
   }
+  const c = await admin.loadTenantOpenAIPChanges(props.tenantId)
+  openaipChanges.value = c.ok && Array.isArray(c.data) ? c.data : []
 }
 
 // AERO-2: force a fresh OpenAIP fetch for this tenant, then reload the status so the

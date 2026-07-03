@@ -430,10 +430,11 @@ func TestIntegrationAeroCacheRepo(t *testing.T) {
 	}
 
 	at := time.Unix(1_700_000_000, 0).UTC()
-	if err := repo.Save(ctx, &tid, "airspace", `{"type":"FeatureCollection","features":[]}`, 3, at); err != nil {
+	// First fetch: change columns are nil (no prior to diff).
+	if err := repo.Save(ctx, &tid, "airspace", `{"type":"FeatureCollection","features":[]}`, 3, nil, nil, nil, at); err != nil {
 		t.Fatalf("save airspace: %v", err)
 	}
-	if err := repo.Save(ctx, &tid, "navaid", `{"type":"FeatureCollection","features":[]}`, 5, at.Add(time.Hour)); err != nil {
+	if err := repo.Save(ctx, &tid, "navaid", `{"type":"FeatureCollection","features":[]}`, 5, nil, nil, nil, at.Add(time.Hour)); err != nil {
 		t.Fatalf("save navaid: %v", err)
 	}
 
@@ -447,11 +448,29 @@ func TestIntegrationAeroCacheRepo(t *testing.T) {
 	}
 
 	// Upsert overwrites in place (still one row).
-	if err := repo.Save(ctx, &tid, "airspace", `{"type":"FeatureCollection","features":[]}`, 9, at.Add(2*time.Hour)); err != nil {
+	// Second fetch (AERO-3 change-impact): prev 3 → 9, +6/−0.
+	p3, a6, r0 := 3, 6, 0
+	if err := repo.Save(ctx, &tid, "airspace", `{"type":"FeatureCollection","features":[]}`, 9, &p3, &a6, &r0, at.Add(2*time.Hour)); err != nil {
 		t.Fatalf("upsert airspace: %v", err)
 	}
 	if got, _, _ := repo.Load(ctx, &tid, "airspace"); got.FeatureCount != 9 {
 		t.Errorf("after upsert count = %d, want 9", got.FeatureCount)
+	}
+	// Changes reports the per-kind change-impact; airspace carries the diff, navaid
+	// (first fetch) has nil change columns.
+	changes, err := repo.Changes(ctx, &tid)
+	if err != nil {
+		t.Fatalf("changes: %v", err)
+	}
+	byKind := map[string]AeroCacheChange{}
+	for _, c := range changes {
+		byKind[c.Kind] = c
+	}
+	if as := byKind["airspace"]; as.PrevFeatureCount == nil || *as.PrevFeatureCount != 3 || as.Added == nil || *as.Added != 6 || as.Removed == nil || *as.Removed != 0 {
+		t.Errorf("airspace change = %+v, want prev 3 / +6 / -0", as)
+	}
+	if nv := byKind["navaid"]; nv.PrevFeatureCount != nil || nv.Added != nil {
+		t.Errorf("navaid (first fetch) should have nil change columns, got %+v", nv)
 	}
 
 	// Status: latest fetched_at (navaid, +1h) and summed features (9 + 5).
@@ -467,7 +486,7 @@ func TestIntegrationAeroCacheRepo(t *testing.T) {
 	}
 
 	// The global (NULL tenant) cache is a distinct row from the tenant's.
-	if err := repo.Save(ctx, nil, "airspace", `{"type":"FeatureCollection","features":[]}`, 100, at); err != nil {
+	if err := repo.Save(ctx, nil, "airspace", `{"type":"FeatureCollection","features":[]}`, 100, nil, nil, nil, at); err != nil {
 		t.Fatalf("save global: %v", err)
 	}
 	if g, ok, _ := repo.Load(ctx, nil, "airspace"); !ok || g.FeatureCount != 100 {

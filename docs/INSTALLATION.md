@@ -800,6 +800,16 @@ Ohne `WAYFINDER_OPENAIP_API_KEY` ist das Feature aus (Warn-Log, kein Fehler).
 > liegen weiterhin unverschlüsselt in der DB — deren Versiegelung ist ein möglicher
 > Folge-Schritt.)*
 
+> **AIRAC-Kalender + Change-Impact (AERO-3, ADR 0018).** Die „OpenAIP"-Sektion zeigt
+> den **aktuellen AIRAC-Zyklus** und den **nächsten Stichtag** (deterministisch aus
+> dem 28-Tage-Raster berechnet — **keine** externe Quelle), damit der Betreiber den
+> Refresh rund um den AIRAC-Wechsel planen kann. Nach jedem Abruf zeigt die
+> Mandanten-Detailseite je Ebene den **Change-Impact** („Luftraum 142 → 145,
+> +5/−2"). **Ehrliche Grenze:** der Count-Delta (142 → 145) ist exakt; die
+> `+hinzu/−entfernt`-Zahlen sind **Churn** (ein In-Place-Edit zählt als −1/+1) und
+> werden über einen Inhalts-Hash bestimmt — eine **namentliche** Zuordnung („genau
+> diese Flugplätze") ist bewusst **nicht** enthalten.
+
 ### 7.4 Wetter-Overlays & QNH (DWD/NOAA, optional)
 
 Best-effort Wetter-Kontext aus offenen Quellen (ADR 0016). Der Track-Pfad
@@ -948,6 +958,8 @@ ohne gültigen, einem Mandanten zugeordneten Nutzer → `401`).
 | `GET /api/admin/openaip` | Globaler-Schlüssel-Status (`{"configured":bool, "encryption_available":bool}`, AERO-2) | admin |
 | `PUT /api/admin/openaip` | Globalen Schlüssel setzen/löschen (versiegelt; `503` ohne `WAYFINDER_SECRET_KEY`; löst Fetch-all aus) | admin |
 | `POST /api/admin/openaip/refresh` | OpenAIP für **alle** Mandanten neu holen (AERO-2) → 202 | admin |
+| `GET /api/admin/airac` | Aktueller AIRAC-Zyklus + nächster Stichtag (`{ident, effective, next_ident, next_effective, days_until_next}`, AERO-3; deterministisch, keine externe Quelle) | admin |
+| `GET /api/admin/tenants/{id}/openaip/changes` | Change-Impact des letzten Abrufs je Ebene (`[{kind, feature_count, prev_feature_count?, added?, removed?, fetched_at}]`, AERO-3) | admin |
 
 > 🔒 **Mandanten-Isolation:** Ein `/ws`-Client sieht **nur** Tracks aus den Feeds,
 > die sein Mandant **abonniert** hat. Kein Abo → keine Tracks (fail-closed).

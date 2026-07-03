@@ -197,3 +197,48 @@ func (h *Handler) refreshAllOpenAIP(w http.ResponseWriter, r *http.Request) {
 	h.triggerAeroRefreshAll(r.Context())
 	w.WriteHeader(http.StatusAccepted)
 }
+
+// aeroChangeDTO is the change-impact of the last refresh for one layer (AERO-3).
+// prev_feature_count/added/removed are null on the first fetch (no prior to diff).
+type aeroChangeDTO struct {
+	Kind             string    `json:"kind"`
+	FeatureCount     int       `json:"feature_count"`
+	PrevFeatureCount *int      `json:"prev_feature_count"`
+	Added            *int      `json:"added"`
+	Removed          *int      `json:"removed"`
+	FetchedAt        time.Time `json:"fetched_at"`
+}
+
+// getTenantOpenAIPChanges reports the per-layer change-impact of the tenant's last
+// OpenAIP refresh (AERO-3). 404 when the feature is not wired.
+func (h *Handler) getTenantOpenAIPChanges(w http.ResponseWriter, r *http.Request) {
+	if h.aeroChanges == nil {
+		writeError(w, http.StatusNotFound, "openaip change-impact unavailable")
+		return
+	}
+	tid, err := pathInt(r, "tenantID")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid tenant id")
+		return
+	}
+	if !h.tenantExists(w, r, tid) {
+		return
+	}
+	changes, err := h.aeroChanges.TenantAeroCacheChanges(r.Context(), tid)
+	if err != nil {
+		h.internalError(w, "list openaip changes", err)
+		return
+	}
+	out := make([]aeroChangeDTO, 0, len(changes))
+	for _, c := range changes {
+		out = append(out, aeroChangeDTO{
+			Kind:             c.Kind,
+			FeatureCount:     c.FeatureCount,
+			PrevFeatureCount: c.PrevFeatureCount,
+			Added:            c.Added,
+			Removed:          c.Removed,
+			FetchedAt:        c.FetchedAt,
+		})
+	}
+	writeJSON(w, http.StatusOK, out)
+}

@@ -408,6 +408,17 @@ export const useAdminStore = defineStore('admin', () => {
     return r
   }
 
+  // --- AIRAC calendar + change-impact (AERO-3, ADR 0018) --------------------
+  // The current AIRAC cycle + next effective date (deterministic, no external data).
+  async function loadAirac() {
+    return apiFetch('/api/admin/airac')
+  }
+
+  // The per-layer change-impact of a tenant's last OpenAIP refresh.
+  async function loadTenantOpenAIPChanges(tenantId) {
+    return apiFetch(`/api/admin/tenants/${tenantId}/openaip/changes`)
+  }
+
   // --- access management (AP6) ----------------------------------------------
   // Per-tenant access accounts (role user). The server enforces every boundary
   // (requireAdmin → 403); the UI gating is convenience only.
@@ -604,6 +615,7 @@ export const useAdminStore = defineStore('admin', () => {
     loadFeedSecrets, setFeedSecret, deleteFeedSecret,
     loadTenantOpenAIP, setTenantOpenAIPKey,
     refreshTenantOpenAIP, loadGlobalOpenAIP, setGlobalOpenAIPKey, refreshAllOpenAIP,
+    loadAirac, loadTenantOpenAIPChanges,
     changeOwnPassword, deleteOwnAccount,
     loadAdmins, createAdmin, setAdminStatus, deleteAdmin, setAdminPassword,
     clearBanners,

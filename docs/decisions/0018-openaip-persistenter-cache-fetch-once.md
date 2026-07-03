@@ -89,3 +89,15 @@ Env `WAYFINDER_OPENAIP_API_KEY` bleibt der schlüssellose Fallback; ein UI-Schl�
 gewinnt und greift sofort. Zusätzlich **Fetch-all** (beim Setzen und per Button) und
 ein **Per-Mandant-Refresh**. Nicht abgedeckt: die per-Mandant-Schlüssel bleiben
 Klartext (mögliche Folgearbeit); der **AIRAC-Kalender + Change-Impact** ist AERO-3.
+
+## Nachtrag (AERO-3, 2026-07-03)
+
+AERO-3 ist umgesetzt: ein **deterministischer AIRAC-Kalender** (`pkg/airac`,
+28-Tage-Raster, keine externe Quelle; `GET /api/admin/airac`) und der
+**Change-Impact** je Ebene beim Refresh — `diffCollections` vergleicht die frischen
+Daten mit dem vorher persistierten Stand über einen **Inhalts-Hash** und speichert
+`prev_feature_count`/`added`/`removed` (Migration `00019`). **Ehrliche Grenze:** der
+Count-Delta ist exakt, `added`/`removed` sind Churn; eine **namentliche** Zuordnung
+(„genau diese Flugplätze") ist bewusst ausgelassen, da sie eine Live-Verifikation
+der OpenAIP-Feature-Identität bräuchte (Egress gesperrt). Damit ist die
+OpenAIP-Reihe (AERO-1/2/3) abgeschlossen.

@@ -38,12 +38,18 @@ func (a aeroCacheStore) Load(ctx context.Context, tenantID *int64, kind aeronaut
 	return fc, e.FetchedAt, true, nil
 }
 
-func (a aeroCacheStore) Save(ctx context.Context, tenantID *int64, kind aeronautical.Kind, fc aeronautical.FeatureCollection, fetchedAt time.Time) error {
+func (a aeroCacheStore) Save(ctx context.Context, tenantID *int64, kind aeronautical.Kind, fc aeronautical.FeatureCollection, change aeronautical.ChangeSummary, fetchedAt time.Time) error {
 	b, err := json.Marshal(fc)
 	if err != nil {
 		return err
 	}
-	return a.repo.Save(ctx, tenantID, string(kind), string(b), len(fc.Features), fetchedAt)
+	// Map the change summary to nullable columns: nil on the first fetch (no prior).
+	var prev, added, removed *int
+	if change.HasPrev {
+		p, a2, r := change.PrevFeatureCount, change.Added, change.Removed
+		prev, added, removed = &p, &a2, &r
+	}
+	return a.repo.Save(ctx, tenantID, string(kind), string(b), len(fc.Features), prev, added, removed, fetchedAt)
 }
 
 // AeroCacheStatus satisfies adminapi.AeroCacheStatusReader: the tenant's persisted
@@ -56,6 +62,13 @@ func (a aeroCacheStore) AeroCacheStatus(ctx context.Context, tenantID int64) (*t
 	}
 	fetchedAt := st.FetchedAt
 	return &fetchedAt, st.FeatureCount, true, nil
+}
+
+// TenantAeroCacheChanges satisfies adminapi.AeroChangesReader: the per-kind
+// change-impact of the tenant's last OpenAIP refresh (AERO-3).
+func (a aeroCacheStore) TenantAeroCacheChanges(ctx context.Context, tenantID int64) ([]store.AeroCacheChange, error) {
+	tid := tenantID
+	return a.repo.Changes(ctx, &tid)
 }
 
 // OpenAIP per tenant (ONB-6, ADR 0011). This file wires the aeronautical Registry

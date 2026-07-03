@@ -3,6 +3,25 @@
        key is a secret: the server reports only whether one is stored and whether
        encryption is available, never the key. Setting it seals the value at rest
        and triggers a fetch-all so every tenant picks up the new fallback. -->
+  <!-- AIRAC calendar (AERO-3): deterministic 28-day cycle; tells the operator when
+       the next AIRAC change is due, to schedule an OpenAIP refresh around it. -->
+  <v-card variant="tonal" class="mb-4">
+    <v-card-title class="text-subtitle-1">AIRAC-Zyklus</v-card-title>
+    <v-card-text>
+      <div v-if="airac" class="d-flex flex-wrap ga-4 align-center">
+        <v-chip color="primary" variant="tonal" prepend-icon="mdi-calendar-clock">
+          Aktuell: {{ airac.ident }} (gültig ab {{ fmtDate(airac.effective) }})
+        </v-chip>
+        <span class="text-body-2">
+          Nächster Wechsel: <strong>{{ airac.next_ident }}</strong> am
+          {{ fmtDate(airac.next_effective) }}
+          <span class="text-medium-emphasis">(in {{ airac.days_until_next }} Tagen)</span>
+        </span>
+      </div>
+      <p v-else class="text-medium-emphasis mb-0">AIRAC-Kalender wird geladen…</p>
+    </v-card-text>
+  </v-card>
+
   <v-card variant="tonal" class="mb-4">
     <v-card-title class="text-subtitle-1">OpenAIP — globaler Schlüssel</v-card-title>
     <v-card-text>
@@ -92,6 +111,12 @@ const encryptionAvailable = ref(false)
 const apiKey = ref('')
 const showKey = ref(false)
 const busy = ref(false)
+const airac = ref(null)
+
+function fmtDate(ts) {
+  const d = new Date(ts)
+  return Number.isNaN(d.getTime()) ? String(ts) : d.toLocaleDateString()
+}
 
 async function load() {
   const r = await admin.loadGlobalOpenAIP()
@@ -99,6 +124,8 @@ async function load() {
     configured.value = !!r.data.configured
     encryptionAvailable.value = !!r.data.encryption_available
   }
+  const a = await admin.loadAirac()
+  if (a.ok && a.data) airac.value = a.data
 }
 
 async function save() {

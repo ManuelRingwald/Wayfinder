@@ -538,6 +538,36 @@ describe('admin store — global OpenAIP + fetch-all (AERO-2)', () => {
   })
 })
 
+describe('admin store — AIRAC + change-impact (AERO-3)', () => {
+  it('loadAirac GETs the AIRAC cycle', async () => {
+    installFetch({
+      'GET /api/admin/airac': {
+        status: 200,
+        body: { ident: '2507', effective: '2025-06-26T00:00:00Z', next_ident: '2508', next_effective: '2025-07-24T00:00:00Z', days_until_next: 12 },
+      },
+    })
+    const s = useAdminStore()
+    const r = await s.loadAirac()
+    expect(r.ok).toBe(true)
+    expect(r.data.ident).toBe('2507')
+    expect(r.data.days_until_next).toBe(12)
+  })
+
+  it('loadTenantOpenAIPChanges GETs the per-layer change-impact', async () => {
+    installFetch({
+      'GET /api/admin/tenants/5/openaip/changes': {
+        status: 200,
+        body: [{ kind: 'airspace', feature_count: 143, prev_feature_count: 140, added: 7, removed: 4 }],
+      },
+    })
+    const s = useAdminStore()
+    const r = await s.loadTenantOpenAIPChanges(5)
+    expect(r.ok).toBe(true)
+    expect(r.data[0].added).toBe(7)
+    expect(r.data[0].removed).toBe(4)
+  })
+})
+
 describe('admin store — platform-admin management (ONB-3)', () => {
   it('loadAdmins GETs /api/admin/admins without storing globally', async () => {
     const calls = installFetch({

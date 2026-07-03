@@ -585,8 +585,9 @@ func main() {
 	feedRepo := store.NewFeedRepo(dbPool).WithMulticastPool(cfg.feedPool())
 	adminAPI := adminapi.New(viewRepo, subRepo, feedRepo, store.NewTenantRepo(dbPool),
 		store.NewUserRepo(dbPool), store.NewCredentialRepo(dbPool), featSvc, feedRegistry, feedLife, aeroLife, secretSvc, logger, rescope).
-		WithAeroCache(aeroCache).     // AERO-1: expose OpenAIP cache freshness on the status route
-		WithGlobalOpenAIP(globalAero) // AERO-2: platform-wide OpenAIP key + fetch-all
+		WithAeroCache(aeroCache).      // AERO-1: expose OpenAIP cache freshness on the status route
+		WithGlobalOpenAIP(globalAero). // AERO-2: platform-wide OpenAIP key + fetch-all
+		WithAeroChanges(aeroCache)     // AERO-3: per-tenant change-impact of the last refresh
 	// AP7: pausing an access or tenant revokes its live sessions immediately. Only
 	// in builtin mode (registry present); the counting adapter feeds the metric.
 	if sessionRepo != nil {
