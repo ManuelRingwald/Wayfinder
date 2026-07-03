@@ -781,14 +781,17 @@ Ohne `WAYFINDER_OPENAIP_API_KEY` ist das Feature aus (Warn-Log, kein Fehler).
 Best-effort Wetter-Kontext aus offenen Quellen (ADR 0016). Der Track-Pfad
 (CAT062) ist davon unabhängig — ein Ausfall lässt nur das Overlay/QNH fehlen.
 
-**Wetter-Overlay (DWD-Radar, WX-A).** Ohne `WAYFINDER_DWD_WMS_URL` ist das
-Feature aus (Warn-Log, kein Fehler); der Kachel-Endpunkt liefert dann
-transparente Kacheln. Zusätzlich braucht der Mandant das Feature-Entitlement
-`weather_radar`, damit der Sidebar-Schalter erscheint.
+**Wetter-Overlay (DWD-Radar, WX-A).** **Connected-by-default (ADR 0017): standardmäßig AN** —
+die WMS-URL zeigt per Default auf den öffentlichen DWD-GeoServer. Der Mandant
+braucht nur noch das Feature-Entitlement `weather_radar`, damit der Schalter
+erscheint und **sofort** funktioniert. Abschalten mit
+`WAYFINDER_DWD_RADAR_ENABLED=false` (best-effort — eine unerreichbare Quelle liefert
+transparente Kacheln, nie einen Fehler).
 
 | Variable | Default | Beschreibung |
 |----------|---------|--------------|
-| `WAYFINDER_DWD_WMS_URL` | *(leer)* | DWD-GeoServer-WMS-Basis-URL, z. B. `https://maps.dwd.de/geoserver/dwd/wms`; leer = Feature aus |
+| `WAYFINDER_DWD_RADAR_ENABLED` | `true` | Radar-Overlay an/aus. `false` = Opt-out (keine Abfrage an DWD) |
+| `WAYFINDER_DWD_WMS_URL` | `https://maps.dwd.de/geoserver/dwd/wms` | DWD-GeoServer-WMS-Basis-URL (Override, z. B. eigener Mirror) |
 | `WAYFINDER_DWD_RADAR_LAYER` | `dwd:Niederschlagsradar` | WMS-Layer-Name des Radar-/Niederschlagskomposits |
 | `WAYFINDER_DWD_REFRESH` | `5m` | Cache-Lebensdauer je Radar-Kachel (DWD-Radar aktualisiert ~5 min) |
 
@@ -806,12 +809,14 @@ Entitlement `qnh`. **Wichtig:** QNH kommt **nur aus echtem METAR** (NOAA-Feld
 | `WAYFINDER_QNH_REFRESH` | `15m` | METAR-Poll-Intervall (METAR ~30 min; unter dem AWC-Limit von ~100 req/min) |
 
 **Wetterwarnungen-Overlay (DWD-WFS, WX-C).** Amtliche DWD-Warnpolygone (Gewitter,
-Sturm, Schnee/Eis …), nach Warnstufe eingefärbt. Ohne `WAYFINDER_DWD_WARN_URL`
-aus; zusätzlich Entitlement `weather_warnings` nötig.
+Sturm, Schnee/Eis …), nach Warnstufe eingefärbt. **Connected-by-default (ADR 0017):
+standardmäßig AN**; Mandant braucht nur das Entitlement `weather_warnings`.
+Abschalten mit `WAYFINDER_DWD_WARN_ENABLED=false`.
 
 | Variable | Default | Beschreibung |
 |----------|---------|--------------|
-| `WAYFINDER_DWD_WARN_URL` | *(leer)* | DWD-GeoServer-WFS/OWS-Basis-URL, z. B. `https://maps.dwd.de/geoserver/dwd/ows`; leer = Feature aus |
+| `WAYFINDER_DWD_WARN_ENABLED` | `true` | Warnungen-Overlay an/aus. `false` = Opt-out |
+| `WAYFINDER_DWD_WARN_URL` | `https://maps.dwd.de/geoserver/dwd/ows` | DWD-GeoServer-WFS/OWS-Basis-URL (Override) |
 | `WAYFINDER_DWD_WARN_LAYER` | `dwd:Warnungen_Gemeinden_vereinigt` | WFS-Layer (aufgelöste Gemeinde-Warnungen; leichtgewichtig) |
 | `WAYFINDER_DWD_WARN_REFRESH` | `5m` | Poll-Intervall des Warn-Feeds |
 
@@ -979,12 +984,11 @@ Das Deployment-Netz muss **ausgehend** (HTTPS/443) folgende Ziele erreichen kön
 | `aviationweather.gov` | QNH (NOAA-METAR) | `WAYFINDER_QNH_ENABLED=false` |
 | `api.core.openaip.net` | Luftraum/Navaids/Wegpunkte (OpenAIP) | kein globaler Schlüssel gesetzt = keine Abfrage |
 
-> **Rollout-Hinweis:** ADR 0017 hält die **Entscheidung** fest. Die Default-an-
-> Umstellung und die `WAYFINDER_..._ENABLED`-Schalter werden mit den **Folge-
-> Häppchen** (DWD, QNH, OpenAIP) eingeführt. **Bis dahin** gelten die bisherigen
-> Opt-in-Schalter aus §7.3/§7.4 (Quelle nur an, wenn URL/Stationen/Schlüssel
-> gesetzt sind). Die Egress-Ziele oben sind bereits jetzt die Betriebsvoraussetzung,
-> sobald eine Quelle aktiv ist.
+> **Rollout-Stand:** **DWD-Radar + Warnungen sind jetzt default-an** (ADR 0017,
+> abschaltbar per `WAYFINDER_DWD_RADAR_ENABLED` / `_WARN_ENABLED=false`). **QNH**
+> (NOAA) und **OpenAIP** folgen in den nächsten Häppchen und sind bis dahin noch
+> opt-in (QNH braucht die Flugplatz-Liste, OpenAIP einen Schlüssel — siehe §7.3/§7.4).
+> Die Egress-Ziele oben sind Betriebsvoraussetzung, sobald die jeweilige Quelle aktiv ist.
 
 > **Abgrenzung zur Feed-Isolation:** Der **CAT062/065/063-Multicast-Eingang** bleibt
 > davon unberührt in einem **abgeschotteten Segment/VLAN** (NFR-SEC-001, ADR 0003).

@@ -107,13 +107,14 @@ func main() {
 	// transparent tiles. Like the aeronautical layers it never touches the track
 	// path or readiness. No background loop — tiles are fetched on demand and
 	// cached for the refresh window.
+	radarEnabled := cfg.DWDRadarEnabled && cfg.DWDWMSURL != ""
 	weatherRadar := weathertiles.NewService(
 		weathertiles.NewClient(&http.Client{Timeout: 15 * time.Second}, cfg.DWDWMSURL, cfg.DWDRadarLayer),
-		weathertiles.Config{Enabled: cfg.DWDWMSURL != "", TTL: cfg.DWDRefresh},
+		weathertiles.Config{Enabled: radarEnabled, TTL: cfg.DWDRefresh},
 		logger,
 	)
-	if cfg.DWDWMSURL == "" {
-		logger.Warn("weather radar overlay disabled (no WAYFINDER_DWD_WMS_URL); map will show no DWD radar")
+	if !radarEnabled {
+		logger.Warn("weather radar overlay disabled (WAYFINDER_DWD_RADAR_ENABLED=false); map will show no DWD radar")
 	}
 
 	// QNH infobox (WX-B, ADR 0016): best-effort NOAA/AWC METAR poller. Enabled
@@ -126,11 +127,12 @@ func main() {
 	)
 
 	// Weather-warnings overlay (WX-C, ADR 0016): best-effort DWD WFS GeoJSON.
-	// Enabled only when a WFS URL is configured. Polls in its own goroutine; the
-	// map fetches /api/weather/warnings.geojson. Never touches the track path.
+	// Connected-by-default (ADR 0017): on unless WAYFINDER_DWD_WARN_ENABLED=false.
+	// Polls in its own goroutine; the map fetches /api/weather/warnings.geojson.
+	warnEnabled := cfg.DWDWarnEnabled && cfg.DWDWarnURL != ""
 	weatherWarn := weatherwarnings.NewService(
 		weatherwarnings.NewClient(&http.Client{Timeout: 15 * time.Second}, cfg.DWDWarnURL, cfg.DWDWarnLayer),
-		weatherwarnings.Config{Enabled: cfg.DWDWarnURL != "", Refresh: cfg.DWDWarnRefresh},
+		weatherwarnings.Config{Enabled: warnEnabled, Refresh: cfg.DWDWarnRefresh},
 		logger,
 	)
 
@@ -615,12 +617,14 @@ type Config struct {
 	OpenAIPRefresh  time.Duration // WAYFINDER_OPENAIP_REFRESH (Go duration, default 24h)
 	OpenAIPRadiusKM float64       // WAYFINDER_OPENAIP_RADIUS_KM (default 250)
 
-	// DWD weather-radar overlay (WX-A, ADR 0016): best-effort DWD GeoServer WMS
-	// tile proxy. The feature is enabled only when a WMS URL is configured;
-	// otherwise the map shows no radar overlay (feature still off, ADR 0016).
-	DWDWMSURL     string        // WAYFINDER_DWD_WMS_URL (DWD GeoServer WMS base, e.g. https://maps.dwd.de/geoserver/dwd/wms)
-	DWDRadarLayer string        // WAYFINDER_DWD_RADAR_LAYER (default dwd:Niederschlagsradar)
-	DWDRefresh    time.Duration // WAYFINDER_DWD_REFRESH (radar tile cache TTL, default 5m)
+	// DWD weather-radar overlay (WX-A, ADR 0016). Connected-by-default (ADR 0017):
+	// the WMS URL defaults to the public DWD GeoServer, so the overlay is ON by
+	// default; disable it with WAYFINDER_DWD_RADAR_ENABLED=false (best-effort — an
+	// unreachable source just yields transparent tiles, never an error).
+	DWDRadarEnabled bool          // WAYFINDER_DWD_RADAR_ENABLED (default true; false = opt-out)
+	DWDWMSURL       string        // WAYFINDER_DWD_WMS_URL (DWD GeoServer WMS base, default maps.dwd.de)
+	DWDRadarLayer   string        // WAYFINDER_DWD_RADAR_LAYER (default dwd:Niederschlagsradar)
+	DWDRefresh      time.Duration // WAYFINDER_DWD_REFRESH (radar tile cache TTL, default 5m)
 
 	// QNH infobox (WX-B, ADR 0016): best-effort NOAA/AWC METAR poller. QNH is not
 	// in the CAT062 contract and not in open DWD data; the open source is NOAA
@@ -630,9 +634,11 @@ type Config struct {
 	MetarUserAgent string        // WAYFINDER_METAR_USER_AGENT (required distinctive UA; default Wayfinder-ASD/1.0)
 	QNHRefresh     time.Duration // WAYFINDER_QNH_REFRESH (METAR poll interval, default 15m)
 
-	// DWD weather-warnings overlay (WX-C, ADR 0016): best-effort DWD GeoServer WFS
-	// GeoJSON. Enabled only when a WFS URL is configured.
-	DWDWarnURL     string        // WAYFINDER_DWD_WARN_URL (DWD GeoServer WFS/OWS base, e.g. https://maps.dwd.de/geoserver/dwd/ows)
+	// DWD weather-warnings overlay (WX-C, ADR 0016). Connected-by-default
+	// (ADR 0017): the WFS URL defaults to the public DWD GeoServer, so the overlay
+	// is ON by default; disable it with WAYFINDER_DWD_WARN_ENABLED=false.
+	DWDWarnEnabled bool          // WAYFINDER_DWD_WARN_ENABLED (default true; false = opt-out)
+	DWDWarnURL     string        // WAYFINDER_DWD_WARN_URL (DWD GeoServer WFS/OWS base, default maps.dwd.de)
 	DWDWarnLayer   string        // WAYFINDER_DWD_WARN_LAYER (default dwd:Warnungen_Gemeinden_vereinigt)
 	DWDWarnRefresh time.Duration // WAYFINDER_DWD_WARN_REFRESH (default 5m)
 
@@ -810,9 +816,17 @@ func loadConfig() Config {
 		FeedStaleTimeout: 3 * time.Second,
 		OpenAIPRefresh:   24 * time.Hour,
 		OpenAIPRadiusKM:  250,
+		// DWD weather overlays are connected-by-default (ADR 0017): the public DWD
+		// GeoServer URLs are the default, and the ENABLED flags default true, so the
+		// radar + warnings overlays are ON out of the box (opt-out via
+		// WAYFINDER_DWD_RADAR_ENABLED / _WARN_ENABLED = false).
+		DWDRadarEnabled:  true,
+		DWDWMSURL:        "https://maps.dwd.de/geoserver/dwd/wms",
 		DWDRadarLayer:    "dwd:Niederschlagsradar",
 		DWDRefresh:       5 * time.Minute,
 		QNHRefresh:       15 * time.Minute,
+		DWDWarnEnabled:   true,
+		DWDWarnURL:       "https://maps.dwd.de/geoserver/dwd/ows",
 		DWDWarnLayer:     "dwd:Warnungen_Gemeinden_vereinigt",
 		DWDWarnRefresh:   5 * time.Minute,
 		ImpersonationTTL: 30 * time.Minute,
@@ -927,9 +941,13 @@ func loadConfig() Config {
 		}
 	}
 
-	// DWD weather-radar overlay (WX-A, ADR 0016). Feature enabled only when the
-	// WMS URL is set; layer/refresh keep their defaults when unset/invalid.
-	cfg.DWDWMSURL = os.Getenv("WAYFINDER_DWD_WMS_URL")
+	// DWD weather-radar overlay (WX-A, ADR 0016). Connected-by-default (ADR 0017):
+	// the WMS URL keeps its public-DWD default unless explicitly overridden with a
+	// non-empty value; the overlay is disabled with WAYFINDER_DWD_RADAR_ENABLED=false.
+	cfg.DWDRadarEnabled = envBool("WAYFINDER_DWD_RADAR_ENABLED", true)
+	if v := strings.TrimSpace(os.Getenv("WAYFINDER_DWD_WMS_URL")); v != "" {
+		cfg.DWDWMSURL = v
+	}
 	if v := strings.TrimSpace(os.Getenv("WAYFINDER_DWD_RADAR_LAYER")); v != "" {
 		cfg.DWDRadarLayer = v
 	}
@@ -955,9 +973,13 @@ func loadConfig() Config {
 		}
 	}
 
-	// DWD weather-warnings overlay (WX-C, ADR 0016). Feature enabled only when the
-	// WFS URL is set; layer/refresh keep their defaults when unset/invalid.
-	cfg.DWDWarnURL = os.Getenv("WAYFINDER_DWD_WARN_URL")
+	// DWD weather-warnings overlay (WX-C, ADR 0016). Connected-by-default (ADR 0017):
+	// the WFS URL keeps its public-DWD default unless explicitly overridden;
+	// disabled with WAYFINDER_DWD_WARN_ENABLED=false.
+	cfg.DWDWarnEnabled = envBool("WAYFINDER_DWD_WARN_ENABLED", true)
+	if v := strings.TrimSpace(os.Getenv("WAYFINDER_DWD_WARN_URL")); v != "" {
+		cfg.DWDWarnURL = v
+	}
 	if v := strings.TrimSpace(os.Getenv("WAYFINDER_DWD_WARN_LAYER")); v != "" {
 		cfg.DWDWarnLayer = v
 	}
@@ -1044,6 +1066,22 @@ func atoiDefault(s string, def int) int {
 		return def
 	}
 	return n
+}
+
+// envBool reads a boolean env var, returning def when unset or unparseable
+// (FR-CFG-002: invalid config falls back to the default rather than crashing).
+// Accepts the strconv.ParseBool spellings (1/0, t/f, true/false, …). Used for the
+// connected-by-default opt-out flags (ADR 0017), which default true.
+func envBool(key string, def bool) bool {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return def
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		return def
+	}
+	return b
 }
 
 // feedPool builds the multicast endpoint pool from config, overriding only the
@@ -1349,11 +1387,11 @@ func mapConfigHandler(cfg Config) http.HandlerFunc {
 			"theme":                 theme,
 			"coverage_ring_color":   cfg.CoverageRingColor,
 			"coverage_sensor_count": len(cfg.CoverageSensors),
-			// WX-A: whether the DWD radar tile proxy is configured, so the frontend
-			// can disable a switch that would otherwise do nothing.
-			"weather_radar_available": cfg.DWDWMSURL != "",
-			// WX-C: whether the DWD warnings WFS is configured.
-			"weather_warnings_available": cfg.DWDWarnURL != "",
+			// WX-A / ADR 0017: whether the DWD radar overlay is active (connected-by-
+			// default; off only when explicitly disabled). Gates the sidebar switch.
+			"weather_radar_available": cfg.DWDRadarEnabled && cfg.DWDWMSURL != "",
+			// WX-C / ADR 0017: same for the DWD warnings overlay.
+			"weather_warnings_available": cfg.DWDWarnEnabled && cfg.DWDWarnURL != "",
 		})
 	}
 }
