@@ -3,8 +3,10 @@ package adminapi
 import (
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/manuelringwald/wayfinder/pkg/store"
 )
@@ -23,9 +25,14 @@ import (
 const maxOpenAIPKeyLen = 512
 
 // openaipStatusDTO reports whether a per-tenant key is configured, without ever
-// disclosing the key itself.
+// disclosing the key itself, plus the persistent cache freshness (AERO-1, ADR
+// 0018): when the tenant's OpenAIP data was last fetched and how many features are
+// cached. The cache fields are omitted when nothing is cached yet or no cache
+// reader is wired.
 type openaipStatusDTO struct {
-	Configured bool `json:"configured"`
+	Configured   bool       `json:"configured"`
+	FetchedAt    *time.Time `json:"fetched_at,omitempty"`
+	FeatureCount *int       `json:"feature_count,omitempty"`
 }
 
 func (h *Handler) getTenantOpenAIP(w http.ResponseWriter, r *http.Request) {
@@ -42,7 +49,19 @@ func (h *Handler) getTenantOpenAIP(w http.ResponseWriter, r *http.Request) {
 		h.internalError(w, "get tenant openaip key", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, openaipStatusDTO{Configured: key != nil})
+	dto := openaipStatusDTO{Configured: key != nil}
+	// Best-effort cache freshness (AERO-1): a read error just omits the fields —
+	// it must never fail the status route.
+	if h.aeroCache != nil {
+		if fetchedAt, count, ok, cerr := h.aeroCache.AeroCacheStatus(r.Context(), tid); cerr != nil {
+			h.logger.Warn("openaip status: read cache status failed", slog.Int64("tenant_id", tid), slog.String("error", cerr.Error()))
+		} else if ok {
+			c := count
+			dto.FetchedAt = fetchedAt
+			dto.FeatureCount = &c
+		}
+	}
+	writeJSON(w, http.StatusOK, dto)
 }
 
 func (h *Handler) setTenantOpenAIP(w http.ResponseWriter, r *http.Request) {
@@ -82,8 +101,14 @@ func (h *Handler) setTenantOpenAIP(w http.ResponseWriter, r *http.Request) {
 		h.internalError(w, "set tenant openaip key", err)
 		return
 	}
-	// Live-apply: (re)start the tenant's per-tenant OpenAIP refresh with the new
-	// key (or fall back to the global one when cleared). Idempotent if unchanged.
-	h.triggerAeroApply(r.Context(), tid)
+	// A key change is an explicit "fetch fresh data now" (AERO-1, ADR 0018): force a
+	// refresh rather than the idempotent Apply, so a new/changed key re-fetches even
+	// when stale data is still persisted from a previous key. Clearing the key
+	// (key == nil) drops the per-tenant service back to the global cache.
+	if key != nil {
+		h.triggerAeroRefresh(r.Context(), tid)
+	} else {
+		h.triggerAeroApply(r.Context(), tid)
+	}
 	w.WriteHeader(http.StatusNoContent)
 }

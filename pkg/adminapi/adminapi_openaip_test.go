@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/manuelringwald/wayfinder/pkg/store"
 )
@@ -18,18 +19,71 @@ import (
 // (ONB-6), so the tests can prove live-apply is triggered on key change and
 // teardown on tenant delete.
 type fakeAeroLife struct {
-	applied []int64
-	stopped []int64
+	applied   []int64
+	refreshed []int64
+	stopped   []int64
 }
 
 func (l *fakeAeroLife) Apply(_ context.Context, tenantID int64) {
 	l.applied = append(l.applied, tenantID)
+}
+func (l *fakeAeroLife) Refresh(_ context.Context, tenantID int64) {
+	l.refreshed = append(l.refreshed, tenantID)
 }
 func (l *fakeAeroLife) Stop(tenantID int64) { l.stopped = append(l.stopped, tenantID) }
 
 func handlerForOpenAIP(ft fakeTenants, aero TenantAeroLifecycle) *Handler {
 	return New(&fakeVS{}, &fakeVS{}, fakeFeeds{}, ft, &fakeUserStore{}, &fakeCredStore{},
 		&fakeEntitlements{}, nil, nil, aero, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+}
+
+// fakeAeroCache is a stub AeroCacheStatusReader (AERO-1) returning fixed status.
+type fakeAeroCache struct {
+	fetchedAt *time.Time
+	count     int
+	ok        bool
+}
+
+func (f fakeAeroCache) AeroCacheStatus(_ context.Context, _ int64) (*time.Time, int, bool, error) {
+	return f.fetchedAt, f.count, f.ok, nil
+}
+
+func TestGetTenantOpenAIPReportsCacheStatus(t *testing.T) {
+	ft := fakeTenants{byID: map[int64]store.Tenant{5: {ID: 5}}}
+	at := time.Unix(1_700_000_000, 0).UTC()
+	h := handlerForOpenAIP(ft, nil).WithAeroCache(fakeAeroCache{fetchedAt: &at, count: 42, ok: true})
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, adminReq(http.MethodGet, "/api/admin/tenants/5/openaip", "", 1, store.RoleAdmin))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var got struct {
+		Configured   bool       `json:"configured"`
+		FetchedAt    *time.Time `json:"fetched_at"`
+		FeatureCount *int       `json:"feature_count"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.FetchedAt == nil || !got.FetchedAt.Equal(at) {
+		t.Errorf("fetched_at = %v, want %v", got.FetchedAt, at)
+	}
+	if got.FeatureCount == nil || *got.FeatureCount != 42 {
+		t.Errorf("feature_count = %v, want 42", got.FeatureCount)
+	}
+}
+
+func TestGetTenantOpenAIPOmitsCacheStatusWhenEmpty(t *testing.T) {
+	ft := fakeTenants{byID: map[int64]store.Tenant{5: {ID: 5}}}
+	// Reader wired but nothing cached (ok=false) → cache fields omitted.
+	h := handlerForOpenAIP(ft, nil).WithAeroCache(fakeAeroCache{ok: false})
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, adminReq(http.MethodGet, "/api/admin/tenants/5/openaip", "", 1, store.RoleAdmin))
+	if body := rec.Body.String(); strings.Contains(body, "fetched_at") || strings.Contains(body, "feature_count") {
+		t.Errorf("empty cache status should omit fields, got %s", body)
+	}
 }
 
 func TestGetTenantOpenAIPReportsConfigured(t *testing.T) {
@@ -69,7 +123,7 @@ func TestGetTenantOpenAIPNeverLeaksKey(t *testing.T) {
 	}
 }
 
-func TestSetTenantOpenAIPSetsKeyAndApplies(t *testing.T) {
+func TestSetTenantOpenAIPSetsKeyAndRefreshes(t *testing.T) {
 	ft := fakeTenants{
 		byID:        map[int64]store.Tenant{5: {ID: 5}},
 		openaipSet:  map[int64]*string{},
@@ -86,8 +140,13 @@ func TestSetTenantOpenAIPSetsKeyAndApplies(t *testing.T) {
 	if got == nil || *got != "my-key" {
 		t.Fatalf("stored key = %v, want trimmed \"my-key\"", got)
 	}
-	if len(aero.applied) != 1 || aero.applied[0] != 5 {
-		t.Errorf("apply calls = %v, want [5]", aero.applied)
+	// Setting a key is an explicit "fetch now" (AERO-1): it forces a refresh, not the
+	// idempotent Apply.
+	if len(aero.refreshed) != 1 || aero.refreshed[0] != 5 {
+		t.Errorf("refresh calls = %v, want [5]", aero.refreshed)
+	}
+	if len(aero.applied) != 0 {
+		t.Errorf("setting a key should force a refresh, not Apply; applied = %v", aero.applied)
 	}
 }
 

@@ -118,7 +118,19 @@ type TenantStore interface {
 // per-tenant fetch only follows on the next restart (single-tenant mode / tests).
 type TenantAeroLifecycle interface {
 	Apply(ctx context.Context, tenantID int64)
+	// Refresh forces a re-fetch of the tenant's OpenAIP data now (AERO-1, ADR 0018),
+	// used after a key change (and by the AERO-2 refresh buttons). Unlike Apply it
+	// fetches even when the key/AOI are unchanged.
+	Refresh(ctx context.Context, tenantID int64)
 	Stop(tenantID int64)
+}
+
+// AeroCacheStatusReader reports a tenant's persisted OpenAIP cache freshness for
+// the admin status route (AERO-1, ADR 0018): when it was last fetched and how many
+// features are cached. nil disables the extra status fields (they are simply
+// omitted). Satisfied by an adapter over store.AeroCacheRepo (main.go).
+type AeroCacheStatusReader interface {
+	AeroCacheStatus(ctx context.Context, tenantID int64) (fetchedAt *time.Time, featureCount int, ok bool, err error)
 }
 
 // EntitlementService is the per-tenant feature surface the admin API needs
@@ -171,14 +183,23 @@ type Handler struct {
 	users      UserStore
 	creds      CredentialStore
 	feats      EntitlementService
-	feedHealth FeedHealthSource    // may be nil; AP4 health endpoint returns empty list
-	feedLife   FeedLifecycle       // may be nil; disables live receiver join/leave (ONB-5)
-	aeroLife   TenantAeroLifecycle // may be nil; disables live per-tenant OpenAIP apply (ONB-6)
-	secrets    SecretService       // may be nil; disables the per-feed secret routes (503) when no key is configured (ORCH-2c 3a)
-	sessions   SessionRevoker      // may be nil; disables eager session revocation on pause (AP7)
+	feedHealth FeedHealthSource      // may be nil; AP4 health endpoint returns empty list
+	feedLife   FeedLifecycle         // may be nil; disables live receiver join/leave (ONB-5)
+	aeroLife   TenantAeroLifecycle   // may be nil; disables live per-tenant OpenAIP apply (ONB-6)
+	aeroCache  AeroCacheStatusReader // may be nil; omits OpenAIP cache freshness from the status route (AERO-1)
+	secrets    SecretService         // may be nil; disables the per-feed secret routes (503) when no key is configured (ORCH-2c 3a)
+	sessions   SessionRevoker        // may be nil; disables eager session revocation on pause (AP7)
 	rescope    RescopeFunc
 	logger     *slog.Logger
 	mux        *http.ServeMux
+}
+
+// WithAeroCache wires the OpenAIP persistent-cache status reader (AERO-1, ADR 0018)
+// so the tenant OpenAIP status route reports last-fetch time + feature count.
+// Nil-safe by omission — without it the status route just omits those fields.
+func (h *Handler) WithAeroCache(r AeroCacheStatusReader) *Handler {
+	h.aeroCache = r
+	return h
 }
 
 // WithSessionRevoker wires eager session revocation (AP7): pausing an access or a
@@ -609,6 +630,14 @@ func (h *Handler) triggerRescope(ctx context.Context, tenantID int64) {
 func (h *Handler) triggerAeroApply(ctx context.Context, tenantID int64) {
 	if h.aeroLife != nil {
 		h.aeroLife.Apply(ctx, tenantID)
+	}
+}
+
+// triggerAeroRefresh forces a re-fetch of the tenant's OpenAIP data now (AERO-1,
+// ADR 0018), used after a key change. No-op when not wired (single-tenant / tests).
+func (h *Handler) triggerAeroRefresh(ctx context.Context, tenantID int64) {
+	if h.aeroLife != nil {
+		h.aeroLife.Refresh(ctx, tenantID)
 	}
 }
 

@@ -93,17 +93,17 @@ func TestServiceKeepsLastGoodOnFailure(t *testing.T) {
 	}
 }
 
-func TestServiceDisabledRunReturnsImmediately(t *testing.T) {
+func TestServiceDisabledBootstrapReturnsImmediately(t *testing.T) {
 	s := NewService(NewClient(nil, "http://unused", ""), Config{Enabled: false}, nil)
 	done := make(chan struct{})
 	go func() {
-		s.Run(context.Background())
+		s.BootstrapOnce(context.Background())
 		close(done)
 	}()
 	select {
 	case <-done:
 	case <-time.After(time.Second):
-		t.Fatal("disabled Run should return immediately")
+		t.Fatal("disabled BootstrapOnce should return immediately")
 	}
 	if s.FetchSuccessCount() != 0 || s.FetchFailureCount() != 0 {
 		t.Error("disabled service should not fetch")

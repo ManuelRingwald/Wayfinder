@@ -761,8 +761,18 @@ Ohne `WAYFINDER_OPENAIP_API_KEY` ist das Feature aus (Warn-Log, kein Fehler).
 |----------|---------|--------------|
 | `WAYFINDER_OPENAIP_API_KEY` | *(leer)* | **Globaler** OpenAIP-API-Schlüssel; leer = Feature global aus |
 | `WAYFINDER_OPENAIP_RADIUS_KM` | `250` | Umkreis um das Zentrum für Luftraum-/Navaid-Abfragen (auch via `wayfinder.yaml` → `openaip.radius_km`) |
-| `WAYFINDER_OPENAIP_REFRESH` | `24h` | Aktualisierungsintervall (`1h`, `30m`, `24h`) |
+| `WAYFINDER_OPENAIP_REFRESH` | *(ignoriert)* | **Deprecated seit AERO-1 (ADR 0018)** — OpenAIP wird **einmalig/on-demand** geholt und **persistiert**, nicht mehr periodisch. Ein gesetzter Wert wird ignoriert (Warn-Log), bricht aber den Start nicht |
 | `WAYFINDER_OPENAIP_BASE_URL` | *(intern)* | Override der OpenAIP-Basis-URL (Tests/Proxies) |
+
+> **Persistenter Cache & Fetch-once (AERO-1, ADR 0018).** Die geholten
+> Aeronautik-Daten (Luftraum/Navaids/Wegpunkte) werden in der DB **persistiert**
+> (Tabelle `aeronautical_cache`) und überleben einen **Redeploy** — beim Start wird
+> der Cache **ohne Netz** aus der DB geladen. Ein OpenAIP-Abruf passiert nur noch
+> **ereignisgesteuert**: Erstbefüllung (Schlüssel vorhanden, aber nichts
+> persistiert), AOI-Änderung oder ein **expliziter Refresh** (Schlüssel gesetzt/
+> geändert). Aeronautik-Daten folgen dem **AIRAC-Zyklus** (28 Tage) — ein
+> Dauer-Polling gibt es bewusst nicht mehr. Der Admin-Status-Endpunkt zeigt je
+> Mandant, **wann** zuletzt geholt wurde und **wie viele** Objekte gecacht sind.
 
 > **OpenAIP pro Mandant (ONB-6, ADR 0011).** Im Multi-Mandanten-Betrieb kann
 > jeder Mandant einen **eigenen** OpenAIP-Schlüssel bekommen — im Admin-Dashboard
@@ -918,7 +928,7 @@ ohne gültigen, einem Mandanten zugeordneten Nutzer → `401`).
 | `DELETE /api/admin/tenants/{id}` | Mandant löschen (nur wenn keine Zugänge) | admin |
 | `POST /api/admin/tenants/{id}/subscriptions` | Feed zuweisen (`{"feed_id":…}`), idempotent | admin |
 | `DELETE /api/admin/tenants/{id}/subscriptions/{feedID}` | Feed entziehen | admin |
-| `GET /api/admin/tenants/{id}/openaip` | OpenAIP-Schlüssel-Status (`{"configured":bool}`) | admin |
+| `GET /api/admin/tenants/{id}/openaip` | OpenAIP-Status: Schlüssel gesetzt? + Cache-Frische (`{"configured":bool, "fetched_at"?, "feature_count"?}`, AERO-1) | admin |
 | `PUT /api/admin/tenants/{id}/openaip` | OpenAIP-Schlüssel setzen/löschen | admin |
 
 > 🔒 **Mandanten-Isolation:** Ein `/ws`-Client sieht **nur** Tracks aus den Feeds,
