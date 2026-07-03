@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -405,5 +406,85 @@ func TestIntegrationAdminTenantSeparation(t *testing.T) {
 	if _, err := pool.Exec(ctx,
 		`INSERT INTO users (tenant_id, subject, role) VALUES (NULL, 'bad-user', 'user')`); err == nil {
 		t.Fatal("expected the role/tenant CHECK to reject a tenant-less user")
+	}
+}
+
+func TestIntegrationAeroCacheRepo(t *testing.T) {
+	pool := testPool(t)
+	ctx := context.Background()
+	tenants := NewTenantRepo(pool)
+	repo := NewAeroCacheRepo(pool)
+
+	ten, err := tenants.Create(ctx, "aero", "Aero Tenant")
+	if err != nil {
+		t.Fatalf("create tenant: %v", err)
+	}
+	tid := ten.ID
+
+	// Nothing cached yet: Load miss, Status not ok.
+	if _, ok, err := repo.Load(ctx, &tid, "airspace"); err != nil || ok {
+		t.Fatalf("initial load: ok=%v err=%v, want miss", ok, err)
+	}
+	if _, ok, err := repo.Status(ctx, &tid); err != nil || ok {
+		t.Fatalf("initial status: ok=%v err=%v, want not ok", ok, err)
+	}
+
+	at := time.Unix(1_700_000_000, 0).UTC()
+	if err := repo.Save(ctx, &tid, "airspace", `{"type":"FeatureCollection","features":[]}`, 3, at); err != nil {
+		t.Fatalf("save airspace: %v", err)
+	}
+	if err := repo.Save(ctx, &tid, "navaid", `{"type":"FeatureCollection","features":[]}`, 5, at.Add(time.Hour)); err != nil {
+		t.Fatalf("save navaid: %v", err)
+	}
+
+	// Round-trip one kind.
+	got, ok, err := repo.Load(ctx, &tid, "airspace")
+	if err != nil || !ok {
+		t.Fatalf("load airspace: ok=%v err=%v", ok, err)
+	}
+	if got.FeatureCount != 3 || !got.FetchedAt.Equal(at) {
+		t.Errorf("loaded = %+v, want count 3 @ %v", got, at)
+	}
+
+	// Upsert overwrites in place (still one row).
+	if err := repo.Save(ctx, &tid, "airspace", `{"type":"FeatureCollection","features":[]}`, 9, at.Add(2*time.Hour)); err != nil {
+		t.Fatalf("upsert airspace: %v", err)
+	}
+	if got, _, _ := repo.Load(ctx, &tid, "airspace"); got.FeatureCount != 9 {
+		t.Errorf("after upsert count = %d, want 9", got.FeatureCount)
+	}
+
+	// Status: latest fetched_at (navaid, +1h) and summed features (9 + 5).
+	st, ok, err := repo.Status(ctx, &tid)
+	if err != nil || !ok {
+		t.Fatalf("status: ok=%v err=%v", ok, err)
+	}
+	if st.FeatureCount != 14 {
+		t.Errorf("status feature count = %d, want 14 (9+5)", st.FeatureCount)
+	}
+	if !st.FetchedAt.Equal(at.Add(time.Hour)) {
+		t.Errorf("status fetched_at = %v, want the latest (%v)", st.FetchedAt, at.Add(time.Hour))
+	}
+
+	// The global (NULL tenant) cache is a distinct row from the tenant's.
+	if err := repo.Save(ctx, nil, "airspace", `{"type":"FeatureCollection","features":[]}`, 100, at); err != nil {
+		t.Fatalf("save global: %v", err)
+	}
+	if g, ok, _ := repo.Load(ctx, nil, "airspace"); !ok || g.FeatureCount != 100 {
+		t.Errorf("global load = %+v, want count 100", g)
+	}
+	if tn, _, _ := repo.Load(ctx, &tid, "airspace"); tn.FeatureCount != 9 {
+		t.Errorf("tenant row must be unaffected by the global save, got %d", tn.FeatureCount)
+	}
+
+	// Deleting the tenant cascades its cache rows away (FK ON DELETE CASCADE).
+	if err := tenants.Delete(ctx, tid); err != nil {
+		t.Fatalf("delete tenant: %v", err)
+	}
+	if _, ok, _ := repo.Status(ctx, &tid); ok {
+		t.Error("tenant cache rows should be gone after the tenant is deleted")
+	}
+	if _, ok, _ := repo.Load(ctx, nil, "airspace"); !ok {
+		t.Error("the global cache row must survive a tenant delete")
 	}
 }

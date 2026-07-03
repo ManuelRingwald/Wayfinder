@@ -16,7 +16,7 @@ func newTestRegistry(t *testing.T, serverURL string, global *Service) *Registry 
 	factory := func(apiKey string) *Client {
 		return NewClient(http.DefaultClient, serverURL, apiKey)
 	}
-	return NewRegistry(context.Background(), global, factory, time.Hour, nil)
+	return NewRegistry(context.Background(), global, factory, nil, nil)
 }
 
 func TestRegistryServesPerTenantCache(t *testing.T) {
@@ -28,8 +28,8 @@ func TestRegistryServesPerTenantCache(t *testing.T) {
 	reg := newTestRegistry(t, srv.URL, nil)
 	defer reg.StopAll()
 
-	reg.Start(7, "tenant-key", BoundingBox{})
-	// The per-tenant service refreshes once on Run start; wait for the cache to warm.
+	reg.Start(7, "tenant-key", BoundingBox{}, false)
+	// The per-tenant service fetches once on Start; wait for the cache to warm.
 	waitFor(t, func() bool { return len(reg.Serve(7, KindNavaid).Features) == 2 })
 
 	if got := len(reg.Serve(7, KindNavaid).Features); got != 2 {
@@ -52,7 +52,7 @@ func TestRegistryEmptyKeyFallsBackToGlobal(t *testing.T) {
 
 	// No per-tenant key: Start(tenant, "", …) must not run a service, and Serve
 	// must transparently fall back to the global cache.
-	reg.Start(7, "", BoundingBox{})
+	reg.Start(7, "", BoundingBox{}, false)
 	if reg.IsRunning(7) {
 		t.Fatal("an empty key must not start a per-tenant service")
 	}
@@ -67,19 +67,19 @@ func TestRegistryStartIdempotentOnUnchangedInputs(t *testing.T) {
 		builds.Add(1)
 		return NewClient(http.DefaultClient, "http://unused", apiKey)
 	}
-	reg := NewRegistry(context.Background(), nil, factory, time.Hour, nil)
+	reg := NewRegistry(context.Background(), nil, factory, nil, nil)
 	defer reg.StopAll()
 
 	bbox := BoundingBox{MinLon: 1, MinLat: 2, MaxLon: 3, MaxLat: 4}
-	reg.Start(7, "k", bbox)
-	reg.Start(7, "k", bbox) // identical → no-op
-	reg.Start(7, "k", bbox)
+	reg.Start(7, "k", bbox, false)
+	reg.Start(7, "k", bbox, false) // identical → no-op
+	reg.Start(7, "k", bbox, false)
 	if builds.Load() != 1 {
 		t.Fatalf("expected exactly one client build for unchanged inputs, got %d", builds.Load())
 	}
 
 	// A changed key restarts (new build).
-	reg.Start(7, "k2", bbox)
+	reg.Start(7, "k2", bbox, false)
 	if builds.Load() != 2 {
 		t.Fatalf("a changed key must restart the service (build), got %d builds", builds.Load())
 	}
@@ -94,7 +94,7 @@ func TestRegistryStopFallsBackToGlobal(t *testing.T) {
 	reg := newTestRegistry(t, srv.URL, nil)
 	defer reg.StopAll()
 
-	reg.Start(7, "k", BoundingBox{})
+	reg.Start(7, "k", BoundingBox{}, false)
 	waitFor(t, func() bool { return reg.IsRunning(7) })
 	if !reg.Stop(7) {
 		t.Fatal("Stop should report true for a running tenant")
@@ -122,7 +122,7 @@ func TestRegistryAggregatesFetchCounts(t *testing.T) {
 
 	reg := newTestRegistry(t, srv.URL, global)
 	defer reg.StopAll()
-	reg.Start(7, "k", BoundingBox{})
+	reg.Start(7, "k", BoundingBox{}, false)
 	waitFor(t, func() bool { return reg.FetchSuccessCount() >= 6 })
 
 	if reg.FetchSuccessCount() < 6 {
@@ -138,7 +138,7 @@ func TestRegistryHandlerResolvesTenant(t *testing.T) {
 
 	reg := newTestRegistry(t, srv.URL, nil)
 	defer reg.StopAll()
-	reg.Start(7, "k", BoundingBox{})
+	reg.Start(7, "k", BoundingBox{}, false)
 	waitFor(t, func() bool { return len(reg.Serve(7, KindNavaid).Features) == 2 })
 
 	mux := http.NewServeMux()

@@ -74,6 +74,11 @@ func main() {
 	}))
 	slog.SetDefault(logger)
 
+	if cfg.OpenAIPRefreshDeprecated {
+		logger.Warn("WAYFINDER_OPENAIP_REFRESH is deprecated and ignored (AERO-1, ADR 0018): " +
+			"OpenAIP is fetched once/on-demand and persisted, not on a periodic ticker")
+	}
+
 	// Create broadcaster.
 	broadcaster := broadcast.New(logger)
 
@@ -89,18 +94,9 @@ func main() {
 	// Registry exposes aggregate Status/Observe methods as drop-in replacements.
 	feedRegistry := health.NewRegistry(cfg.FeedStaleTimeout)
 
-	// Aeronautical layers (ASD-003, ADR 0004): best-effort OpenAIP overlays.
-	// Enabled only when an API key is configured; never affects the track path
-	// or readiness. The query window is a box around the configured map center.
-	aeroService := aeronautical.NewService(
-		aeronautical.NewClient(&http.Client{Timeout: 15 * time.Second}, cfg.OpenAIPBaseURL, cfg.OpenAIPAPIKey),
-		aeronautical.Config{
-			Enabled: cfg.OpenAIPAPIKey != "",
-			BBox:    aeronautical.BoundingBoxFromCenter(cfg.MapCenterLat, cfg.MapCenterLon, cfg.OpenAIPRadiusKM),
-			Refresh: cfg.OpenAIPRefresh,
-		},
-		logger,
-	)
+	// The aeronautical (OpenAIP) global fallback Service is built after the DB pool
+	// is open — since AERO-1 (ADR 0018) it reads/writes a persistent DB cache, so it
+	// needs the store. See below, next to the per-tenant registry.
 
 	// Weather-radar overlay (WX-A, ADR 0016): best-effort DWD GeoServer WMS tile
 	// proxy. Enabled only when a WMS URL is configured; otherwise it serves
@@ -240,6 +236,25 @@ func main() {
 		logger.Warn("QNH source disabled (WAYFINDER_QNH_ENABLED=false); header shows no QNH")
 	}
 
+	// Aeronautical layers (ASD-003, ADR 0004): best-effort OpenAIP overlays. Enabled
+	// only when an API key is configured; never affects the track path or readiness.
+	// The query window is a box around the configured map center. Since AERO-1 (ADR
+	// 0018) the fetched GeoJSON is persisted in the DB (aeroCache) and fetched
+	// once/on-demand instead of on a ticker — WAYFINDER_OPENAIP_REFRESH is obsolete.
+	// This global Service is the fallback cache (tenant_id NULL) behind the per-tenant
+	// registry.
+	aeroCache := newAeroCacheStore(store.NewAeroCacheRepo(dbPool))
+	aeroService := aeronautical.NewService(
+		aeronautical.NewClient(&http.Client{Timeout: 15 * time.Second}, cfg.OpenAIPBaseURL, cfg.OpenAIPAPIKey),
+		aeronautical.Config{
+			Enabled:  cfg.OpenAIPAPIKey != "",
+			BBox:     aeronautical.BoundingBoxFromCenter(cfg.MapCenterLat, cfg.MapCenterLon, cfg.OpenAIPRadiusKM),
+			Store:    aeroCache,
+			TenantID: nil, // global fallback row
+		},
+		logger,
+	)
+
 	// Server-side session registry (AP7, ADR 0009 §5). Built once and shared by the
 	// login handlers, the admin revocation hooks, the janitor and the /metrics
 	// gauge. Only in builtin mode — a proxy session lives in the upstream OIDC
@@ -341,9 +356,10 @@ func main() {
 		}
 	}()
 
-	// Start the aeronautical refresh loop (best-effort, ADR 0004). In multi-tenant
-	// mode this Service is the global fallback cache behind the per-tenant registry.
-	go aeroService.Run(ctx)
+	// Bootstrap the global fallback aeronautical cache (best-effort, ADR 0004; AERO-1,
+	// ADR 0018): hydrate from the persistent DB cache (no network) and fetch once only
+	// if there is a key but nothing persisted yet. No background ticker.
+	go aeroService.BootstrapOnce(ctx)
 
 	// Start the QNH METAR poller (best-effort, WX-B, ADR 0016). No-op when no
 	// stations are configured. Bound to the shutdown context.
@@ -355,9 +371,11 @@ func main() {
 
 	// OpenAIP per tenant (ONB-6, ADR 0011): each tenant fetches OpenAIP with its own
 	// key (or the global fallback) against its own area of interest. The registry
-	// supervises one Service per tenant alongside the global fallback; a tenant
-	// without its own running Service falls back to the global cache.
-	aeroRegistry := aeronautical.NewRegistry(ctx, aeroService, newAeroClientFactory(cfg.OpenAIPBaseURL), cfg.OpenAIPRefresh, logger)
+	// holds one Service per tenant alongside the global fallback; a tenant without
+	// its own service falls back to the global cache. Since AERO-1 (ADR 0018) each
+	// per-tenant Service reads/writes the shared persistent cache and fetches
+	// once/on-demand (no ticker).
+	aeroRegistry := aeronautical.NewRegistry(ctx, aeroService, newAeroClientFactory(cfg.OpenAIPBaseURL), aeroCache, logger)
 	defer aeroRegistry.StopAll()
 	aeroLifeImpl := tenantAeroLifecycle{
 		reg:       aeroRegistry,
@@ -550,7 +568,8 @@ func main() {
 	}
 	feedRepo := store.NewFeedRepo(dbPool).WithMulticastPool(cfg.feedPool())
 	adminAPI := adminapi.New(viewRepo, subRepo, feedRepo, store.NewTenantRepo(dbPool),
-		store.NewUserRepo(dbPool), store.NewCredentialRepo(dbPool), featSvc, feedRegistry, feedLife, aeroLife, secretSvc, logger, rescope)
+		store.NewUserRepo(dbPool), store.NewCredentialRepo(dbPool), featSvc, feedRegistry, feedLife, aeroLife, secretSvc, logger, rescope).
+		WithAeroCache(aeroCache) // AERO-1: expose OpenAIP cache freshness on the status route
 	// AP7: pausing an access or tenant revokes its live sessions immediately. Only
 	// in builtin mode (registry present); the counting adapter feeds the metric.
 	if sessionRepo != nil {
@@ -649,10 +668,13 @@ type Config struct {
 
 	// OpenAIP aeronautical layers (ASD-003, ADR 0004). The feature is enabled
 	// only when an API key is configured; otherwise the map shows no overlays.
-	OpenAIPAPIKey   string        // WAYFINDER_OPENAIP_API_KEY (secret)
-	OpenAIPBaseURL  string        // WAYFINDER_OPENAIP_BASE_URL (optional override)
-	OpenAIPRefresh  time.Duration // WAYFINDER_OPENAIP_REFRESH (Go duration, default 24h)
-	OpenAIPRadiusKM float64       // WAYFINDER_OPENAIP_RADIUS_KM (default 250)
+	OpenAIPAPIKey  string // WAYFINDER_OPENAIP_API_KEY (secret)
+	OpenAIPBaseURL string // WAYFINDER_OPENAIP_BASE_URL (optional override)
+	// OpenAIPRefresh is DEPRECATED and ignored since AERO-1 (ADR 0018): OpenAIP is
+	// fetched once/on-demand and persisted, not on a ticker. Still parsed so a set
+	// WAYFINDER_OPENAIP_REFRESH does not break startup; a set value is warned about.
+	OpenAIPRefreshDeprecated bool
+	OpenAIPRadiusKM          float64 // WAYFINDER_OPENAIP_RADIUS_KM (default 250)
 
 	// DWD weather-radar overlay (WX-A, ADR 0016). Connected-by-default (ADR 0017):
 	// the WMS URL defaults to the public DWD GeoServer, so the overlay is ON by
@@ -855,7 +877,6 @@ func loadConfig() Config {
 		MapTheme:         mapThemeDark,
 		LogLevel:         slog.LevelInfo,
 		FeedStaleTimeout: 3 * time.Second,
-		OpenAIPRefresh:   24 * time.Hour,
 		OpenAIPRadiusKM:  250,
 		// DWD weather overlays are connected-by-default (ADR 0017): the public DWD
 		// GeoServer URLs are the default, and the ENABLED flags default true, so the
@@ -973,11 +994,11 @@ func loadConfig() Config {
 	cfg.FeedOctetMin = atoiDefault(os.Getenv("WAYFINDER_FEED_OCTET_MIN"), -1)
 	cfg.FeedOctetMax = atoiDefault(os.Getenv("WAYFINDER_FEED_OCTET_MAX"), -1)
 
-	if v := os.Getenv("WAYFINDER_OPENAIP_REFRESH"); v != "" {
-		if d, err := time.ParseDuration(v); err == nil && d > 0 {
-			cfg.OpenAIPRefresh = d
-		}
-	}
+	// WAYFINDER_OPENAIP_REFRESH is deprecated and ignored since AERO-1 (ADR 0018):
+	// OpenAIP is fetched once/on-demand and persisted, not on a ticker. Record that
+	// it was set so loadConfig's caller can warn (kept out of loadConfig, which has
+	// no logger).
+	cfg.OpenAIPRefreshDeprecated = strings.TrimSpace(os.Getenv("WAYFINDER_OPENAIP_REFRESH")) != ""
 
 	if v := os.Getenv("WAYFINDER_OPENAIP_RADIUS_KM"); v != "" {
 		if km, err := strconv.ParseFloat(v, 64); err == nil && km > 0 {

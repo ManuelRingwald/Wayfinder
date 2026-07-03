@@ -224,6 +224,17 @@ func TestLoadConfigMetarStationsFallback(t *testing.T) {
 	}
 }
 
+func TestLoadConfigOpenAIPRefreshDeprecated(t *testing.T) {
+	_ = os.Unsetenv("WAYFINDER_OPENAIP_REFRESH")
+	if loadConfig().OpenAIPRefreshDeprecated {
+		t.Error("unset WAYFINDER_OPENAIP_REFRESH should not flag deprecation")
+	}
+	t.Setenv("WAYFINDER_OPENAIP_REFRESH", "12h")
+	if !loadConfig().OpenAIPRefreshDeprecated {
+		t.Error("a set WAYFINDER_OPENAIP_REFRESH should flag the deprecation warning")
+	}
+}
+
 func TestEnvBool(t *testing.T) {
 	const key = "WAYFINDER_TEST_ENVBOOL"
 	_ = os.Unsetenv(key)

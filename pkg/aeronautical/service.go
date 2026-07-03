@@ -20,22 +20,36 @@ var endpointPaths = map[Kind]string{
 // allKinds is the fetch/serve order.
 var allKinds = []Kind{KindAirspace, KindNavaid, KindWaypoint}
 
+// CacheStore persists the fetched GeoJSON so it survives a redeploy (AERO-1, ADR
+// 0018). It is injected so the aeronautical package stays free of the store/DB
+// detail. A nil store means "in-memory only" (no persistence) — used by tests and
+// as a graceful fallback. tenantID nil addresses the global fallback cache row.
+type CacheStore interface {
+	Load(ctx context.Context, tenantID *int64, kind Kind) (fc FeatureCollection, fetchedAt time.Time, ok bool, err error)
+	Save(ctx context.Context, tenantID *int64, kind Kind, fc FeatureCollection, fetchedAt time.Time) error
+}
+
 // Config configures the aeronautical Service.
 type Config struct {
 	// Enabled gates the whole feature. When false (e.g. no API key configured)
-	// the refresh loop does nothing and the endpoints serve empty collections.
+	// fetching does nothing and the endpoints serve empty collections.
 	Enabled bool
 	// BBox is the geographic window queried from OpenAIP.
 	BBox BoundingBox
-	// Refresh is the interval between background refreshes (AIRAC-paced;
-	// default applied by the caller, e.g. 24 h).
-	Refresh time.Duration
+	// Store persists the fetched cache across redeploys (AERO-1, ADR 0018). nil =
+	// in-memory only.
+	Store CacheStore
+	// TenantID selects which persisted cache row this Service owns (nil = the
+	// global fallback row).
+	TenantID *int64
 }
 
-// Service periodically refreshes aeronautical data from OpenAIP, caches the
-// last good result per kind, and serves it as GeoJSON. Per ADR 0004 it is
-// best-effort: failures keep the last-good cache and never surface as errors to
-// the frontend or to readiness.
+// Service fetches aeronautical data from OpenAIP, caches the last good result per
+// kind (in memory, backed by a persistent DB cache), and serves it as GeoJSON.
+// Per ADR 0004 it is best-effort: failures keep the last-good cache and never
+// surface as errors to the frontend or to readiness. Since AERO-1 (ADR 0018) it
+// fetches once/on-demand rather than on a periodic ticker: the caller hydrates it
+// from the persistent store on boot and triggers a fetch only when needed.
 type Service struct {
 	client *Client
 	cfg    Config
@@ -48,7 +62,7 @@ type Service struct {
 }
 
 // NewService creates a Service. The cache starts empty; endpoints serve empty
-// collections until the first successful refresh.
+// collections until Hydrate loads the persisted cache or the first fetch succeeds.
 func NewService(client *Client, cfg Config, logger *slog.Logger) *Service {
 	if logger == nil {
 		logger = slog.Default()
@@ -65,36 +79,71 @@ func NewService(client *Client, cfg Config, logger *slog.Logger) *Service {
 	return s
 }
 
-// Run performs an initial refresh and then refreshes on the configured
-// interval until ctx is cancelled. It returns immediately (after logging) when
-// the feature is disabled. Run is non-blocking with respect to readiness: it is
-// meant to be launched in its own goroutine and never reports fatal errors.
-func (s *Service) Run(ctx context.Context) {
+// Hydrate loads the persisted cache (if any) into memory without any network
+// call (AERO-1, ADR 0018), so the map is warm immediately after a redeploy. A nil
+// store or an empty cache is a no-op. Best-effort: a load error is logged and
+// skipped, never fatal.
+func (s *Service) Hydrate(ctx context.Context) {
+	if s.cfg.Store == nil {
+		return
+	}
+	for _, kind := range allKinds {
+		fc, fetchedAt, ok, err := s.cfg.Store.Load(ctx, s.cfg.TenantID, kind)
+		if err != nil {
+			s.logger.Warn("aeronautical hydrate failed; skipping",
+				slog.String("kind", string(kind)), slog.String("error", err.Error()))
+			continue
+		}
+		if !ok {
+			continue
+		}
+		stored := fc
+		s.cache[kind].Store(&stored)
+		if u := fetchedAt.Unix(); u > s.lastSuccessUnix.Load() {
+			s.lastSuccessUnix.Store(u)
+		}
+	}
+}
+
+// HasData reports whether any kind has a cached collection (from a hydrate or a
+// fetch). Used to decide whether a first-time fetch is needed on boot.
+func (s *Service) HasData() bool {
+	for _, kind := range allKinds {
+		if s.cache[kind].Load() != nil {
+			return true
+		}
+	}
+	return false
+}
+
+// BootstrapOnce hydrates from the persistent store and, only if the feature is
+// enabled and nothing was hydrated (a fresh install, no persisted data yet), does
+// a single fetch to populate the cache. It never runs a background loop — the
+// AERO-1 fetch model is fetch-once/on-demand (ADR 0018).
+func (s *Service) BootstrapOnce(ctx context.Context) {
 	if !s.cfg.Enabled {
 		s.logger.Warn("aeronautical layers disabled (no OpenAIP API key); " +
 			"map will show no airspace/navaid/waypoint overlays")
 		return
 	}
-
-	s.refreshAll(ctx)
-
-	interval := s.cfg.Refresh
-	if interval <= 0 {
-		interval = 24 * time.Hour
-	}
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			s.refreshAll(ctx)
-		}
+	s.Hydrate(ctx)
+	if !s.HasData() {
+		s.refreshAll(ctx)
 	}
 }
 
-// refreshAll refreshes every kind, keeping the last-good cache on failure.
+// RefreshNow performs a single fetch of every kind and persists the result (a
+// forced refresh, e.g. an admin key change or the AERO-2 refresh buttons). It is
+// a no-op when the feature is disabled.
+func (s *Service) RefreshNow(ctx context.Context) {
+	if !s.cfg.Enabled {
+		return
+	}
+	s.refreshAll(ctx)
+}
+
+// refreshAll fetches every kind, keeping the last-good cache on failure and
+// persisting each success to the store (AERO-1) so it survives a redeploy.
 func (s *Service) refreshAll(ctx context.Context) {
 	for _, kind := range allKinds {
 		fc, err := s.client.Fetch(ctx, kind, s.cfg.BBox)
@@ -107,7 +156,14 @@ func (s *Service) refreshAll(ctx context.Context) {
 		stored := fc
 		s.cache[kind].Store(&stored)
 		s.fetchSuccess.Add(1)
-		s.lastSuccessUnix.Store(time.Now().Unix())
+		now := time.Now()
+		s.lastSuccessUnix.Store(now.Unix())
+		if s.cfg.Store != nil {
+			if err := s.cfg.Store.Save(ctx, s.cfg.TenantID, kind, fc, now); err != nil {
+				s.logger.Warn("aeronautical persist failed; cache kept in memory only",
+					slog.String("kind", string(kind)), slog.String("error", err.Error()))
+			}
+		}
 		s.logger.Debug("aeronautical refresh ok",
 			slog.String("kind", string(kind)), slog.Int("features", len(fc.Features)))
 	}

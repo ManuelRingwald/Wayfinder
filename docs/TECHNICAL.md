@@ -192,9 +192,12 @@ dauerhaft „FEED ?", #117.)
 ### 2.4 Aeronautische Daten (best-effort)
 
 ```
-pkg/aeronautical.Service
+pkg/aeronautical.Service   (AERO-1, ADR 0018: fetch-once/on-demand, persistent)
     │
-    ├─► Periodischer Fetch von OpenAIP-REST-API (default 24h)
+    ├─► Boot: Hydrate aus DB-Cache (aeronautical_cache) — ohne Netz
+    ├─► Fetch von OpenAIP-REST-API nur ereignisgesteuert
+    │       (Erstbefüllung / AOI-Änderung / expliziter Refresh)
+    │       ├─► persistiert jeden Erfolg in die DB (überlebt Redeploy)
     │       └─► Last-Good-Cache bei Fehler
     └─► HTTP-Endpunkte /api/airspace, /api/navaids, /api/waypoints
             └─► GeoJSON-FeatureCollections an den Browser
@@ -281,8 +284,8 @@ immer aktiv — ADR 0014); statische Frontend-Routen werden ausgeliefert.
 | `/api/admin/feeds/{id}/secrets/{ref…}` | DELETE | **ORCH-2c 3a-API:** Wert für `cred_ref` entfernen → 204; nicht gesetzt → 404. Ohne Schlüssel → **503**; unbekannter Feed → 404; **admin** |
 | `/api/admin/tenants/{id}/view` | GET/PUT | **AP3:** Standard-Sicht **eines beliebigen** Mandanten lesen/schreiben (cross-tenant Editor; gleiche `validateView` wie `/api/admin/view`); **admin** |
 | `/api/admin/tenants/{id}/entitlements[/{key}]` | GET/PUT | Feature-Entitlements pro Mandant; **admin** (WF2-50) |
-| `/api/admin/tenants/{id}/openaip` | GET | **ONB-6 (ADR 0011):** meldet `{configured: bool}` — ob der Mandant einen **eigenen** OpenAIP-Schlüssel hat. **Nie der Schlüssel selbst.** **admin** |
-| `/api/admin/tenants/{id}/openaip` | PUT | **ONB-6:** Schlüssel setzen/löschen (`{api_key: string\|null}`) → 204; leer/Whitespace/`null` = löschen (Rückfall auf den globalen Schlüssel); zu lang → 400; unbekannter Mandant → 404; **Live-Apply** (re)startet den Per-Mandant-Refresh sofort; **admin** |
+| `/api/admin/tenants/{id}/openaip` | GET | **ONB-6 (ADR 0011); AERO-1 (ADR 0018):** meldet `{configured: bool, fetched_at?, feature_count?}` — ob der Mandant einen **eigenen** OpenAIP-Schlüssel hat, plus die Cache-Frische (wann zuletzt geholt, wie viele Objekte). **Nie der Schlüssel selbst.** Cache-Felder entfallen, solange nichts gecacht ist. **admin** |
+| `/api/admin/tenants/{id}/openaip` | PUT | **ONB-6:** Schlüssel setzen/löschen (`{api_key: string\|null}`) → 204; leer/Whitespace/`null` = löschen (Rückfall auf den globalen Schlüssel); zu lang → 400; unbekannter Mandant → 404; **AERO-1:** ein **gesetzter** Schlüssel erzwingt sofort einen **Fetch** (nicht nur idempotentes Apply); **admin** |
 | `/api/admin/admins` | GET/POST | **ONB-3 (ADR 0011):** Plattform-Admins (global, **kein Mandant**) auflisten / anlegen; **admin**. POST `{subject, email?, password?}` → 201; doppelter Subject → 409; Passwort min. 8 (optional, für Proxy-Modus) |
 | `/api/admin/admins/{id}` | PATCH/DELETE | **ONB-3:** Admin pausieren/reaktivieren (`{status}`) bzw. löschen; **admin**; **„letzter aktiver Admin"-Guard** (Pausieren/Löschen des letzten aktiven Admins → 409); ID eines Mandanten-Nutzers → 404 (nicht auf dieser Fläche erreichbar) |
 | `/api/admin/admins/{id}/password` | PUT | **ONB-3:** Admin-Passwort setzen/zurücksetzen (`{password}`, min. 8); **admin** |
@@ -519,11 +522,17 @@ Auflösung (höchste Priorität zuerst):
 
 ### 6.3 OpenAIP
 
+Seit **AERO-1 (ADR 0018)** persistent + fetch-once: die geholten GeoJSON-Daten
+liegen in der DB (`aeronautical_cache`, `tenant_id` NULL = globaler Fallback),
+werden beim Start ohne Netz hydratisiert und nur ereignisgesteuert neu geholt
+(Erstbefüllung / AOI-Änderung / expliziter Refresh via Schlüssel-Änderung). Kein
+periodischer Ticker mehr.
+
 | Variable | Default | Typ | Beschreibung |
 |----------|---------|-----|--------------|
 | `WAYFINDER_OPENAIP_API_KEY` | *(leer)* | string | **Globaler** API-Key; leer = Feature global aus. **ONB-6 (ADR 0011):** dient im Multi-Mandanten-Betrieb als **Fallback** für Mandanten ohne eigenen Schlüssel; pro Mandant wird der Schlüssel in der DB (`tenants.openaip_api_key`) über `PUT /api/admin/tenants/{id}/openaip` gesetzt |
 | `WAYFINDER_OPENAIP_RADIUS_KM` | `250` | int | Abfrageradius um das Zentrum in km. **ONB-6:** je Mandant um das **View-Zentrum** (oder dessen AOI-Box, falls gesetzt); ohne View die globale Karten-Box |
-| `WAYFINDER_OPENAIP_REFRESH` | `24h` | duration | Refresh-Intervall (Go-Duration, z. B. `1h`, `30m`); gilt für den globalen **und** jeden Per-Mandant-Refresh |
+| `WAYFINDER_OPENAIP_REFRESH` | *(ignoriert)* | duration | **Deprecated seit AERO-1 (ADR 0018):** OpenAIP wird einmalig/on-demand geholt und in `aeronautical_cache` persistiert, **nicht** periodisch. Ein gesetzter Wert wird ignoriert (Warn-Log beim Start), bricht den Start nicht |
 | `WAYFINDER_OPENAIP_BASE_URL` | *(intern)* | URL | Override der OpenAIP-API-Basis-URL (geteilt von globalem und Per-Mandant-Client) |
 
 ### 6.4 Wetter-Overlays (DWD, WX-A, ADR 0016)

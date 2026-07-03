@@ -5,7 +5,6 @@ import (
 	"log/slog"
 	"net/http"
 	"sync"
-	"time"
 )
 
 // ClientFactory builds an OpenAIP Client for a given API key (ONB-6). It is
@@ -30,16 +29,19 @@ type Registry struct {
 	base    context.Context
 	global  *Service // fallback cache for tenants without their own running service
 	factory ClientFactory
-	refresh time.Duration
+	store   CacheStore // persistent cache shared by every per-tenant Service (AERO-1)
 	logger  *slog.Logger
 
 	mu       sync.Mutex
 	services map[int64]*serviceHandle
 }
 
-// serviceHandle tracks one running per-tenant Service. apiKey and bbox are kept
-// for idempotency: a Start with unchanged inputs is a no-op, so a rescope that
-// did not move the AOI (e.g. a feed grant) does not needlessly restart the fetch.
+// serviceHandle tracks one per-tenant Service and its in-flight/last fetch. apiKey
+// and bbox are kept for idempotency: a Start with unchanged inputs (and no force)
+// is a no-op, so a rescope that did not move the AOI (e.g. a feed grant) does not
+// needlessly re-fetch. Since AERO-1 (ADR 0018) the goroutine is a one-shot fetch,
+// not a ticker loop — it hydrates, fetches if needed, then exits; cancel/done let
+// Stop/StopAll wait for an in-flight fetch to finish.
 type serviceHandle struct {
 	svc    *Service
 	apiKey string
@@ -49,10 +51,11 @@ type serviceHandle struct {
 }
 
 // NewRegistry creates a per-tenant Service registry. base is the parent context
-// for every per-tenant refresh loop (cancelled on shutdown); global is the
-// fallback Service (the existing process-global cache); factory builds a Client
-// per key; refresh is the AIRAC-paced refresh interval applied to each service.
-func NewRegistry(base context.Context, global *Service, factory ClientFactory, refresh time.Duration, logger *slog.Logger) *Registry {
+// for every per-tenant fetch (cancelled on shutdown); global is the fallback
+// Service (the process-global cache); factory builds a Client per key; store is
+// the persistent DB cache each per-tenant Service reads/writes (AERO-1, ADR 0018;
+// nil = in-memory only).
+func NewRegistry(base context.Context, global *Service, factory ClientFactory, store CacheStore, logger *slog.Logger) *Registry {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -60,49 +63,62 @@ func NewRegistry(base context.Context, global *Service, factory ClientFactory, r
 		base:     base,
 		global:   global,
 		factory:  factory,
-		refresh:  refresh,
+		store:    store,
 		logger:   logger,
 		services: make(map[int64]*serviceHandle),
 	}
 }
 
-// Start (re)starts the per-tenant Service for tenantID with the given effective
-// key and area of interest. It is idempotent on unchanged (apiKey, bbox): an
-// identical call is a no-op, so it is safe to call from the live-apply path on
-// every tenant mutation. An empty apiKey means the tenant has no own key and no
-// global fallback exists — no service is run and any existing one is stopped, so
-// the tenant transparently falls back to the global cache.
-func (reg *Registry) Start(tenantID int64, apiKey string, bbox BoundingBox) {
+// Start (re)configures the per-tenant Service for tenantID with the given
+// effective key and area of interest and, when needed, triggers a single fetch
+// (AERO-1: fetch-once/on-demand, no ticker). It is idempotent on unchanged
+// (apiKey, bbox) unless force is set: an identical unforced call is a no-op, so it
+// is safe to call from the live-apply path on every tenant mutation. force=true
+// re-fetches the same inputs (an explicit refresh, e.g. a key change). An empty
+// apiKey means the tenant has no own key: any existing service is stopped and the
+// tenant transparently falls back to the global cache.
+//
+// Fetch policy for the launched one-shot: a fetch runs when the inputs changed
+// (a prior handle existed) or force is set; a brand-new tenant with persisted data
+// only hydrates (fetch only when the hydrated cache is still empty). This is what
+// makes a redeploy a hydrate rather than a fetch storm (ADR 0018).
+func (reg *Registry) Start(tenantID int64, apiKey string, bbox BoundingBox, force bool) {
 	if apiKey == "" {
 		reg.Stop(tenantID) // nothing to fetch with; fall back to global
 		return
 	}
 
 	reg.mu.Lock()
-	if h, ok := reg.services[tenantID]; ok {
-		if h.apiKey == apiKey && h.bbox == bbox {
-			reg.mu.Unlock()
-			return // unchanged — idempotent no-op
-		}
-		// Inputs changed: stop the old loop, then start a fresh one below.
+	prior, had := reg.services[tenantID]
+	if had && prior.apiKey == apiKey && prior.bbox == bbox && !force {
+		reg.mu.Unlock()
+		return // unchanged and not forced — idempotent no-op
+	}
+	if had {
+		// Inputs changed (or forced): stop the old one-shot, then start fresh.
 		delete(reg.services, tenantID)
 		reg.mu.Unlock()
-		h.cancel()
-		<-h.done
+		prior.cancel()
+		<-prior.done
 		reg.mu.Lock()
 	}
 
-	svc := NewService(reg.factory(apiKey), Config{Enabled: true, BBox: bbox, Refresh: reg.refresh}, reg.logger)
+	tid := tenantID
+	svc := NewService(reg.factory(apiKey), Config{Enabled: true, BBox: bbox, Store: reg.store, TenantID: &tid}, reg.logger)
 	ctx, cancel := context.WithCancel(reg.base)
 	done := make(chan struct{})
 	reg.services[tenantID] = &serviceHandle{svc: svc, apiKey: apiKey, bbox: bbox, cancel: cancel, done: done}
+	needFetch := force || had // changed inputs or explicit refresh
 	reg.mu.Unlock()
 
 	go func() {
 		defer close(done)
-		svc.Run(ctx)
+		svc.Hydrate(ctx)
+		if needFetch || !svc.HasData() {
+			svc.RefreshNow(ctx)
+		}
 	}()
-	reg.logger.Info("tenant aeronautical service started", slog.Int64("tenant_id", tenantID))
+	reg.logger.Info("tenant aeronautical service configured", slog.Int64("tenant_id", tenantID), slog.Bool("fetch", needFetch))
 }
 
 // Stop cancels and removes the per-tenant Service for tenantID, waiting for its
