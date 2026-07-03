@@ -6,7 +6,7 @@ import (
 )
 
 func TestIsKnown(t *testing.T) {
-	for _, k := range []Key{STCA, MultiFeed, PremiumLayers, Airspaces, RangeRings, HistoryDots, VorNdb, Waypoints} {
+	for _, k := range []Key{STCA, MultiFeed, PremiumLayers, Airspaces, RangeRings, HistoryDots, VorNdb, Waypoints, WeatherRadar} {
 		if !IsKnown(k) {
 			t.Errorf("IsKnown(%q) = false, want true", k)
 		}
@@ -20,8 +20,8 @@ func TestIsKnown(t *testing.T) {
 
 func TestAllSortedAndComplete(t *testing.T) {
 	all := All()
-	if len(all) != 8 {
-		t.Fatalf("All() len = %d, want 8", len(all))
+	if len(all) != 9 {
+		t.Fatalf("All() len = %d, want 9", len(all))
 	}
 	if !sort.SliceIsSorted(all, func(i, j int) bool { return all[i] < all[j] }) {
 		t.Errorf("All() not sorted: %v", all)
@@ -30,7 +30,7 @@ func TestAllSortedAndComplete(t *testing.T) {
 	for _, k := range all {
 		seen[k] = true
 	}
-	for _, want := range []Key{STCA, MultiFeed, PremiumLayers, Airspaces, RangeRings, HistoryDots, VorNdb, Waypoints} {
+	for _, want := range []Key{STCA, MultiFeed, PremiumLayers, Airspaces, RangeRings, HistoryDots, VorNdb, Waypoints, WeatherRadar} {
 		if !seen[want] {
 			t.Errorf("All() missing %q", want)
 		}

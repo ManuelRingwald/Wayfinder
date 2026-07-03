@@ -38,6 +38,7 @@ import (
 	"github.com/manuelringwald/wayfinder/pkg/secret"
 	"github.com/manuelringwald/wayfinder/pkg/store"
 	"github.com/manuelringwald/wayfinder/pkg/tenant"
+	"github.com/manuelringwald/wayfinder/pkg/weathertiles"
 	"github.com/manuelringwald/wayfinder/pkg/ws"
 )
 
@@ -98,6 +99,20 @@ func main() {
 		},
 		logger,
 	)
+
+	// Weather-radar overlay (WX-A, ADR 0016): best-effort DWD GeoServer WMS tile
+	// proxy. Enabled only when a WMS URL is configured; otherwise it serves
+	// transparent tiles. Like the aeronautical layers it never touches the track
+	// path or readiness. No background loop — tiles are fetched on demand and
+	// cached for the refresh window.
+	weatherRadar := weathertiles.NewService(
+		weathertiles.NewClient(&http.Client{Timeout: 15 * time.Second}, cfg.DWDWMSURL, cfg.DWDRadarLayer),
+		weathertiles.Config{Enabled: cfg.DWDWMSURL != "", TTL: cfg.DWDRefresh},
+		logger,
+	)
+	if cfg.DWDWMSURL == "" {
+		logger.Warn("weather radar overlay disabled (no WAYFINDER_DWD_WMS_URL); map will show no DWD radar")
+	}
 
 	// broadcastFeedSnapshot pushes the per-feed health snapshot to clients
 	// subscribed to that feed (Option B, WF-3). Color is derived from the
@@ -324,7 +339,7 @@ func main() {
 	// OpenAIP fetch counters (ONB-6): sum across every per-tenant Service plus the
 	// global one so the process-wide counter stays meaningful as tenants come and go.
 	aeroCounts := func() (int64, int64) { return aeroRegistry.FetchSuccessCount(), aeroRegistry.FetchFailureCount() }
-	go startProbeServer(logger, &blockCount, &trackCount, &tracksCurrent, &heartbeatCount, broadcaster, decodeErrors, feedRegistry, aeroService, aeroCounts, &lastError, featSvc, sessionRepo)
+	go startProbeServer(logger, &blockCount, &trackCount, &tracksCurrent, &heartbeatCount, broadcaster, decodeErrors, feedRegistry, aeroService, aeroCounts, weatherRadar, &lastError, featSvc, sessionRepo)
 
 	// Start WebSocket server.
 	mux := http.NewServeMux()
@@ -373,6 +388,14 @@ func main() {
 	// browser on demand. An empty FeatureCollection is returned when no sensors
 	// are configured so the frontend can always fetch unconditionally.
 	mux.HandleFunc("/api/coverage/rings", coverageRingsHandler(cfg))
+
+	// Weather-radar tile proxy (WX-A, ADR 0016): MapLibre requests XYZ tiles from
+	// Wayfinder; the backend translates each into a DWD WMS GetMap. Behind the
+	// tenant middleware so only authenticated principals reach our egress (like
+	// the aeronautical endpoints); the overlay itself is gated per tenant in the
+	// UI via the weather_radar entitlement. A disabled/unreachable source serves
+	// transparent tiles, never an error.
+	mux.Handle("GET /api/weather/radar/{z}/{x}/{y}", tenantMW(weatherRadar.TileHandler()))
 
 	// Builtin-mode login/logout (WF2-12.3): only when the auth mode is builtin
 	// (proxy mints no local sessions). These routes are intentionally
@@ -552,6 +575,13 @@ type Config struct {
 	OpenAIPRefresh  time.Duration // WAYFINDER_OPENAIP_REFRESH (Go duration, default 24h)
 	OpenAIPRadiusKM float64       // WAYFINDER_OPENAIP_RADIUS_KM (default 250)
 
+	// DWD weather-radar overlay (WX-A, ADR 0016): best-effort DWD GeoServer WMS
+	// tile proxy. The feature is enabled only when a WMS URL is configured;
+	// otherwise the map shows no radar overlay (feature still off, ADR 0016).
+	DWDWMSURL     string        // WAYFINDER_DWD_WMS_URL (DWD GeoServer WMS base, e.g. https://maps.dwd.de/geoserver/dwd/wms)
+	DWDRadarLayer string        // WAYFINDER_DWD_RADAR_LAYER (default dwd:Niederschlagsradar)
+	DWDRefresh    time.Duration // WAYFINDER_DWD_REFRESH (radar tile cache TTL, default 5m)
+
 	// SecretKey is the deployment-managed AES-256 key (32 bytes, base64) that seals
 	// per-feed source credentials at rest (ORCH-2c, ADR 0012 §6). Unset disables the
 	// write-only secret admin routes (they return 503); the same key is configured
@@ -726,6 +756,8 @@ func loadConfig() Config {
 		FeedStaleTimeout: 3 * time.Second,
 		OpenAIPRefresh:   24 * time.Hour,
 		OpenAIPRadiusKM:  250,
+		DWDRadarLayer:    "dwd:Niederschlagsradar",
+		DWDRefresh:       5 * time.Minute,
 		ImpersonationTTL: 30 * time.Minute,
 	}
 
@@ -835,6 +867,18 @@ func loadConfig() Config {
 	if v := os.Getenv("WAYFINDER_OPENAIP_RADIUS_KM"); v != "" {
 		if km, err := strconv.ParseFloat(v, 64); err == nil && km > 0 {
 			cfg.OpenAIPRadiusKM = km
+		}
+	}
+
+	// DWD weather-radar overlay (WX-A, ADR 0016). Feature enabled only when the
+	// WMS URL is set; layer/refresh keep their defaults when unset/invalid.
+	cfg.DWDWMSURL = os.Getenv("WAYFINDER_DWD_WMS_URL")
+	if v := strings.TrimSpace(os.Getenv("WAYFINDER_DWD_RADAR_LAYER")); v != "" {
+		cfg.DWDRadarLayer = v
+	}
+	if v := os.Getenv("WAYFINDER_DWD_REFRESH"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			cfg.DWDRefresh = d
 		}
 	}
 
@@ -1220,6 +1264,9 @@ func mapConfigHandler(cfg Config) http.HandlerFunc {
 			"theme":                 theme,
 			"coverage_ring_color":   cfg.CoverageRingColor,
 			"coverage_sensor_count": len(cfg.CoverageSensors),
+			// WX-A: whether the DWD radar tile proxy is configured, so the frontend
+			// can disable a switch that would otherwise do nothing.
+			"weather_radar_available": cfg.DWDWMSURL != "",
 		})
 	}
 }
@@ -1243,7 +1290,7 @@ func coverageRingsHandler(cfg Config) http.HandlerFunc {
 }
 
 // startProbeServer starts an HTTP server for health, readiness and metrics.
-func startProbeServer(logger *slog.Logger, blockCount, trackCount, tracksCurrent, heartbeatCount *atomic.Int64, broadcaster *broadcast.Broadcaster, decodeErrors func() int64, feedRegistry *health.Registry, aeroService *aeronautical.Service, aeroCounts func() (success, failure int64), lastError *atomic.Pointer[string], featSvc *feature.Service, sessionRepo *store.SessionRepo) {
+func startProbeServer(logger *slog.Logger, blockCount, trackCount, tracksCurrent, heartbeatCount *atomic.Int64, broadcaster *broadcast.Broadcaster, decodeErrors func() int64, feedRegistry *health.Registry, aeroService *aeronautical.Service, aeroCounts func() (success, failure int64), weatherRadar *weathertiles.Service, lastError *atomic.Pointer[string], featSvc *feature.Service, sessionRepo *store.SessionRepo) {
 	mux := http.NewServeMux()
 
 	// /health — liveness check (always ready unless startup failed).
@@ -1297,6 +1344,16 @@ func startProbeServer(logger *slog.Logger, blockCount, trackCount, tracksCurrent
 			metrics.Counter("wayfinder_openaip_fetch_success_total", "Total successful OpenAIP fetches (per kind), summed across the global and all per-tenant caches.", aeroSuccess),
 			metrics.Counter("wayfinder_openaip_fetch_failures_total", "Total failed OpenAIP fetches (per kind), summed across the global and all per-tenant caches.", aeroFailure),
 			metrics.Gauge("wayfinder_openaip_cache_age_seconds", "Seconds since the last successful OpenAIP fetch of the global fallback cache, or -1 if never.", aeroService.CacheAgeSeconds(time.Now())),
+		}
+		// Weather feed metrics (WX-A, ADR 0016), source-labelled so the QNH/warnings
+		// features (WX-B/C) can add their own series under the same names.
+		if weatherRadar != nil {
+			radar := metrics.Label{Name: "source", Value: "dwd_radar"}
+			mset = append(mset,
+				metrics.Counter("wayfinder_weather_fetch_success_total", "Total successful weather-source fetches, by source.", weatherRadar.FetchSuccessCount()).With(radar),
+				metrics.Counter("wayfinder_weather_fetch_failures_total", "Total failed weather-source fetches, by source.", weatherRadar.FetchFailureCount()).With(radar),
+				metrics.Gauge("wayfinder_weather_cache_age_seconds", "Seconds since the last successful weather-source fetch, or -1 if never, by source.", weatherRadar.CacheAgeSeconds(time.Now())).With(radar),
+			)
 		}
 		// Active-session gauge (AP7): a live count from the registry at scrape time,
 		// under a short timeout so a slow database cannot wedge the scrape. Skipped

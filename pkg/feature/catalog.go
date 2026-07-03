@@ -27,6 +27,8 @@ const (
 	VorNdb Key = "vor_ndb"
 	// Waypoints — waypoint overlay display (ASD-003).
 	Waypoints Key = "waypoints"
+	// WeatherRadar — DWD weather-radar map overlay display (WX-A, ADR 0016).
+	WeatherRadar Key = "weather_radar"
 )
 
 // catalog is the closed set of known feature keys with human-readable
@@ -42,6 +44,7 @@ var catalog = map[Key]string{
 	HistoryDots:   "Track history dots display (ASD-004a)",
 	VorNdb:        "VOR/NDB navaid overlay display (ASD-003)",
 	Waypoints:     "Waypoint overlay display (ASD-003)",
+	WeatherRadar:  "DWD weather-radar map overlay (WX-A, ADR 0016)",
 }
 
 // IsKnown reports whether key is part of the feature catalog.
