@@ -475,6 +475,67 @@ describe('admin store — OpenAIP per tenant (ONB-6)', () => {
     expect(r.ok).toBe(false)
     expect(s.error).toMatch(/too long/)
   })
+
+  it('loadTenantOpenAIP surfaces the AERO-1 cache freshness fields', async () => {
+    installFetch({
+      'GET /api/admin/tenants/5/openaip': {
+        status: 200,
+        body: { configured: false, fetched_at: '2026-07-03T10:00:00Z', feature_count: 12 },
+      },
+    })
+    const s = useAdminStore()
+    const r = await s.loadTenantOpenAIP(5)
+    expect(r.data.fetched_at).toBe('2026-07-03T10:00:00Z')
+    expect(r.data.feature_count).toBe(12)
+  })
+
+  it('refreshTenantOpenAIP POSTs the per-tenant refresh', async () => {
+    const calls = installFetch({ 'POST /api/admin/tenants/5/openaip/refresh': { status: 202 } })
+    const s = useAdminStore()
+    const r = await s.refreshTenantOpenAIP(5)
+    expect(r.ok).toBe(true)
+    expect(calls[0].method).toBe('POST')
+    expect(calls[0].url).toBe('/api/admin/tenants/5/openaip/refresh')
+    expect(s.notice).toMatch(/angestoßen/)
+  })
+})
+
+describe('admin store — global OpenAIP + fetch-all (AERO-2)', () => {
+  it('loadGlobalOpenAIP reports configured + encryption availability', async () => {
+    installFetch({
+      'GET /api/admin/openaip': { status: 200, body: { configured: true, encryption_available: true } },
+    })
+    const s = useAdminStore()
+    const r = await s.loadGlobalOpenAIP()
+    expect(r.data).toEqual({ configured: true, encryption_available: true })
+  })
+
+  it('setGlobalOpenAIPKey PUTs the sealed key', async () => {
+    const calls = installFetch({ 'PUT /api/admin/openaip': { status: 204 } })
+    const s = useAdminStore()
+    const r = await s.setGlobalOpenAIPKey('glob-key')
+    expect(r.ok).toBe(true)
+    expect(calls[0].url).toBe('/api/admin/openaip')
+    expect(JSON.parse(calls[0].body)).toEqual({ api_key: 'glob-key' })
+    expect(s.notice).toMatch(/gespeichert/)
+  })
+
+  it('setGlobalOpenAIPKey surfaces the 503 when encryption is unavailable', async () => {
+    installFetch({ 'PUT /api/admin/openaip': { status: 503, body: { error: 'encryption unavailable' } } })
+    const s = useAdminStore()
+    const r = await s.setGlobalOpenAIPKey('glob-key')
+    expect(r.ok).toBe(false)
+    expect(s.error).toMatch(/encryption unavailable/)
+  })
+
+  it('refreshAllOpenAIP POSTs the fetch-all', async () => {
+    const calls = installFetch({ 'POST /api/admin/openaip/refresh': { status: 202 } })
+    const s = useAdminStore()
+    const r = await s.refreshAllOpenAIP()
+    expect(r.ok).toBe(true)
+    expect(calls[0].url).toBe('/api/admin/openaip/refresh')
+    expect(s.notice).toMatch(/alle Mandanten/)
+  })
 })
 
 describe('admin store — platform-admin management (ONB-3)', () => {

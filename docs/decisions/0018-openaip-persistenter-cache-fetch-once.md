@@ -77,3 +77,15 @@ AERO-3.
 - **ADR 0017** — Connected-by-default / Informations-Plattform (die Prämisse, aus
   der „statisch halten, bewusst aktualisieren" folgt).
 - **ONB-6** — per-Mandant-Fetch mit eigenem Schlüssel + globalem Fallback.
+
+## Nachtrag (AERO-2, 2026-07-03)
+
+AERO-2 ist umgesetzt: der **globale** Schlüssel ist nun zur Laufzeit über die
+Platform-Admin-UI setzbar, **verschlüsselt** in `platform_settings`
+(`00018`, AES-256-GCM). **Verschlüsselungs-Entscheidung — Option A (strikt):** ohne
+`WAYFINDER_SECRET_KEY` ist die UI-Set-Route deaktiviert (`503`); es wird **nie** ein
+Klartext-Geheimnis gespeichert, konsistent mit den Feed-Credentials (ORCH-2c). Die
+Env `WAYFINDER_OPENAIP_API_KEY` bleibt der schlüssellose Fallback; ein UI-Schlüssel
+gewinnt und greift sofort. Zusätzlich **Fetch-all** (beim Setzen und per Button) und
+ein **Per-Mandant-Refresh**. Nicht abgedeckt: die per-Mandant-Schlüssel bleiben
+Klartext (mögliche Folgearbeit); der **AIRAC-Kalender + Change-Impact** ist AERO-3.

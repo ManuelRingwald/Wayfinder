@@ -367,6 +367,47 @@ export const useAdminStore = defineStore('admin', () => {
     return r
   }
 
+  // --- OpenAIP: refresh + global key (AERO-2, ADR 0018) ---------------------
+  // Force a fresh fetch for one tenant (per-tenant "refresh now" button).
+  async function refreshTenantOpenAIP(tenantId) {
+    error.value = null
+    notice.value = null
+    const r = await apiFetch(`/api/admin/tenants/${tenantId}/openaip/refresh`, { method: 'POST' })
+    if (r.ok) notice.value = 'OpenAIP-Aktualisierung angestoßen.'
+    else error.value = r.error
+    return r
+  }
+
+  // The platform-wide (global fallback) OpenAIP key. loadGlobalOpenAIP reports only
+  // whether a key is stored and whether encryption is available (never the key).
+  async function loadGlobalOpenAIP() {
+    return apiFetch('/api/admin/openaip')
+  }
+
+  // setGlobalOpenAIPKey sets (string) or clears (null) the global key; the server
+  // seals it and triggers a fetch-all. Returns the raw result (503 when no cipher).
+  async function setGlobalOpenAIPKey(apiKey) {
+    error.value = null
+    notice.value = null
+    const r = await apiFetch('/api/admin/openaip', {
+      method: 'PUT',
+      body: JSON.stringify({ api_key: apiKey }),
+    })
+    if (r.ok) notice.value = apiKey ? 'Globaler OpenAIP-Schlüssel gespeichert.' : 'Globaler OpenAIP-Schlüssel entfernt.'
+    else error.value = r.error
+    return r
+  }
+
+  // Force a fresh fetch for every tenant ("refresh all" button).
+  async function refreshAllOpenAIP() {
+    error.value = null
+    notice.value = null
+    const r = await apiFetch('/api/admin/openaip/refresh', { method: 'POST' })
+    if (r.ok) notice.value = 'OpenAIP-Aktualisierung für alle Mandanten angestoßen.'
+    else error.value = r.error
+    return r
+  }
+
   // --- access management (AP6) ----------------------------------------------
   // Per-tenant access accounts (role user). The server enforces every boundary
   // (requireAdmin → 403); the UI gating is convenience only.
@@ -562,6 +603,7 @@ export const useAdminStore = defineStore('admin', () => {
     loadFeedSources, saveFeedSources,
     loadFeedSecrets, setFeedSecret, deleteFeedSecret,
     loadTenantOpenAIP, setTenantOpenAIPKey,
+    refreshTenantOpenAIP, loadGlobalOpenAIP, setGlobalOpenAIPKey, refreshAllOpenAIP,
     changeOwnPassword, deleteOwnAccount,
     loadAdmins, createAdmin, setAdminStatus, deleteAdmin, setAdminPassword,
     clearBanners,

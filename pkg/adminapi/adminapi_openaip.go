@@ -112,3 +112,88 @@ func (h *Handler) setTenantOpenAIP(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
+
+// refreshTenantOpenAIP forces a fresh OpenAIP fetch for one tenant (AERO-2, ADR
+// 0018) — the per-tenant "refresh now" button (e.g. an AIRAC update). The fetch runs
+// asynchronously in the registry; the route returns 202 once it is queued.
+func (h *Handler) refreshTenantOpenAIP(w http.ResponseWriter, r *http.Request) {
+	tid, err := pathInt(r, "tenantID")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid tenant id")
+		return
+	}
+	if !h.tenantExists(w, r, tid) {
+		return
+	}
+	h.triggerAeroRefresh(r.Context(), tid)
+	w.WriteHeader(http.StatusAccepted)
+}
+
+// globalOpenAIPStatusDTO reports whether a UI-set global key is stored and whether
+// encryption is available (WAYFINDER_SECRET_KEY). The key itself is never returned.
+type globalOpenAIPStatusDTO struct {
+	Configured          bool `json:"configured"`
+	EncryptionAvailable bool `json:"encryption_available"`
+}
+
+func (h *Handler) getGlobalOpenAIP(w http.ResponseWriter, r *http.Request) {
+	if h.globalAero == nil {
+		writeJSON(w, http.StatusOK, globalOpenAIPStatusDTO{})
+		return
+	}
+	configured, err := h.globalAero.Configured(r.Context())
+	if err != nil {
+		h.internalError(w, "get global openaip status", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, globalOpenAIPStatusDTO{
+		Configured:          configured,
+		EncryptionAvailable: h.globalAero.Available(),
+	})
+}
+
+// setGlobalOpenAIP sets or clears the platform-wide OpenAIP key. Setting requires a
+// configured cipher (503 without WAYFINDER_SECRET_KEY — Option A, no plaintext
+// secret at rest). A successful set (or clear) triggers a fetch-all so every tenant
+// picks up the new fallback immediately.
+func (h *Handler) setGlobalOpenAIP(w http.ResponseWriter, r *http.Request) {
+	if h.globalAero == nil {
+		writeError(w, http.StatusNotFound, "global openaip key management unavailable")
+		return
+	}
+	var body struct {
+		APIKey *string `json:"api_key"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	key := ""
+	if body.APIKey != nil {
+		key = strings.TrimSpace(*body.APIKey)
+	}
+	if len(key) > maxOpenAIPKeyLen {
+		writeError(w, http.StatusBadRequest, "api_key too long")
+		return
+	}
+	// Storing a (non-empty) key needs encryption; without it, fail closed rather than
+	// persist a plaintext secret. Clearing (empty key) is always allowed.
+	if key != "" && !h.globalAero.Available() {
+		writeError(w, http.StatusServiceUnavailable, "encryption unavailable: set WAYFINDER_SECRET_KEY to store a global OpenAIP key")
+		return
+	}
+	if err := h.globalAero.SetKey(r.Context(), key); err != nil {
+		h.internalError(w, "set global openaip key", err)
+		return
+	}
+	// The new (or cleared) global fallback must reach every tenant now.
+	h.triggerAeroRefreshAll(r.Context())
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// refreshAllOpenAIP forces a fresh OpenAIP fetch for every tenant (AERO-2) — the
+// "refresh all" button. Asynchronous in the registry; returns 202 once queued.
+func (h *Handler) refreshAllOpenAIP(w http.ResponseWriter, r *http.Request) {
+	h.triggerAeroRefreshAll(r.Context())
+	w.WriteHeader(http.StatusAccepted)
+}
