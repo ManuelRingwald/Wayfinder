@@ -776,10 +776,10 @@ Ohne `WAYFINDER_OPENAIP_API_KEY` ist das Feature aus (Warn-Log, kein Fehler).
 > Die Endpunkte `/api/airspace`, `/api/navaids`, `/api/waypoints` liefern damit im
 > Multi-Mandanten-Betrieb je Anmeldung die Daten des **eigenen** Mandanten.
 
-### 7.4 Wetter-Overlays (DWD, optional)
+### 7.4 Wetter-Overlays & QNH (DWD/NOAA, optional)
 
 Best-effort Wetter-Kontext aus offenen Quellen (ADR 0016). Der Track-Pfad
-(CAT062) ist davon unabhängig — ein Ausfall lässt nur das Overlay fehlen.
+(CAT062) ist davon unabhängig — ein Ausfall lässt nur das Overlay/QNH fehlen.
 
 **Wetter-Overlay (DWD-Radar, WX-A).** Ohne `WAYFINDER_DWD_WMS_URL` ist das
 Feature aus (Warn-Log, kein Fehler); der Kachel-Endpunkt liefert dann
@@ -792,15 +792,30 @@ transparente Kacheln. Zusätzlich braucht der Mandant das Feature-Entitlement
 | `WAYFINDER_DWD_RADAR_LAYER` | `dwd:Niederschlagsradar` | WMS-Layer-Name des Radar-/Niederschlagskomposits |
 | `WAYFINDER_DWD_REFRESH` | `5m` | Cache-Lebensdauer je Radar-Kachel (DWD-Radar aktualisiert ~5 min) |
 
-> **Ausgehender Netzzugang (Vertrauensgrenze, ADR 0016).** Wayfinder holt die
-> Radar-Kacheln **server-seitig** vom DWD und liefert sie same-origin an den
-> Browser (`/api/weather/radar/{z}/{x}/{y}.png`). Das **Deployment-Netz muss
-> daher ausgehend `maps.dwd.de` (HTTPS/443) erreichen dürfen.** Der Abruf ist
-> best-effort und misstrauisch (Timeout, Größenlimit, kein Absturz auf
-> Fehldaten) und blockiert nie `/ready`.
+**QNH-Infobox (NOAA-METAR, WX-B).** Zeigt das aktuelle QNH (Höhenmesser-
+Einstellung, hPa) des/der konfigurierten Flugplätze in der Kopfzeile. Ohne
+`WAYFINDER_METAR_STATIONS` ist das Feature aus. Zusätzlich braucht der Mandant das
+Entitlement `qnh`. **Wichtig:** QNH kommt **nur aus echtem METAR** (NOAA-Feld
+`altim`), **nicht** aus DWD-Druckdaten (PMSL/MOSMIX sind eine andere Größe).
+
+| Variable | Default | Beschreibung |
+|----------|---------|--------------|
+| `WAYFINDER_METAR_STATIONS` | *(leer)* | Kommaliste von ICAO-Flugplätzen in Prioritätsreihenfolge (z. B. `EDDF,EDDL`); der **erste** ist die Kopfzeilen-Anzeige. Leer = Feature aus |
+| `WAYFINDER_METAR_URL` | *(NOAA AWC)* | METAR-Daten-API (Default `https://aviationweather.gov/api/data/metar`) |
+| `WAYFINDER_METAR_USER_AGENT` | `Wayfinder-ASD/1.0` | Distinktiver User-Agent (leere/Default-UAs werden von der AWC gefiltert → 403) |
+| `WAYFINDER_QNH_REFRESH` | `15m` | METAR-Poll-Intervall (METAR ~30 min; unter dem AWC-Limit von ~100 req/min) |
+
+> **Ausgehender Netzzugang (Vertrauensgrenze, ADR 0016).** Wayfinder holt Radar
+> und QNH **server-seitig** und liefert sie same-origin an den Browser
+> (`/api/weather/radar/{z}/{x}/{y}.png`, `/api/weather/qnh`). Das **Deployment-Netz
+> muss daher ausgehend `maps.dwd.de` (Radar) bzw. `aviationweather.gov` (QNH),
+> jeweils HTTPS/443, erreichen dürfen.** Beide Abrufe sind best-effort und
+> misstrauisch (Timeout, Größenlimit, kein Absturz auf Fehldaten) und blockieren
+> nie `/ready`.
 >
-> **Lizenz/Attribution.** DWD-Daten sind frei unter GeoNutzV/CC BY 4.0; die
-> Attribution **„© Deutscher Wetterdienst"** wird im Karten-Overlay gesetzt.
+> **Lizenz/Attribution.** DWD-Daten sind frei unter GeoNutzV/CC BY 4.0
+> („© Deutscher Wetterdienst", im Karten-Overlay gesetzt); NOAA/NWS-METAR ist
+> US-Government Public Domain.
 
 ### 7.5 Sicherheit (Browser-Rand)
 
