@@ -103,6 +103,19 @@ Firefly
 überschreitet Puffer) werden verworfen, ohne den Prozess zu beenden.
 Es gibt keinen Panic auf Netzwerkeingaben.
 
+**Per-Feed-Isolation am Empfänger (sicherheitsrelevant).** Bei **mehreren Feeds**
+vergibt der Allocator **eine Multicast-Gruppe je Feed bei festem Port** (z. B.
+`239.255.0.7:8600`, `239.255.0.8:8600`; `pkg/store/feed_alloc.go`). `net.ListenMulticastUDP`
+bindet den Socket aber auf `0.0.0.0:<port>` (Wildcard) und tritt der Gruppe nur per
+**IGMP** bei — auf **einem Host** ist der Kernel dann Mitglied **aller** Gruppen auf
+diesem Port und liefert jedem wildcard-gebundenen Socket **alle** Gruppen. Ohne
+Gegenmaßnahme würde ein Feed-Empfänger die Tracks eines **anderen** Feeds mit seiner
+`feed_id` etikettieren (Cross-Tenant-Leck, NFR-SEC-003). Der Receiver aktiviert
+daher die Ziel-Adress-Control-Message (`golang.org/x/net/ipv4`, `FlagDst`) und
+**verwirft jedes Datagramm, dessen Ziel-Gruppe nicht die eigene ist** (`acceptsGroup`).
+Kann eine Plattform die Control-Message nicht liefern (kein `IP_PKTINFO`), wird
+geloggt und auf das frühere Verhalten zurückgefallen (kein Blindwerden des Feeds).
+
 ### 2.2 Ausgang: Track-Updates an den Browser
 
 ```

@@ -10,6 +10,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"golang.org/x/net/ipv4"
+
 	"github.com/manuelringwald/wayfinder/pkg/cat062"
 	"github.com/manuelringwald/wayfinder/pkg/cat063"
 	"github.com/manuelringwald/wayfinder/pkg/cat065"
@@ -18,10 +20,14 @@ import (
 // Receiver listens on a UDP-Multicast socket for CAT062 data blocks.
 // Each datagram = one complete CAT062 block (CAT + LEN + Records).
 type Receiver struct {
-	feedID              int64
-	group               net.IP
-	port                int
-	conn                *net.UDPConn
+	feedID int64
+	group  net.IP
+	port   int
+	conn   *net.UDPConn
+	// pc wraps conn to read the per-datagram destination address (control message),
+	// so a socket that is wildcard-bound (all groups on the port) can drop datagrams
+	// addressed to another feed's group — see Listen/Run and acceptsGroup.
+	pc                  *ipv4.PacketConn
 	logger              *slog.Logger
 	handler             func(feedID int64, tracks []cat062.DecodedTrack) error
 	statusHandler       func(status cat065.ServiceStatus) error
@@ -108,6 +114,16 @@ func (r *Receiver) countDecodeError() {
 
 // Listen opens the UDP-Multicast socket and joins the multicast group.
 // It does NOT start the receive loop; call Run() for that.
+//
+// Per-feed isolation (security-critical). `net.ListenMulticastUDP` binds the
+// socket to the wildcard address (0.0.0.0:port), not to the group — the group is
+// only joined at the IGMP layer. On a single host several feeds join DISTINCT
+// groups on the SAME port (the allocator varies the group, keeps the port; see
+// pkg/store/feed_alloc.go), so once the host is a member of both groups, EVERY
+// wildcard-bound socket on that port receives BOTH groups' datagrams — a receiver
+// would otherwise ingest another feed's tracks (cross-tenant leak). We therefore
+// enable the destination-address control message and drop, in Run(), any datagram
+// not addressed to this receiver's group (acceptsGroup).
 func (r *Receiver) Listen() error {
 	groupAddr := &net.UDPAddr{
 		Port: r.port,
@@ -120,10 +136,29 @@ func (r *Receiver) Listen() error {
 	}
 
 	r.conn = conn
+	r.pc = ipv4.NewPacketConn(conn)
+	// Ask the kernel to attach the datagram's destination address to each read.
+	// If the platform cannot (rare — Linux/macOS/BSD support IP_PKTINFO), we log
+	// and continue: acceptsGroup then treats a missing destination as "accept",
+	// falling back to the prior behaviour rather than blinding the feed.
+	if err := r.pc.SetControlMessage(ipv4.FlagDst, true); err != nil {
+		r.logger.Warn("per-group datagram filtering unavailable; feeds sharing a port may cross-deliver",
+			slog.String("group", r.group.String()), slog.String("error", err.Error()))
+	}
 	r.logger.Info("listening on multicast",
 		slog.String("group", r.group.String()),
 		slog.Int("port", r.port))
 	return nil
+}
+
+// acceptsGroup reports whether a datagram whose IPv4 destination address is dst
+// belongs to this receiver's feed group. It is the per-feed isolation guard: the
+// wildcard-bound socket may receive other feeds' groups on the shared port, and
+// each receiver must accept ONLY its own group's datagrams. A nil dst (control
+// message unavailable) is accepted — we cannot prove it foreign, and dropping it
+// would blind the feed on a platform without IP_PKTINFO.
+func (r *Receiver) acceptsGroup(dst net.IP) bool {
+	return dst == nil || dst.Equal(r.group)
 }
 
 // Run starts the receive loop. It blocks until context is cancelled or an error occurs.
@@ -150,9 +185,9 @@ func (r *Receiver) Run(ctx context.Context) error {
 	go func() {
 		select {
 		case <-ctx.Done():
-			// A deadline in the past makes the current/next ReadFromUDP return at
-			// once with os.ErrDeadlineExceeded; the loop then observes ctx.Done().
-			_ = r.conn.SetReadDeadline(time.Now())
+			// A deadline in the past makes the current/next read return at once
+			// with os.ErrDeadlineExceeded; the loop then observes ctx.Done().
+			_ = r.pc.SetReadDeadline(time.Now())
 		case <-stopWatch:
 		}
 	}()
@@ -166,7 +201,10 @@ func (r *Receiver) Run(ctx context.Context) error {
 		default:
 		}
 
-		n, remoteAddr, err := r.conn.ReadFromUDP(buffer)
+		// Read via the ipv4.PacketConn so the control message carries the datagram's
+		// destination group (see Listen): a wildcard-bound socket receives every
+		// group joined on this port, and we must keep only our own feed's group.
+		n, cm, src, err := r.pc.ReadFrom(buffer)
 		if err != nil {
 			// A read interrupted by the cancellation watchdog (deadline exceeded)
 			// is a clean stop, not a feed error — report the context cause.
@@ -177,7 +215,7 @@ func (r *Receiver) Run(ctx context.Context) error {
 				// Defensive: a deadline fired without cancellation (should not
 				// happen, as we only ever set it from the watchdog). Clear it and
 				// continue rather than treating it as a fatal feed error.
-				_ = r.conn.SetReadDeadline(time.Time{})
+				_ = r.pc.SetReadDeadline(time.Time{})
 				continue
 			}
 			return fmt.Errorf("read multicast: %w", err)
@@ -185,6 +223,16 @@ func (r *Receiver) Run(ctx context.Context) error {
 		if n == 0 {
 			continue
 		}
+		// Drop datagrams addressed to another feed's group that reached this
+		// wildcard-bound socket on the shared port (feed isolation).
+		var dst net.IP
+		if cm != nil {
+			dst = cm.Dst
+		}
+		if !r.acceptsGroup(dst) {
+			continue
+		}
+		remoteAddr, _ := src.(*net.UDPAddr)
 		r.dispatch(buffer[:n], remoteAddr)
 	}
 }
