@@ -69,4 +69,14 @@ describe('validateView (parity with server pkg/adminapi.validateView)', () => {
   it('rejects an over-long ICAO label', () => {
     expect(validateView({ ...valid(), icao: 'ABCDEFGHIJKLM' })).toContain('icao label too long')
   })
+
+  it('accepts a well-formed QNH aerodrome (4-letter ICAO)', () => {
+    expect(validateView({ ...valid(), qnh_icao: 'EDDH' })).toEqual([])
+    expect(validateView({ ...valid(), qnh_icao: 'eddh' })).toEqual([]) // case-insensitive
+    expect(validateView({ ...valid(), qnh_icao: '' })).toEqual([]) // empty = unset
+  })
+
+  it.each(['EDD', 'EDDHX', 'ED-H', 'ED H'])('rejects a malformed QNH aerodrome %s', (code) => {
+    expect(validateView({ ...valid(), qnh_icao: code })).toContain('qnh_icao must be a 4-letter ICAO code')
+  })
 })

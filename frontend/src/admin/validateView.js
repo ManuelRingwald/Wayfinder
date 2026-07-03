@@ -41,5 +41,14 @@ export function validateView(d) {
     errors.push('icao label too long')
   }
 
+  // qnh_icao is the optional aerodrome (real 4-letter ICAO) whose QNH the header
+  // infobox shows; mirror the server's format check (validICAOCode). Empty = unset.
+  if (d.qnh_icao != null) {
+    const t = String(d.qnh_icao).trim()
+    if (t !== '' && !/^[A-Za-z0-9]{4}$/.test(t)) {
+      errors.push('qnh_icao must be a 4-letter ICAO code')
+    }
+  }
+
   return errors
 }

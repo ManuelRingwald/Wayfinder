@@ -1,6 +1,13 @@
 # WX-B — QNH-Infobox (NOAA-METAR)
 
 > Häppchen B der Wetter-Erweiterung. Baut auf WX-0 (ADR 0016) und WX-A auf.
+>
+> **Nachtrag (CBD-3, ADR 0017):** Das hier beschriebene globale Env-Opt-in
+> (`WAYFINDER_METAR_STATIONS`, „ohne Stationen aus") ist überholt. Die NOAA-Quelle
+> ist jetzt **default-an** (`WAYFINDER_QNH_ENABLED`), der Flugplatz wird **pro
+> Mandant** gesetzt (`view_configs.qnh_icao`), `/api/weather/qnh` ist tenant-scoped;
+> `WAYFINDER_METAR_STATIONS` ist nur noch deprecated Fallback. Siehe
+> `CBD-3_QNH_per_tenant.md`.
 
 ## Fachlich
 

@@ -34,11 +34,16 @@ type ViewConfig struct {
 	// ICAO is an optional per-tenant location indicator shown in the ASD header
 	// (e.g. "EDGG" / "EDGG·KTG"). nil = unset (the header omits it). It is display
 	// config, not track data — CAT062 carries no sector identity.
-	ICAO      *string
+	ICAO *string
+	// QNHICAO is the optional per-tenant aerodrome ICAO whose QNH (altimeter
+	// setting, hPa) is shown in the header infobox (CBD-3, ADR 0016). Unlike ICAO
+	// this is a REAL location indicator (e.g. "EDDH") fed to the NOAA/AWC METAR
+	// poller — not a free-form label. nil = unset (no QNH for this tenant).
+	QNHICAO   *string
 	UpdatedAt time.Time
 }
 
-const viewConfigColumns = `id, tenant_id, user_id, center_lat, center_lon, zoom, aoi, fl_min, fl_max, layers, icao, updated_at`
+const viewConfigColumns = `id, tenant_id, user_id, center_lat, center_lon, zoom, aoi, fl_min, fl_max, layers, icao, qnh_icao, updated_at`
 
 // ViewConfigRepo provides access to the view_configs table.
 type ViewConfigRepo struct {
@@ -56,14 +61,15 @@ func (r *ViewConfigRepo) UpsertTenantDefault(ctx context.Context, tenantID int64
 	if err != nil {
 		return ViewConfig{}, wrap("upsert tenant view: marshal", err)
 	}
-	const q = `INSERT INTO view_configs (tenant_id, user_id, center_lat, center_lon, zoom, aoi, fl_min, fl_max, layers, icao)
-		VALUES ($1, NULL, $2, $3, $4, $5::jsonb, $6, $7, $8::jsonb, $9)
+	const q = `INSERT INTO view_configs (tenant_id, user_id, center_lat, center_lon, zoom, aoi, fl_min, fl_max, layers, icao, qnh_icao)
+		VALUES ($1, NULL, $2, $3, $4, $5::jsonb, $6, $7, $8::jsonb, $9, $10)
 		ON CONFLICT (tenant_id) WHERE user_id IS NULL
 		DO UPDATE SET center_lat = EXCLUDED.center_lat, center_lon = EXCLUDED.center_lon,
 			zoom = EXCLUDED.zoom, aoi = EXCLUDED.aoi, fl_min = EXCLUDED.fl_min,
-			fl_max = EXCLUDED.fl_max, layers = EXCLUDED.layers, icao = EXCLUDED.icao, updated_at = now()
+			fl_max = EXCLUDED.fl_max, layers = EXCLUDED.layers, icao = EXCLUDED.icao,
+			qnh_icao = EXCLUDED.qnh_icao, updated_at = now()
 		RETURNING ` + viewConfigColumns
-	out, err := scanViewConfig(r.db.QueryRow(ctx, q, tenantID, vc.CenterLat, vc.CenterLon, vc.Zoom, aoi, vc.FLMin, vc.FLMax, layers, vc.ICAO))
+	out, err := scanViewConfig(r.db.QueryRow(ctx, q, tenantID, vc.CenterLat, vc.CenterLon, vc.Zoom, aoi, vc.FLMin, vc.FLMax, layers, vc.ICAO, vc.QNHICAO))
 	if err != nil {
 		return ViewConfig{}, wrap("upsert tenant view", err)
 	}
@@ -77,14 +83,15 @@ func (r *ViewConfigRepo) UpsertUserOverride(ctx context.Context, tenantID, userI
 	if err != nil {
 		return ViewConfig{}, wrap("upsert user view: marshal", err)
 	}
-	const q = `INSERT INTO view_configs (tenant_id, user_id, center_lat, center_lon, zoom, aoi, fl_min, fl_max, layers, icao)
-		VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9::jsonb, $10)
+	const q = `INSERT INTO view_configs (tenant_id, user_id, center_lat, center_lon, zoom, aoi, fl_min, fl_max, layers, icao, qnh_icao)
+		VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9::jsonb, $10, $11)
 		ON CONFLICT (user_id) WHERE user_id IS NOT NULL
 		DO UPDATE SET center_lat = EXCLUDED.center_lat, center_lon = EXCLUDED.center_lon,
 			zoom = EXCLUDED.zoom, aoi = EXCLUDED.aoi, fl_min = EXCLUDED.fl_min,
-			fl_max = EXCLUDED.fl_max, layers = EXCLUDED.layers, icao = EXCLUDED.icao, updated_at = now()
+			fl_max = EXCLUDED.fl_max, layers = EXCLUDED.layers, icao = EXCLUDED.icao,
+			qnh_icao = EXCLUDED.qnh_icao, updated_at = now()
 		RETURNING ` + viewConfigColumns
-	out, err := scanViewConfig(r.db.QueryRow(ctx, q, tenantID, userID, vc.CenterLat, vc.CenterLon, vc.Zoom, aoi, vc.FLMin, vc.FLMax, layers, vc.ICAO))
+	out, err := scanViewConfig(r.db.QueryRow(ctx, q, tenantID, userID, vc.CenterLat, vc.CenterLon, vc.Zoom, aoi, vc.FLMin, vc.FLMax, layers, vc.ICAO, vc.QNHICAO))
 	if err != nil {
 		return ViewConfig{}, wrap("upsert user view", err)
 	}
@@ -124,6 +131,32 @@ func (r *ViewConfigRepo) GetEffective(ctx context.Context, tenantID, userID int6
 	return r.GetTenantDefault(ctx, tenantID)
 }
 
+// DistinctQNHICAOs returns the set of aerodrome ICAOs configured across all view
+// configs (tenant defaults and user overrides), de-duplicated, skipping NULL/empty
+// (CBD-3). It is the poll set for the global QNH service: the union of every
+// tenant's header aerodrome, so one background poller keeps all of them warm. The
+// caller normalises casing; the poll set is small (one airport per tenant).
+func (r *ViewConfigRepo) DistinctQNHICAOs(ctx context.Context) ([]string, error) {
+	const q = `SELECT DISTINCT qnh_icao FROM view_configs WHERE qnh_icao IS NOT NULL AND qnh_icao <> ''`
+	rows, err := r.db.Query(ctx, q)
+	if err != nil {
+		return nil, wrap("list qnh icaos", err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err != nil {
+			return nil, wrap("scan qnh icao", err)
+		}
+		out = append(out, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, wrap("iterate qnh icaos", err)
+	}
+	return out, nil
+}
+
 // viewJSONParams prepares the jsonb parameters: aoi is nil (SQL NULL) when there
 // is no area of interest, else its JSON; layers is always a JSON object ("{}"
 // when empty/nil).
@@ -151,7 +184,7 @@ func scanViewConfig(row rowScanner) (ViewConfig, error) {
 		layers []byte
 	)
 	if err := row.Scan(&vc.ID, &vc.TenantID, &vc.UserID, &vc.CenterLat, &vc.CenterLon, &vc.Zoom,
-		&aoi, &vc.FLMin, &vc.FLMax, &layers, &vc.ICAO, &vc.UpdatedAt); err != nil {
+		&aoi, &vc.FLMin, &vc.FLMax, &layers, &vc.ICAO, &vc.QNHICAO, &vc.UpdatedAt); err != nil {
 		return ViewConfig{}, err
 	}
 	if err := fromJSONB(aoi, &vc.AOI); err != nil {

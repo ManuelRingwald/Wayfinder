@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -204,11 +205,13 @@ func TestRefreshFailureKeepsLastGood(t *testing.T) {
 	}
 }
 
-func TestDisabledServiceServesEmpty(t *testing.T) {
+func TestEnabledSourceWithNoStationsServesEmpty(t *testing.T) {
+	// CBD-3: enabled reflects only the NOAA source. On, but with nothing configured,
+	// the endpoint serves an empty list rather than being "disabled".
 	svc := NewService(NewClient(http.DefaultClient, "u", "ua"),
 		Config{Enabled: true, Stations: nil}, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	if svc.enabled {
-		t.Error("service with no stations must be disabled")
+	if !svc.enabled {
+		t.Error("an enabled source must stay enabled even without stations")
 	}
 	rec := httptest.NewRecorder()
 	svc.Handler()(rec, httptest.NewRequest(http.MethodGet, "/api/weather/qnh", nil))
@@ -217,8 +220,99 @@ func TestDisabledServiceServesEmpty(t *testing.T) {
 		t.Fatalf("decode: %v", err)
 	}
 	if len(resp.Stations) != 0 || resp.Primary != nil {
-		t.Errorf("disabled service should serve empty, got %+v", resp)
+		t.Errorf("no-station source should serve empty, got %+v", resp)
 	}
+}
+
+func TestDisabledSourceSkipsPollAndServesEmpty(t *testing.T) {
+	// WAYFINDER_QNH_ENABLED=false: Run returns immediately and nothing is polled.
+	var polled bool
+	svc := newQNHService(t, []string{"EDDF"}, func(w http.ResponseWriter, r *http.Request) {
+		polled = true
+		_, _ = io.WriteString(w, "[]")
+	})
+	svc.enabled = false // simulate the disabled source
+	svc.Run(context.Background())
+	if polled {
+		t.Error("disabled source must not poll")
+	}
+	if snap := svc.Snapshot(); len(snap.Stations) != 0 || snap.Primary != nil {
+		t.Errorf("disabled source should serve empty, got %+v", snap)
+	}
+}
+
+func TestProviderUnionPolledAndTenantScoped(t *testing.T) {
+	// The poller fetches the union of the dynamic provider + static fallback, but a
+	// tenant only sees its own aerodrome via SnapshotFor (CBD-3).
+	var gotIDs string
+	svc := NewService(
+		NewClient(nil, "", "UA"),
+		Config{Enabled: true, Refresh: time.Minute, StaleAfter: 2 * time.Hour,
+			Stations:         []string{"EDDF"}, // static fallback
+			StationsProvider: func() []string { return []string{"EDDH", "EDDM"} }},
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotIDs = r.URL.Query().Get("ids")
+		_, _ = io.WriteString(w, metarJSONBody(t, []map[string]any{
+			{"icaoId": "EDDF", "altim": 1013.0, "obsTime": 1_100_000},
+			{"icaoId": "EDDH", "altim": 1007.0, "obsTime": 1_100_000},
+			{"icaoId": "EDDM", "altim": 1015.0, "obsTime": 1_100_000},
+		}))
+	}))
+	defer srv.Close()
+	svc.client = NewClient(srv.Client(), srv.URL, "UA")
+	svc.now = func() time.Time { return time.Unix(1_100_000, 0) }
+	svc.refreshOnce(context.Background())
+
+	// All three (provider union first, then static) get polled.
+	for _, want := range []string{"EDDH", "EDDM", "EDDF"} {
+		if !strings.Contains(gotIDs, want) {
+			t.Errorf("poll ids %q missing %s", gotIDs, want)
+		}
+	}
+	// A tenant with EDDH sees only EDDH as its primary.
+	snap := svc.SnapshotFor([]string{"EDDH"})
+	if snap.Primary == nil || snap.Primary.ICAO != "EDDH" || snap.Primary.QNHHpa != 1007 {
+		t.Errorf("tenant snapshot = %+v, want EDDH/1007", snap.Primary)
+	}
+	if len(snap.Stations) != 1 {
+		t.Errorf("tenant should see exactly its own aerodrome, got %d", len(snap.Stations))
+	}
+	// A tenant with no aerodrome falls back to the static list (EDDF).
+	fb := svc.SnapshotFor(nil)
+	if fb.Primary == nil || fb.Primary.ICAO != "EDDF" {
+		t.Errorf("fallback snapshot = %+v, want EDDF", fb.Primary)
+	}
+}
+
+func TestTenantHandlerResolvesPerRequest(t *testing.T) {
+	svc := newQNHService(t, nil, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, metarJSONBody(t, []map[string]any{
+			{"icaoId": "EDDH", "altim": 1007.0, "obsTime": 1_100_000},
+		}))
+	})
+	svc.provider = func() []string { return []string{"EDDH"} }
+	svc.now = func() time.Time { return time.Unix(1_100_000, 0) }
+	svc.refreshOnce(context.Background())
+
+	rec := httptest.NewRecorder()
+	svc.TenantHandler(func(r *http.Request) []string { return []string{"EDDH"} })(
+		rec, httptest.NewRequest(http.MethodGet, "/api/weather/qnh", nil))
+	var resp qnhResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Primary == nil || resp.Primary.ICAO != "EDDH" {
+		t.Errorf("tenant handler primary = %+v, want EDDH", resp.Primary)
+	}
+}
+
+func TestRefreshKickIsNonBlocking(t *testing.T) {
+	svc := newQNHService(t, []string{"EDDF"}, func(w http.ResponseWriter, r *http.Request) {})
+	// Two kicks with a buffer of one must not block (the second coalesces).
+	svc.Refresh()
+	svc.Refresh()
 }
 
 func TestNormaliseStations(t *testing.T) {

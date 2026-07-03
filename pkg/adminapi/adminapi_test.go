@@ -531,6 +531,38 @@ func TestNormalizeICAO(t *testing.T) {
 	}
 }
 
+func TestValidateViewQNHICAO(t *testing.T) {
+	base := viewDTO{CenterLat: 50, CenterLon: 8, Zoom: 6}
+	for _, ok := range []string{"EDDH", "eddh", "  EDDF  ", ""} {
+		v := ok
+		base.QNHICAO = &v
+		if err := validateView(base); err != nil {
+			t.Errorf("valid qnh_icao %q rejected: %v", ok, err)
+		}
+	}
+	for _, bad := range []string{"EDD", "EDDHX", "ED-H", "ED H"} {
+		v := bad
+		base.QNHICAO = &v
+		if err := validateView(base); err == nil {
+			t.Errorf("malformed qnh_icao %q accepted, want error", bad)
+		}
+	}
+}
+
+func TestNormalizeQNHICAO(t *testing.T) {
+	if normalizeQNHICAO(nil) != nil {
+		t.Error("nil should stay nil")
+	}
+	blank := "   "
+	if normalizeQNHICAO(&blank) != nil {
+		t.Error("blank should collapse to nil (unset)")
+	}
+	v := "  eddh  "
+	if got := normalizeQNHICAO(&v); got == nil || *got != "EDDH" {
+		t.Errorf("normalizeQNHICAO = %v, want EDDH (trimmed + upper)", got)
+	}
+}
+
 func TestWhoamiUnauthorizedWithoutIdentity(t *testing.T) {
 	rec := httptest.NewRecorder()
 	handlerWith(&fakeVS{}, fakeFeeds{}, fakeTenants{}).

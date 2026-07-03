@@ -43,3 +43,7 @@ QNH (NOAA) und OpenAIP folgen in den nächsten Häppchen und bleiben bis dahin
 opt-in (QNH braucht die Flugplatz-Liste, OpenAIP einen Schlüssel). Die DWD-Quelle
 ist in der Entwurfs-Umgebung weiterhin nicht live erreichbar (Egress-Policy) —
 best-effort deckt das ab (transparente/leere Anzeige, kein Absturz).
+
+> **Nachtrag:** QNH ist mit **CBD-3** (`CBD-3_QNH_per_tenant.md`) nachgezogen —
+> NOAA-Quelle default-an (`WAYFINDER_QNH_ENABLED`), Flugplatz **pro Mandant**
+> (`qnh_icao`). Es bleibt nur noch OpenAIP (AERO) übrig.
