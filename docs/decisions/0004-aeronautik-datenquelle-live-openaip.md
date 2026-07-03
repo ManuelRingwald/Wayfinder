@@ -5,6 +5,11 @@
 - **Schnittstellen-relevant:** nein (keine Änderung am CAT062-Draht-Vertrag mit
   Firefly; betrifft eine **neue, eigenständige** Datenquelle für die
   Kartendarstellung)
+- **Nachtrag (ADR 0017):** Die „kein Schlüssel ⇒ Feature still aus"-Opt-in-Haltung
+  (u.a. Offline-Begründung) wird durch **ADR 0017 (Connected-by-default)** abgelöst;
+  OpenAIP wird auf ein **persistentes On-Demand-Modell** mit **global über die
+  Admin-UI setzbarem Schlüssel** umgestellt (Folge-Häppchen). Die
+  Schutz-Eigenschaften (Schlüssel server-seitig, best-effort, Größenlimits) bleiben.
 
 ## Kontext
 

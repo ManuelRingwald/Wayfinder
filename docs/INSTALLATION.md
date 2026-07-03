@@ -963,6 +963,41 @@ openaip:
 Wayfinder ist ein **12-Factor-Service** und eignet sich direkt für Kubernetes.
 Die folgenden Hinweise richten sich an Betriebs-/IT-Teams.
 
+### 8.0 Netzwerk-Anforderungen: ausgehende Verbindungen (Egress)
+
+> **Wayfinder ist für den vernetzten Betrieb ausgelegt (ADR 0017).** Es ist ein
+> System zur **Informationsbereitstellung/Lagedarstellung**, nicht zur Steuerung
+> von Flugbewegungen — die externen Kontext-Quellen (Karte, Wetter, Aeronautik)
+> sind **standardmäßig aktiv**.
+
+Das Deployment-Netz muss **ausgehend** (HTTPS/443) folgende Ziele erreichen können:
+
+| Ziel | Wofür | Abschaltbar per |
+|------|-------|-----------------|
+| Karten-Tile-CDN (`tile.openstreetmap.org` bzw. `basemaps.cartocdn.com`) | Basiskarte | eigener `WAYFINDER_MAP_STYLE_URL` (self-hosted) |
+| `maps.dwd.de` | DWD-Radar + Wetterwarnungen | `WAYFINDER_DWD_RADAR_ENABLED=false` / `_WARN_ENABLED=false` |
+| `aviationweather.gov` | QNH (NOAA-METAR) | `WAYFINDER_QNH_ENABLED=false` |
+| `api.core.openaip.net` | Luftraum/Navaids/Wegpunkte (OpenAIP) | kein globaler Schlüssel gesetzt = keine Abfrage |
+
+> **Rollout-Hinweis:** ADR 0017 hält die **Entscheidung** fest. Die Default-an-
+> Umstellung und die `WAYFINDER_..._ENABLED`-Schalter werden mit den **Folge-
+> Häppchen** (DWD, QNH, OpenAIP) eingeführt. **Bis dahin** gelten die bisherigen
+> Opt-in-Schalter aus §7.3/§7.4 (Quelle nur an, wenn URL/Stationen/Schlüssel
+> gesetzt sind). Die Egress-Ziele oben sind bereits jetzt die Betriebsvoraussetzung,
+> sobald eine Quelle aktiv ist.
+
+> **Abgrenzung zur Feed-Isolation:** Der **CAT062/065/063-Multicast-Eingang** bleibt
+> davon unberührt in einem **abgeschotteten Segment/VLAN** (NFR-SEC-001, ADR 0003).
+> Die obigen Egress-Ziele betreffen **ausschließlich ausgehende Kontext-Quellen**,
+> nicht den Feed-Draht. Fällt eine Kontext-Quelle aus oder ist gesperrt, bleibt der
+> ASD-Kern (CAT062 → Karte) voll funktionsfähig (best-effort, blockiert nie
+> `/ready`).
+>
+> **Besonders isolierter Betrieb:** Wer die Kontext-Quellen bewusst nicht
+> nach außen sprechen lassen will, schaltet sie einzeln über die
+> `WAYFINDER_..._ENABLED=false`-Schalter ab (bzw. hinterlegt keinen OpenAIP-
+> Schlüssel und einen self-hosted Kartenstil).
+
 ### 8.1 Image bauen und pushen
 
 ```bash

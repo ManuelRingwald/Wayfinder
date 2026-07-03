@@ -294,6 +294,14 @@ Vertrauensgrenze liegt auf der **Netzwerk-Schicht**: Firefly-Sender und Wayfinde
 Empfänger gehören in ein **abgeschottetes Segment/VLAN**, in dem sonst niemand
 sendet. Die `8080`-Technik-Schnittstelle gehört ebenfalls nur ins interne Netz.
 
+> **Nicht verwechseln mit den ausgehenden Kontext-Quellen (ADR 0017).** Diese
+> Feed-Isolation betrifft **nur** den eingehenden Multicast-Draht. Wayfinder ist ein
+> System zur **Informationsbereitstellung** (nicht zur Steuerung von
+> Flugbewegungen) und darf für die Kontext-Overlays (Karte, Wetter, Aeronautik)
+> **ausgehend** ins Internet sprechen — siehe die Egress-Ziele in
+> `INSTALLATION.md §8.0`. Ein Ausfall/Sperren dieser Quellen beeinträchtigt den
+> ASD-Kern nicht (best-effort).
+
 ### 6.5 Wiederkehrende Sicherheits-Kontrolle
 ```bash
 # Abgewiesene Einblicks-Versuche (sollte normalerweise leer sein):

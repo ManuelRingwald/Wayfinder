@@ -5,6 +5,10 @@
 - **Schnittstellen-relevant:** nein (keine Änderung am CAT062-Draht-Vertrag mit
   Firefly; betrifft **neue, eigenständige** Auxiliar-Datenquellen für die
   Kartendarstellung und eine Header-Infobox)
+- **Nachtrag (ADR 0017):** Der „Feature still aus ohne URL"-Opt-in-Default wird
+  durch **ADR 0017 (Connected-by-default)** auf **default-an mit explizitem
+  `..._ENABLED`-Opt-out** umgestellt; die Schutz-Eigenschaften (best-effort,
+  robuster Decoder, NFR-SEC-005) bleiben vollständig gültig — nur der Default kippt.
 
 ## Kontext
 
