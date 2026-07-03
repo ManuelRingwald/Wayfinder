@@ -17,12 +17,24 @@ const defaultStaleAfter = 2 * time.Hour
 
 // Config configures the QNH Service.
 type Config struct {
-	// Enabled gates the feature. When false (no stations configured) the endpoint
-	// serves an empty station list and the poller never runs.
+	// Enabled gates the NOAA/AWC METAR source (CBD-3, connected-by-default, ADR
+	// 0017): true = the poller runs and the endpoint serves data; false
+	// (WAYFINDER_QNH_ENABLED=false) = the poller never runs and the endpoint serves
+	// an empty list. It no longer depends on any station being configured — a source
+	// that is on but has nothing to poll simply serves nothing until a tenant sets
+	// an aerodrome.
 	Enabled bool
-	// Stations are the ICAO aerodromes to poll, in priority order; the first is
-	// the header "primary". Upper-cased by the caller/NewService.
+	// Stations is the optional GLOBAL fallback aerodrome list (deprecated
+	// WAYFINDER_METAR_STATIONS), in priority order; the first is the fallback
+	// header "primary" for a tenant that has not set its own aerodrome. Upper-cased
+	// by NewService. The per-tenant aerodrome (StationsProvider) is the primary
+	// mechanism (CBD-3).
 	Stations []string
+	// StationsProvider, when set, returns the dynamic per-tenant poll set (the union
+	// of every tenant's configured aerodrome). It is read on each refresh so newly
+	// configured aerodromes are picked up without a restart. Combined with (unioned
+	// over) the static Stations fallback.
+	StationsProvider func() []string
 	// Refresh is the poll interval. METAR is issued ~every 30 min (plus SPECI);
 	// ~15 min keeps the value fresh well under the AWC ~100 req/min limit.
 	Refresh time.Duration
@@ -42,12 +54,14 @@ type QNH struct {
 // the last-good cache and never errors to the browser or readiness.
 type Service struct {
 	client     *Client
-	stations   []string
+	static     []string        // global fallback aerodromes (deprecated env)
+	provider   func() []string // dynamic per-tenant poll set (CBD-3)
 	refresh    time.Duration
 	staleAfter time.Duration
 	enabled    bool
 	logger     *slog.Logger
 	now        func() time.Time // injectable clock for deterministic tests
+	kick       chan struct{}    // non-blocking "refresh now" trigger
 
 	mu    sync.Mutex
 	cache map[string]QNH
@@ -57,8 +71,10 @@ type Service struct {
 	lastSuccessUnix atomic.Int64
 }
 
-// NewService builds a QNH Service. Stations are upper-cased and de-duplicated in
-// order; empty/blank config disables the feature.
+// NewService builds a QNH Service. The static fallback stations are upper-cased
+// and de-duplicated in order; enabled reflects only whether the NOAA source is
+// switched on (CBD-3) — a source that is on with no aerodrome to poll runs but
+// serves nothing.
 func NewService(client *Client, cfg Config, logger *slog.Logger) *Service {
 	if logger == nil {
 		logger = slog.Default()
@@ -71,16 +87,38 @@ func NewService(client *Client, cfg Config, logger *slog.Logger) *Service {
 	if staleAfter <= 0 {
 		staleAfter = defaultStaleAfter
 	}
-	stations := normaliseStations(cfg.Stations)
 	return &Service{
 		client:     client,
-		stations:   stations,
+		static:     normaliseStations(cfg.Stations),
+		provider:   cfg.StationsProvider,
 		refresh:    refresh,
 		staleAfter: staleAfter,
-		enabled:    cfg.Enabled && len(stations) > 0,
+		enabled:    cfg.Enabled,
 		logger:     logger,
 		now:        time.Now,
+		kick:       make(chan struct{}, 1),
 		cache:      make(map[string]QNH),
+	}
+}
+
+// currentStations is the poll set for this tick: the dynamic per-tenant union
+// (provider) combined with the static global fallback, upper-cased and de-duped.
+func (s *Service) currentStations() []string {
+	var raw []string
+	if s.provider != nil {
+		raw = append(raw, s.provider()...)
+	}
+	raw = append(raw, s.static...)
+	return normaliseStations(raw)
+}
+
+// Refresh asks the poll loop to fetch now (best-effort, non-blocking). Used after
+// a tenant edits its aerodrome so a freshly configured station is polled promptly
+// instead of waiting up to one refresh interval.
+func (s *Service) Refresh() {
+	select {
+	case s.kick <- struct{}{}:
+	default: // a refresh is already pending; coalesce.
 	}
 }
 
@@ -100,11 +138,13 @@ func normaliseStations(in []string) []string {
 	return out
 }
 
-// Run performs an initial poll then polls on the configured interval until ctx is
-// cancelled. It returns immediately when disabled. Non-blocking wrt readiness.
+// Run performs an initial poll then polls on the configured interval (or on a
+// Refresh() kick) until ctx is cancelled. It returns immediately when the source
+// is disabled. It keeps ticking even when no aerodrome is configured yet, so a
+// tenant that sets one later is picked up. Non-blocking wrt readiness.
 func (s *Service) Run(ctx context.Context) {
 	if !s.enabled {
-		s.logger.Warn("QNH infobox disabled (no WAYFINDER_METAR_STATIONS); header shows no QNH")
+		s.logger.Warn("QNH source disabled (WAYFINDER_QNH_ENABLED=false); header shows no QNH")
 		return
 	}
 	s.refreshOnce(ctx)
@@ -116,14 +156,21 @@ func (s *Service) Run(ctx context.Context) {
 			return
 		case <-ticker.C:
 			s.refreshOnce(ctx)
+		case <-s.kick:
+			s.refreshOnce(ctx)
 		}
 	}
 }
 
-// refreshOnce polls all stations, updating the per-station cache on success and
-// keeping the last-good cache on failure.
+// refreshOnce polls the current station set, updating the per-station cache on
+// success and keeping the last-good cache on failure. A no-op when nothing is
+// configured — the source stays on, ready for the next tenant to add an aerodrome.
 func (s *Service) refreshOnce(ctx context.Context) {
-	reports, err := s.client.FetchMETAR(ctx, s.stations)
+	stations := s.currentStations()
+	if len(stations) == 0 {
+		return
+	}
+	reports, err := s.client.FetchMETAR(ctx, stations)
 	if err != nil {
 		s.fetchFailure.Add(1)
 		s.logger.Debug("QNH refresh failed; keeping last-good cache", slog.String("error", err.Error()))
@@ -153,14 +200,23 @@ type qnhResponse struct {
 	Primary  *stationDTO  `json:"primary,omitempty"`
 }
 
-// Snapshot returns the current per-station QNH DTOs in configured priority order,
-// omitting stations that have never been read. Exposed for the handler and tests.
-func (s *Service) Snapshot() qnhResponse {
+// SnapshotFor returns the per-station QNH DTOs for the given aerodromes in the
+// given priority order (the first with a reading is the header primary), omitting
+// stations that have never been read. When icaos is empty it falls back to the
+// static global list (deprecated WAYFINDER_METAR_STATIONS) so a tenant without its
+// own aerodrome still sees the configured fallback. This is the tenant-scoped view
+// (CBD-3): the poller keeps the union of all aerodromes warm; each tenant reads
+// only its own.
+func (s *Service) SnapshotFor(icaos []string) qnhResponse {
+	icaos = normaliseStations(icaos)
+	if len(icaos) == 0 {
+		icaos = s.static
+	}
 	now := s.now().Unix()
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	resp := qnhResponse{Stations: make([]stationDTO, 0, len(s.stations))}
-	for _, icao := range s.stations {
+	resp := qnhResponse{Stations: make([]stationDTO, 0, len(icaos))}
+	for _, icao := range icaos {
 		q, ok := s.cache[icao]
 		if !ok {
 			continue
@@ -180,13 +236,30 @@ func (s *Service) Snapshot() qnhResponse {
 	return resp
 }
 
-// Handler serves the QNH snapshot as JSON. Always 200 with a (possibly empty)
-// station list — best-effort, never an error (ADR 0016).
+// Snapshot returns the snapshot for the static fallback stations. Retained for the
+// legacy global Handler and tests; the tenant-scoped path uses SnapshotFor.
+func (s *Service) Snapshot() qnhResponse { return s.SnapshotFor(nil) }
+
+// Handler serves the static/global QNH snapshot as JSON. Always 200 with a
+// (possibly empty) station list — best-effort, never an error (ADR 0016). The
+// per-tenant endpoint uses TenantHandler.
 func (s *Service) Handler() http.HandlerFunc {
+	return s.TenantHandler(nil)
+}
+
+// TenantHandler serves the QNH snapshot for the aerodrome(s) the resolve function
+// returns for the request (CBD-3): the tenant's configured aerodrome, resolved by
+// the caller from the request context. A nil resolver (or one returning nothing)
+// falls back to the static global list. Always 200 — best-effort, never an error.
+func (s *Service) TenantHandler(resolve func(r *http.Request) []string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		var icaos []string
+		if resolve != nil {
+			icaos = resolve(r)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-cache")
-		_ = json.NewEncoder(w).Encode(s.Snapshot())
+		_ = json.NewEncoder(w).Encode(s.SnapshotFor(icaos))
 	}
 }
 

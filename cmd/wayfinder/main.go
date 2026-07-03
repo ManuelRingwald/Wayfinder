@@ -117,14 +117,8 @@ func main() {
 		logger.Warn("weather radar overlay disabled (WAYFINDER_DWD_RADAR_ENABLED=false); map will show no DWD radar")
 	}
 
-	// QNH infobox (WX-B, ADR 0016): best-effort NOAA/AWC METAR poller. Enabled
-	// only when stations are configured. Polls in its own goroutine; the header
-	// reads /api/weather/qnh. Never touches the track path or readiness.
-	weatherQNH := weather.NewService(
-		weather.NewClient(&http.Client{Timeout: 15 * time.Second}, cfg.MetarURL, cfg.MetarUserAgent),
-		weather.Config{Enabled: len(cfg.MetarStations) > 0, Stations: cfg.MetarStations, Refresh: cfg.QNHRefresh},
-		logger,
-	)
+	// The QNH poller (WX-B / CBD-3) is built after the DB pool is open — its poll
+	// set is the union of the tenants' configured aerodromes, which lives in the DB.
 
 	// Weather-warnings overlay (WX-C, ADR 0016): best-effort DWD WFS GeoJSON.
 	// Connected-by-default (ADR 0017): on unless WAYFINDER_DWD_WARN_ENABLED=false.
@@ -217,6 +211,34 @@ func main() {
 		os.Exit(1)
 	}
 	defer dbPool.Close()
+
+	// QNH infobox (WX-B, ADR 0016; per-tenant CBD-3, ADR 0017). Connected-by-default:
+	// the NOAA/AWC METAR source is ON unless WAYFINDER_QNH_ENABLED=false. The poll set
+	// is dynamic — the union of every tenant's configured aerodrome (view_configs
+	// .qnh_icao) — read fresh each refresh so a newly set aerodrome is picked up
+	// without a restart; WAYFINDER_METAR_STATIONS remains a deprecated global
+	// fallback. Polls in its own goroutine; the header reads /api/weather/qnh scoped
+	// to the caller's tenant. Never touches the track path or readiness.
+	qnhViews := store.NewViewConfigRepo(dbPool)
+	qnhStations := func() []string {
+		lookupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		icaos, err := qnhViews.DistinctQNHICAOs(lookupCtx)
+		if err != nil {
+			logger.Warn("qnh: list per-tenant aerodromes failed; using static fallback only",
+				slog.String("error", err.Error()))
+			return nil
+		}
+		return icaos
+	}
+	weatherQNH := weather.NewService(
+		weather.NewClient(&http.Client{Timeout: 15 * time.Second}, cfg.MetarURL, cfg.MetarUserAgent),
+		weather.Config{Enabled: cfg.QNHEnabled, Stations: cfg.MetarStations, StationsProvider: qnhStations, Refresh: cfg.QNHRefresh},
+		logger,
+	)
+	if !cfg.QNHEnabled {
+		logger.Warn("QNH source disabled (WAYFINDER_QNH_ENABLED=false); header shows no QNH")
+	}
 
 	// Server-side session registry (AP7, ADR 0009 §5). Built once and shared by the
 	// login handlers, the admin revocation hooks, the janitor and the /metrics
@@ -427,11 +449,23 @@ func main() {
 	// transparent tiles, never an error.
 	mux.Handle("GET /api/weather/radar/{z}/{x}/{y}", tenantMW(weatherRadar.TileHandler()))
 
-	// QNH infobox (WX-B, ADR 0016): the header polls this for the current QNH of
-	// the configured aerodrome(s). Behind the tenant middleware; best-effort JSON
-	// (empty station list when disabled), never an error. UI-gated per tenant via
-	// the qnh entitlement.
-	mux.Handle("GET /api/weather/qnh", tenantMW(weatherQNH.Handler()))
+	// QNH infobox (WX-B, ADR 0016; per-tenant CBD-3): the header polls this for the
+	// current QNH of the caller's own aerodrome (view_configs.qnh_icao), resolved
+	// from the tenant context; a tenant without one falls back to the deprecated
+	// global list. Behind the tenant middleware; best-effort JSON (empty station
+	// list when disabled/unset), never an error. UI-gated per tenant via the qnh
+	// entitlement.
+	mux.Handle("GET /api/weather/qnh", tenantMW(weatherQNH.TenantHandler(func(r *http.Request) []string {
+		id, ok := tenant.FromContext(r.Context())
+		if !ok {
+			return nil
+		}
+		vc, err := qnhViews.GetEffective(r.Context(), id.TenantID, id.UserID)
+		if err != nil || vc.QNHICAO == nil {
+			return nil
+		}
+		return []string{*vc.QNHICAO}
+	})))
 
 	// Weather-warnings GeoJSON (WX-C, ADR 0016): the map fetches this and renders
 	// warning polygons coloured by severity. Behind the tenant middleware;
@@ -491,6 +525,9 @@ func main() {
 	// grants, re-scope that tenant's connected clients in place — no reconnect.
 	rescope := func(ctx context.Context, tenantID int64) {
 		rescopeTenant(ctx, broadcaster, subRepo, viewRepo, logger, tenantID)
+		// A view edit may have changed this tenant's QNH aerodrome; kick the poller
+		// so a freshly set station is fetched promptly instead of at the next tick.
+		weatherQNH.Refresh()
 	}
 	// Feed lifecycle (ONB-5): the admin API joins/leaves multicast groups live
 	// via the feed manager, and forgets a deleted feed's health (adapter below).
@@ -626,11 +663,15 @@ type Config struct {
 	DWDRadarLayer   string        // WAYFINDER_DWD_RADAR_LAYER (default dwd:Niederschlagsradar)
 	DWDRefresh      time.Duration // WAYFINDER_DWD_REFRESH (radar tile cache TTL, default 5m)
 
-	// QNH infobox (WX-B, ADR 0016): best-effort NOAA/AWC METAR poller. QNH is not
-	// in the CAT062 contract and not in open DWD data; the open source is NOAA
-	// METAR (altim field, hPa). Enabled only when at least one station is set.
+	// QNH infobox (WX-B, ADR 0016; per-tenant CBD-3, ADR 0017): best-effort NOAA/AWC
+	// METAR poller. QNH is not in the CAT062 contract and not in open DWD data; the
+	// open source is NOAA METAR (altim field, hPa). Connected-by-default: the source
+	// is ON unless WAYFINDER_QNH_ENABLED=false. The poll set is the union of the
+	// tenants' aerodromes (view_configs.qnh_icao, set in the Admin UI); MetarStations
+	// is a deprecated global fallback.
+	QNHEnabled     bool          // WAYFINDER_QNH_ENABLED (default true; false = opt-out of the NOAA source)
 	MetarURL       string        // WAYFINDER_METAR_URL (NOAA AWC METAR data API, default aviationweather.gov)
-	MetarStations  []string      // WAYFINDER_METAR_STATIONS (comma list of ICAO aerodromes, priority order; empty = feature off)
+	MetarStations  []string      // WAYFINDER_METAR_STATIONS (deprecated global fallback; per-tenant qnh_icao preferred)
 	MetarUserAgent string        // WAYFINDER_METAR_USER_AGENT (required distinctive UA; default Wayfinder-ASD/1.0)
 	QNHRefresh     time.Duration // WAYFINDER_QNH_REFRESH (METAR poll interval, default 15m)
 
@@ -820,10 +861,13 @@ func loadConfig() Config {
 		// GeoServer URLs are the default, and the ENABLED flags default true, so the
 		// radar + warnings overlays are ON out of the box (opt-out via
 		// WAYFINDER_DWD_RADAR_ENABLED / _WARN_ENABLED = false).
-		DWDRadarEnabled:  true,
-		DWDWMSURL:        "https://maps.dwd.de/geoserver/dwd/wms",
-		DWDRadarLayer:    "dwd:Niederschlagsradar",
-		DWDRefresh:       5 * time.Minute,
+		DWDRadarEnabled: true,
+		DWDWMSURL:       "https://maps.dwd.de/geoserver/dwd/wms",
+		DWDRadarLayer:   "dwd:Niederschlagsradar",
+		DWDRefresh:      5 * time.Minute,
+		// QNH (NOAA) is connected-by-default too (ADR 0017): the source is ON, the
+		// poll set comes from the tenants' aerodromes. Opt out with WAYFINDER_QNH_ENABLED=false.
+		QNHEnabled:       true,
 		QNHRefresh:       15 * time.Minute,
 		DWDWarnEnabled:   true,
 		DWDWarnURL:       "https://maps.dwd.de/geoserver/dwd/ows",
@@ -957,9 +1001,17 @@ func loadConfig() Config {
 		}
 	}
 
-	// QNH infobox (WX-B, ADR 0016). Feature enabled only when stations are set.
-	cfg.MetarURL = os.Getenv("WAYFINDER_METAR_URL")
-	cfg.MetarUserAgent = os.Getenv("WAYFINDER_METAR_USER_AGENT")
+	// QNH infobox (WX-B, ADR 0016; per-tenant CBD-3, ADR 0017). Connected-by-default:
+	// the NOAA source keeps its public default unless explicitly disabled; the URL/UA
+	// keep their client defaults unless overridden with a non-empty value.
+	cfg.QNHEnabled = envBool("WAYFINDER_QNH_ENABLED", true)
+	if v := strings.TrimSpace(os.Getenv("WAYFINDER_METAR_URL")); v != "" {
+		cfg.MetarURL = v
+	}
+	if v := strings.TrimSpace(os.Getenv("WAYFINDER_METAR_USER_AGENT")); v != "" {
+		cfg.MetarUserAgent = v
+	}
+	// Deprecated global fallback (per-tenant qnh_icao in the Admin UI is preferred).
 	if v := os.Getenv("WAYFINDER_METAR_STATIONS"); v != "" {
 		for _, s := range strings.Split(v, ",") {
 			if s = strings.TrimSpace(s); s != "" {
@@ -1392,6 +1444,10 @@ func mapConfigHandler(cfg Config) http.HandlerFunc {
 			"weather_radar_available": cfg.DWDRadarEnabled && cfg.DWDWMSURL != "",
 			// WX-C / ADR 0017: same for the DWD warnings overlay.
 			"weather_warnings_available": cfg.DWDWarnEnabled && cfg.DWDWarnURL != "",
+			// WX-B / CBD-3 / ADR 0017: whether the QNH (NOAA) source is on. The header
+			// infobox additionally needs the tenant's qnh entitlement and a configured
+			// aerodrome (view_configs.qnh_icao); this flag only reports the source.
+			"qnh_available": cfg.QNHEnabled,
 		})
 	}
 }

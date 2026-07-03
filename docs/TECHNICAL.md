@@ -262,7 +262,7 @@ immer aktiv — ADR 0014); statische Frontend-Routen werden ausgeliefert.
 | `/api/navaids` | GET | VOR/NDB-Beacons (GeoJSON, best-effort). **ONB-6:** mandanten-aufgelöst wie `/api/airspace` |
 | `/api/waypoints` | GET | Wegpunkte (GeoJSON, best-effort). **ONB-6:** mandanten-aufgelöst wie `/api/airspace` |
 | `/api/weather/radar/{z}/{x}/{y}.png` | GET | **WX-A (ADR 0016):** DWD-Radar-Kachel-Proxy — übersetzt jede XYZ-Kachel in einen DWD-WMS-`GetMap` (EPSG:3857), cacht sie ~5 min und liefert PNG. Hinter der Tenant-Middleware (nur authentifiziert erreicht den Egress). **Best-effort:** deaktiviert/unerreichbar → **transparente** Kachel (HTTP 200), nie ein Fehler; blockiert nie `/ready`. Overlay per Feature-Entitlement `weather_radar` in der UI gegated |
-| `/api/weather/qnh` | GET | **WX-B (ADR 0016):** aktuelles QNH (hPa, ganzzahlig) der konfigurierten Flugplätze aus NOAA/AWC-METAR (`{stations:[{icao,qnh_hpa,obs_time,stale}],primary?}`). QNH nur aus echtem METAR (`altim`), **nie** DWD-PMSL. Hinter der Tenant-Middleware; best-effort (leere Liste wenn aus), nie ein Fehler. Kopfzeilen-Anzeige per Entitlement `qnh` in der UI gegated |
+| `/api/weather/qnh` | GET | **WX-B (ADR 0016; per-Tenant CBD-3):** aktuelles QNH (hPa, ganzzahlig) des **eigenen** Mandanten-Flugplatzes (`view_configs.qnh_icao`, aus dem Tenant-Kontext aufgelöst) aus NOAA/AWC-METAR (`{stations:[{icao,qnh_hpa,obs_time,stale}],primary?}`). Mandant ohne eigenen Flugplatz → deprecated globaler Fallback. QNH nur aus echtem METAR (`altim`), **nie** DWD-PMSL. Hinter der Tenant-Middleware; best-effort (leere Liste wenn aus/ungesetzt), nie ein Fehler. Kopfzeilen-Anzeige per Entitlement `qnh` in der UI gegated |
 | `/api/weather/warnings.geojson` | GET | **WX-C (ADR 0016):** amtliche DWD-Warnpolygone aus dem GeoServer-WFS (`dwd:Warnungen_Gemeinden_vereinigt`), normalisiert (`wf_level` 1–4 + `headline`/`event`/`expires`), WGS84-GeoJSON. Hinter der Tenant-Middleware; best-effort (leere FeatureCollection wenn aus/Ausfall), nie ein Fehler. Overlay per Entitlement `weather_warnings` in der UI gegated |
 | `/api/whoami` | GET | **WF2-12.4:** rollen-agnostische Identitäts-Probe (`{subject, tenant_id, user_id, role, must_change_password, features, sensor_classes, fl_min?, fl_max?, icao?}`); hinter der Tenant-Middleware, **nicht** `requireAdmin` — die ASD-Karte entscheidet damit Login-Schirm vs. Live-Bild und gated Layer/Legende (Issues #106/#107); `401` ohne Sitzung. `sensor_classes` ist die Vereinigung der Sensor-Klassen über die abonnierten Feeds des Mandanten. `fl_min`/`fl_max` spiegeln das FL-Band der effektiven Ansicht (Standard-Ansicht oder Nutzer-Override) für den grauen Bereichs-Hinweis im FL-Filter der Sidebar (#116; `omitempty`, fehlen wenn kein Band konfiguriert). `icao` (Reskin 3a, FR-UI-020) ist das optionale **ICAO-Kürzel** der effektiven Ansicht (Sektor/FIR, z. B. `EDGG·KTG`), das die ASD-Kopfzeile zeigt — reine Anzeige-Config (kein CAT062-Feld), am View-Config gepflegt (Migration 00015, Admin-View-Editor), `omitempty`. |
 | `/api/session/renew` | POST | **WF2-12.5:** Sliding-Session — mintet das Session-Cookie mit frischer TTL neu (builtin); hinter der Tenant-Middleware, `401` ohne Sitzung. Die Karte ruft es periodisch (alle 10 min) + bei WS-Reconnect + Tab-Fokus auf, damit eine aktive Konsole nie ausgeloggt wird. **WF2-12.6:** bewahrt den Erst-Login-Zeitpunkt und antwortet `401` (kein neues Cookie), sobald das absolute Maximum `WAYFINDER_SESSION_MAX_LIFETIME` überschritten ist |
@@ -538,12 +538,17 @@ erlaubt sein (`maps.dwd.de`, HTTPS/443). Abschalten per `..._ENABLED=false`.
 | `WAYFINDER_DWD_RADAR_LAYER` | `dwd:Niederschlagsradar` | string | WMS-Layer-Name des Radar-/Niederschlagskomposits |
 | `WAYFINDER_DWD_REFRESH` | `5m` | duration | Cache-Lebensdauer je Radar-Kachel (Go-Duration) |
 
-QNH-Infobox (WX-B). Ohne Stationen aus; QNH nur aus echtem METAR (nie DWD-PMSL).
+QNH-Infobox (WX-B / CBD-3). **Connected-by-default (ADR 0017): NOAA-Quelle
+default-an**, abschaltbar per `WAYFINDER_QNH_ENABLED=false`. Der Flugplatz wird
+**pro Mandant** in der Admin-UI gesetzt (`view_configs.qnh_icao`); der Poller fragt
+die Vereinigung aller Mandanten-Flugplätze ab. `/api/weather/qnh` ist
+tenant-scoped (nur der eigene Flugplatz). QNH nur aus echtem METAR (nie DWD-PMSL).
 Egress zu `aviationweather.gov` (443) muss erlaubt sein.
 
 | Variable | Default | Typ | Beschreibung |
 |----------|---------|-----|--------------|
-| `WAYFINDER_METAR_STATIONS` | *(leer)* | csv | ICAO-Flugplätze (Priorität; erster = Kopfzeile), leer = Feature aus |
+| `WAYFINDER_QNH_ENABLED` | `true` | bool | QNH-Quelle an/aus; `false` = Opt-out (keine NOAA-Abfrage) |
+| `WAYFINDER_METAR_STATIONS` | *(leer)* | csv | **Deprecated** globaler Fallback für Mandanten ohne eigenen `qnh_icao` (Priorität; erster = Kopfzeile) |
 | `WAYFINDER_METAR_URL` | *(NOAA AWC)* | URL | METAR-Daten-API (Default `https://aviationweather.gov/api/data/metar`) |
 | `WAYFINDER_METAR_USER_AGENT` | `Wayfinder-ASD/1.0` | string | Distinktiver User-Agent (Pflicht gegen AWC-403) |
 | `WAYFINDER_QNH_REFRESH` | `15m` | duration | METAR-Poll-Intervall |

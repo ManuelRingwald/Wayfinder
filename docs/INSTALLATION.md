@@ -795,15 +795,21 @@ transparente Kacheln, nie einen Fehler).
 | `WAYFINDER_DWD_RADAR_LAYER` | `dwd:Niederschlagsradar` | WMS-Layer-Name des Radar-/Niederschlagskomposits |
 | `WAYFINDER_DWD_REFRESH` | `5m` | Cache-Lebensdauer je Radar-Kachel (DWD-Radar aktualisiert ~5 min) |
 
-**QNH-Infobox (NOAA-METAR, WX-B).** Zeigt das aktuelle QNH (Höhenmesser-
-Einstellung, hPa) des/der konfigurierten Flugplätze in der Kopfzeile. Ohne
-`WAYFINDER_METAR_STATIONS` ist das Feature aus. Zusätzlich braucht der Mandant das
-Entitlement `qnh`. **Wichtig:** QNH kommt **nur aus echtem METAR** (NOAA-Feld
-`altim`), **nicht** aus DWD-Druckdaten (PMSL/MOSMIX sind eine andere Größe).
+**QNH-Infobox (NOAA-METAR, WX-B / CBD-3).** Zeigt das aktuelle QNH (Höhenmesser-
+Einstellung, hPa) des Flugplatzes des Mandanten in der Kopfzeile.
+**Connected-by-default (ADR 0017): die NOAA-Quelle ist standardmäßig AN**,
+abschaltbar mit `WAYFINDER_QNH_ENABLED=false`. Welcher Flugplatz angezeigt wird,
+setzt der Admin **pro Mandant** in der Admin-UI (Feld **„QNH-Flugplatz (ICAO)"**,
+`qnh_icao`, echter 4-stelliger ICAO wie `EDDH`) — der Poller fragt die Vereinigung
+aller Mandanten-Flugplätze ab. Zusätzlich braucht der Mandant das Entitlement
+`qnh`. Ohne gesetzten Flugplatz zeigt die Kopfzeile nichts (Quelle an, aber nichts
+abzufragen). **Wichtig:** QNH kommt **nur aus echtem METAR** (NOAA-Feld `altim`),
+**nicht** aus DWD-Druckdaten (PMSL/MOSMIX sind eine andere Größe).
 
 | Variable | Default | Beschreibung |
 |----------|---------|--------------|
-| `WAYFINDER_METAR_STATIONS` | *(leer)* | Kommaliste von ICAO-Flugplätzen in Prioritätsreihenfolge (z. B. `EDDF,EDDL`); der **erste** ist die Kopfzeilen-Anzeige. Leer = Feature aus |
+| `WAYFINDER_QNH_ENABLED` | `true` | QNH-Quelle (NOAA-METAR) an/aus. `false` = Opt-out (keine Abfrage an `aviationweather.gov`) |
+| `WAYFINDER_METAR_STATIONS` | *(leer)* | **Deprecated globaler Fallback** — Kommaliste von ICAO-Flugplätzen (Prioritätsreihenfolge) für Mandanten **ohne** eigenen `qnh_icao`. Der per-Mandant-Flugplatz aus der Admin-UI ist der vorgesehene Weg |
 | `WAYFINDER_METAR_URL` | *(NOAA AWC)* | METAR-Daten-API (Default `https://aviationweather.gov/api/data/metar`) |
 | `WAYFINDER_METAR_USER_AGENT` | `Wayfinder-ASD/1.0` | Distinktiver User-Agent (leere/Default-UAs werden von der AWC gefiltert → 403) |
 | `WAYFINDER_QNH_REFRESH` | `15m` | METAR-Poll-Intervall (METAR ~30 min; unter dem AWC-Limit von ~100 req/min) |
@@ -984,10 +990,13 @@ Das Deployment-Netz muss **ausgehend** (HTTPS/443) folgende Ziele erreichen kön
 | `aviationweather.gov` | QNH (NOAA-METAR) | `WAYFINDER_QNH_ENABLED=false` |
 | `api.core.openaip.net` | Luftraum/Navaids/Wegpunkte (OpenAIP) | kein globaler Schlüssel gesetzt = keine Abfrage |
 
-> **Rollout-Stand:** **DWD-Radar + Warnungen sind jetzt default-an** (ADR 0017,
-> abschaltbar per `WAYFINDER_DWD_RADAR_ENABLED` / `_WARN_ENABLED=false`). **QNH**
-> (NOAA) und **OpenAIP** folgen in den nächsten Häppchen und sind bis dahin noch
-> opt-in (QNH braucht die Flugplatz-Liste, OpenAIP einen Schlüssel — siehe §7.3/§7.4).
+> **Rollout-Stand:** **DWD-Radar + Warnungen** (ADR 0017, abschaltbar per
+> `WAYFINDER_DWD_RADAR_ENABLED` / `_WARN_ENABLED=false`) und **QNH** (NOAA,
+> abschaltbar per `WAYFINDER_QNH_ENABLED=false`) sind **default-an**. Die
+> QNH-Anzeige braucht zusätzlich einen **pro-Mandant** gesetzten Flugplatz-ICAO
+> (Admin-UI, `qnh_icao`) und das Entitlement `qnh` — die Quelle selbst ist an, aber
+> ohne Flugplatz gibt es nichts zu zeigen (siehe §7.4). **OpenAIP** folgt in einem
+> späteren Häppchen und ist bis dahin noch opt-in (globaler Schlüssel — siehe §7.3).
 > Die Egress-Ziele oben sind Betriebsvoraussetzung, sobald die jeweilige Quelle aktiv ist.
 
 > **Abgrenzung zur Feed-Isolation:** Der **CAT062/065/063-Multicast-Eingang** bleibt

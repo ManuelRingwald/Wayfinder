@@ -198,6 +198,32 @@ func TestLoadConfigDWDURLOverride(t *testing.T) {
 	}
 }
 
+func TestLoadConfigQNHConnectedByDefault(t *testing.T) {
+	for _, k := range []string{"WAYFINDER_QNH_ENABLED", "WAYFINDER_METAR_STATIONS", "WAYFINDER_METAR_URL"} {
+		_ = os.Unsetenv(k)
+	}
+	cfg := loadConfig()
+	if !cfg.QNHEnabled {
+		t.Error("QNHEnabled: want true by default (connected-by-default, CBD-3)")
+	}
+}
+
+func TestLoadConfigQNHEnabledOptOut(t *testing.T) {
+	t.Setenv("WAYFINDER_QNH_ENABLED", "false")
+	cfg := loadConfig()
+	if cfg.QNHEnabled {
+		t.Error("WAYFINDER_QNH_ENABLED=false must disable the QNH source")
+	}
+}
+
+func TestLoadConfigMetarStationsFallback(t *testing.T) {
+	t.Setenv("WAYFINDER_METAR_STATIONS", "EDDF, EDDL ,")
+	cfg := loadConfig()
+	if len(cfg.MetarStations) != 2 || cfg.MetarStations[0] != "EDDF" || cfg.MetarStations[1] != "EDDL" {
+		t.Errorf("MetarStations = %v, want [EDDF EDDL] (trimmed, blanks dropped)", cfg.MetarStations)
+	}
+}
+
 func TestEnvBool(t *testing.T) {
 	const key = "WAYFINDER_TEST_ENVBOOL"
 	_ = os.Unsetenv(key)

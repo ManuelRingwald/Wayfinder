@@ -109,10 +109,13 @@ services:
       WAYFINDER_MAP_CENTER_LAT: ${WAYFINDER_MAP_CENTER_LAT:-50.0379}
       WAYFINDER_MAP_CENTER_LON: ${WAYFINDER_MAP_CENTER_LON:-8.5622}
       WAYFINDER_MAP_ZOOM: ${WAYFINDER_MAP_ZOOM:-8}
-      # DWD weather overlays (radar + warnings) are connected-by-default (ADR 0017):
-      # ON out of the box, needs outbound https to maps.dwd.de. Disable per source:
+      # DWD weather overlays (radar + warnings) and QNH (NOAA) are connected-by-
+      # default (ADR 0017): ON out of the box; radar/warnings need outbound https to
+      # maps.dwd.de, QNH to aviationweather.gov. The QNH aerodrome is set per tenant
+      # in the Admin UI (qnh_icao). Disable per source:
       #   WAYFINDER_DWD_RADAR_ENABLED: "false"
       #   WAYFINDER_DWD_WARN_ENABLED: "false"
+      #   WAYFINDER_QNH_ENABLED: "false"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 10s

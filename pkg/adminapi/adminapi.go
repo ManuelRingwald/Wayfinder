@@ -13,6 +13,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -465,6 +466,11 @@ type viewDTO struct {
 	// ICAO is the optional per-tenant location indicator shown in the ASD header
 	// (e.g. "EDGG" / "EDGG·KTG"). Display config, not track data. Omitted/empty = unset.
 	ICAO *string `json:"icao,omitempty"`
+	// QNHICAO is the optional per-tenant aerodrome whose QNH is shown in the header
+	// infobox (CBD-3). A real 4-letter ICAO location indicator (e.g. "EDDH"), fed to
+	// the NOAA/AWC METAR poller — distinct from the free-form ICAO label above.
+	// Omitted/empty = unset (no QNH for this tenant).
+	QNHICAO *string `json:"qnh_icao,omitempty"`
 }
 
 // feedDTO is the catalogue-facing shape of a feed. The multicast group/port are
@@ -946,6 +952,11 @@ func validateView(d viewDTO) error {
 	if d.ICAO != nil && len([]rune(strings.TrimSpace(*d.ICAO))) > maxICAOLabelLen {
 		return errors.New("icao label too long")
 	}
+	if d.QNHICAO != nil {
+		if t := strings.TrimSpace(*d.QNHICAO); t != "" && !validICAOCode(t) {
+			return errors.New("qnh_icao must be a 4-letter ICAO code")
+		}
+	}
 	return nil
 }
 
@@ -953,6 +964,13 @@ func validateView(d viewDTO) error {
 // 4 chars; the extra room allows a sector suffix ("EDGG·KTG") without letting the
 // header grow unbounded.
 const maxICAOLabelLen = 12
+
+// icaoCodeRE matches a bare 4-character ICAO location indicator (letters/digits),
+// the shape the NOAA/AWC METAR API expects for the QNH aerodrome (CBD-3). Unlike
+// the free-form header label, qnh_icao must be a real station id.
+var icaoCodeRE = regexp.MustCompile(`^[A-Za-z0-9]{4}$`)
+
+func validICAOCode(s string) bool { return icaoCodeRE.MatchString(s) }
 
 // normalizeICAO trims the optional header label and collapses an empty string to
 // nil (unset), so a cleared field stores as SQL NULL rather than "".
@@ -967,11 +985,24 @@ func normalizeICAO(s *string) *string {
 	return &t
 }
 
+// normalizeQNHICAO trims, upper-cases and collapses an empty QNH aerodrome to nil
+// (unset). Upper-cased because METAR station ids are canonical upper-case ICAO.
+func normalizeQNHICAO(s *string) *string {
+	if s == nil {
+		return nil
+	}
+	t := strings.ToUpper(strings.TrimSpace(*s))
+	if t == "" {
+		return nil
+	}
+	return &t
+}
+
 func toViewConfig(d viewDTO) store.ViewConfig {
 	return store.ViewConfig{
 		CenterLat: d.CenterLat, CenterLon: d.CenterLon, Zoom: d.Zoom,
 		AOI: d.AOI, FLMin: d.FLMin, FLMax: d.FLMax, Layers: d.Layers,
-		ICAO: normalizeICAO(d.ICAO),
+		ICAO: normalizeICAO(d.ICAO), QNHICAO: normalizeQNHICAO(d.QNHICAO),
 	}
 }
 
@@ -979,7 +1010,7 @@ func toViewDTO(vc store.ViewConfig) viewDTO {
 	return viewDTO{
 		CenterLat: vc.CenterLat, CenterLon: vc.CenterLon, Zoom: vc.Zoom,
 		AOI: vc.AOI, FLMin: vc.FLMin, FLMax: vc.FLMax, Layers: vc.Layers,
-		ICAO: vc.ICAO,
+		ICAO: vc.ICAO, QNHICAO: vc.QNHICAO,
 	}
 }
 
