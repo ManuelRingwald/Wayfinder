@@ -13,6 +13,32 @@
 ## 🎯 Stand 2026-07-02
 
 - **Zuletzt aktualisiert:** 2026-07-02
+- **E2E-Finding (diese Sitzung, gleicher Branch): Multi-Feed-Multicast-Crosstalk
+  → Cross-Tenant-Leck + Feed-Chip-Flackern.** Mit **zwei** Feeds auf einem Host
+  flackerte der Feed-Chip (grün↔gelb) im ~2-s-Takt, und — gravierender — ein
+  Empfänger sah die **Tracks des jeweils anderen Feeds**. Ursache: Der Allocator
+  vergibt eine Gruppe je Feed bei **festem Port** (`feed_alloc.go`), aber
+  `net.ListenMulticastUDP` bindet **Wildcard** (`0.0.0.0:8600`) und joint nur per
+  IGMP → auf einem Host empfängt jeder Socket **alle** beigetretenen Gruppen; ein
+  Empfänger etikettierte fremde Tracks mit **seiner** feed_id → Leck **vor** dem
+  Scope-Filter. **Nicht** aus dem Polling-Paket (#2/#3 sind sauber; Logs zeigten
+  kein 429/Backoff) — ein latenter Bug, der erst mit dem **zweiten** Feed auftritt.
+  Fix in `pkg/receiver`: Ziel-Gruppe je Datagramm via `ipv4.PacketConn`/`FlagDst`
+  prüfen, Fremdgruppen verwerfen (`acceptsGroup`); Fallback-Log wenn `IP_PKTINFO`
+  fehlt. Neue Dependency `golang.org/x/net`. Unit-Test `TestAcceptsGroup`;
+  NFR-SEC-003 + TECHNICAL.md ergänzt. Verifikation operativ (E2E): ein Feed → stabil,
+  zwei Feeds → vor dem Fix Flackern. Gates: `go test ./...`, `go vet`, `gofmt` grün.
+- **E2E-Finding (diese Sitzung, gleicher Branch): „Zugang anlegen" scheiterte
+  stumm bei doppeltem Benutzernamen.** Der Anlegen-Dialog (`AdminUsers.vue`)
+  schloss bei Erfolg, tat bei Fehler aber **nichts** — kein Hinweis, warum. Ursache
+  fachlich: Subjects sind **mandantenübergreifend eindeutig**, der Server meldet
+  korrekt `409 "subject already exists"` (Backend unverändert), aber das Frontend
+  zeigte die Meldung nicht. Fix: Dialog rendert jetzt einen `v-alert` mit klarer
+  deutscher Begründung (`createErrorMessage`): 409 → „Benutzername bereits vergeben,
+  mandantenübergreifend eindeutig — evtl. in einem anderen Mandanten"; Passwort-zu-
+  kurz übersetzt; sonst Server-Detail/Fallback. Regressionstest
+  `adminUsersCreateError.test.js` (`?raw`-SFC). Gates: **vitest 297**, `vite build`,
+  `go test ./internal/webui` grün; `dist` neu eingebettet.
 - **E2E-Finding (diese Sitzung, gleicher Branch): Mandanten-Dropdown im Quellen-
   Dialog zeigte neu angelegte Mandanten nicht.** Das „Aus Mandant übernehmen"-
   Dropdown (`AdminFeeds.vue`) liest `admin.tenants` (Cross-Mandanten-Liste), die
