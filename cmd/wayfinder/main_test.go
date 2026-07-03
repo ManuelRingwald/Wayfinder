@@ -149,6 +149,76 @@ func TestLoadConfigInvalidLogLevelFallsBackToDefault(t *testing.T) {
 	}
 }
 
+// ADR 0017 (connected-by-default): the DWD radar + warnings overlays are ON by
+// default (public DWD URLs baked in), and only disabled via an explicit
+// WAYFINDER_DWD_..._ENABLED=false flag.
+func TestLoadConfigDWDConnectedByDefault(t *testing.T) {
+	for _, k := range []string{
+		"WAYFINDER_DWD_RADAR_ENABLED", "WAYFINDER_DWD_WMS_URL",
+		"WAYFINDER_DWD_WARN_ENABLED", "WAYFINDER_DWD_WARN_URL",
+	} {
+		_ = os.Unsetenv(k)
+	}
+	cfg := loadConfig()
+	if !cfg.DWDRadarEnabled {
+		t.Error("DWDRadarEnabled: want true by default (connected-by-default)")
+	}
+	if cfg.DWDWMSURL == "" {
+		t.Error("DWDWMSURL: want a non-empty public-DWD default")
+	}
+	if !cfg.DWDWarnEnabled {
+		t.Error("DWDWarnEnabled: want true by default")
+	}
+	if cfg.DWDWarnURL == "" {
+		t.Error("DWDWarnURL: want a non-empty public-DWD default")
+	}
+}
+
+func TestLoadConfigDWDEnabledOptOut(t *testing.T) {
+	t.Setenv("WAYFINDER_DWD_RADAR_ENABLED", "false")
+	t.Setenv("WAYFINDER_DWD_WARN_ENABLED", "0")
+	cfg := loadConfig()
+	if cfg.DWDRadarEnabled {
+		t.Error("WAYFINDER_DWD_RADAR_ENABLED=false must disable the radar overlay")
+	}
+	if cfg.DWDWarnEnabled {
+		t.Error("WAYFINDER_DWD_WARN_ENABLED=0 must disable the warnings overlay")
+	}
+	// The ENABLED flag is the opt-out — the URL default stays.
+	if cfg.DWDWMSURL == "" {
+		t.Error("URL default should remain even when the overlay is disabled")
+	}
+}
+
+func TestLoadConfigDWDURLOverride(t *testing.T) {
+	t.Setenv("WAYFINDER_DWD_WMS_URL", "https://mirror.example/geoserver/dwd/wms")
+	cfg := loadConfig()
+	if cfg.DWDWMSURL != "https://mirror.example/geoserver/dwd/wms" {
+		t.Errorf("DWDWMSURL override: got %q", cfg.DWDWMSURL)
+	}
+}
+
+func TestEnvBool(t *testing.T) {
+	const key = "WAYFINDER_TEST_ENVBOOL"
+	_ = os.Unsetenv(key)
+	if !envBool(key, true) {
+		t.Error("unset should return default true")
+	}
+	if envBool(key, false) {
+		t.Error("unset should return default false")
+	}
+	for v, want := range map[string]bool{"true": true, "false": false, "1": true, "0": false, "TRUE": true} {
+		t.Setenv(key, v)
+		if got := envBool(key, !want); got != want {
+			t.Errorf("envBool(%q) = %v, want %v", v, got, want)
+		}
+	}
+	t.Setenv(key, "maybe") // unparseable → default
+	if !envBool(key, true) {
+		t.Error("unparseable value should fall back to the default")
+	}
+}
+
 func TestMapConfigHandlerDarkThemeByDefault(t *testing.T) {
 	cfg := Config{MapTheme: mapThemeDark}
 

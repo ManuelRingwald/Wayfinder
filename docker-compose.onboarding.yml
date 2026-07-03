@@ -70,6 +70,10 @@ services:
       WAYFINDER_MAP_CENTER_LAT: ${WAYFINDER_MAP_CENTER_LAT:-50.0379}
       WAYFINDER_MAP_CENTER_LON: ${WAYFINDER_MAP_CENTER_LON:-8.5622}
       WAYFINDER_MAP_ZOOM: ${WAYFINDER_MAP_ZOOM:-8}
+      # DWD weather overlays (radar + warnings) are connected-by-default (ADR 0017):
+      # ON out of the box, needs outbound https to maps.dwd.de. Disable per source:
+      #   WAYFINDER_DWD_RADAR_ENABLED: "false"
+      #   WAYFINDER_DWD_WARN_ENABLED: "false"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 10s

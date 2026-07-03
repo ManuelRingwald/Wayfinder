@@ -528,12 +528,13 @@ Auflösung (höchste Priorität zuerst):
 
 ### 6.4 Wetter-Overlays (DWD, WX-A, ADR 0016)
 
-Best-effort; ohne WMS-URL ist das Radar-Overlay aus (transparente Kacheln). Der
-Egress zum DWD muss im Deployment-Netz erlaubt sein (`maps.dwd.de`, HTTPS/443).
+Best-effort; **connected-by-default (ADR 0017): default-an**. Egress zum DWD muss
+erlaubt sein (`maps.dwd.de`, HTTPS/443). Abschalten per `..._ENABLED=false`.
 
 | Variable | Default | Typ | Beschreibung |
 |----------|---------|-----|--------------|
-| `WAYFINDER_DWD_WMS_URL` | *(leer)* | URL | DWD-GeoServer-WMS-Basis-URL (z. B. `https://maps.dwd.de/geoserver/dwd/wms`); leer = Radar-Overlay aus |
+| `WAYFINDER_DWD_RADAR_ENABLED` | `true` | bool | Radar-Overlay an/aus; `false` = Opt-out (keine DWD-Abfrage) |
+| `WAYFINDER_DWD_WMS_URL` | `https://maps.dwd.de/geoserver/dwd/wms` | URL | DWD-GeoServer-WMS-Basis-URL (Override, z. B. Mirror) |
 | `WAYFINDER_DWD_RADAR_LAYER` | `dwd:Niederschlagsradar` | string | WMS-Layer-Name des Radar-/Niederschlagskomposits |
 | `WAYFINDER_DWD_REFRESH` | `5m` | duration | Cache-Lebensdauer je Radar-Kachel (Go-Duration) |
 
@@ -547,11 +548,13 @@ Egress zu `aviationweather.gov` (443) muss erlaubt sein.
 | `WAYFINDER_METAR_USER_AGENT` | `Wayfinder-ASD/1.0` | string | Distinktiver User-Agent (Pflicht gegen AWC-403) |
 | `WAYFINDER_QNH_REFRESH` | `15m` | duration | METAR-Poll-Intervall |
 
-Wetterwarnungen-Overlay (WX-C). Ohne WFS-URL aus; Egress zu `maps.dwd.de` (443).
+Wetterwarnungen-Overlay (WX-C). **Connected-by-default (ADR 0017): default-an**;
+Egress zu `maps.dwd.de` (443). Abschalten per `WAYFINDER_DWD_WARN_ENABLED=false`.
 
 | Variable | Default | Typ | Beschreibung |
 |----------|---------|-----|--------------|
-| `WAYFINDER_DWD_WARN_URL` | *(leer)* | URL | DWD-GeoServer-WFS/OWS-Basis-URL (z. B. `https://maps.dwd.de/geoserver/dwd/ows`); leer = Feature aus |
+| `WAYFINDER_DWD_WARN_ENABLED` | `true` | bool | Warnungen-Overlay an/aus; `false` = Opt-out |
+| `WAYFINDER_DWD_WARN_URL` | `https://maps.dwd.de/geoserver/dwd/ows` | URL | DWD-GeoServer-WFS/OWS-Basis-URL (Override) |
 | `WAYFINDER_DWD_WARN_LAYER` | `dwd:Warnungen_Gemeinden_vereinigt` | string | WFS-Layer (aufgelöste Gemeinde-Warnungen) |
 | `WAYFINDER_DWD_WARN_REFRESH` | `5m` | duration | Poll-Intervall des Warn-Feeds |
 
