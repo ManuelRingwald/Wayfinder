@@ -18,6 +18,14 @@ type ClientFactory func(apiKey string) *Client
 // per-tenant endpoints serve an empty collection (graceful, never an error).
 type TenantResolver func(r *http.Request) (tenantID int64, ok bool)
 
+// FeatureGate reports whether tenantID is entitled to the overlay of the given
+// kind (airspaces / vor_ndb / waypoints). It is injected by the caller (main.go)
+// so this package stays free of the feature/entitlement layer. When the gate
+// denies a kind, the endpoint serves an empty collection — the overlay simply
+// does not appear, enforcing the tenant's disabled feature toggle on the SERVER
+// (the frontend gate is cosmetic only). A nil gate allows every kind (no gating).
+type FeatureGate func(ctx context.Context, tenantID int64, kind Kind) bool
+
 // Registry runs one aeronautical Service per tenant (ONB-6, ADR 0011): each tenant
 // fetches OpenAIP with its own API key (or the global fallback) against its own
 // area of interest, and the read endpoints serve the cache of the requesting
@@ -186,20 +194,29 @@ func (reg *Registry) Serve(tenantID int64, kind Kind) FeatureCollection {
 
 // Register mounts the per-tenant GeoJSON endpoints on mux, each wrapped by mw (the
 // tenant middleware, so the handler sees an authenticated Identity) and resolving
-// the tenant via tenantOf. Mirrors Service.Register but is tenant-aware (ONB-6).
-func (reg *Registry) Register(mux *http.ServeMux, mw func(http.Handler) http.Handler, tenantOf TenantResolver) {
+// the tenant via tenantOf. gate (optional; may be nil) enforces the tenant's
+// feature entitlement per kind — a denied kind serves an empty collection. Mirrors
+// Service.Register but is tenant-aware (ONB-6) and entitlement-aware.
+func (reg *Registry) Register(mux *http.ServeMux, mw func(http.Handler) http.Handler, tenantOf TenantResolver, gate FeatureGate) {
 	for _, kind := range allKinds {
-		mux.Handle(endpointPaths[kind], mw(reg.tenantHandler(kind, tenantOf)))
+		mux.Handle(endpointPaths[kind], mw(reg.tenantHandler(kind, tenantOf, gate)))
 	}
 }
 
 // tenantHandler serves one kind for the requesting tenant. With no identity it
 // returns an empty collection (graceful: the aeronautical layers are best-effort
-// and must never surface as an error, ADR 0004).
-func (reg *Registry) tenantHandler(kind Kind, tenantOf TenantResolver) http.HandlerFunc {
+// and must never surface as an error, ADR 0004). When gate denies the kind for
+// the tenant it likewise serves an empty collection — a tenant whose feature is
+// off must not receive the overlay data, regardless of the cosmetic frontend
+// toggle (server-enforced boundary, NFR-SEC-003 spirit).
+func (reg *Registry) tenantHandler(kind Kind, tenantOf TenantResolver, gate FeatureGate) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		tid, ok := tenantOf(r)
 		if !ok {
+			writeFeatureCollection(w, EmptyCollection())
+			return
+		}
+		if gate != nil && !gate(r.Context(), tid, kind) {
 			writeFeatureCollection(w, EmptyCollection())
 			return
 		}

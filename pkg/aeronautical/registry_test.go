@@ -145,7 +145,7 @@ func TestRegistryHandlerResolvesTenant(t *testing.T) {
 	// The middleware would normally set the Identity; here it is a passthrough and
 	// the resolver returns a fixed tenant id, isolating the Register/Serve wiring.
 	passthrough := func(next http.Handler) http.Handler { return next }
-	reg.Register(mux, passthrough, func(r *http.Request) (int64, bool) { return 7, true })
+	reg.Register(mux, passthrough, func(r *http.Request) (int64, bool) { return 7, true }, nil)
 
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/navaids", nil))
@@ -157,13 +157,46 @@ func TestRegistryHandlerResolvesTenant(t *testing.T) {
 	}
 }
 
+// A tenant whose feature entitlement for a kind is off receives an empty
+// collection for that kind — the overlay is gated on the SERVER, not just the
+// (cosmetic) frontend toggle. The allow path is covered by the tests above (nil
+// gate); here we assert the deny path drops cached data.
+func TestRegistryHandlerFeatureGateDeniesServesEmpty(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(sampleNavaids))
+	}))
+	defer srv.Close()
+
+	reg := newTestRegistry(t, srv.URL, nil)
+	defer reg.StopAll()
+	reg.Start(7, "k", BoundingBox{}, false)
+	waitFor(t, func() bool { return len(reg.Serve(7, KindNavaid).Features) == 2 })
+
+	// Gate denies navaids for tenant 7 (feature off), allows every other kind.
+	gate := func(_ context.Context, tid int64, kind Kind) bool {
+		return tid != 7 || kind != KindNavaid
+	}
+	mux := http.NewServeMux()
+	passthrough := func(next http.Handler) http.Handler { return next }
+	reg.Register(mux, passthrough, func(r *http.Request) (int64, bool) { return 7, true }, gate)
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/navaids", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (graceful)", rec.Code)
+	}
+	if got := len(decodeFC(t, rec).Features); got != 0 {
+		t.Fatalf("gated-off kind must serve empty despite cached data, got %d features", got)
+	}
+}
+
 func TestRegistryHandlerNoIdentityServesEmpty(t *testing.T) {
 	reg := newTestRegistry(t, "http://unused", nil)
 	defer reg.StopAll()
 
 	mux := http.NewServeMux()
 	passthrough := func(next http.Handler) http.Handler { return next }
-	reg.Register(mux, passthrough, func(r *http.Request) (int64, bool) { return 0, false })
+	reg.Register(mux, passthrough, func(r *http.Request) (int64, bool) { return 0, false }, nil)
 
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/airspace", nil))
