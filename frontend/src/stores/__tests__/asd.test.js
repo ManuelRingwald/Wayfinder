@@ -72,3 +72,20 @@ describe('asd store — weather radar overlay (WX-A)', () => {
     expect(s.layerVisibility.weatherRadar).toBe(true)
   })
 })
+
+// WX-C: DWD weather-warnings overlay — same off-by-default + availability gate.
+describe('asd store — weather warnings overlay (WX-C)', () => {
+  it('is off by default and reports unavailable until configured', () => {
+    const s = useAsdStore()
+    expect(s.layerVisibility.weatherWarnings).toBe(false)
+    expect(s.weatherWarningsAvailable).toBe(false)
+  })
+
+  it('setWeatherWarningsAvailable coerces to a boolean', () => {
+    const s = useAsdStore()
+    s.setWeatherWarningsAvailable(1)
+    expect(s.weatherWarningsAvailable).toBe(true)
+    s.setWeatherWarningsAvailable('')
+    expect(s.weatherWarningsAvailable).toBe(false)
+  })
+})

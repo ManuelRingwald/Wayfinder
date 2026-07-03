@@ -31,6 +31,8 @@ const (
 	WeatherRadar Key = "weather_radar"
 	// QNH — QNH (altimeter setting) header infobox display (WX-B, ADR 0016).
 	QNH Key = "qnh"
+	// WeatherWarnings — DWD weather-warnings map overlay display (WX-C, ADR 0016).
+	WeatherWarnings Key = "weather_warnings"
 )
 
 // catalog is the closed set of known feature keys with human-readable
@@ -38,16 +40,17 @@ const (
 // treats any key outside it as fail-closed — so the catalog is the single
 // source of truth for "which features exist".
 var catalog = map[Key]string{
-	STCA:          "Short-Term Conflict Alert display (ASD-006)",
-	MultiFeed:     "Subscribe to multiple sensor feeds (WF2-41)",
-	PremiumLayers: "Premium ASD map overlays",
-	Airspaces:     "Airspace overlays (CTR, TMA, restricted, info) display (ASD-011)",
-	RangeRings:    "Range-ring overlay display (ASD-012)",
-	HistoryDots:   "Track history dots display (ASD-004a)",
-	VorNdb:        "VOR/NDB navaid overlay display (ASD-003)",
-	Waypoints:     "Waypoint overlay display (ASD-003)",
-	WeatherRadar:  "DWD weather-radar map overlay (WX-A, ADR 0016)",
-	QNH:           "QNH altimeter-setting header infobox (WX-B, ADR 0016)",
+	STCA:            "Short-Term Conflict Alert display (ASD-006)",
+	MultiFeed:       "Subscribe to multiple sensor feeds (WF2-41)",
+	PremiumLayers:   "Premium ASD map overlays",
+	Airspaces:       "Airspace overlays (CTR, TMA, restricted, info) display (ASD-011)",
+	RangeRings:      "Range-ring overlay display (ASD-012)",
+	HistoryDots:     "Track history dots display (ASD-004a)",
+	VorNdb:          "VOR/NDB navaid overlay display (ASD-003)",
+	Waypoints:       "Waypoint overlay display (ASD-003)",
+	WeatherRadar:    "DWD weather-radar map overlay (WX-A, ADR 0016)",
+	QNH:             "QNH altimeter-setting header infobox (WX-B, ADR 0016)",
+	WeatherWarnings: "DWD weather-warnings map overlay (WX-C, ADR 0016)",
 }
 
 // IsKnown reports whether key is part of the feature catalog.

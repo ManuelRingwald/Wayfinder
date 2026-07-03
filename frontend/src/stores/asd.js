@@ -41,6 +41,10 @@ export const useAsdStore = defineStore('asd', () => {
   const weatherRadarAvailable = ref(false)
   function setWeatherRadarAvailable(v) { weatherRadarAvailable.value = !!v }
 
+  // WX-C: whether the DWD weather-warnings overlay is configured on the backend.
+  const weatherWarningsAvailable = ref(false)
+  function setWeatherWarningsAvailable(v) { weatherWarningsAvailable.value = !!v }
+
   // Layer visibility
   const layerVisibility = reactive({
     airspace: true,
@@ -50,6 +54,7 @@ export const useAsdStore = defineStore('asd', () => {
     rangeRings: false, // ASD-012: off by default (declutter); operator opts in
     historyDots: true, // AP2: on by default; hidden by feature gate when tenant lacks history_dots
     weatherRadar: false, // WX-A: off by default (weather is opt-in context)
+    weatherWarnings: false, // WX-C: off by default (opt-in context)
   })
 
   // ASD-012: operator-tunable range-ring configuration, applied live. The engine
@@ -122,6 +127,7 @@ export const useAsdStore = defineStore('asd', () => {
     mapLoaded, palette, viewportWidthNM, feedStatus, feedHealth, layerVisibility, flFilter,
     coverageAvailable, setCoverageAvailable,
     weatherRadarAvailable, setWeatherRadarAvailable,
+    weatherWarningsAvailable, setWeatherWarningsAvailable,
     airspaceGroupVisibility,
     rangeRingConfig, setRangeRingConfig,
     selectedTrack, labelPins,

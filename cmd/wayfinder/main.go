@@ -40,6 +40,7 @@ import (
 	"github.com/manuelringwald/wayfinder/pkg/tenant"
 	"github.com/manuelringwald/wayfinder/pkg/weather"
 	"github.com/manuelringwald/wayfinder/pkg/weathertiles"
+	"github.com/manuelringwald/wayfinder/pkg/weatherwarnings"
 	"github.com/manuelringwald/wayfinder/pkg/ws"
 )
 
@@ -121,6 +122,15 @@ func main() {
 	weatherQNH := weather.NewService(
 		weather.NewClient(&http.Client{Timeout: 15 * time.Second}, cfg.MetarURL, cfg.MetarUserAgent),
 		weather.Config{Enabled: len(cfg.MetarStations) > 0, Stations: cfg.MetarStations, Refresh: cfg.QNHRefresh},
+		logger,
+	)
+
+	// Weather-warnings overlay (WX-C, ADR 0016): best-effort DWD WFS GeoJSON.
+	// Enabled only when a WFS URL is configured. Polls in its own goroutine; the
+	// map fetches /api/weather/warnings.geojson. Never touches the track path.
+	weatherWarn := weatherwarnings.NewService(
+		weatherwarnings.NewClient(&http.Client{Timeout: 15 * time.Second}, cfg.DWDWarnURL, cfg.DWDWarnLayer),
+		weatherwarnings.Config{Enabled: cfg.DWDWarnURL != "", Refresh: cfg.DWDWarnRefresh},
 		logger,
 	)
 
@@ -315,6 +325,10 @@ func main() {
 	// stations are configured. Bound to the shutdown context.
 	go weatherQNH.Run(ctx)
 
+	// Start the weather-warnings poller (best-effort, WX-C, ADR 0016). No-op when
+	// no WFS URL is configured. Bound to the shutdown context.
+	go weatherWarn.Run(ctx)
+
 	// OpenAIP per tenant (ONB-6, ADR 0011): each tenant fetches OpenAIP with its own
 	// key (or the global fallback) against its own area of interest. The registry
 	// supervises one Service per tenant alongside the global fallback; a tenant
@@ -353,7 +367,7 @@ func main() {
 	// OpenAIP fetch counters (ONB-6): sum across every per-tenant Service plus the
 	// global one so the process-wide counter stays meaningful as tenants come and go.
 	aeroCounts := func() (int64, int64) { return aeroRegistry.FetchSuccessCount(), aeroRegistry.FetchFailureCount() }
-	go startProbeServer(logger, &blockCount, &trackCount, &tracksCurrent, &heartbeatCount, broadcaster, decodeErrors, feedRegistry, aeroService, aeroCounts, weatherRadar, weatherQNH, &lastError, featSvc, sessionRepo)
+	go startProbeServer(logger, &blockCount, &trackCount, &tracksCurrent, &heartbeatCount, broadcaster, decodeErrors, feedRegistry, aeroService, aeroCounts, weatherRadar, weatherQNH, weatherWarn, &lastError, featSvc, sessionRepo)
 
 	// Start WebSocket server.
 	mux := http.NewServeMux()
@@ -416,6 +430,12 @@ func main() {
 	// (empty station list when disabled), never an error. UI-gated per tenant via
 	// the qnh entitlement.
 	mux.Handle("GET /api/weather/qnh", tenantMW(weatherQNH.Handler()))
+
+	// Weather-warnings GeoJSON (WX-C, ADR 0016): the map fetches this and renders
+	// warning polygons coloured by severity. Behind the tenant middleware;
+	// best-effort (empty collection when disabled), never an error. UI-gated per
+	// tenant via the weather_warnings entitlement.
+	mux.Handle("GET /api/weather/warnings.geojson", tenantMW(weatherWarn.Handler()))
 
 	// Builtin-mode login/logout (WF2-12.3): only when the auth mode is builtin
 	// (proxy mints no local sessions). These routes are intentionally
@@ -610,6 +630,12 @@ type Config struct {
 	MetarUserAgent string        // WAYFINDER_METAR_USER_AGENT (required distinctive UA; default Wayfinder-ASD/1.0)
 	QNHRefresh     time.Duration // WAYFINDER_QNH_REFRESH (METAR poll interval, default 15m)
 
+	// DWD weather-warnings overlay (WX-C, ADR 0016): best-effort DWD GeoServer WFS
+	// GeoJSON. Enabled only when a WFS URL is configured.
+	DWDWarnURL     string        // WAYFINDER_DWD_WARN_URL (DWD GeoServer WFS/OWS base, e.g. https://maps.dwd.de/geoserver/dwd/ows)
+	DWDWarnLayer   string        // WAYFINDER_DWD_WARN_LAYER (default dwd:Warnungen_Gemeinden_vereinigt)
+	DWDWarnRefresh time.Duration // WAYFINDER_DWD_WARN_REFRESH (default 5m)
+
 	// SecretKey is the deployment-managed AES-256 key (32 bytes, base64) that seals
 	// per-feed source credentials at rest (ORCH-2c, ADR 0012 §6). Unset disables the
 	// write-only secret admin routes (they return 503); the same key is configured
@@ -787,6 +813,8 @@ func loadConfig() Config {
 		DWDRadarLayer:    "dwd:Niederschlagsradar",
 		DWDRefresh:       5 * time.Minute,
 		QNHRefresh:       15 * time.Minute,
+		DWDWarnLayer:     "dwd:Warnungen_Gemeinden_vereinigt",
+		DWDWarnRefresh:   5 * time.Minute,
 		ImpersonationTTL: 30 * time.Minute,
 	}
 
@@ -924,6 +952,18 @@ func loadConfig() Config {
 	if v := os.Getenv("WAYFINDER_QNH_REFRESH"); v != "" {
 		if d, err := time.ParseDuration(v); err == nil && d > 0 {
 			cfg.QNHRefresh = d
+		}
+	}
+
+	// DWD weather-warnings overlay (WX-C, ADR 0016). Feature enabled only when the
+	// WFS URL is set; layer/refresh keep their defaults when unset/invalid.
+	cfg.DWDWarnURL = os.Getenv("WAYFINDER_DWD_WARN_URL")
+	if v := strings.TrimSpace(os.Getenv("WAYFINDER_DWD_WARN_LAYER")); v != "" {
+		cfg.DWDWarnLayer = v
+	}
+	if v := os.Getenv("WAYFINDER_DWD_WARN_REFRESH"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			cfg.DWDWarnRefresh = d
 		}
 	}
 
@@ -1312,6 +1352,8 @@ func mapConfigHandler(cfg Config) http.HandlerFunc {
 			// WX-A: whether the DWD radar tile proxy is configured, so the frontend
 			// can disable a switch that would otherwise do nothing.
 			"weather_radar_available": cfg.DWDWMSURL != "",
+			// WX-C: whether the DWD warnings WFS is configured.
+			"weather_warnings_available": cfg.DWDWarnURL != "",
 		})
 	}
 }
@@ -1335,7 +1377,7 @@ func coverageRingsHandler(cfg Config) http.HandlerFunc {
 }
 
 // startProbeServer starts an HTTP server for health, readiness and metrics.
-func startProbeServer(logger *slog.Logger, blockCount, trackCount, tracksCurrent, heartbeatCount *atomic.Int64, broadcaster *broadcast.Broadcaster, decodeErrors func() int64, feedRegistry *health.Registry, aeroService *aeronautical.Service, aeroCounts func() (success, failure int64), weatherRadar *weathertiles.Service, weatherQNH *weather.Service, lastError *atomic.Pointer[string], featSvc *feature.Service, sessionRepo *store.SessionRepo) {
+func startProbeServer(logger *slog.Logger, blockCount, trackCount, tracksCurrent, heartbeatCount *atomic.Int64, broadcaster *broadcast.Broadcaster, decodeErrors func() int64, feedRegistry *health.Registry, aeroService *aeronautical.Service, aeroCounts func() (success, failure int64), weatherRadar *weathertiles.Service, weatherQNH *weather.Service, weatherWarn *weatherwarnings.Service, lastError *atomic.Pointer[string], featSvc *feature.Service, sessionRepo *store.SessionRepo) {
 	mux := http.NewServeMux()
 
 	// /health — liveness check (always ready unless startup failed).
@@ -1406,6 +1448,14 @@ func startProbeServer(logger *slog.Logger, blockCount, trackCount, tracksCurrent
 				metrics.Counter("wayfinder_weather_fetch_success_total", "Total successful weather-source fetches, by source.", weatherQNH.FetchSuccessCount()).With(metar),
 				metrics.Counter("wayfinder_weather_fetch_failures_total", "Total failed weather-source fetches, by source.", weatherQNH.FetchFailureCount()).With(metar),
 				metrics.Gauge("wayfinder_weather_cache_age_seconds", "Seconds since the last successful weather-source fetch, or -1 if never, by source.", weatherQNH.CacheAgeSeconds(time.Now())).With(metar),
+			)
+		}
+		if weatherWarn != nil {
+			warn := metrics.Label{Name: "source", Value: "dwd_warnings"}
+			mset = append(mset,
+				metrics.Counter("wayfinder_weather_fetch_success_total", "Total successful weather-source fetches, by source.", weatherWarn.FetchSuccessCount()).With(warn),
+				metrics.Counter("wayfinder_weather_fetch_failures_total", "Total failed weather-source fetches, by source.", weatherWarn.FetchFailureCount()).With(warn),
+				metrics.Gauge("wayfinder_weather_cache_age_seconds", "Seconds since the last successful weather-source fetch, or -1 if never, by source.", weatherWarn.CacheAgeSeconds(time.Now())).With(warn),
 			)
 		}
 		// Active-session gauge (AP7): a live count from the registry at scrape time,

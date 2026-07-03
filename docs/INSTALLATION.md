@@ -805,11 +805,22 @@ Entitlement `qnh`. **Wichtig:** QNH kommt **nur aus echtem METAR** (NOAA-Feld
 | `WAYFINDER_METAR_USER_AGENT` | `Wayfinder-ASD/1.0` | Distinktiver User-Agent (leere/Default-UAs werden von der AWC gefiltert → 403) |
 | `WAYFINDER_QNH_REFRESH` | `15m` | METAR-Poll-Intervall (METAR ~30 min; unter dem AWC-Limit von ~100 req/min) |
 
-> **Ausgehender Netzzugang (Vertrauensgrenze, ADR 0016).** Wayfinder holt Radar
-> und QNH **server-seitig** und liefert sie same-origin an den Browser
-> (`/api/weather/radar/{z}/{x}/{y}.png`, `/api/weather/qnh`). Das **Deployment-Netz
-> muss daher ausgehend `maps.dwd.de` (Radar) bzw. `aviationweather.gov` (QNH),
-> jeweils HTTPS/443, erreichen dürfen.** Beide Abrufe sind best-effort und
+**Wetterwarnungen-Overlay (DWD-WFS, WX-C).** Amtliche DWD-Warnpolygone (Gewitter,
+Sturm, Schnee/Eis …), nach Warnstufe eingefärbt. Ohne `WAYFINDER_DWD_WARN_URL`
+aus; zusätzlich Entitlement `weather_warnings` nötig.
+
+| Variable | Default | Beschreibung |
+|----------|---------|--------------|
+| `WAYFINDER_DWD_WARN_URL` | *(leer)* | DWD-GeoServer-WFS/OWS-Basis-URL, z. B. `https://maps.dwd.de/geoserver/dwd/ows`; leer = Feature aus |
+| `WAYFINDER_DWD_WARN_LAYER` | `dwd:Warnungen_Gemeinden_vereinigt` | WFS-Layer (aufgelöste Gemeinde-Warnungen; leichtgewichtig) |
+| `WAYFINDER_DWD_WARN_REFRESH` | `5m` | Poll-Intervall des Warn-Feeds |
+
+> **Ausgehender Netzzugang (Vertrauensgrenze, ADR 0016).** Wayfinder holt Radar,
+> Warnungen und QNH **server-seitig** und liefert sie same-origin an den Browser
+> (`/api/weather/radar/{z}/{x}/{y}.png`, `/api/weather/warnings.geojson`,
+> `/api/weather/qnh`). Das **Deployment-Netz muss daher ausgehend `maps.dwd.de`
+> (Radar + Warnungen) bzw. `aviationweather.gov` (QNH), jeweils HTTPS/443,
+> erreichen dürfen.** Alle Abrufe sind best-effort und
 > misstrauisch (Timeout, Größenlimit, kein Absturz auf Fehldaten) und blockieren
 > nie `/ready`.
 >
