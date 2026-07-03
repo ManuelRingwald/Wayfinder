@@ -315,6 +315,86 @@ func TestRefreshTenantOpenAIP(t *testing.T) {
 	}
 }
 
+func TestGetAiracReturnsAValidCycle(t *testing.T) {
+	ft := fakeTenants{byID: map[int64]store.Tenant{}}
+	h := handlerForOpenAIP(ft, nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, adminReq(http.MethodGet, "/api/admin/airac", "", 1, store.RoleAdmin))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var got struct {
+		Ident         string    `json:"ident"`
+		Effective     time.Time `json:"effective"`
+		NextEffective time.Time `json:"next_effective"`
+		DaysUntilNext int       `json:"days_until_next"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got.Ident) != 4 {
+		t.Errorf("ident = %q, want a 4-char YYNN", got.Ident)
+	}
+	if diff := got.NextEffective.Sub(got.Effective); diff != 28*24*time.Hour {
+		t.Errorf("next-effective is %v after effective, want 28 days", diff)
+	}
+	if got.DaysUntilNext < 1 || got.DaysUntilNext > 28 {
+		t.Errorf("days until next = %d, want 1..28", got.DaysUntilNext)
+	}
+}
+
+// fakeAeroChanges is a stub AeroChangesReader (AERO-3).
+type fakeAeroChanges struct{ rows []store.AeroCacheChange }
+
+func (f fakeAeroChanges) TenantAeroCacheChanges(_ context.Context, _ int64) ([]store.AeroCacheChange, error) {
+	return f.rows, nil
+}
+
+func TestGetTenantOpenAIPChanges(t *testing.T) {
+	ft := fakeTenants{byID: map[int64]store.Tenant{5: {ID: 5}}}
+	prev, added, removed := 140, 7, 4
+	rows := []store.AeroCacheChange{
+		{Kind: "airspace", FeatureCount: 143, PrevFeatureCount: &prev, Added: &added, Removed: &removed, FetchedAt: time.Unix(1_700_000_000, 0).UTC()},
+		{Kind: "navaid", FeatureCount: 20}, // first fetch: nil change columns
+	}
+	h := handlerForOpenAIP(ft, nil).WithAeroChanges(fakeAeroChanges{rows: rows})
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, adminReq(http.MethodGet, "/api/admin/tenants/5/openaip/changes", "", 1, store.RoleAdmin))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var got []struct {
+		Kind             string `json:"kind"`
+		FeatureCount     int    `json:"feature_count"`
+		PrevFeatureCount *int   `json:"prev_feature_count"`
+		Added            *int   `json:"added"`
+		Removed          *int   `json:"removed"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d change rows, want 2", len(got))
+	}
+	if got[0].Kind != "airspace" || got[0].Added == nil || *got[0].Added != 7 || got[0].Removed == nil || *got[0].Removed != 4 {
+		t.Errorf("airspace change = %+v, want +7/-4", got[0])
+	}
+	if got[1].PrevFeatureCount != nil {
+		t.Errorf("navaid first-fetch should have null prev, got %+v", got[1])
+	}
+}
+
+func TestGetTenantOpenAIPChangesUnavailableIs404(t *testing.T) {
+	ft := fakeTenants{byID: map[int64]store.Tenant{5: {ID: 5}}}
+	h := handlerForOpenAIP(ft, nil) // no changes reader wired
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, adminReq(http.MethodGet, "/api/admin/tenants/5/openaip/changes", "", 1, store.RoleAdmin))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404 when the changes reader is not wired", rec.Code)
+	}
+}
+
 func TestOpenAIPRoutesForbidNonAdmin(t *testing.T) {
 	ft := fakeTenants{byID: map[int64]store.Tenant{5: {ID: 5}}}
 	h := handlerForOpenAIP(ft, &fakeAeroLife{})

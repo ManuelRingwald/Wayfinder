@@ -26,7 +26,9 @@ var allKinds = []Kind{KindAirspace, KindNavaid, KindWaypoint}
 // as a graceful fallback. tenantID nil addresses the global fallback cache row.
 type CacheStore interface {
 	Load(ctx context.Context, tenantID *int64, kind Kind) (fc FeatureCollection, fetchedAt time.Time, ok bool, err error)
-	Save(ctx context.Context, tenantID *int64, kind Kind, fc FeatureCollection, fetchedAt time.Time) error
+	// Save persists the fetched collection plus the change summary of this refresh
+	// (AERO-3) so the admin can see what churned per layer.
+	Save(ctx context.Context, tenantID *int64, kind Kind, fc FeatureCollection, change ChangeSummary, fetchedAt time.Time) error
 }
 
 // Config configures the aeronautical Service.
@@ -153,13 +155,16 @@ func (s *Service) refreshAll(ctx context.Context) {
 				slog.String("kind", string(kind)), slog.String("error", err.Error()))
 			continue
 		}
+		// Change-impact (AERO-3): diff the fresh data against what we had before
+		// overwriting the in-memory cache, so the admin sees what churned per layer.
+		change := diffCollections(s.cache[kind].Load(), fc)
 		stored := fc
 		s.cache[kind].Store(&stored)
 		s.fetchSuccess.Add(1)
 		now := time.Now()
 		s.lastSuccessUnix.Store(now.Unix())
 		if s.cfg.Store != nil {
-			if err := s.cfg.Store.Save(ctx, s.cfg.TenantID, kind, fc, now); err != nil {
+			if err := s.cfg.Store.Save(ctx, s.cfg.TenantID, kind, fc, change, now); err != nil {
 				s.logger.Warn("aeronautical persist failed; cache kept in memory only",
 					slog.String("kind", string(kind)), slog.String("error", err.Error()))
 			}

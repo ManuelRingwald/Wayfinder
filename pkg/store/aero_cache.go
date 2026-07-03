@@ -53,27 +53,77 @@ func (r *AeroCacheRepo) Load(ctx context.Context, tenantID *int64, kind string) 
 	return e, true, nil
 }
 
-// Save upserts the cache row for (tenantID, kind). tenantID nil targets the global
-// fallback row. Idempotent via the partial unique indexes.
-func (r *AeroCacheRepo) Save(ctx context.Context, tenantID *int64, kind, geojson string, featureCount int, fetchedAt time.Time) error {
+// Save upserts the cache row for (tenantID, kind), including the change-impact of
+// this refresh (AERO-3): prevCount/added/removed are nil on the first fetch (no
+// prior to diff). tenantID nil targets the global fallback row. Idempotent via the
+// partial unique indexes.
+func (r *AeroCacheRepo) Save(ctx context.Context, tenantID *int64, kind, geojson string, featureCount int, prevCount, added, removed *int, fetchedAt time.Time) error {
 	if tenantID == nil {
-		const q = `INSERT INTO aeronautical_cache (tenant_id, kind, geojson, feature_count, fetched_at)
-			VALUES (NULL, $1, $2, $3, $4)
+		const q = `INSERT INTO aeronautical_cache (tenant_id, kind, geojson, feature_count, prev_feature_count, added, removed, fetched_at)
+			VALUES (NULL, $1, $2, $3, $4, $5, $6, $7)
 			ON CONFLICT (kind) WHERE tenant_id IS NULL
-			DO UPDATE SET geojson = EXCLUDED.geojson, feature_count = EXCLUDED.feature_count, fetched_at = EXCLUDED.fetched_at`
-		if _, err := r.db.Exec(ctx, q, kind, geojson, featureCount, fetchedAt); err != nil {
+			DO UPDATE SET geojson = EXCLUDED.geojson, feature_count = EXCLUDED.feature_count,
+				prev_feature_count = EXCLUDED.prev_feature_count, added = EXCLUDED.added,
+				removed = EXCLUDED.removed, fetched_at = EXCLUDED.fetched_at`
+		if _, err := r.db.Exec(ctx, q, kind, geojson, featureCount, prevCount, added, removed, fetchedAt); err != nil {
 			return wrap("save global aero cache", err)
 		}
 		return nil
 	}
-	const q = `INSERT INTO aeronautical_cache (tenant_id, kind, geojson, feature_count, fetched_at)
-		VALUES ($1, $2, $3, $4, $5)
+	const q = `INSERT INTO aeronautical_cache (tenant_id, kind, geojson, feature_count, prev_feature_count, added, removed, fetched_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		ON CONFLICT (tenant_id, kind) WHERE tenant_id IS NOT NULL
-		DO UPDATE SET geojson = EXCLUDED.geojson, feature_count = EXCLUDED.feature_count, fetched_at = EXCLUDED.fetched_at`
-	if _, err := r.db.Exec(ctx, q, *tenantID, kind, geojson, featureCount, fetchedAt); err != nil {
+		DO UPDATE SET geojson = EXCLUDED.geojson, feature_count = EXCLUDED.feature_count,
+			prev_feature_count = EXCLUDED.prev_feature_count, added = EXCLUDED.added,
+			removed = EXCLUDED.removed, fetched_at = EXCLUDED.fetched_at`
+	if _, err := r.db.Exec(ctx, q, *tenantID, kind, geojson, featureCount, prevCount, added, removed, fetchedAt); err != nil {
 		return wrap("save tenant aero cache", err)
 	}
 	return nil
+}
+
+// AeroCacheChange is the change-impact of the last refresh for one (tenant, kind)
+// (AERO-3). PrevFeatureCount/Added/Removed are nil when the row has never been
+// diffed (first fetch).
+type AeroCacheChange struct {
+	Kind             string
+	FeatureCount     int
+	PrevFeatureCount *int
+	Added            *int
+	Removed          *int
+	FetchedAt        time.Time
+}
+
+// Changes returns the per-kind change-impact rows for tenantID (nil = global),
+// ordered by kind. Empty when nothing is cached yet.
+func (r *AeroCacheRepo) Changes(ctx context.Context, tenantID *int64) ([]AeroCacheChange, error) {
+	var rows pgx.Rows
+	var err error
+	if tenantID == nil {
+		const q = `SELECT kind, feature_count, prev_feature_count, added, removed, fetched_at
+			FROM aeronautical_cache WHERE tenant_id IS NULL ORDER BY kind`
+		rows, err = r.db.Query(ctx, q)
+	} else {
+		const q = `SELECT kind, feature_count, prev_feature_count, added, removed, fetched_at
+			FROM aeronautical_cache WHERE tenant_id = $1 ORDER BY kind`
+		rows, err = r.db.Query(ctx, q, *tenantID)
+	}
+	if err != nil {
+		return nil, wrap("list aero cache changes", err)
+	}
+	defer rows.Close()
+	var out []AeroCacheChange
+	for rows.Next() {
+		var c AeroCacheChange
+		if err := rows.Scan(&c.Kind, &c.FeatureCount, &c.PrevFeatureCount, &c.Added, &c.Removed, &c.FetchedAt); err != nil {
+			return nil, wrap("scan aero cache change", err)
+		}
+		out = append(out, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, wrap("iterate aero cache changes", err)
+	}
+	return out, nil
 }
 
 // AeroCacheStatus is the summary the admin status route exposes for a tenant's
