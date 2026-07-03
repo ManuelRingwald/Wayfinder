@@ -10,6 +10,25 @@
 
 ---
 
+## 🎯 Stand 2026-07-03
+
+- **Zuletzt aktualisiert:** 2026-07-03
+- **Ist-/Gap-Analyse Service-Orientierung & HA (Doku-Sitzung, Branch
+  `claude/wayfinder-firefly-architecture-759lfg`):** Auf Frage des
+  Projektverantwortlichen („Wie service-orientiert sind Firefly/Wayfinder heute?
+  Lohnt es, das für Produktion/HA weiter zu verankern?") wurde eine
+  repo-übergreifende Analyse erstellt und dokumentiert:
+  **`docs/design/gap-analyse-service-orientierung-ha.md`**. Kernaussagen:
+  System-Ebene ist bereits service-orientiert (CAT062-Draht-Vertrag, 1 Firefly
+  pro Feed, Orchestrator-Control-Plane); Binnen-Ebene sind bewusst modulare
+  Monolithen mit vorbereiteten Nahtstellen. HA entsteht über Redundanz + Zustand,
+  nicht über Zerlegung — empfohlene Reihenfolge: **WF2-52 Teil 1** (ASD
+  multi-replica: fixer Session-Key, Rescope über Replikas, `/ws`-LB-Konzept) →
+  Firefly-Zustands-Story (Recorder/Snapshot, SDPS-002-Vorstufe) → Feed-Redundanz
+  (eigener ADR, beidseitig) → **ORCH-6** (K8s). Verweise in `ROADMAP.md`
+  (Stufe 5 + §3) eingehängt; Firefly-`STATUS.md` verweist ebenfalls. **Reine
+  Doku, kein Code** — Umsetzung erst nach Ankündigung + Go je Paket.
+
 ## 🎯 Stand 2026-07-02
 
 - **Zuletzt aktualisiert:** 2026-07-02
