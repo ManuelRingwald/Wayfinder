@@ -442,6 +442,15 @@ type whoamiDTO struct {
 	// Omitted when unset. Display config, not track data — CAT062 carries no
 	// sector identity (Vorgabe: keine Fake-UI).
 	ICAO *string `json:"icao,omitempty"`
+	// CenterLat/CenterLon/Zoom are the effective view's map viewport (the tenant's
+	// Standard-Ansicht, or the user's override): the ASD map opens on THIS centre
+	// so a controller lands on their own sector, not a global default (FR-UI-013).
+	// Nil when the tenant has no view config → the map falls back to the global
+	// WAYFINDER_MAP_CENTER_* env (/api/map-config). Cosmetic — the server enforces
+	// the AOI/track scope independently (WF2-21.2); this only aims the camera.
+	CenterLat *float64 `json:"center_lat,omitempty"`
+	CenterLon *float64 `json:"center_lon,omitempty"`
+	Zoom      *float64 `json:"zoom,omitempty"`
 	// ImpersonatedTenantID discloses that the tenant-scoped fields above
 	// (Features/SensorClasses/FLMin/FLMax/ICAO) were resolved against this
 	// tenant instead of the caller's own — admin read-only impersonation
@@ -473,14 +482,19 @@ func (h *Handler) whoami(w http.ResponseWriter, r *http.Request) {
 	if tid, ok := tenant.ImpersonatedTenant(r.Context()); ok {
 		impersonated = &tid
 	}
-	// Effective view FL band for the sidebar's filter-range hint (#116).
-	// Fail-soft: no view config (or a backend error) simply omits the band.
+	// Effective view: FL band for the sidebar hint (#116), ICAO for the header,
+	// and the map viewport centre/zoom so the ASD opens on the tenant's own
+	// sector (FR-UI-013). Fail-soft: no view config (or a backend error) simply
+	// omits these — the map then falls back to the global map-config env.
 	var flMin, flMax *int
 	var icao *string
+	var centerLat, centerLon, zoom *float64
 	if h.views != nil {
 		if vc, err := h.views.GetEffective(r.Context(), readTenant, id.UserID); err == nil {
 			flMin, flMax = vc.FLMin, vc.FLMax
 			icao = vc.ICAO
+			lat, lon, z := vc.CenterLat, vc.CenterLon, vc.Zoom
+			centerLat, centerLon, zoom = &lat, &lon, &z
 		}
 	}
 	writeJSON(w, http.StatusOK, whoamiDTO{
@@ -494,6 +508,9 @@ func (h *Handler) whoami(w http.ResponseWriter, r *http.Request) {
 		FLMin:                flMin,
 		FLMax:                flMax,
 		ICAO:                 icao,
+		CenterLat:            centerLat,
+		CenterLon:            centerLon,
+		Zoom:                 zoom,
 		ImpersonatedTenantID: impersonated,
 	})
 }

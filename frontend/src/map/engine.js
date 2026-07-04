@@ -63,7 +63,12 @@ import {
 //                  'open' when the /ws stream connects, 'closed' when it drops.
 //                  The ASD uses it to slide the session on connect and to probe
 //                  the session on a drop (auth loss → login overlay, WF2-12.5).
-export async function initMap(container, store, onTrackClick, onConnectionChange) {
+//   initialCenter — optional {lat, lon, zoom} from the tenant's effective view
+//                  (session.viewCenter, whoami). When present the map opens on
+//                  the tenant's own sector; when null it uses the global
+//                  /api/map-config centre (FR-UI-013). Later changes flow through
+//                  applyViewCenter (e.g. an admin switching impersonation target).
+export async function initMap(container, store, onTrackClick, onConnectionChange, initialCenter = null) {
   // Fetch map config from the backend.
   const res = await fetch('/api/map-config')
   const cfg = await res.json()
@@ -84,11 +89,22 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
   // WX-C: same for the DWD warnings overlay.
   store.setWeatherWarningsAvailable(cfg.weather_warnings_available === true)
 
+  // Effective viewport: the tenant's view centre (whoami) when supplied, else the
+  // global map-config env. recenter() and the range rings follow this, so the
+  // "recentre" button and the ring geometry track the tenant's sector too — not
+  // the global default (FR-UI-013). center_lat === 0 is a valid latitude, so
+  // presence is tested with != null, not truthiness.
+  const effectiveCenter = {
+    lat: initialCenter?.lat != null ? initialCenter.lat : cfg.center_lat,
+    lon: initialCenter?.lon != null ? initialCenter.lon : cfg.center_lon,
+    zoom: initialCenter?.zoom != null ? initialCenter.zoom : cfg.zoom,
+  }
+
   const map = new maplibregl.Map({
     container,
     style: cfg.style,
-    center: [cfg.center_lon, cfg.center_lat],
-    zoom: cfg.zoom,
+    center: [effectiveCenter.lon, effectiveCenter.lat],
+    zoom: effectiveCenter.zoom,
     // Suppress the default expanded attribution: it printed "© OpenStreetMap …"
     // bottom-right, right under our distance/vector readout. We add a compact
     // attribution below (collapses to an ⓘ, expands on click) — the credit stays
@@ -411,7 +427,25 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
   // and the chrome layer never needs to reach into it directly.
   function zoomIn()    { map.zoomIn() }
   function zoomOut()   { map.zoomOut() }
-  function recenter()  { map.flyTo({ center: [cfg.center_lon, cfg.center_lat], zoom: cfg.zoom }) }
+  function recenter()  { map.flyTo({ center: [effectiveCenter.lon, effectiveCenter.lat], zoom: effectiveCenter.zoom }) }
+
+  // applyViewCenter aims the camera at the tenant's effective view centre
+  // (session.viewCenter, whoami), keeping recenter()/range-rings in sync. Passing
+  // null resets to the global map-config env centre. A no-op when the centre is
+  // unchanged, so periodic session refreshes never yank the camera; a genuine
+  // change (e.g. an admin switching the impersonation target) jumps to it.
+  function applyViewCenter(vc) {
+    const next = vc && vc.lat != null && vc.lon != null
+      ? { lat: vc.lat, lon: vc.lon, zoom: vc.zoom != null ? vc.zoom : cfg.zoom }
+      : { lat: cfg.center_lat, lon: cfg.center_lon, zoom: cfg.zoom }
+    if (next.lat === effectiveCenter.lat && next.lon === effectiveCenter.lon && next.zoom === effectiveCenter.zoom) {
+      return
+    }
+    effectiveCenter.lat = next.lat
+    effectiveCenter.lon = next.lon
+    effectiveCenter.zoom = next.zoom
+    map.jumpTo({ center: [next.lon, next.lat], zoom: next.zoom })
+  }
 
   // ASD-012: (re)generate the range-ring geometry from the configured centre and
   // the operator's spacing/count, then push it to the source. Called on load and
@@ -419,8 +453,8 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
   function updateRangeRings(spacingNM, count) {
     const src = map.getSource(RANGE_RINGS_SOURCE_ID)
     if (!src) return
-    src.setData(rangeRingsGeoJSON(cfg.center_lat, cfg.center_lon, spacingNM, count))
+    src.setData(rangeRingsGeoJSON(effectiveCenter.lat, effectiveCenter.lon, spacingNM, count))
   }
 
-  return { map, destroy, reconnect, setLayerVisibility, updateFlFilter, updateAirspaceFilter, updateSelection, zoomIn, zoomOut, recenter, updateRangeRings }
+  return { map, destroy, reconnect, setLayerVisibility, updateFlFilter, updateAirspaceFilter, updateSelection, zoomIn, zoomOut, recenter, applyViewCenter, updateRangeRings }
 }

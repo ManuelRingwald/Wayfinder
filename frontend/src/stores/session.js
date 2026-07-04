@@ -54,6 +54,17 @@ export const useSessionStore = defineStore('session', () => {
   // Null when unset — the header then omits it (display config, not track data).
   const icao = computed(() => identity.value?.icao ?? null)
 
+  // viewCenter mirrors the effective view's map viewport (centre + zoom, from
+  // whoami) so the ASD opens on the tenant's own sector instead of the global
+  // WAYFINDER_MAP_CENTER_* default (FR-UI-013). Null when the tenant has no view
+  // config → the map keeps the /api/map-config env centre. center_lat === 0 is a
+  // valid latitude (equator), so presence is tested with != null, not truthiness.
+  const viewCenter = computed(() => {
+    const i = identity.value
+    if (!i || i.center_lat == null || i.center_lon == null) return null
+    return { lat: i.center_lat, lon: i.center_lon, zoom: i.zoom ?? null }
+  })
+
   // probe resolves the current session via the role-agnostic identity endpoint.
   // 200 → authed; anything else (401 etc.) → anon. A transition from authed → anon
   // marks the session as expired (for the visible "session expired" hint).
@@ -127,7 +138,7 @@ export const useSessionStore = defineStore('session', () => {
 
   return {
     identity, status, error, expired, subject, role, isAdmin,
-    features, hasFeature, sensorClasses, flMin, flMax, icao,
+    features, hasFeature, sensorClasses, flMin, flMax, icao, viewCenter,
     probe, login, renewNow, startRenew, stopRenew, logout,
   }
 })
