@@ -6,6 +6,19 @@
 // later changes (e.g. an admin switching the impersonation target).
 import { describe, it, expect } from 'vitest'
 import sfc from '../MapCanvas.vue?raw'
+import engine from '../../map/engine.js?raw'
+import mapControls from '../MapControls.vue?raw'
+
+describe('recenter restores the full start view (#169)', () => {
+  it('recenter resets bearing and pitch, not just centre + zoom', () => {
+    expect(engine).toMatch(/function recenter\(\)\s*\{[\s\S]*bearing:\s*0[\s\S]*pitch:\s*0[\s\S]*\}/)
+  })
+
+  it('the control is relabelled "Ansicht zurücksetzen" (no longer "Zentrum")', () => {
+    expect(mapControls).toContain('Ansicht zurücksetzen')
+    expect(mapControls).not.toContain('text="Zentrum"')
+  })
+})
 
 describe('MapCanvas view-centre wiring (FR-UI-013)', () => {
   it('reads the session store', () => {
