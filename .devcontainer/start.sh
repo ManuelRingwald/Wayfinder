@@ -30,10 +30,18 @@ fi
 # restarts, the secret key enables credentialled sources (OpenSky client
 # credentials via the admin UI's feed-secrets endpoints — without it the
 # secrets API answers 503).
+#
+# Encoding matters, and the two keys differ:
+#   - SESSION_KEY is consumed as raw bytes (HMAC accepts any length), so hex is fine.
+#   - SECRET_KEY must be base64-encoded 32 bytes: the server parses it with
+#     secret.KeyFromBase64 (AES-256). `openssl rand -hex 32` yielded a 64-char
+#     hex string that base64-decodes to 48 bytes ≠ 32 → rejected as invalid, and
+#     the secret store silently stayed disabled (issue #171). `-base64 32` emits
+#     exactly 32 bytes base64-encoded, which the server accepts.
 if [ ! -f .env ]; then
 	{
 		echo "WAYFINDER_SESSION_KEY=$(openssl rand -hex 32)"
-		echo "WAYFINDER_SECRET_KEY=$(openssl rand -hex 32)"
+		echo "WAYFINDER_SECRET_KEY=$(openssl rand -base64 32)"
 	} >.env
 	echo "Generated codespace-local .env (session-signing + secret key)."
 fi
