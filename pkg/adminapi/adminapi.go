@@ -970,6 +970,7 @@ func (h *Handler) revokeSubscription(w http.ResponseWriter, r *http.Request) {
 type entitlementDTO struct {
 	Key         string `json:"key"`
 	Enabled     bool   `json:"enabled"`
+	Label       string `json:"label"`
 	Description string `json:"description"`
 }
 
@@ -991,7 +992,7 @@ func (h *Handler) listTenantEntitlements(w http.ResponseWriter, r *http.Request)
 	// UI shows every available feature with its (default-denied) state.
 	out := make([]entitlementDTO, 0, len(feature.All()))
 	for _, k := range feature.All() {
-		out = append(out, entitlementDTO{Key: string(k), Enabled: eff[k], Description: feature.Describe(k)})
+		out = append(out, entitlementDTO{Key: string(k), Enabled: eff[k], Label: feature.Label(k), Description: feature.Describe(k)})
 	}
 	writeJSON(w, http.StatusOK, out)
 }
