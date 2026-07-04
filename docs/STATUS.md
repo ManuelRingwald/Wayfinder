@@ -24,8 +24,13 @@
 - **B2 — Einstieg in der Admin-UI:** „Als Mandant ansehen"-Button auf der
   Mandanten-Detailseite (mintet das Grant, springt zur Karte; Fehler-Alert bei
   fehlgeschlagenem Mint). Die Funktion ist damit dort auffindbar, wo Admins sie
-  suchen — nicht mehr nur über die Bar auf der Karte. **Ausstehend:** A
-  (Default-Mandanten-Seed entfernen); E2E-Check auf der VM, wenn wieder da.
+  suchen — nicht mehr nur über die Bar auf der Karte.
+- **A — Auto-Seed ohne Komfort-Mandant (ADR 0011 Nachtrag):** Der Boot-Seed
+  legt nur noch den tenant-losen Standard-Admin an; der Mandant `default`
+  entfällt (seit ONB-4 redundant, stiftete Verwirrung). Frische Instanzen
+  starten mit null Mandanten; Bestandsinstallationen unberührt (dortigen
+  `default` bei Bedarf per UI löschen). **Ausstehend:** E2E-Check der
+  Impersonation auf der VM, wenn wieder da (zusammen mit #159).
 - **Teil 1 des E2E-Befunds gemergt (PR #158):** Die Luftraum-Overlay-Endpunkte
   (`/api/airspace|navaids|waypoints`) erzwingen das Feature-Entitlement jetzt
   **server-seitig** (leere Collection ohne Entitlement). Details siehe

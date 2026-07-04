@@ -270,3 +270,21 @@ Charter §3). Reihenfolge nach Abhängigkeit:
 - Dieser ADR entscheidet die **Richtung**; Schema-Detailform je Tabelle, die
   Cascade-Strategie und die UI-Feinheiten werden im jeweiligen AP-Häppchen
   festgelegt (kein weiterer Architektur-Sprung nötig).
+
+---
+
+## Nachtrag (2026-07-04): Kein Komfort-Mandant `default` mehr im Auto-Seed
+
+Der Boot-Auto-Seed (ONB-1) legte neben dem tenant-losen Standard-Admin einen
+Komfort-Mandanten `default` an — als „Zuhause" für die ersten Lotsen-Zugänge,
+bevor es die Mandanten-Verwaltung per UI gab. Seit ONB-4 (Mandanten
+anlegen/löschen in der Admin-Oberfläche) spart dieser Seed genau **einen
+Klick** und stiftete im Betrieb nachweislich Verwirrung („wozu ist der
+Default-Mandant da?" — E2E-Rückmeldung 2026-07-04).
+
+**Entscheidung:** Der Auto-Seed provisioniert nur noch den Standard-Admin.
+Eine frische Instanz startet mit **null Mandanten**; der Betreiber legt seine
+eigenen Mandanten per Admin-UI an. **Bestandsinstallationen sind unberührt**
+(der Seed läuft ohnehin nur, solange kein aktiver Admin existiert); ein dort
+vorhandener `default`-Mandant kann — sofern leer — per UI gelöscht werden
+(Guard B, ONB-4).
