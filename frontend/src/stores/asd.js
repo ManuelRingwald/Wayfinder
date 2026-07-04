@@ -12,9 +12,6 @@ export const useAsdStore = defineStore('asd', () => {
   // Map/app state
   const mapLoaded = ref(false)
   const palette = ref('dark') // 'dark' | 'osm'
-  // Visible scope width in NM (engine reports it on every move/zoom); shown in
-  // the bottom-right "<width> NM Breite" readout that replaced the scale bar.
-  const viewportWidthNM = ref(0)
 
   // Feed health per feed (#117): feedId → 'ok' | 'degraded' | 'stale'. A tenant
   // can be subscribed to several feeds; the chip shows the WORST state so a dead
@@ -105,7 +102,6 @@ export const useAsdStore = defineStore('asd', () => {
   }
   function resetFeedHealth() { feedHealth.value = new Map() }
   function setMapLoaded(val) { mapLoaded.value = val }
-  function setViewportWidth(nm) { viewportWidthNM.value = nm }
   function setPalette(p) { palette.value = p }
   function setLayerVisibility(layer, val) { layerVisibility[layer] = val }
   function setFlFilter(updates) { Object.assign(flFilter, updates) }
@@ -124,14 +120,14 @@ export const useAsdStore = defineStore('asd', () => {
   }
 
   return {
-    mapLoaded, palette, viewportWidthNM, feedStatus, feedHealth, layerVisibility, flFilter,
+    mapLoaded, palette, feedStatus, feedHealth, layerVisibility, flFilter,
     coverageAvailable, setCoverageAvailable,
     weatherRadarAvailable, setWeatherRadarAvailable,
     weatherWarningsAvailable, setWeatherWarningsAvailable,
     airspaceGroupVisibility,
     rangeRingConfig, setRangeRingConfig,
     selectedTrack, labelPins,
-    setFeedHealth, resetFeedHealth, setMapLoaded, setViewportWidth, setPalette, setLayerVisibility,
+    setFeedHealth, resetFeedHealth, setMapLoaded, setPalette, setLayerVisibility,
     setFlFilter,
     toggleAirspaceGroup,
     selectTrack, clearTrackSelection, setLabelPin, deleteLabelPin,

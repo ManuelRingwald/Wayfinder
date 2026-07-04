@@ -61,12 +61,14 @@
         <AsdHeader />
         <FeedStatusChip />
       </div>
-      <!-- Reskin 3b: floating scope legend (bottom-left) + bottom-right readout
-           "<width> NM Breite · Vektor N min" (replaces the native scale bar). -->
+      <!-- Reskin 3b: floating scope legend (bottom-left). The bottom-right
+           width/leader readout was removed (E2E): it read like a scale bar but
+           was only the scope width, and sat confusingly next to the range rings.
+           Distance is read from the range rings; the speed leaders themselves
+           carry the look-ahead. -->
       <div class="scope-legend-overlay">
         <ScopeLegend />
       </div>
-      <div class="vector-readout-overlay wf-mono">{{ store.viewportWidthNM }} NM Breite · Vektor {{ vectorMinutes }} min</div>
     </v-main>
 
     <TrackDetailPanel
@@ -89,7 +91,6 @@ import ScopeLegend from '@/components/ScopeLegend.vue'
 import TrackDetailPanel from '@/components/TrackDetailPanel.vue'
 import FeedStatusChip from '@/components/FeedStatusChip.vue'
 import LoginCard from '@/components/LoginCard.vue'
-import { VECTOR_LOOKAHEAD_S } from '@/map/constants.js'
 
 const { mdAndUp } = useDisplay()
 const store = useAsdStore()
@@ -98,11 +99,6 @@ const tools = useToolsStore()
 const drawerOpen = ref(true)
 const mapCanvas = ref(null)
 const loginLoading = ref(false)
-
-// Reskin 3b: speed-vector look-ahead in minutes, shown in the bottom-right
-// readout. Fixed today (VECTOR_LOOKAHEAD_S); becomes operator-tunable in the
-// tweaks panel (Häppchen 5), at which point this reads the live setting.
-const vectorMinutes = Math.round(VECTOR_LOOKAHEAD_S / 60)
 
 // Make an expiry visible: a dropped session shows "session expired" on the login
 // screen instead of a bare prompt (WF2-12.5).
@@ -222,22 +218,5 @@ function onTrackClick(track) {
   left: 68px;
   z-index: 600;
   pointer-events: none;
-}
-
-/* Bottom-right distance/vector readout: "<width> NM Breite · Vektor N min"
-   (design). Replaces the native scale bar, which was removed in the engine. */
-.vector-readout-overlay {
-  position: absolute;
-  bottom: 12px;
-  right: 12px;
-  z-index: 600;
-  pointer-events: none;
-  font-size: 10.5px;
-  color: var(--wf-on-surface-variant);
-  background: rgba(14, 22, 34, 0.85);
-  backdrop-filter: blur(4px);
-  border: var(--wf-chrome-border);
-  border-radius: var(--wf-radius-sm);
-  padding: 3px 8px;
 }
 </style>

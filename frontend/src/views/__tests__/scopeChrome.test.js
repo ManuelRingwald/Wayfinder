@@ -27,21 +27,28 @@ describe('top-centre status/filter chips removed', () => {
   })
 })
 
-describe('bottom-right readout: "<width> NM Breite · Vektor N min"', () => {
-  it('AsdView shows the combined readout and moves it to the corner', () => {
-    expect(asdView).toContain('NM Breite · Vektor')
-    expect(asdView).toContain('store.viewportWidthNM')
+// The bottom-right "<width> NM Breite · Vektor N min" readout was removed (E2E):
+// it looked like a scale bar but was only the scope width, and sat confusingly
+// next to the range rings. Distance is read from the range rings; the speed
+// vectors carry the look-ahead. These guards keep the whole chain from creeping
+// back — the store ref, the engine reporter and the view overlay.
+describe('bottom-right readout removed', () => {
+  it('AsdView no longer renders the readout', () => {
+    expect(asdView).not.toContain('NM Breite')
+    expect(asdView).not.toContain('viewportWidthNM')
+    expect(asdView).not.toContain('vector-readout-overlay')
+    expect(asdView).not.toContain('vectorMinutes')
   })
 
-  it('the engine reports viewport width and the native scale bar is removed', () => {
-    expect(engine).toContain('reportViewportWidth')
-    expect(engine).toContain('store.setViewportWidth')
+  it('the engine drops the viewport-width reporter (and still has no scale bar)', () => {
+    expect(engine).not.toContain('reportViewportWidth')
+    expect(engine).not.toContain('setViewportWidth')
     expect(engine).not.toContain('ScaleControl')
   })
 
-  it('the store exposes viewportWidthNM + its setter', () => {
-    expect(asdStore).toContain('viewportWidthNM')
-    expect(asdStore).toContain('setViewportWidth')
+  it('the store no longer exposes viewportWidthNM / its setter', () => {
+    expect(asdStore).not.toContain('viewportWidthNM')
+    expect(asdStore).not.toContain('setViewportWidth')
   })
 })
 

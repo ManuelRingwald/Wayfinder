@@ -300,13 +300,18 @@
     `render.js`/`engine.js` ausgebaut, FR-UI-010 als entfernt markiert). (b)
     **Konto-Dopplung** aufgelöst: der `lotse`-Chip oben rechts ist weg (Konto nur
     noch in der Sidebar), der **Feed-Status-Badge** rückt auf dessen Platz,
-    Zentrum/Vollbild rücken nach oben. (c) Rechts unten jetzt ein Pill
-    **„‹Breite› NM Breite · Vektor ‹N› min"** — die native Maßstabsleiste wurde
-    durch die aus den Kartengrenzen berechnete Viewport-Breite ersetzt
-    (`engine.js` `reportViewportWidth` → `asd`-Store `viewportWidthNM`).
-    Regressionstests `scopeChrome.test.js` + `asdViewAuthGate` angepasst. Gates:
-    **vitest 267**, `vite build`, `go test ./internal/webui` grün; `dist` neu
-    eingebettet.
+    Zentrum/Vollbild rücken nach oben. (c) ~~Rechts unten jetzt ein Pill
+    **„‹Breite› NM Breite · Vektor ‹N› min"**~~ — **entfernt (E2E 2026-07-04):**
+    Das Pill sah aus wie ein Maßstabsbalken, war aber nur die Schirmbreite, und
+    stand irreführend neben den Range-Ringen. Ausgebaut (`AsdView`-Overlay,
+    `engine.js` `reportViewportWidth`/`haversineNM`-Import, `asd`-Store
+    `viewportWidthNM`/`setViewportWidth`); `scopeChrome.test.js` invertiert.
+    Distanz kommt aus den Range-Ringen, die Vorhalte-Zeit aus dem
+    Geschwindigkeitsvektor am Symbol. Zugleich die **Range-Ring-Labels von
+    Norden auf die vier Diagonalen gestaffelt** (`LABEL_BEARINGS`,
+    NO→SO→SW→NW), damit sie nicht mit der Kopf-Chrome kollidieren und nicht
+    gemeinsam aus dem Bild scrollen. Regressionstests `scopeChrome.test.js`,
+    `rangerings.test.js` angepasst.
   - **Scope-Fix-ups (E2E, Folge-Durchgang):** (1) **RBL/DIST/QDM waren tot** —
     `createMeasure` lief in `MapCanvas` **vor** dem Map-`load` (initMap kehrt vor
     `load` zurück), `addSource` warf → `measure` blieb `null`. Fix: Controller erst

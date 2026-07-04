@@ -57,16 +57,26 @@ export function ringPolygon(centerLat, centerLon, radiusM, points = 128) {
   return coords
 }
 
+// Label placement: each ring's label is staggered onto a different diagonal
+// bearing (NE → SE → SW → NW, cycling), never due north. The earlier "all due
+// north" placement piled every label on the 12-o'clock radial, where they
+// collided with the top-edge chrome (compass, header, feed badge) and scrolled
+// off the top together on a southward pan. Diagonals keep the labels clear of
+// the cardinal traffic lanes and spread them across the scope, so no single pan
+// direction hides them all and no two adjacent rings share a radial.
+const LABEL_BEARINGS = [45, 135, 225, 315]
+
 // rangeRingsGeoJSON builds the overlay FeatureCollection: one LineString per
-// ring (property `nm`) plus one label Point per ring (placed due north of the
-// centre so labels stack along the 12-o'clock radius). count is clamped to a
-// non-negative integer; spacingNM/count come from the reactive store (ASD-012).
+// ring (property `nm`) plus one label Point per ring (staggered around the scope
+// per LABEL_BEARINGS above). count is clamped to a non-negative integer;
+// spacingNM/count come from the reactive store (ASD-012).
 export function rangeRingsGeoJSON(centerLat, centerLon, spacingNM, count, points = 128) {
   const features = []
   const n = Math.max(0, Math.floor(count))
   for (let k = 1; k <= n; k++) {
     const nm = spacingNM * k
     const radiusM = nm * NM_TO_M
+    const labelBearing = LABEL_BEARINGS[(k - 1) % LABEL_BEARINGS.length]
     features.push({
       type: 'Feature',
       properties: { nm, kind: 'ring' },
@@ -75,7 +85,7 @@ export function rangeRingsGeoJSON(centerLat, centerLon, spacingNM, count, points
     features.push({
       type: 'Feature',
       properties: { nm, kind: 'label', label: `${nm} NM` },
-      geometry: { type: 'Point', coordinates: destinationPoint(centerLat, centerLon, radiusM, 0) },
+      geometry: { type: 'Point', coordinates: destinationPoint(centerLat, centerLon, radiusM, labelBearing) },
     })
   }
   return { type: 'FeatureCollection', features }

@@ -7,7 +7,6 @@
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { PALETTES, TRACKS_LAYER_ID, AIRSPACE_GROUPS } from './constants.js'
-import { haversineNM } from './tools.js'
 import {
   addAeronauticalIcons,
   addAirspaceLayers,
@@ -116,8 +115,8 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
   // Native MapLibre compass control. It shows the current bearing and resets to
   // north on click (replacing the old hand-rolled reset-north button). Zoom lives
   // on the navigation rail; showZoom is off here to avoid duplicate buttons. The
-  // absolute distance reference is the bottom-right "<width> NM Breite" readout
-  // (reportViewportWidth below), which replaced the native scale bar (design).
+  // absolute distance reference is the range-ring overlay (constant-ground-distance
+  // circles around the display centre); there is no scale bar.
   map.addControl(
     new maplibregl.NavigationControl({ showZoom: false, showCompass: true, visualizePitch: false }),
     'top-left',
@@ -153,17 +152,6 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
     // Pass the selected track number so renderSources keeps the selection halo
     // (ASD-007) pinned to the moving symbol; undefined clears the ring.
     renderSources(map, state, store.flFilter, state.labelPins, palette, store.selectedTrack?.track_num)
-  }
-
-  // Report the visible scope width in NM for the bottom-right "<width> NM Breite"
-  // readout (replaces the native scale bar, per the design). Measured across the
-  // viewport at the centre latitude; pushed to the store, throttled to one update
-  // per animation frame via the existing move handler below.
-  const reportViewportWidth = () => {
-    const b = map.getBounds()
-    const lat = map.getCenter().lat
-    const widthNM = haversineNM({ lat, lng: b.getWest() }, { lat, lng: b.getEast() })
-    store.setViewportWidth(Math.round(widthNM))
   }
 
   // Fade-loop management: start interval if not already running.
@@ -295,7 +283,6 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
     addLabelsLayer(map, palette)      // ASD-002: above track circles
     state.mapLoaded = true
     store.setMapLoaded(true)
-    reportViewportWidth() // initial bottom-right "NM Breite" readout
 
     if (state.pendingTracks) {
       updateTracksLayer(state.pendingTracks, state, doRender, startFadeLoop)
@@ -329,7 +316,6 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
       deconflictFrame = requestAnimationFrame(() => {
         deconflictFrame = null
         if (state.mapLoaded) doRender()
-        reportViewportWidth() // keep the bottom-right "NM Breite" readout live
       })
     })
 
