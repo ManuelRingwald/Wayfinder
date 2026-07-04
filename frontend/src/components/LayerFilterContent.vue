@@ -15,34 +15,24 @@
            tenant is not entitled to. Fail-open while the identity is still loading or
            for an admin viewer (gateReady false → show all). The server enforces
            access independently; this is a pure UX gate. -->
-      <div v-if="showLayer('airspaces')" class="filter-row">
-        <v-switch
-          v-model="store.layerVisibility.airspace"
-          label="Lufträume"
-          color="primary"
-          density="compact"
-          hide-details
-          inset
-          @update:model-value="onLayerToggle('airspace', $event)"
-        />
-      </div>
-
-      <!-- ASD-011: airspace sub-group toggles, indented, coloured per group -->
-      <template v-if="(showLayer('airspaces')) && store.layerVisibility.airspace">
+      <!-- ASD-011 / #176: the four airspace groups are first-class toggles (the
+           parent "Lufträume" toggle was removed). The airspace layer is visible
+           iff at least one group is on, derived in the store (setAirspaceGroup).
+           Uniform primary colour; per-group map colours stay in AIRSPACE_GROUPS. -->
+      <template v-if="showLayer('airspaces')">
         <div
           v-for="group in AIRSPACE_GROUPS"
           :key="group.id"
-          class="filter-row filter-row--sub"
+          class="filter-row"
         >
-          <span class="airspace-dot" :style="{ background: group.color }" />
           <v-switch
-            v-model="store.airspaceGroupVisibility[group.id]"
+            :model-value="store.airspaceGroupVisibility[group.id]"
             :label="group.label"
-            :color="group.color"
+            color="primary"
             density="compact"
             hide-details
             inset
-            class="sub-switch"
+            @update:model-value="onAirspaceGroup(group.id, $event)"
           />
         </div>
       </template>
@@ -347,6 +337,14 @@ function onLayerToggle(layer, val) {
   emit('layer-toggle', { layer, val })
 }
 
+// #176: toggling an airspace group updates the group filter AND derives the
+// airspace layer visibility (visible iff any group is on). Both mutations live
+// in the store; MapCanvas's layerVisibility + airspaceGroupVisibility watchers
+// pick them up, so no explicit layer-toggle emit is needed here.
+function onAirspaceGroup(id, val) {
+  store.setAirspaceGroup(id, val)
+}
+
 function onFlFilterChange() {
   const update = {
     minFL: minFL.value || null,
@@ -369,23 +367,27 @@ async function onLogout() {
   padding: 8px 0 16px;
 }
 
-/* Section header: small, uppercase, subdued — visual separator, not interactive */
+/* Section header: small, uppercase, subdued — visual separator, not interactive.
+   #176: every header carries an underline so the logic blocks read as clearly
+   separated (previously only the --spaced variant had a rule, so the first
+   "Layer" header had none). */
 .filter-section-header {
   /* Design System v1: the signature "overline" section header, token-driven. */
-  padding: 10px 14px 4px;
+  padding: 10px 14px 6px;
+  margin: 0 6px;
   font-size: var(--wf-overline-size);
   font-weight: var(--wf-overline-weight);
   letter-spacing: var(--wf-overline-tracking);
   text-transform: uppercase;
   color: var(--wf-overline-color);
   line-height: 1.4;
+  border-bottom: 1px solid rgba(var(--v-border-color), 0.16);
 }
 
-/* Extra top margin before a new logic block */
+/* Extra top margin before a new logic block (the underline itself is on every
+   header now, so no separate top border here). */
 .filter-section-header--spaced {
-  margin-top: 12px;
-  border-top: 1px solid rgba(var(--v-border-color), 0.12);
-  padding-top: 14px;
+  margin-top: 14px;
 }
 
 /* Standard filter row */
@@ -408,21 +410,6 @@ async function onLogout() {
   font-size: 10.5px;
   line-height: 1.35;
   color: rgba(var(--v-theme-on-surface), 0.45);
-}
-
-/* Coloured dot that mirrors the airspace colour on the map */
-.airspace-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  margin-right: 6px;
-}
-
-/* Sub-switch: slightly smaller label */
-.sub-switch :deep(.v-label) {
-  font-size: 0.8rem;
-  opacity: 0.85;
 }
 
 /* FL input pair */

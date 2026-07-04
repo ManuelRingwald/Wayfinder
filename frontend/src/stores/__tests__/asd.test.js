@@ -6,6 +6,33 @@ beforeEach(() => {
   setActivePinia(createPinia())
 })
 
+// #176: the standalone "Lufträume" parent toggle was removed; the airspace layer
+// visibility is derived from the four group toggles (visible iff any is on).
+describe('asd store — airspace layer visibility derived from groups (#176)', () => {
+  it('stays visible while any group is on, hides when all are off', () => {
+    const s = useAsdStore()
+    expect(s.layerVisibility.airspace).toBe(true) // all groups on by default
+    s.setAirspaceGroup('ctr', false)
+    s.setAirspaceGroup('tma', false)
+    s.setAirspaceGroup('restricted', false)
+    expect(s.layerVisibility.airspace).toBe(true) // info still on
+    s.setAirspaceGroup('info', false)
+    expect(s.layerVisibility.airspace).toBe(false) // all off → layer hidden
+    s.setAirspaceGroup('tma', true)
+    expect(s.layerVisibility.airspace).toBe(true) // one back on → visible
+    expect(s.airspaceGroupVisibility.tma).toBe(true)
+  })
+
+  it('toggleAirspaceGroup flips a group and re-derives visibility', () => {
+    const s = useAsdStore()
+    ;['ctr', 'tma', 'restricted', 'info'].forEach((g) => s.setAirspaceGroup(g, false))
+    expect(s.layerVisibility.airspace).toBe(false)
+    s.toggleAirspaceGroup('ctr')
+    expect(s.airspaceGroupVisibility.ctr).toBe(true)
+    expect(s.layerVisibility.airspace).toBe(true)
+  })
+})
+
 // #117: the broadcast FeedStatusMessage speaks per-feed colors
 // (green/yellow/red); the store maps them to chip states and aggregates
 // worst-wins across all subscribed feeds.

@@ -79,8 +79,17 @@ export const useAsdStore = defineStore('asd', () => {
     info: true,
   })
 
+  // #176: the standalone "Lufträume" parent toggle was removed. The airspace
+  // LAYER is now visible iff at least one group is on — derived here so both the
+  // group filter (airspaceGroupVisibility) and the layer visibility
+  // (layerVisibility.airspace) update together, and MapCanvas's two watchers
+  // (updateAirspaceFilter + setLayerVisibility) keep the map in sync.
+  function setAirspaceGroup(id, val) {
+    airspaceGroupVisibility[id] = val
+    layerVisibility.airspace = Object.values(airspaceGroupVisibility).some(Boolean)
+  }
   function toggleAirspaceGroup(id) {
-    airspaceGroupVisibility[id] = !airspaceGroupVisibility[id]
+    setAirspaceGroup(id, !airspaceGroupVisibility[id])
   }
 
   // Selected track for detail panel (null = no selection)
@@ -129,7 +138,7 @@ export const useAsdStore = defineStore('asd', () => {
     selectedTrack, labelPins,
     setFeedHealth, resetFeedHealth, setMapLoaded, setPalette, setLayerVisibility,
     setFlFilter,
-    toggleAirspaceGroup,
+    toggleAirspaceGroup, setAirspaceGroup,
     selectTrack, clearTrackSelection, setLabelPin, deleteLabelPin,
   }
 })

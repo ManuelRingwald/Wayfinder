@@ -115,7 +115,7 @@
         <!-- Divider + panel (appear only when a section is active) -->
         <Transition name="nav-panel">
           <div v-if="activePanel" class="nav-panel" key="panel">
-            <v-divider vertical />
+            <v-divider vertical class="nav-panel__divider" />
             <div class="nav-panel__body">
               <LayerFilterContent
                 :section="activePanel"
@@ -356,6 +356,13 @@ function onFlFilterChange(payload) { emit('fl-filter-change', payload) }
   flex: 1;
   overflow: hidden;
   min-width: 0;
+}
+/* #176: make the rail↔panel divider clearly visible (the default v-divider
+   opacity was too faint to read as a separation between the icon rail and the
+   open content panel). */
+.nav-panel__divider.v-divider {
+  opacity: 1;
+  border-color: rgba(var(--v-border-color), 0.32);
 }
 .nav-panel__body {
   flex: 1;
