@@ -61,6 +61,19 @@ Weitere machst du per UI — genau der Ablauf, den du auch produktiv testest:
 > **leerem Himmel** (nur CAT065-Heartbeat, Firefly ADR 0030) — der Feed-Chip
 > wird grün, Tracks kommen erst mit konfigurierten Quellen.
 
+> **Bestehende Codespaces (vor dem Fix zu #171 angelegt):** Ein früher
+> erzeugtes `.env` kann den Secret-Key noch im falschen (Hex-)Format enthalten.
+> Der Server verwirft ihn dann als ungültig (er erwartet Base64-kodierte
+> 32 Bytes), der Quellen-Dialog meldet **„Secret-Store deaktiviert"** und es
+> lassen sich keine OpenSky-Zugangsdaten hinterlegen. Weil `start.sh` ein
+> vorhandenes `.env` nicht überschreibt (`[ ! -f .env ]`), einmalig im
+> Codespace-Terminal reparieren:
+> ```bash
+> sed -i '/^WAYFINDER_SECRET_KEY=/d' .env
+> echo "WAYFINDER_SECRET_KEY=$(openssl rand -base64 32)" >> .env
+> docker compose -f docker-compose.orchestrated.yml up -d --force-recreate wayfinder orchestrator
+> ```
+
 ## 3. Alltag
 
 | Aktion | Wie |
