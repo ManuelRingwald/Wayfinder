@@ -34,6 +34,22 @@ describe('AdminTenantDetail view-config captions (#57)', () => {
   })
 })
 
+describe('AdminTenantDetail airport centre search (ICAO)', () => {
+  it('wires the airport autocomplete to the search + pick handlers', () => {
+    expect(sfc).toContain('v-autocomplete')
+    expect(sfc).toContain('onAirportSearch')
+    expect(sfc).toContain('onAirportPick')
+    expect(sfc).toContain('admin.searchAirports')
+  })
+
+  it('a picked airport fills the centre coordinates AND the ICAO fields', () => {
+    expect(sfc).toContain('form.centerLat = hit.lat')
+    expect(sfc).toContain('form.centerLon = hit.lon')
+    expect(sfc).toContain('form.icao = hit.icao')
+    expect(sfc).toContain('form.qnhIcao = hit.icao')
+  })
+})
+
 describe('AdminTenantDetail feature entitlements', () => {
   it('shows the catalogue label (Fachbegriff), falling back to the raw key', () => {
     // The heading must be the operator-facing label from the feature catalogue,

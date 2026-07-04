@@ -402,6 +402,54 @@ func adminReq(method, path, body string, tenantID int64, role store.Role) *http.
 	return r
 }
 
+// --- airport directory: view-config centre search ---------------------------
+
+func TestGetAirportsSearchByICAO(t *testing.T) {
+	rec := httptest.NewRecorder()
+	handlerWith(&fakeVS{}, fakeFeeds{}, fakeTenants{}).
+		ServeHTTP(rec, adminReq(http.MethodGet, "/api/admin/airports?q=EDDH", "", 7, store.RoleAdmin))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var got []struct {
+		ICAO string  `json:"icao"`
+		Name string  `json:"name"`
+		Lat  float64 `json:"lat"`
+		Lon  float64 `json:"lon"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got) == 0 || got[0].ICAO != "EDDH" {
+		t.Fatalf("first result = %v, want EDDH first", got)
+	}
+	if got[0].Lat < 53 || got[0].Lat > 54 || got[0].Lon < 9 || got[0].Lon > 11 {
+		t.Errorf("EDDH coords look wrong: %v/%v", got[0].Lat, got[0].Lon)
+	}
+}
+
+func TestGetAirportsShortQueryIsEmptyArray(t *testing.T) {
+	rec := httptest.NewRecorder()
+	handlerWith(&fakeVS{}, fakeFeeds{}, fakeTenants{}).
+		ServeHTTP(rec, adminReq(http.MethodGet, "/api/admin/airports?q=E", "", 7, store.RoleAdmin))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	// Empty JSON array, not null — the frontend maps over the result.
+	if body := strings.TrimSpace(rec.Body.String()); body != "[]" {
+		t.Errorf("body = %q, want []", body)
+	}
+}
+
+func TestGetAirportsRequiresIdentity(t *testing.T) {
+	rec := httptest.NewRecorder()
+	handlerWith(&fakeVS{}, fakeFeeds{}, fakeTenants{}).
+		ServeHTTP(rec, adminReq(http.MethodGet, "/api/admin/airports?q=EDDH", "", 0, ""))
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", rec.Code)
+	}
+}
+
 // --- whoami role probe (WF2-32) ---------------------------------------------
 
 func TestWhoamiReportsIdentity(t *testing.T) {

@@ -26,6 +26,29 @@ beforeEach(() => {
   setActivePinia(createPinia())
 })
 
+describe('admin store — airport centre search', () => {
+  it('searchAirports GETs the offline directory and returns hits', async () => {
+    const calls = installFetch({
+      'GET /api/admin/airports?q=EDDH': {
+        status: 200,
+        body: [{ icao: 'EDDH', name: 'Hamburg Helmut Schmidt Airport', lat: 53.6304, lon: 9.98823 }],
+      },
+    })
+    const s = useAdminStore()
+    const r = await s.searchAirports('EDDH')
+    expect(r.ok).toBe(true)
+    expect(r.data[0].icao).toBe('EDDH')
+    expect(calls.some((c) => c.url === '/api/admin/airports?q=EDDH' && c.method === 'GET')).toBe(true)
+  })
+
+  it('searchAirports url-encodes the query', async () => {
+    const calls = installFetch({})
+    const s = useAdminStore()
+    await s.searchAirports('a b/c')
+    expect(calls[0].url).toBe('/api/admin/airports?q=a%20b%2Fc')
+  })
+})
+
 describe('admin store — identity & role gating', () => {
   it('loadIdentity stores the identity and exposes the role', async () => {
     installFetch({

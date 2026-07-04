@@ -97,6 +97,43 @@
   <v-card variant="tonal" class="mb-4">
     <v-card-title class="text-subtitle-1">Standard-Ansicht</v-card-title>
     <v-card-text>
+      <!-- ICAO airport search: type a code or name, pick a hit → the map centre
+           (and the ICAO fields) fill in. Offline directory, no external call. -->
+      <v-autocomplete
+        v-model="airportPick"
+        :items="airportHits"
+        :loading="airportSearching"
+        item-title="label"
+        item-value="icao"
+        return-object
+        no-filter
+        clearable
+        auto-select-first
+        label="Flughafen suchen (ICAO oder Name)"
+        placeholder="z. B. EDDH oder Hamburg"
+        prepend-inner-icon="mdi-airport"
+        variant="outlined"
+        density="compact"
+        hide-details
+        class="mb-1"
+        style="max-width: 380px"
+        @update:search="onAirportSearch"
+        @update:model-value="onAirportPick"
+      >
+        <template #no-data>
+          <div class="px-3 py-2 text-caption text-medium-emphasis">
+            {{ airportQuery.trim().length < 2 ? 'Mindestens 2 Zeichen eingeben…' : 'Keine Treffer' }}
+          </div>
+        </template>
+      </v-autocomplete>
+      <p class="text-caption text-medium-emphasis mb-3">
+        <template v-if="airportApplied">
+          <span class="text-success">Übernommen: {{ airportApplied }}</span> — bei Bedarf unten anpassen, dann „Ansicht speichern“.
+        </template>
+        <template v-else>
+          ICAO-Code (z. B. <code>EDDH</code>) oder Name eingeben und einen Treffer wählen — Zentrum-Koordinaten, ICAO-Kürzel und QNH-Flugplatz werden dann automatisch gefüllt.
+        </template>
+      </p>
       <div class="d-flex flex-wrap ga-3">
         <v-text-field
           v-model.number="form.centerLat"
@@ -354,7 +391,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAdminStore } from '@/stores/admin.js'
 import { useImpersonationStore } from '@/stores/impersonation.js'
@@ -427,6 +464,57 @@ const form = reactive({
   icao: '',
   qnhIcao: '',
 })
+
+// ICAO airport search (offline directory, /api/admin/airports). Selecting a hit
+// is the confirmation: the map centre plus the ICAO fields (header + QNH) fill
+// in, all still editable and nothing persisted until "Ansicht speichern". The
+// search is debounced so it doesn't fire on every keystroke.
+const airportHits = ref([])
+const airportSearching = ref(false)
+const airportQuery = ref('')
+const airportPick = ref(null)
+const airportApplied = ref('')
+let airportDebounce = null
+let skipNextSearch = false
+
+function onAirportSearch(q) {
+  // Selecting an item sets the search text to its label; skip that echo so we
+  // don't fire a pointless query for "EDDH — Hamburg …".
+  if (skipNextSearch) {
+    skipNextSearch = false
+    return
+  }
+  airportQuery.value = q || ''
+  if (airportDebounce) clearTimeout(airportDebounce)
+  const query = airportQuery.value.trim()
+  if (query.length < 2) {
+    airportHits.value = []
+    return
+  }
+  airportDebounce = setTimeout(async () => {
+    airportSearching.value = true
+    const r = await admin.searchAirports(query)
+    airportSearching.value = false
+    const rows = r.ok && Array.isArray(r.data) ? r.data : []
+    airportHits.value = rows.map((a) => ({ ...a, label: `${a.icao} — ${a.name}` }))
+  }, 250)
+}
+
+function onAirportPick(hit) {
+  if (!hit || typeof hit !== 'object') return
+  form.centerLat = hit.lat
+  form.centerLon = hit.lon
+  form.icao = hit.icao
+  form.qnhIcao = hit.icao
+  airportApplied.value = `${hit.icao} — ${hit.name} (${round(hit.lat)}, ${round(hit.lon)})`
+  // Reset the picker so it stays a reusable search tool; the "Übernommen" hint
+  // keeps the confirmation visible.
+  skipNextSearch = true
+  airportHits.value = []
+  nextTick(() => {
+    airportPick.value = null
+  })
+}
 
 async function loadView() {
   const r = await admin.loadTenantView(props.tenantId)

@@ -186,6 +186,13 @@ export const useAdminStore = defineStore('admin', () => {
     return apiFetch(`/api/admin/tenants/${tenantId}/entitlements`)
   }
 
+  // searchAirports queries the offline ICAO airport directory for the
+  // view-config centre search. Read-only, no notice/error side effects (it runs
+  // on every keystroke); the caller reads r.ok / r.data.
+  async function searchAirports(q) {
+    return apiFetch(`/api/admin/airports?q=${encodeURIComponent(q)}`)
+  }
+
   async function setTenantEntitlement(tenantId, key, enabled) {
     error.value = null
     notice.value = null
@@ -608,6 +615,7 @@ export const useAdminStore = defineStore('admin', () => {
     loadIdentity, login, logout, loadView, saveView, loadFeeds, loadSubscriptions,
     loadTenants, loadTenantSubscriptions, grant, revoke,
     loadOverview, loadFeedsHealth, loadTenantView, saveTenantView, loadTenantEntitlements, setTenantEntitlement,
+    searchAirports,
     loadTenantUsers, createUser, setUserStatus, deleteUser, setUserPassword, setUserSessionLimit, setTenantStatus,
     createTenant, deleteTenant,
     createFeed, deleteFeed,
