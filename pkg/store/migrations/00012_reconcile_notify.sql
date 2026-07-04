@@ -14,9 +14,11 @@
 -- database (not the application) catches every writer, including manual SQL, not
 -- just the wayfinder server's own mutations.
 --
--- feed_secrets is intentionally NOT covered yet: a secret value only becomes
--- spec-relevant once container injection lands (ORCH-5). Adding it here early
--- would trigger needless reconciles that change nothing.
+-- feed_secrets was intentionally NOT covered here originally: a secret value was
+-- not spec-relevant until container injection landed (ORCH-5). That premise no
+-- longer holds — since ORCH-5b a feed secret resolves into the tracker spec and
+-- its spec hash — so migration 00020 adds the feed_secrets trigger (#177). This
+-- comment is kept as history; the trigger itself lives in 00020.
 CREATE OR REPLACE FUNCTION wayfinder_notify_reconcile() RETURNS trigger AS $$
 BEGIN
     PERFORM pg_notify('wayfinder_reconcile', '');
