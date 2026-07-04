@@ -254,3 +254,41 @@ Mandanten*.
   **dokumentierte, auditierbare, befristete Ausnahme** für `super_admin`-Support —
   sie hebt die Isolations-Garantie für den **Normalbetrieb nicht** auf und ersetzt
   sie nicht.
+
+---
+
+## Nachtrag (2026-07-04): Grant gilt auch auf den Read-only-REST-Endpunkten der Karte
+
+**Befund (E2E):** Nur der `/ws`-Lesepfad honorierte den Grant. Alle REST-Pfade,
+aus denen die Karte ihr Bild zusammensetzt, antworteten weiter für den
+(mandantenlosen) `admin` selbst: `/api/whoami` lieferte leere Features →
+sämtliche Layer-Schalter verschwanden; `/api/airspace|navaids|waypoints` und
+`/api/weather/qnh` liefen gegen Tenant 0 → leer. Ergebnis war eine nackte Karte
+mit Tracks — nicht „exakt das, was der Mandant sieht".
+
+**Entscheidung:** Der Grant wird mit **identischer Semantik** (dieselbe
+`impersonation.Resolve`-Entscheidung, fail-closed) auf die **rein lesenden**
+REST-Endpunkte der Karte ausgedehnt:
+
+- Eine Middleware (`impersonationReadMW`, innerhalb der Tenant-Middleware)
+  stempelt bei aktivem Grant den **effektiven Lese-Mandanten** in den
+  Request-Kontext (`tenant.WithReadTenant`); die **Identity bleibt unberührt**.
+- `/api/whoami` löst Features/Sensor-Klassen/FL-Band/ICAO gegen den
+  Ziel-Mandanten auf und legt den Zustand offen
+  (`impersonated_tenant_id`, omitempty); Identitätsfelder bleiben die echten.
+- `/api/airspace|navaids|waypoints` bedienen den Cache des Ziel-Mandanten;
+  das Feature-Gate (PR #158) urteilt über **dessen** Entitlements.
+- `/api/weather/qnh` löst den Flugplatz gegen die View des Ziel-Mandanten.
+- **Unverändert:** `/api/admin/*` (Admin-UI = echte Identität), alle
+  Schreibpfade, `/ws` (hatte die Auflösung bereits), Radar-Kacheln und
+  Warnungen (mandanten-unabhängig).
+
+**Fail-closed wie am Handshake:** fehlender/abgelaufener Grant → Pfad
+byte-identisch wie ohne Impersonation; gültiger Grant von Nicht-`admin` oder
+auf gelöschten Mandanten → **403 + Audit** (`impersonation_denied`);
+DB-Fehler bei der Mandanten-Prüfung → 500 (nie stiller Fallback).
+
+**Warum kein Risiko für die Nutzer des Mandanten:** Die Aufschaltung bleibt
+strukturell read-only — FL-Filter und Layer-Schalter der Karte sind reiner
+Client-Zustand, das ASD schreibt serverseitig nichts außer Session-Renew/
+Logout, und jeder Mandanten-Nutzer hat seine eigene View(-Override)-Zeile.

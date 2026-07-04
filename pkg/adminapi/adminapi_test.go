@@ -22,6 +22,7 @@ import (
 type fakeVS struct {
 	vc           store.ViewConfig
 	getErr       error
+	effTenant    int64 // tenant GetEffective was asked for (impersonation tests)
 	upsertTenant int64
 	upserted     store.ViewConfig
 	subsFeeds    []store.Feed
@@ -32,7 +33,8 @@ type fakeVS struct {
 	revokeFeed   int64
 }
 
-func (f *fakeVS) GetEffective(_ context.Context, _, _ int64) (store.ViewConfig, error) {
+func (f *fakeVS) GetEffective(_ context.Context, tenantID, _ int64) (store.ViewConfig, error) {
+	f.effTenant = tenantID
 	return f.vc, f.getErr
 }
 
@@ -338,16 +340,18 @@ func (f *fakeCredStore) GetHash(_ context.Context, userID int64) (string, error)
 // fakeEntitlements satisfies EntitlementService and records the last Set call
 // (to prove tenant targeting and that cross-tenant gating blocks before it).
 type fakeEntitlements struct {
-	eff    map[feature.Key]bool
-	effErr error
-	setErr error
-	setTid int64
-	setKey feature.Key
-	setVal bool
-	has    map[feature.Key]bool
+	eff       map[feature.Key]bool
+	effErr    error
+	effTenant int64 // tenant Effective was asked for (impersonation tests)
+	setErr    error
+	setTid    int64
+	setKey    feature.Key
+	setVal    bool
+	has       map[feature.Key]bool
 }
 
-func (f *fakeEntitlements) Effective(_ context.Context, _ int64) (map[feature.Key]bool, error) {
+func (f *fakeEntitlements) Effective(_ context.Context, tenantID int64) (map[feature.Key]bool, error) {
+	f.effTenant = tenantID
 	return f.eff, f.effErr
 }
 

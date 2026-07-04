@@ -442,6 +442,12 @@ type whoamiDTO struct {
 	// Omitted when unset. Display config, not track data — CAT062 carries no
 	// sector identity (Vorgabe: keine Fake-UI).
 	ICAO *string `json:"icao,omitempty"`
+	// ImpersonatedTenantID discloses that the tenant-scoped fields above
+	// (Features/SensorClasses/FLMin/FLMax/ICAO) were resolved against this
+	// tenant instead of the caller's own — admin read-only impersonation
+	// (ADR 0008 Nachtrag). The identity fields stay the caller's real ones.
+	// Omitted on the normal, non-impersonated path.
+	ImpersonatedTenantID *int64 `json:"impersonated_tenant_id,omitempty"`
 }
 
 // WhoamiHandler exposes the identity probe for mounting OUTSIDE the requireAdmin
@@ -458,27 +464,37 @@ func (h *Handler) whoami(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
+	// Admin read-only impersonation (ADR 0008 Nachtrag): the tenant-scoped
+	// fields resolve against the effective READ tenant — the impersonation
+	// target when the middleware stamped one, else the caller's own. The
+	// identity fields below are deliberately NOT switched.
+	readTenant := tenant.ReadTenant(r.Context(), id.TenantID)
+	var impersonated *int64
+	if tid, ok := tenant.ImpersonatedTenant(r.Context()); ok {
+		impersonated = &tid
+	}
 	// Effective view FL band for the sidebar's filter-range hint (#116).
 	// Fail-soft: no view config (or a backend error) simply omits the band.
 	var flMin, flMax *int
 	var icao *string
 	if h.views != nil {
-		if vc, err := h.views.GetEffective(r.Context(), id.TenantID, id.UserID); err == nil {
+		if vc, err := h.views.GetEffective(r.Context(), readTenant, id.UserID); err == nil {
 			flMin, flMax = vc.FLMin, vc.FLMax
 			icao = vc.ICAO
 		}
 	}
 	writeJSON(w, http.StatusOK, whoamiDTO{
-		Subject:            id.Subject,
-		TenantID:           id.TenantID,
-		UserID:             id.UserID,
-		Role:               id.Role,
-		MustChangePassword: id.MustChangePassword,
-		Features:           h.effectiveFeatures(r.Context(), id.TenantID),
-		SensorClasses:      h.effectiveSensorClasses(r.Context(), id.TenantID),
-		FLMin:              flMin,
-		FLMax:              flMax,
-		ICAO:               icao,
+		Subject:              id.Subject,
+		TenantID:             id.TenantID,
+		UserID:               id.UserID,
+		Role:                 id.Role,
+		MustChangePassword:   id.MustChangePassword,
+		Features:             h.effectiveFeatures(r.Context(), readTenant),
+		SensorClasses:        h.effectiveSensorClasses(r.Context(), readTenant),
+		FLMin:                flMin,
+		FLMax:                flMax,
+		ICAO:                 icao,
+		ImpersonatedTenantID: impersonated,
 	})
 }
 

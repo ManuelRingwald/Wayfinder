@@ -445,6 +445,14 @@ func main() {
 	if len(cfg.SessionKey) > 0 {
 		impChecker = tenantExistsChecker{repo: store.NewTenantRepo(dbPool)}
 	}
+	// The same grant is honoured on the map's plain read-only REST endpoints
+	// (whoami, aeronautical overlays, QNH) so an impersonating admin sees the
+	// FULL tenant picture, not just the /ws track stream (ADR 0008 Nachtrag).
+	// Disabled (identity passthrough) without a signing key, like /ws.
+	impReadMW := func(next http.Handler) http.Handler { return next }
+	if impChecker != nil {
+		impReadMW = impersonationReadMW(impChecker, cfg.SessionKey, logger.With(slog.String("component", "audit")))
+	}
 	scopeResolver := newScopeResolver(store.NewSubscriptionRepo(dbPool), store.NewViewConfigRepo(dbPool), impChecker, cfg.SessionKey, logger)
 	wsHandler := ws.New(broadcaster, logger, cfg.AllowedOrigins, scopeResolver)
 	// The live picture is tenant-scoped: gate /ws with the tenant middleware, which
@@ -472,10 +480,12 @@ func main() {
 	// /api/waypoints), served from the OpenAIP cache (ADR 0004). They are
 	// tenant-aware (ONB-6): behind the tenant middleware, each serves the
 	// requesting tenant's own per-tenant cache (with global fallback).
-	aeroRegistry.Register(mux, tenantMW, func(r *http.Request) (int64, bool) {
-		id, ok := tenant.FromContext(r.Context())
-		return id.TenantID, ok
-	}, func(ctx context.Context, tenantID int64, kind aeronautical.Kind) bool {
+	// tenantMW sets the Identity, impReadMW resolves an impersonation grant into
+	// the effective read tenant (ADR 0008 Nachtrag), readTenantOf serves that
+	// tenant's cache — so an impersonating admin sees the target's overlays and
+	// the feature gate below judges the target's entitlements.
+	aeroMW := func(next http.Handler) http.Handler { return tenantMW(impReadMW(next)) }
+	aeroRegistry.Register(mux, aeroMW, readTenantOf, func(ctx context.Context, tenantID int64, kind aeronautical.Kind) bool {
 		// Server-enforced feature gate: a tenant whose airspaces/vor_ndb/waypoints
 		// entitlement is off receives an empty collection for that kind (the overlay
 		// does not appear). The frontend toggle is cosmetic; the server is the boundary.
@@ -505,17 +515,21 @@ func main() {
 	// global list. Behind the tenant middleware; best-effort JSON (empty station
 	// list when disabled/unset), never an error. UI-gated per tenant via the qnh
 	// entitlement.
-	mux.Handle("GET /api/weather/qnh", tenantMW(weatherQNH.TenantHandler(func(r *http.Request) []string {
+	// impReadMW: while impersonating, the aerodrome resolves against the TARGET
+	// tenant's view config (ADR 0008 Nachtrag) — an impersonating admin has no
+	// user override there, so this is the tenant default, exactly what a fresh
+	// tenant user would see.
+	mux.Handle("GET /api/weather/qnh", tenantMW(impReadMW(weatherQNH.TenantHandler(func(r *http.Request) []string {
 		id, ok := tenant.FromContext(r.Context())
 		if !ok {
 			return nil
 		}
-		vc, err := qnhViews.GetEffective(r.Context(), id.TenantID, id.UserID)
+		vc, err := qnhViews.GetEffective(r.Context(), tenant.ReadTenant(r.Context(), id.TenantID), id.UserID)
 		if err != nil || vc.QNHICAO == nil {
 			return nil
 		}
 		return []string{*vc.QNHICAO}
-	})))
+	}))))
 
 	// Weather-warnings GeoJSON (WX-C, ADR 0016): the map fetches this and renders
 	// warning polygons coloured by severity. Behind the tenant middleware;
@@ -608,7 +622,11 @@ func main() {
 	// not just admins): the map reads it to decide between its login screen and
 	// the live picture. Behind the tenant middleware (sets the Identity) but NOT
 	// requireAdmin — a plain tenant user must be able to resolve its own session.
-	mux.Handle("GET /api/whoami", tenantMW(adminAPI.WhoamiHandler()))
+	// impReadMW: while impersonating, the probe reports the TARGET tenant's
+	// features/sensor classes/FL band/ICAO (plus impersonated_tenant_id), so the
+	// map renders exactly what that tenant's users see (ADR 0008 Nachtrag). The
+	// identity fields (subject/role/tenant_id) stay the admin's own.
+	mux.Handle("GET /api/whoami", tenantMW(impReadMW(adminAPI.WhoamiHandler())))
 
 	// Cross-tenant read-only impersonation (ADR 0008, WF2-34): mint and clear
 	// the grant cookie. The more-specific method+path patterns take precedence

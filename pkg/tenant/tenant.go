@@ -40,6 +40,34 @@ func FromContext(ctx context.Context) (Identity, bool) {
 	return id, ok
 }
 
+type readTenantKey struct{}
+
+// WithReadTenant marks ctx with the tenant whose data plain READ endpoints may
+// serve instead of the caller's own — set only by the admin impersonation
+// middleware after a grant passed the fail-closed impersonation.Resolve check
+// (ADR 0008). It deliberately does NOT touch the Identity: write paths and
+// role gates keep keying on Identity.TenantID, so impersonation stays
+// structurally read-only.
+func WithReadTenant(ctx context.Context, tenantID int64) context.Context {
+	return context.WithValue(ctx, readTenantKey{}, tenantID)
+}
+
+// ReadTenant returns the effective read tenant for ctx: the impersonated
+// target when one is set, else fallback (the caller's own tenant).
+func ReadTenant(ctx context.Context, fallback int64) int64 {
+	if tid, ok := ctx.Value(readTenantKey{}).(int64); ok {
+		return tid
+	}
+	return fallback
+}
+
+// ImpersonatedTenant reports the impersonation target when the request reads
+// as another tenant, so read handlers (e.g. whoami) can disclose the state.
+func ImpersonatedTenant(ctx context.Context) (int64, bool) {
+	tid, ok := ctx.Value(readTenantKey{}).(int64)
+	return tid, ok
+}
+
 // UserLookup resolves an authenticated subject to its stored user.
 // *store.UserRepo satisfies it; tests use a fake.
 type UserLookup interface {
