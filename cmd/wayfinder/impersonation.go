@@ -167,3 +167,54 @@ func logImpersonationDenied(audit *slog.Logger, r *http.Request, id tenant.Ident
 		slog.String("reason", reason.Error()),
 		slog.String("remote", r.RemoteAddr))
 }
+
+// impersonationReadMW extends the grant to the map's plain read-only REST
+// endpoints (whoami, aeronautical overlays, QNH) with byte-identical /ws
+// semantics — the same impersonation.Resolve decides. Without it the ASD showed
+// a half-impersonated picture: the /ws stream switched to the target tenant but
+// every REST-derived piece (features → layer toggles, overlays, weather, ICAO,
+// FL band) still answered for the tenant-less admin, i.e. empty.
+//
+// Outcomes: absent/stale grant → the request passes through unchanged (the
+// non-impersonated path stays byte-identical); a valid admin grant stamps the
+// effective read tenant onto the context (tenant.WithReadTenant) for the
+// wrapped handler; a valid grant from a non-admin, or naming a missing tenant,
+// is rejected 403 and audited — never silently honoured or ignored. It sits
+// INSIDE the tenant middleware (needs the Identity) and is applied only to
+// read-only routes; write paths never see a read-tenant context.
+func impersonationReadMW(tenants impersonation.TenantChecker, key []byte, audit *slog.Logger) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			id, ok := tenant.FromContext(r.Context())
+			if !ok { // defensive — the tenant middleware runs outside this one
+				next.ServeHTTP(w, r)
+				return
+			}
+			d, err := impersonation.Resolve(r.Context(), impersonationGrantCookie(r), id, key, tenants)
+			if err != nil {
+				logImpersonationDenied(audit, r, id, err)
+				status := http.StatusForbidden
+				if !errors.Is(err, impersonation.ErrDenied) && !errors.Is(err, impersonation.ErrUnknownTenant) {
+					status = http.StatusInternalServerError // e.g. tenant lookup failed → fail closed
+				}
+				http.Error(w, `{"error":"impersonation denied"}`, status)
+				return
+			}
+			if d.Active {
+				r = r.WithContext(tenant.WithReadTenant(r.Context(), d.TargetTenantID))
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// readTenantOf resolves the tenant whose data a read endpoint serves: the
+// impersonation target when impersonationReadMW stamped one, else the caller's
+// own tenant. Used as the aeronautical Registry's TenantResolver.
+func readTenantOf(r *http.Request) (int64, bool) {
+	id, ok := tenant.FromContext(r.Context())
+	if !ok {
+		return 0, false
+	}
+	return tenant.ReadTenant(r.Context(), id.TenantID), true
+}

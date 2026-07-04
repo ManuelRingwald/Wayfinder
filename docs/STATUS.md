@@ -13,6 +13,15 @@
 ## 🎯 Stand 2026-07-04
 
 - **Zuletzt aktualisiert:** 2026-07-04
+- **Impersonation vervollständigt (B1, ADR 0008 Nachtrag):** „Als Mandant
+  ansehen" schaltete bisher nur den `/ws`-Strom auf den Ziel-Mandanten um; alle
+  REST-Pfade (whoami → Features/Legende/FL/ICAO, Aero-Overlays, QNH)
+  antworteten weiter für den mandantenlosen Admin → nackte Karte. Jetzt stempelt
+  `impersonationReadMW` (identische fail-closed-Semantik wie `/ws`) den
+  effektiven Lese-Mandanten in den Kontext; whoami/Aero/QNH lösen gegen den
+  Ziel-Mandanten auf, `impersonated_tenant_id` legt es offen. Identity und alle
+  Schreibpfade unberührt. **Ausstehend:** B2 (Einstieg in der Admin-UI),
+  A (Default-Mandanten-Seed entfernen); E2E-Check auf der VM, wenn wieder da.
 - **Teil 1 des E2E-Befunds gemergt (PR #158):** Die Luftraum-Overlay-Endpunkte
   (`/api/airspace|navaids|waypoints`) erzwingen das Feature-Entitlement jetzt
   **server-seitig** (leere Collection ohne Entitlement). Details siehe
