@@ -64,6 +64,12 @@ Karte **leer** — das ist kein Fehler. Deshalb richten wir in dieser Anleitung
 > 💡 **Merksatz:** **81 = sehen** (Browser), **80 = Technik**. Sie öffnen im
 > Alltag nur die **8081**.
 
+> 🌐 **Gar nichts installieren können?** (z. B. Arbeits-Laptop ohne
+> Admin-Rechte und ohne Terminal): Der komplette Stack läuft alternativ in
+> einem **GitHub Codespace** in der Cloud — der Rechner braucht dann nur einen
+> Browser. Anleitung: **`docs/CODESPACES.md`**. Die restliche Anleitung hier
+> gilt für die Installation auf einem eigenen Rechner/einer VM.
+
 ---
 
 ## Teil 2 — Werkzeuge installieren

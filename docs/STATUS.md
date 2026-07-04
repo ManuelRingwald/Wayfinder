@@ -29,8 +29,18 @@
   legt nur noch den tenant-losen Standard-Admin an; der Mandant `default`
   entfällt (seit ONB-4 redundant, stiftete Verwirrung). Frische Instanzen
   starten mit null Mandanten; Bestandsinstallationen unberührt (dortigen
-  `default` bei Bedarf per UI löschen). **Ausstehend:** E2E-Check der
-  Impersonation auf der VM, wenn wieder da (zusammen mit #159).
+  `default` bei Bedarf per UI löschen).
+- **Codespaces-Testumgebung (Browser-only, orchestriert):** `.devcontainer/`
+  startet den **orchestrierten Stack** (`docker-compose.orchestrated.yml`:
+  Postgres + Wayfinder + Orchestrator; **Auto-Spawn je Feed** funktioniert,
+  weil ein Codespace ein Linux-Host mit docker-in-docker ist — ein
+  Netz-Namespace, Multicast lokal zugestellt). Betreiber-Vorgabe: Mandanten
+  anlegen + Auto-Spawn müssen testbar sein, die Frankfurt-Demo ist Altlast
+  (Ausbau angekündigt, wartet auf Go). `start.sh` baut das Firefly-Image aus
+  dem Sibling-Checkout und erzeugt eine Codespace-lokale `.env`
+  (Session-/Secret-Key, gitignored). Port 8081 = private HTTPS-URL
+  (GitHub-Login + builtin-Auth). Anleitung: `docs/CODESPACES.md`.
+  **Ausstehend:** E2E-Check der Impersonation + #159 (VM oder Codespace).
 - **Teil 1 des E2E-Befunds gemergt (PR #158):** Die Luftraum-Overlay-Endpunkte
   (`/api/airspace|navaids|waypoints`) erzwingen das Feature-Entitlement jetzt
   **server-seitig** (leere Collection ohne Entitlement). Details siehe

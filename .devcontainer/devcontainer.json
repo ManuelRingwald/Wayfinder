@@ -1,0 +1,52 @@
+{
+	// Browser-only E2E environment (GitHub Codespaces): runs the ORCHESTRATED
+	// stack (docker-compose.orchestrated.yml — Postgres + Wayfinder + the
+	// orchestrator control plane, ADR 0012) inside the codespace, so the full
+	// production-shaped chain works: create a tenant/feed in the admin UI and
+	// the orchestrator auto-spawns one Firefly tracker per subscribed feed.
+	// Host networking + UDP multicast work because a codespace is a Linux host
+	// (docker-in-docker, single network namespace — no Docker-Desktop VM
+	// boundary). The operator's machine only needs a browser: port 8081 is
+	// forwarded as a PRIVATE https URL gated by the GitHub login (the ASD
+	// picture is not public, CLAUDE.md §7 — Wayfinder's builtin auth is the
+	// second gate behind it).
+	"name": "Wayfinder E2E (Browser-only)",
+	"image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+	"features": {
+		"ghcr.io/devcontainers/features/docker-in-docker:2": {},
+		"ghcr.io/devcontainers/features/github-cli:1": {}
+	},
+	// The Firefly release build (Rust) is the expensive first-boot step; 4 cores
+	// keep it bearable (~5-10 min once, cached afterwards).
+	"hostRequirements": {
+		"cpus": 4,
+		"memory": "8gb",
+		"storage": "32gb"
+	},
+	"forwardPorts": [8081, 8080],
+	"portsAttributes": {
+		"8081": {
+			"label": "Wayfinder ASD (UI / Admin)",
+			"onAutoForward": "notify"
+		},
+		"8080": {
+			"label": "Wayfinder Health / Metrics",
+			"onAutoForward": "silent"
+		}
+	},
+	"customizations": {
+		"codespaces": {
+			// The Firefly tracker image the orchestrator spawns is built from
+			// the sibling checkout (../firefly); this grants the codespace
+			// token read access so setup.sh can clone it (approval prompt on
+			// codespace creation).
+			"repositories": {
+				"ManuelRingwald/Firefly": {
+					"permissions": { "contents": "read" }
+				}
+			}
+		}
+	},
+	"postCreateCommand": "bash .devcontainer/setup.sh",
+	"postStartCommand": "bash .devcontainer/start.sh"
+}
