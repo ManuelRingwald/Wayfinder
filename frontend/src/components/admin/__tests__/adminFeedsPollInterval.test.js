@@ -27,8 +27,13 @@ describe('OpenSky poll interval (ADR 0029)', () => {
   it('carries the field through the form round-trip helpers', () => {
     // blankSource + toFormSource must both know the field, else it is dropped on
     // add / reload.
-    expect(sfc).toContain('poll_interval_secs: null')
     expect(sfc).toContain('poll_interval_secs: s.poll_interval_secs ?? null')
+  })
+
+  it('prefills a fresh OpenSky source with the visible default (#172)', () => {
+    // Option A: a new OpenSky source shows "10" rather than an empty field, so
+    // the operator sees which interval applies at a glance.
+    expect(sfc).toContain("poll_interval_secs: type === 'adsb_opensky' ? DEFAULT_POLL_SECS : null")
   })
 
   it('mirrors the server bounds (5..3600, default 10)', () => {

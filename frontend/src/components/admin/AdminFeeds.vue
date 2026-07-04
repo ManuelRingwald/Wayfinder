@@ -596,7 +596,11 @@ function blankSource(type = 'adsb_opensky') {
   return {
     type, center_lat: null, center_lon: null, radius_nm: null, tenant_id: null,
     sac: null, sic: null, lat: null, lon: null, height_m: null, listen: '',
-    cred_ref: '', poll_interval_secs: null,
+    // #172: prefill the OpenSky poll interval with the visible default so the
+    // field shows "10" instead of an empty box — the operator sees which value
+    // applies without focusing it. Still editable/clearable (empty ⇒ Firefly
+    // default). Other source types have no poll field, so leave them null.
+    cred_ref: '', poll_interval_secs: type === 'adsb_opensky' ? DEFAULT_POLL_SECS : null,
   }
 }
 
