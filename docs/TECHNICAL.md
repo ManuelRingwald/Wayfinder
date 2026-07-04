@@ -303,6 +303,7 @@ immer aktiv — ADR 0014); statische Frontend-Routen werden ausgeliefert.
 | `/api/admin/tenants/{id}` | DELETE | **ONB-4:** Mandanten löschen → 204; kaskadiert (ON DELETE CASCADE) auf Zugänge (+ Credentials), Abos, Entitlements, View-Konfig; **Guard B**: solange der Mandant noch **Zugänge** hat → **409** (erst Konten entfernen); **admin** |
 | `/api/admin/tenants/{id}` | PATCH | Mandant pausieren/reaktivieren (`{status}`); kaskadiert via Login-Enforcement auf alle Zugänge (AP6); **admin** |
 | `/api/admin/sensor-classes` | GET | Sensorklassen-Katalog (read-only Referenz, WF2-41) |
+| `/api/admin/airports` | GET | **FR-UI-024:** ICAO-Flugplatzsuche für das View-Editor-Zentrum (`?q=<ICAO oder Name>&limit=`) → `[{icao, name, lat, lon}]`, gerankt exakter ICAO → Präfix → Namens-Substring; Query < 2 Zeichen → `[]`. Read-only Referenz aus dem **offline eingebetteten** Verzeichnis (`pkg/airport`, `go:embed airports.tsv`; Quelle: public-domain OurAirports, ~22 000 Plätze) — **kein** externer Dienst, **kein** Key; **admin** |
 | `/api/admin/impersonation` | GET/POST/DELETE | Cross-Tenant Read-Only-Impersonation (ADR 0008): **GET** liefert den aktuellen Status (`{active, tenant_id}`) für den Banner (Reload-fest, da der Cookie HttpOnly ist); **POST** `{"tenant_id":…}` mintet den signierten Grant-Cookie (`admin` only, Ziel-Mandant muss existieren → sonst 404); **DELETE** beendet sie (Cookie löschen). Nur aktiv, wenn ein Signing-Key (`WAYFINDER_SESSION_KEY`) konfiguriert ist. |
 | `/api/admin/*` | div. | Tenant-skopiertes Admin-API (WF2-31/31b); rollen-gegated |
 

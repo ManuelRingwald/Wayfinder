@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/manuelringwald/wayfinder/pkg/airport"
 	"github.com/manuelringwald/wayfinder/pkg/feature"
 	"github.com/manuelringwald/wayfinder/pkg/health"
 	"github.com/manuelringwald/wayfinder/pkg/sensorclass"
@@ -319,6 +320,9 @@ func New(views ViewStore, subs SubscriptionStore, feeds FeedStore, tenants Tenan
 	mux.HandleFunc("DELETE /api/admin/feeds/{feedID}/secrets/{ref...}", h.requireAdmin(h.deleteFeedSecret))
 	// Read-only reference: the sensor-class catalogue (WF2-41).
 	mux.HandleFunc("GET /api/admin/sensor-classes", h.getSensorClasses)
+	// Read-only reference: the offline ICAO airport directory that powers the
+	// view-config centre search (type an ICAO/name → fill the map centre).
+	mux.HandleFunc("GET /api/admin/airports", h.getAirports)
 	// Cross-tenant provisioning (target tenant from the path).
 	mux.HandleFunc("GET /api/admin/tenants", h.requireAdmin(h.listTenants))
 	// Tenant lifecycle (ONB-4, ADR 0011): create and delete tenants from the UI.
@@ -679,6 +683,29 @@ func (h *Handler) getSensorClasses(w http.ResponseWriter, r *http.Request) {
 		out = append(out, sensorClassDTO{Class: string(c), Description: sensorclass.Describe(c)})
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// getAirports serves the offline ICAO airport directory (GET
+// /api/admin/airports?q=EDDH&limit=8) that powers the view-config form's centre
+// search: the admin types an ICAO code or name fragment and picks a match to
+// fill the map centre. Read-only reference data; admin-gated by the /api/admin/
+// mount. An empty/too-short query yields an empty list, never an error.
+func (h *Handler) getAirports(w http.ResponseWriter, r *http.Request) {
+	if _, ok := tenant.FromContext(r.Context()); !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	limit := 8
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 50 {
+			limit = n
+		}
+	}
+	results := airport.Search(r.URL.Query().Get("q"), limit)
+	if results == nil {
+		results = []airport.Airport{}
+	}
+	writeJSON(w, http.StatusOK, results)
 }
 
 // requireAdmin is a defence-in-depth guard for cross-tenant provisioning routes.
