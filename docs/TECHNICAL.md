@@ -683,14 +683,17 @@ migriert, verweigert das Re-Homing eines Subjects in einen anderen Mandanten.
 
 **Boot-Auto-Seed (ONB-1, ADR 0011):** In `builtin`-Modus mit gesetzter
 `WAYFINDER_DB_URL` provisioniert Wayfinder beim Start **automatisch** einen
-Standard-Mandanten (`default`, als bequemes Zuhause für die ersten Lotsen-Zugänge)
-+ Standard-Admin (Subject `admin`, Passwort `admin`) — aber **nur, wenn noch kein
-aktiver Admin existiert** (`UserRepo.CountActiveAdmins == 0`). Der seedete Admin
-trägt `must_change_password=true`; das bekannte Default-Passwort ist also nur bis
-zum erzwungenen Wechsel beim ersten Login gültig. Der Seed
-(`cmd/wayfinder/seed.go`) ist idempotent und wiederverwendet `runBootstrap`; ein
-Neustart oder ein bereits rotiertes Passwort wird nie überschrieben. So ist eine
-frische Instanz ohne Terminal-Schritt benutzbar (`docker-compose.onboarding.yml`).
+Standard-Admin (Subject `admin`, Passwort `admin`, tenant-los) — aber **nur, wenn
+noch kein aktiver Admin existiert** (`UserRepo.CountActiveAdmins == 0`). Der
+seedete Admin trägt `must_change_password=true`; das bekannte Default-Passwort
+ist also nur bis zum erzwungenen Wechsel beim ersten Login gültig. **Es wird
+kein Mandant geseedet** (ADR 0011 Nachtrag): der frühere Komfort-Mandant
+`default` sparte nur den einen UI-Klick des Anlegens (ONB-4) und stiftete
+Verwirrung — eine frische Instanz startet mit **null Mandanten**, der Betreiber
+legt seine eigenen per Admin-UI an. Der Seed (`cmd/wayfinder/seed.go`) ist
+idempotent und wiederverwendet `runBootstrap`; ein Neustart oder ein bereits
+rotiertes Passwort wird nie überschrieben. So ist eine frische Instanz ohne
+Terminal-Schritt benutzbar (`docker-compose.onboarding.yml`).
 
 **Strikte Admin/Nutzer-Trennung (ONB-3, ADR 0011):** Plattform-Admins und
 Mandanten-Nutzer (Lotsen) sind sauber getrennt. Ein **Admin ist global** und

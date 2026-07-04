@@ -12,10 +12,11 @@ import (
 
 // TestIntegrationAutoSeed exercises the ONB-1/ONB-3 (ADR 0011) boot auto-seed
 // against a real Postgres: the first run provisions the default (tenant-less)
-// admin with the known default password and the forced-change flag, plus a
-// convenience default tenant; a second run is a no-op (an admin already exists);
-// and once the admin has rotated its password and cleared the flag, a restart
-// does not undo that. Skips without WAYFINDER_TEST_DB_URL.
+// admin with the known default password and the forced-change flag — and
+// deliberately NO tenant (ADR 0011 Nachtrag: the earlier convenience tenant
+// "default" is gone); a second run is a no-op (an admin already exists); and
+// once the admin has rotated its password and cleared the flag, a restart does
+// not undo that. Skips without WAYFINDER_TEST_DB_URL.
 func TestIntegrationAutoSeed(t *testing.T) {
 	dsn := os.Getenv("WAYFINDER_TEST_DB_URL")
 	if dsn == "" {
@@ -62,6 +63,15 @@ func TestIntegrationAutoSeed(t *testing.T) {
 	}
 	if ok, _ := auth.VerifyPassword(hash, defaultAdminPassword); !ok {
 		t.Fatal("default password does not verify")
+	}
+	// No tenant is seeded any more (ADR 0011 Nachtrag): a fresh instance starts
+	// with zero tenants; the operator names their own via the UI (ONB-4).
+	var tenantCount int
+	if err := pool.QueryRow(ctx, `SELECT COUNT(*) FROM tenants`).Scan(&tenantCount); err != nil {
+		t.Fatalf("count tenants: %v", err)
+	}
+	if tenantCount != 0 {
+		t.Fatalf("seed created %d tenant(s), want 0 (no convenience tenant)", tenantCount)
 	}
 
 	// Second boot: a no-op — no duplicate admin.
