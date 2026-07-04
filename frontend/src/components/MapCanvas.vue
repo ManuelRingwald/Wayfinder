@@ -18,6 +18,7 @@
 import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { useAsdStore } from '@/stores/asd.js'
 import { useImpersonationStore } from '@/stores/impersonation.js'
+import { useSessionStore } from '@/stores/session.js'
 import { useToolsStore } from '@/stores/tools.js'
 import { initMap } from '@/map/engine.js'
 import { createMeasure } from '@/map/measure.js'
@@ -28,6 +29,7 @@ import ImpersonationBar from './ImpersonationBar.vue'
 const emit = defineEmits(['track-click', 'connection-change'])
 const store = useAsdStore()
 const imp = useImpersonationStore()
+const session = useSessionStore()
 const tools = useToolsStore()
 const mapEl = ref(null)
 let mapEngine = null
@@ -39,6 +41,9 @@ onMounted(async () => {
     store,
     (track) => emit('track-click', track),
     (state) => emit('connection-change', state),
+    // FR-UI-013: open on the tenant's own sector (whoami view centre) instead of
+    // the global map-config default. Null (no view config) keeps the env centre.
+    session.viewCenter,
   )
   // Häppchen 4: attach the measurement controller and let the tools store drive
   // it (reporting the live readout back to the store). createMeasure adds a
@@ -98,6 +103,14 @@ watch(() => ({ ...store.rangeRingConfig }), (cfg) => {
 // a normal page load reconnects only via the engine's own connect.
 watch(() => imp.reconnectNonce, () => {
   mapEngine?.reconnect()
+})
+
+// FR-UI-013: re-aim the camera when the effective view centre changes — either
+// because whoami resolved after the map mounted, or an admin switched the
+// impersonation target (ADR 0008) to a tenant with a different sector. The engine
+// no-ops when the centre is unchanged, so this never fights the user's panning.
+watch(() => session.viewCenter, (vc) => {
+  mapEngine?.applyViewCenter(vc)
 })
 
 defineExpose({

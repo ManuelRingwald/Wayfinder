@@ -69,6 +69,39 @@ describe('session store — ASD map auth gate', () => {
     expect(s.sensorClasses).toEqual([])
   })
 
+  it('exposes the tenant view centre from whoami so the map opens on its sector (FR-UI-013)', async () => {
+    installFetch({
+      'GET /api/whoami': {
+        status: 200,
+        body: { subject: 'lotse', tenant_id: 2, role: 'user', center_lat: 53.63, center_lon: 9.988, zoom: 8 },
+      },
+    })
+    const s = useSessionStore()
+    await s.probe()
+    expect(s.viewCenter).toEqual({ lat: 53.63, lon: 9.988, zoom: 8 })
+  })
+
+  it('viewCenter is null when whoami omits the centre ⇒ map keeps the env default', async () => {
+    installFetch({
+      'GET /api/whoami': { status: 200, body: { subject: 'lotse', tenant_id: 2, role: 'user' } },
+    })
+    const s = useSessionStore()
+    await s.probe()
+    expect(s.viewCenter).toBeNull()
+  })
+
+  it('viewCenter honours the equator (center_lat === 0 is valid, not "unset")', async () => {
+    installFetch({
+      'GET /api/whoami': {
+        status: 200,
+        body: { subject: 'lotse', tenant_id: 2, role: 'user', center_lat: 0, center_lon: 0, zoom: 4 },
+      },
+    })
+    const s = useSessionStore()
+    await s.probe()
+    expect(s.viewCenter).toEqual({ lat: 0, lon: 0, zoom: 4 })
+  })
+
   it('probe falls closed to anon on 401 (no identity ⇒ login screen, never a map)', async () => {
     installFetch({ 'GET /api/whoami': { status: 401, body: { error: 'unauthorized' } } })
     const s = useSessionStore()

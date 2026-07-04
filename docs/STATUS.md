@@ -10,6 +10,21 @@
 
 ---
 
+## 🎯 Stand 2026-07-04 (Abend)
+
+- **E2E-Fix: ASD-Karte öffnet auf dem Mandanten-Sektor (FR-UI-013-Nachtrag).**
+  Befund im Codespace-Testlauf: Mandant EDDH/Hamburg konfiguriert, Karte
+  zentrierte aber auf Frankfurt. Ursache: `/api/map-config` liefert das Zentrum
+  aus der globalen `WAYFINDER_MAP_CENTER_*`-Env (Default Frankfurt); die
+  Mandanten-Ansicht speiste nur `icao`/`fl_min`/`fl_max` ins `whoami`, **nicht**
+  Zentrum/Zoom — daher Kopfzeile korrekt „EDDH", Kamera falsch auf Frankfurt.
+  Fix: `whoami` liefert jetzt `center_lat`/`center_lon`/`zoom` der effektiven
+  Ansicht (`omitempty`; keine View-Config → Env-Fallback, nie 0/0); Frontend
+  positioniert die Karte darauf (`initMap(initialCenter)`), „Neu zentrieren" +
+  Range-Ringe folgen (`effectiveCenter`), Ansicht-Wechsel re-zielt
+  (`applyViewCenter`). Tests: whoami-DTO (Go), session/`viewCenter` +
+  MapCanvas-Verdrahtung (Vitest 334); dist neu gebaut. Eigener PR/Issue.
+
 ## 🎯 Stand 2026-07-04
 
 - **Zuletzt aktualisiert:** 2026-07-04

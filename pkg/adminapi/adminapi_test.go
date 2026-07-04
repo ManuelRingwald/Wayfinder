@@ -507,6 +507,43 @@ func TestWhoamiOmitsICAOWhenUnset(t *testing.T) {
 	}
 }
 
+// whoami carries the effective view's map viewport so the ASD opens on the
+// tenant's own sector (FR-UI-013) instead of the global map-config default.
+func TestWhoamiIncludesEffectiveViewCenter(t *testing.T) {
+	vs := &fakeVS{vc: store.ViewConfig{CenterLat: 53.63, CenterLon: 9.988, Zoom: 8}}
+	rec := httptest.NewRecorder()
+	handlerWith(vs, fakeFeeds{}, fakeTenants{}).
+		ServeHTTP(rec, adminReq(http.MethodGet, "/api/admin/whoami", "", 7, store.RoleAdmin))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var got struct {
+		CenterLat *float64 `json:"center_lat"`
+		CenterLon *float64 `json:"center_lon"`
+		Zoom      *float64 `json:"zoom"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.CenterLat == nil || *got.CenterLat != 53.63 ||
+		got.CenterLon == nil || *got.CenterLon != 9.988 ||
+		got.Zoom == nil || *got.Zoom != 8 {
+		t.Errorf("whoami view centre = %v/%v z%v, want 53.63/9.988 z8", got.CenterLat, got.CenterLon, got.Zoom)
+	}
+}
+
+// A tenant with no view config (GetEffective → ErrNotFound) omits the centre, so
+// the ASD map falls back to the global WAYFINDER_MAP_CENTER_* env — never centres
+// on lat/lon 0,0 (the Gulf of Guinea).
+func TestWhoamiOmitsViewCenterWhenNoConfig(t *testing.T) {
+	rec := httptest.NewRecorder()
+	handlerWith(&fakeVS{getErr: store.ErrNotFound}, fakeFeeds{}, fakeTenants{}).
+		ServeHTTP(rec, adminReq(http.MethodGet, "/api/admin/whoami", "", 7, store.RoleAdmin))
+	if body := rec.Body.String(); strings.Contains(body, "center_lat") || strings.Contains(body, "\"zoom\"") {
+		t.Errorf("whoami should omit the view centre when there is no config, got %s", body)
+	}
+}
+
 func TestValidateViewICAO(t *testing.T) {
 	base := viewDTO{CenterLat: 50, CenterLon: 8, Zoom: 6}
 	ok := "EDGG·KTG" // 8 runes
