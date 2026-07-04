@@ -20,8 +20,12 @@
   `impersonationReadMW` (identische fail-closed-Semantik wie `/ws`) den
   effektiven Lese-Mandanten in den Kontext; whoami/Aero/QNH lösen gegen den
   Ziel-Mandanten auf, `impersonated_tenant_id` legt es offen. Identity und alle
-  Schreibpfade unberührt. **Ausstehend:** B2 (Einstieg in der Admin-UI),
-  A (Default-Mandanten-Seed entfernen); E2E-Check auf der VM, wenn wieder da.
+  Schreibpfade unberührt.
+- **B2 — Einstieg in der Admin-UI:** „Als Mandant ansehen"-Button auf der
+  Mandanten-Detailseite (mintet das Grant, springt zur Karte; Fehler-Alert bei
+  fehlgeschlagenem Mint). Die Funktion ist damit dort auffindbar, wo Admins sie
+  suchen — nicht mehr nur über die Bar auf der Karte. **Ausstehend:** A
+  (Default-Mandanten-Seed entfernen); E2E-Check auf der VM, wenn wieder da.
 - **Teil 1 des E2E-Befunds gemergt (PR #158):** Die Luftraum-Overlay-Endpunkte
   (`/api/airspace|navaids|waypoints`) erzwingen das Feature-Entitlement jetzt
   **server-seitig** (leere Collection ohne Entitlement). Details siehe
