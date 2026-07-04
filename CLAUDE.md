@@ -344,3 +344,13 @@ Details siehe `docs/cross-project/todo-for-firefly.md`.
     (nur der lokale Tracking-Ref ist veraltet). Stattdessen den veralteten
     Tracking-Ref verwerfen und **normal** pushen — `git push -u origin <branch>`
     legt den Branch neu an.
+- **Issue-Verknüpfung im PR (Pflicht):** Erledigt ein PR ein GitHub-Issue, muss
+  der **PR-Text** ein Closing-Keyword mit der Issue-Nummer tragen —
+  `Fixes #NNN`, `Closes #NNN` oder `Resolves #NNN`. **Nur dann** schließt
+  GitHub das Issue beim Merge automatisch; eine bloße Referenz („#NNN" im
+  Titel oder Commit) reicht **nicht**. Genau so entstanden stale Issues:
+  #68, #91, #124 und #125 blieben nach dem Merge der zugehörigen PRs offen
+  und wurden erst am 2026-07-04 bei einer Bestandsaufnahme nachträglich
+  geschlossen. Beim PR-Anlegen daher prüfen: Gibt es ein korrespondierendes
+  Issue? → Closing-Keyword in den PR-Text. Nach dem Merge verifizieren, dass
+  das Issue wirklich zu ist.

@@ -10,6 +10,24 @@
 
 ---
 
+## 🎯 Stand 2026-07-04
+
+- **Zuletzt aktualisiert:** 2026-07-04
+- **Teil 1 des E2E-Befunds gemergt (PR #158):** Die Luftraum-Overlay-Endpunkte
+  (`/api/airspace|navaids|waypoints`) erzwingen das Feature-Entitlement jetzt
+  **server-seitig** (leere Collection ohne Entitlement). Details siehe
+  Stand 2026-07-02 unten.
+- **Teil 2 als Issue geparkt: [#159](https://github.com/ManuelRingwald/Wayfinder/issues/159)**
+  (Radius/AOI wird beim OpenAIP-Abruf nicht berücksichtigt). Verifikation
+  wartet auf die Test-VM; im Issue stehen Diagnose-Stand, die zwei
+  Hypothesen (H1 anderer Mandant / H2 Ansicht nicht gespeichert) und die
+  Prüfschritte.
+- **Issue-Tracker bereinigt:** #68, #91, #124, #125 waren bereits implementiert
+  und gemergt, standen aber noch offen (PRs ohne Closing-Keywords). Alle vier
+  mit Beleg-Kommentar geschlossen. Neue Charter-Regel in `CLAUDE.md` §11:
+  PRs, die ein Issue erledigen, tragen **`Fixes #NNN`** im PR-Text.
+  Einziges offenes Issue: #132 (SSDD, bewusst zurückgestellt) + neu #159.
+
 ## 🎯 Stand 2026-07-03
 
 - **Zuletzt aktualisiert:** 2026-07-03
