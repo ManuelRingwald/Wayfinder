@@ -10,6 +10,19 @@
       {{ tenant.status === 'paused' ? 'pausiert' : 'aktiv' }}
     </v-chip>
     <v-spacer />
+    <!-- WF2-34 (ADR 0008): read-only "View as Tenant" straight from the tenant's
+         admin page — mints the grant and jumps to the map, where the
+         ImpersonationBar shows the yellow read-only banner with the exit. -->
+    <v-btn
+      size="small"
+      color="primary"
+      variant="tonal"
+      prepend-icon="mdi-account-eye-outline"
+      :loading="impBusy"
+      @click="viewAsTenant"
+    >
+      Als Mandant ansehen
+    </v-btn>
     <v-btn
       v-if="tenant"
       size="small"
@@ -33,6 +46,18 @@
       Mandant löschen
     </v-btn>
   </div>
+
+  <!-- WF2-34: surfaced only when minting the read-only grant failed. -->
+  <v-alert
+    v-if="impError"
+    type="error"
+    density="compact"
+    class="mb-4"
+    closable
+    @click:close="impError = null"
+  >
+    {{ impError }}
+  </v-alert>
 
   <!-- Delete tenant confirmation (ONB-4) -->
   <v-dialog v-model="deleteDialog" max-width="480">
@@ -328,7 +353,9 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { useAdminStore } from '@/stores/admin.js'
+import { useImpersonationStore } from '@/stores/impersonation.js'
 import { radiusNmToBbox, bboxToRadius } from '@/admin/geo.js'
 import { describeFeedHealth } from '@/admin/feedHealth.js'
 import AdminProvisioning from '@/components/admin/AdminProvisioning.vue'
@@ -341,6 +368,28 @@ const emit = defineEmits(['back'])
 
 const admin = useAdminStore()
 const busy = ref(false)
+
+// WF2-34 (ADR 0008): "Als Mandant ansehen" from the admin page. The server
+// mints the HttpOnly grant cookie; navigating to the map hands over to the
+// ImpersonationBar (banner, switcher, exit) and the /ws connect picks up the
+// target scope. Read-only by construction — no admin action here writes any
+// tenant user's view.
+const imp = useImpersonationStore()
+const router = useRouter()
+const impBusy = ref(false)
+const impError = ref(null)
+
+async function viewAsTenant() {
+  impBusy.value = true
+  impError.value = null
+  const ok = await imp.start(props.tenantId)
+  impBusy.value = false
+  if (ok) {
+    router.push('/')
+    return
+  }
+  impError.value = imp.error || 'Ansehen als Mandant fehlgeschlagen.'
+}
 const entitlements = ref([])
 const deleteDialog = ref(false) // ONB-4: delete-tenant confirmation
 
