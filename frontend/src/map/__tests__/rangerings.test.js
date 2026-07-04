@@ -85,10 +85,18 @@ describe('rangeRingsGeoJSON', () => {
     expect(partial).toHaveLength(2)
   })
 
-  it('places each label due north of the centre', () => {
-    const fc = rangeRingsGeoJSON(50, 8, 10, 1)
-    const label = fc.features.find((f) => f.properties.kind === 'label')
-    expect(label.geometry.coordinates[0]).toBeCloseTo(8, 6) // lon ~ centre
-    expect(label.geometry.coordinates[1]).toBeGreaterThan(50) // north of centre
+  it('staggers labels onto diagonal bearings, never due north', () => {
+    // Four rings → labels cycle NE, SE, SW, NW. None sits on the north radial
+    // (each is meaningfully offset in longitude), and consecutive rings never
+    // share a radial. Guards the fix that moved labels off the 12-o'clock line.
+    const labels = rangeRingsGeoJSON(50, 8, 10, 4)
+      .features.filter((f) => f.properties.kind === 'label')
+      .map((f) => f.geometry.coordinates)
+    const quadrant = ([lon, lat]) => [lat > 50 ? 'N' : 'S', lon > 8 ? 'E' : 'W'].join('')
+    expect(labels.map(quadrant)).toEqual(['NE', 'SE', 'SW', 'NW'])
+    // Every label is off the north/south radial (clearly east or west of centre).
+    for (const [lon] of labels) {
+      expect(Math.abs(lon - 8)).toBeGreaterThan(0.01)
+    }
   })
 })
