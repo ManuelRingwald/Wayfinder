@@ -449,9 +449,9 @@ Keys werden fail-closed verweigert und über den `unknown_key`-Zähler sichtbar.
 
 | Key | Beschreibung | Default |
 |-----|--------------|---------|
-| `stca` | Short-Term Conflict Alert (ASD-006) | deny |
+| `stca` | Short-Term Conflict Alert (ASD-006) — **reserviert** (#175) | deny |
 | `multi_feed` | Mehrere Sensor-Feeds abonnieren (WF2-41) | deny |
-| `premium_layers` | Premium-ASD-Kartenoverlay | deny |
+| `premium_layers` | Premium-ASD-Kartenoverlay — **reserviert** (#175) | deny |
 | `airspaces` | Luftraum-Overlays (CTR, TMA, restricted, info) — ASD-011 | deny |
 | `range_rings` | Range-Ring-Overlay — ASD-012 | deny |
 | `history_dots` | Track-History-Punkte — ASD-004a | deny |
@@ -460,6 +460,14 @@ Keys werden fail-closed verweigert und über den `unknown_key`-Zähler sichtbar.
 | `weather_radar` | DWD-Wetter-Radar-Overlay — WX-A (ADR 0016) | deny |
 | `qnh` | QNH-Kopfzeilen-Infobox (NOAA-METAR) — WX-B (ADR 0016) | deny |
 | `weather_warnings` | DWD-Wetterwarnungen-Overlay — WX-C (ADR 0016) | deny |
+
+**Reservierte Keys (#175):** `stca` und `premium_layers` sind katalogisiert, haben
+aber **keinen Verbraucher** (Ein-/Ausschalten ist ein No-Op). Sie bleiben im Katalog
+(Round-Trip + fail-closed unverändert), tragen aber im Feature-Katalog das
+`Reserved`-Flag (`feature.Reserved`, im `entitlementDTO.reserved`); das Admin-Panel
+zeigt sie **deaktiviert** mit dem Hinweis „noch nicht aktiv", statt einen wirkungslosen
+Toggle anzubieten (Präzedenz #114). Das Verdrahten (bei `stca`: Firefly-I062/340 +
+Datenblock-Darstellung, cross-project) hebt das Flag auf.
 
 **UI-Gate der ASD-Karte (rein kosmetisch, kein Serverenforcement auf Aero-Daten;
 Issue #106).** Das Layer-/Filter-Panel (`LayerFilterContent.vue`) gated über die

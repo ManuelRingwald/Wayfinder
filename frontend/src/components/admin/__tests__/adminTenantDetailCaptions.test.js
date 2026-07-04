@@ -57,4 +57,11 @@ describe('AdminTenantDetail feature entitlements', () => {
     expect(sfc).toContain('e.label || e.key')
     expect(sfc).toContain('e.description')
   })
+
+  it('reserved keys are disabled with a "noch nicht aktiv" chip (#175)', () => {
+    // A catalogued-but-unwired feature must not offer an active-looking toggle.
+    expect(sfc).toContain('e.reserved')
+    expect(sfc).toContain(':disabled="e.reserved"')
+    expect(sfc).toContain('noch nicht aktiv')
+  })
 })

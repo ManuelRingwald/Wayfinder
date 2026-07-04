@@ -1004,6 +1004,31 @@ func TestListTenantEntitlementsAdmin(t *testing.T) {
 	}
 }
 
+func TestListTenantEntitlementsMarksReserved(t *testing.T) {
+	ft := fakeTenants{byID: map[int64]store.Tenant{5: {ID: 5}}}
+	rec := httptest.NewRecorder()
+	handlerWithEnt(&fakeVS{}, fakeFeeds{}, ft, &fakeEntitlements{}).
+		ServeHTTP(rec, adminReq(http.MethodGet, "/api/admin/tenants/5/entitlements", "", 99, store.RoleAdmin))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var got []entitlementDTO
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	reserved := map[string]bool{}
+	for _, e := range got {
+		reserved[e.Key] = e.Reserved
+	}
+	// #175: the two orphaned seed keys are reserved; a wired key is not.
+	if !reserved[string(feature.STCA)] || !reserved[string(feature.PremiumLayers)] {
+		t.Errorf("stca/premium_layers should be reserved: %v", reserved)
+	}
+	if reserved[string(feature.RangeRings)] {
+		t.Error("range_rings should not be reserved")
+	}
+}
+
 func TestSetTenantEntitlementAdmin(t *testing.T) {
 	fe := &fakeEntitlements{}
 	ft := fakeTenants{byID: map[int64]store.Tenant{5: {ID: 5}}}

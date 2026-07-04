@@ -63,6 +63,24 @@ func TestLabel(t *testing.T) {
 	}
 }
 
+func TestReserved(t *testing.T) {
+	// The two orphaned seed keys are reserved (no consumer, #175); every wired
+	// key is not.
+	for _, k := range []Key{STCA, PremiumLayers} {
+		if !Reserved(k) {
+			t.Errorf("Reserved(%q) = false, want true (orphaned key)", k)
+		}
+	}
+	for _, k := range []Key{MultiFeed, Airspaces, RangeRings, HistoryDots, VorNdb, Waypoints, WeatherRadar, QNH, WeatherWarnings} {
+		if Reserved(k) {
+			t.Errorf("Reserved(%q) = true, want false (wired key)", k)
+		}
+	}
+	if Reserved("bogus") {
+		t.Error("Reserved(bogus) = true, want false")
+	}
+}
+
 // TestNoInternalDocRefs pins the operator-facing copy free of internal document
 // references (requirement IDs, ADR numbers, ASTERIX item codes). These mean
 // nothing to an administrator granting entitlements and were removed on request;

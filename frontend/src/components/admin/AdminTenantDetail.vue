@@ -257,8 +257,12 @@
       <div v-for="e in entitlements" :key="e.key" class="d-flex align-center justify-space-between">
         <div>
           <!-- Show the catalogue's Fachbegriff (e.label); fall back to the raw
-               key only if an older server omits it. -->
-          <div>{{ e.label || e.key }}</div>
+               key only if an older server omits it. Reserved keys (#175) carry a
+               "noch nicht aktiv" chip so the disabled toggle reads as intentional. -->
+          <div>
+            {{ e.label || e.key }}
+            <v-chip v-if="e.reserved" size="x-small" variant="tonal" class="ml-2">noch nicht aktiv</v-chip>
+          </div>
           <div class="text-caption text-medium-emphasis">{{ e.description }}</div>
         </div>
         <v-switch
@@ -268,6 +272,7 @@
           hide-details
           inset
           :loading="busy"
+          :disabled="e.reserved"
           @update:model-value="toggleFeature(e, $event)"
         />
       </div>

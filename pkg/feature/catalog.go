@@ -48,6 +48,14 @@ const (
 type entry struct {
 	Label       string
 	Description string
+	// Reserved marks a catalogued key that has NO consumer yet — enabling it
+	// does nothing (#175). The key stays in the catalog (so it round-trips and
+	// stays fail-closed), but the admin panel shows it disabled + "noch nicht
+	// aktiv" instead of offering a toggle that silently does nothing (the #114
+	// "a switch that visibly does nothing reads as a bug" principle). Turning a
+	// reserved key into a real feature is a deliberate act: wire a consumer, then
+	// drop this flag.
+	Reserved bool
 }
 
 // catalog is the closed set of known feature keys with their operator-facing
@@ -58,9 +66,13 @@ type entry struct {
 // Copy is German to match the admin UI; the labels keep the international ATC
 // terms (QNH, STCA, VOR/NDB, Range Rings) that operators already know.
 var catalog = map[Key]entry{
-	STCA:            {Label: "STCA", Description: "Kurzfrist-Konfliktwarnung: markiert im Datenblock, wenn zwei Tracks in Kürze zu nah kommen."},
-	MultiFeed:       {Label: "Mehrere Feeds", Description: "Erlaubt dem Mandanten, mehrere Sensor-Feeds gleichzeitig zu abonnieren."},
-	PremiumLayers:   {Label: "Premium-Kartenlayer", Description: "Schaltet zusätzliche, erweiterte Kartenoverlays frei (Premium-Umfang)."},
+	// STCA is reserved: it needs a Firefly conflict item (I062/340) on the wire
+	// and an ASD data-block renderer, neither of which exists yet (cross-project).
+	STCA:      {Label: "STCA", Description: "Kurzfrist-Konfliktwarnung: markiert im Datenblock, wenn zwei Tracks in Kürze zu nah kommen.", Reserved: true},
+	MultiFeed: {Label: "Mehrere Feeds", Description: "Erlaubt dem Mandanten, mehrere Sensor-Feeds gleichzeitig zu abonnieren."},
+	// PremiumLayers is reserved: a generic seed placeholder with no defined
+	// overlays and no consumer — kept until "premium overlays" actually exist.
+	PremiumLayers:   {Label: "Premium-Kartenlayer", Description: "Schaltet zusätzliche, erweiterte Kartenoverlays frei (Premium-Umfang).", Reserved: true},
 	Airspaces:       {Label: "Lufträume", Description: "Blendet Luftraumstrukturen ein (CTR, TMA, Sperr- und Infogebiete)."},
 	RangeRings:      {Label: "Range Rings", Description: "Konzentrische Entfernungsringe um das Kartenzentrum als Distanzraster."},
 	HistoryDots:     {Label: "Positions-History", Description: "Zeigt vergangene Positionen eines Tracks als Punktespur."},
@@ -95,3 +107,9 @@ func Describe(key Key) string { return catalog[key].Description }
 // Label returns the short human-readable term (the ATC/domain Fachbegriff) shown
 // as the heading for a known key, or "" if the key is not in the catalog.
 func Label(key Key) string { return catalog[key].Label }
+
+// Reserved reports whether a known key is catalogued but not yet wired to a
+// consumer (#175): enabling it is a no-op, so the admin panel shows it disabled
+// with a "noch nicht aktiv" hint. Unknown keys are not reserved (they are simply
+// unknown, fail-closed).
+func Reserved(key Key) bool { return catalog[key].Reserved }
