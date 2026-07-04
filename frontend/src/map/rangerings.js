@@ -57,18 +57,19 @@ export function ringPolygon(centerLat, centerLon, radiusM, points = 128) {
   return coords
 }
 
-// Label placement: each ring's label is staggered onto a different diagonal
-// bearing (NE → SE → SW → NW, cycling), never due north. The earlier "all due
-// north" placement piled every label on the 12-o'clock radial, where they
-// collided with the top-edge chrome (compass, header, feed badge) and scrolled
-// off the top together on a southward pan. Diagonals keep the labels clear of
-// the cardinal traffic lanes and spread them across the scope, so no single pan
-// direction hides them all and no two adjacent rings share a radial.
-const LABEL_BEARINGS = [45, 135, 225, 315]
+// Label placement: every ring's label sits on the SAME NE radial (45°, up-and-
+// right), each on its own ring radius. Because consecutive rings are at
+// different radii (5 NM, 10 NM, …), a shared bearing does NOT make the labels
+// overlap — they line up neatly along one diagonal, which reads calmer than
+// spreading them around the scope. NE keeps them clear of the compass control
+// (top-left); the operator learns one place to look for the range readout. Due
+// north is deliberately avoided so the labels don't stack on the 12-o'clock line
+// under the top-centre chrome.
+const LABEL_BEARING = 45 // NE, uniform for all rings
 
 // rangeRingsGeoJSON builds the overlay FeatureCollection: one LineString per
-// ring (property `nm`) plus one label Point per ring (staggered around the scope
-// per LABEL_BEARINGS above). count is clamped to a non-negative integer;
+// ring (property `nm`) plus one label Point per ring (all on the NE radial, see
+// LABEL_BEARING above). count is clamped to a non-negative integer;
 // spacingNM/count come from the reactive store (ASD-012).
 export function rangeRingsGeoJSON(centerLat, centerLon, spacingNM, count, points = 128) {
   const features = []
@@ -76,7 +77,6 @@ export function rangeRingsGeoJSON(centerLat, centerLon, spacingNM, count, points
   for (let k = 1; k <= n; k++) {
     const nm = spacingNM * k
     const radiusM = nm * NM_TO_M
-    const labelBearing = LABEL_BEARINGS[(k - 1) % LABEL_BEARINGS.length]
     features.push({
       type: 'Feature',
       properties: { nm, kind: 'ring' },
@@ -85,7 +85,7 @@ export function rangeRingsGeoJSON(centerLat, centerLon, spacingNM, count, points
     features.push({
       type: 'Feature',
       properties: { nm, kind: 'label', label: `${nm} NM` },
-      geometry: { type: 'Point', coordinates: destinationPoint(centerLat, centerLon, radiusM, labelBearing) },
+      geometry: { type: 'Point', coordinates: destinationPoint(centerLat, centerLon, radiusM, LABEL_BEARING) },
     })
   }
   return { type: 'FeatureCollection', features }

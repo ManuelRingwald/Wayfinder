@@ -85,18 +85,21 @@ describe('rangeRingsGeoJSON', () => {
     expect(partial).toHaveLength(2)
   })
 
-  it('staggers labels onto diagonal bearings, never due north', () => {
-    // Four rings → labels cycle NE, SE, SW, NW. None sits on the north radial
-    // (each is meaningfully offset in longitude), and consecutive rings never
-    // share a radial. Guards the fix that moved labels off the 12-o'clock line.
+  it('places every label on the same NE radial (issue #170)', () => {
+    // All rings share bearing 45° (NE): each label is north-east of the centre
+    // (lat > centre, lon > centre), on its own radius. Never due north, so they
+    // don't stack on the 12-o'clock line under the top-centre chrome.
     const labels = rangeRingsGeoJSON(50, 8, 10, 4)
       .features.filter((f) => f.properties.kind === 'label')
       .map((f) => f.geometry.coordinates)
-    const quadrant = ([lon, lat]) => [lat > 50 ? 'N' : 'S', lon > 8 ? 'E' : 'W'].join('')
-    expect(labels.map(quadrant)).toEqual(['NE', 'SE', 'SW', 'NW'])
-    // Every label is off the north/south radial (clearly east or west of centre).
-    for (const [lon] of labels) {
-      expect(Math.abs(lon - 8)).toBeGreaterThan(0.01)
+    for (const [lon, lat] of labels) {
+      expect(lat).toBeGreaterThan(50) // north of centre
+      expect(lon).toBeGreaterThan(8) // east of centre → NE quadrant
+    }
+    // Outer labels sit farther out along the same diagonal (monotonic radius).
+    const lats = labels.map(([, lat]) => lat)
+    for (let i = 1; i < lats.length; i++) {
+      expect(lats[i]).toBeGreaterThan(lats[i - 1])
     }
   })
 })
