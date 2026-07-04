@@ -35,22 +35,40 @@ const (
 	WeatherWarnings Key = "weather_warnings"
 )
 
-// catalog is the closed set of known feature keys with human-readable
-// descriptions. The admin API may only set keys in this set, and HasFeature
-// treats any key outside it as fail-closed — so the catalog is the single
-// source of truth for "which features exist".
-var catalog = map[Key]string{
-	STCA:            "Short-Term Conflict Alert display (ASD-006)",
-	MultiFeed:       "Subscribe to multiple sensor feeds (WF2-41)",
-	PremiumLayers:   "Premium ASD map overlays",
-	Airspaces:       "Airspace overlays (CTR, TMA, restricted, info) display (ASD-011)",
-	RangeRings:      "Range-ring overlay display (ASD-012)",
-	HistoryDots:     "Track history dots display (ASD-004a)",
-	VorNdb:          "VOR/NDB navaid overlay display (ASD-003)",
-	Waypoints:       "Waypoint overlay display (ASD-003)",
-	WeatherRadar:    "DWD weather-radar map overlay (WX-A, ADR 0016)",
-	QNH:             "QNH altimeter-setting header infobox (WX-B, ADR 0016)",
-	WeatherWarnings: "DWD weather-warnings map overlay (WX-C, ADR 0016)",
+// entry is a catalog record for one feature: a short human-readable label (the
+// domain term shown as the heading in the admin entitlement panel) and a
+// one-line, plain-language description that helps an administrator understand
+// what granting the toggle actually does.
+//
+// Neither field carries internal document references (requirement IDs like
+// "ASD-012", "WF2-41", ADR numbers): those are meaningless to an operator and
+// only clutter the UI. Provenance for developers lives in the const doc comments
+// above and in docs/requirements — not in this operator-facing copy. The
+// TestNoInternalDocRefs guard keeps it that way.
+type entry struct {
+	Label       string
+	Description string
+}
+
+// catalog is the closed set of known feature keys with their operator-facing
+// label + description. The admin API may only set keys in this set, and
+// HasFeature treats any key outside it as fail-closed — so the catalog is the
+// single source of truth for "which features exist".
+//
+// Copy is German to match the admin UI; the labels keep the international ATC
+// terms (QNH, STCA, VOR/NDB, Range Rings) that operators already know.
+var catalog = map[Key]entry{
+	STCA:            {Label: "STCA", Description: "Kurzfrist-Konfliktwarnung: markiert im Datenblock, wenn zwei Tracks in Kürze zu nah kommen."},
+	MultiFeed:       {Label: "Mehrere Feeds", Description: "Erlaubt dem Mandanten, mehrere Sensor-Feeds gleichzeitig zu abonnieren."},
+	PremiumLayers:   {Label: "Premium-Kartenlayer", Description: "Schaltet zusätzliche, erweiterte Kartenoverlays frei (Premium-Umfang)."},
+	Airspaces:       {Label: "Lufträume", Description: "Blendet Luftraumstrukturen ein (CTR, TMA, Sperr- und Infogebiete)."},
+	RangeRings:      {Label: "Range Rings", Description: "Konzentrische Entfernungsringe um das Kartenzentrum als Distanzraster."},
+	HistoryDots:     {Label: "Positions-History", Description: "Zeigt vergangene Positionen eines Tracks als Punktespur."},
+	VorNdb:          {Label: "VOR/NDB", Description: "Blendet VOR-/NDB-Funknavigationsanlagen (Navaids) ein."},
+	Waypoints:       {Label: "Waypoints", Description: "Blendet Wegpunkte/Meldepunkte auf der Karte ein."},
+	WeatherRadar:    {Label: "Wetterradar (DWD)", Description: "Niederschlagsradar des Deutschen Wetterdienstes als Kartenoverlay."},
+	QNH:             {Label: "QNH", Description: "Höhenmesser-Einstellung (QNH) als Infobox in der Kopfzeile."},
+	WeatherWarnings: {Label: "Wetterwarnungen (DWD)", Description: "Amtliche Wetterwarnungen des Deutschen Wetterdienstes als Kartenoverlay."},
 }
 
 // IsKnown reports whether key is part of the feature catalog.
@@ -70,6 +88,10 @@ func All() []Key {
 	return keys
 }
 
-// Describe returns the human-readable description for a known key, or "" if the
+// Describe returns the plain-language description for a known key, or "" if the
 // key is not in the catalog.
-func Describe(key Key) string { return catalog[key] }
+func Describe(key Key) string { return catalog[key].Description }
+
+// Label returns the short human-readable term (the ATC/domain Fachbegriff) shown
+// as the heading for a known key, or "" if the key is not in the catalog.
+func Label(key Key) string { return catalog[key].Label }

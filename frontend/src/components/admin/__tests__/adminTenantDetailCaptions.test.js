@@ -33,3 +33,12 @@ describe('AdminTenantDetail view-config captions (#57)', () => {
     expect(sfc).toContain('ohne gemeldete Flugfläche')
   })
 })
+
+describe('AdminTenantDetail feature entitlements', () => {
+  it('shows the catalogue label (Fachbegriff), falling back to the raw key', () => {
+    // The heading must be the operator-facing label from the feature catalogue,
+    // not the raw snake_case key; e.label || e.key keeps older servers working.
+    expect(sfc).toContain('e.label || e.key')
+    expect(sfc).toContain('e.description')
+  })
+})

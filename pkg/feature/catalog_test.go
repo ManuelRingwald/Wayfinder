@@ -2,6 +2,7 @@ package feature
 
 import (
 	"sort"
+	"strings"
 	"testing"
 )
 
@@ -43,5 +44,41 @@ func TestDescribe(t *testing.T) {
 	}
 	if got := Describe("bogus"); got != "" {
 		t.Errorf("Describe(bogus) = %q, want empty", got)
+	}
+}
+
+func TestLabel(t *testing.T) {
+	// Every known key carries a non-empty label + description — the admin panel
+	// shows the label as the heading, so a blank one would render a bare key.
+	for _, k := range All() {
+		if Label(k) == "" {
+			t.Errorf("Label(%q) = empty, want a Fachbegriff", k)
+		}
+		if Describe(k) == "" {
+			t.Errorf("Describe(%q) = empty, want a description", k)
+		}
+	}
+	if got := Label("bogus"); got != "" {
+		t.Errorf("Label(bogus) = %q, want empty", got)
+	}
+}
+
+// TestNoInternalDocRefs pins the operator-facing copy free of internal document
+// references (requirement IDs, ADR numbers, ASTERIX item codes). These mean
+// nothing to an administrator granting entitlements and were removed on request;
+// this guard stops them from creeping back into a label or description.
+func TestNoInternalDocRefs(t *testing.T) {
+	forbidden := []string{"ASD-", "WF2", "WX-", "ADR", "I062", "I065"}
+	for _, k := range All() {
+		for _, field := range []struct{ name, val string }{
+			{"label", Label(k)},
+			{"description", Describe(k)},
+		} {
+			for _, bad := range forbidden {
+				if strings.Contains(field.val, bad) {
+					t.Errorf("%s of %q contains internal ref %q: %q", field.name, k, bad, field.val)
+				}
+			}
+		}
 	}
 }

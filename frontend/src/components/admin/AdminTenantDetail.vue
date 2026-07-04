@@ -219,7 +219,9 @@
       <p v-if="!entitlements.length" class="text-medium-emphasis">Lade Features…</p>
       <div v-for="e in entitlements" :key="e.key" class="d-flex align-center justify-space-between">
         <div>
-          <div>{{ e.key }}</div>
+          <!-- Show the catalogue's Fachbegriff (e.label); fall back to the raw
+               key only if an older server omits it. -->
+          <div>{{ e.label || e.key }}</div>
           <div class="text-caption text-medium-emphasis">{{ e.description }}</div>
         </div>
         <v-switch
