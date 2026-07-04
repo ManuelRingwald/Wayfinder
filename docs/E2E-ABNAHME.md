@@ -12,8 +12,9 @@
 > `network_mode: host`) braucht einen **echten Linux-Kernel**. Docker Desktop auf
 > dem Mac kann das nicht (nur die interne VM, nicht der Mac-Host). Lösung: eine
 > schlanke **Ubuntu-VM mit Multipass** direkt auf dem Mac mini — darin läuft alles
-> nativ wie auf einem Linux-Server. (Einen schnellen Teil-Check **ohne** VM
-> beschreibt [Anhang A](#anhang-a--schnell-check-ohne-vm-nur-auf-dem-mac).)
+> nativ wie auf einem Linux-Server. (Der Weg **ohne** eigene VM ist heute ein
+> GitHub Codespace — siehe [Anhang A](#anhang-a--schnell-check-ohne-vm-entfallen--codespaces)
+> bzw. `docs/CODESPACES.md`.)
 
 ---
 
@@ -23,7 +24,7 @@
 |---|------------|-----------------|
 | 1 | Aus einem frischen Mac mini wird mit wenigen Befehlen ein **echter Linux-Docker-Host** (Multipass-VM). | Teil 1–2 |
 | 2 | Der **orchestrierte Stack** (Datenbank + ASD-Server + Orchestrator) startet vollständig. | Teil 3 |
-| 3 | *(optional)* Ein **offline Smoke-Test** belegt die Kette Feed → Auto-Spawn → CAT062-Multicast → ASD → Aufräumen mit einer Demo-Szene. | Teil 4 |
+| 3 | *(optional)* Ein **offline Smoke-Test** belegt die Kette Feed → Auto-Spawn → CAT065-Multicast → ASD → Aufräumen mit einem bewusst quellenlosen Feed (leerer Himmel + Heartbeat, Firefly ADR 0030). | Teil 4 |
 | 4 | Die **ganze Kundeneinrichtung** (Mandant, Zugang, Feed, Sicht, Zuweisung) läuft in der **Browser-UI**, mit **echten** ADS-B-/FLARM-Daten (Raum Frankfurt); der angemeldete Mandant sieht **live Tracks**. | Teil 5 |
 | 5 | **Hinter den Kulissen** belegen Container, Logs und Metriken jede Stufe der Kette. | Teil 6 |
 
@@ -37,7 +38,7 @@
 [Teil 6 Hinter den Kulissen](#teil-6--hinter-den-kulissen-prüfen) ·
 [Teil 7 Aufräumen](#teil-7--aufräumen) ·
 [Teil 8 Fehlerbehebung](#teil-8--fehlerbehebung) ·
-[Anhang A Schnell-Check ohne VM](#anhang-a--schnell-check-ohne-vm-nur-auf-dem-mac)
+[Anhang A ohne VM → Codespaces](#anhang-a--schnell-check-ohne-vm-entfallen--codespaces)
 
 > **Konventionen.** `〈…〉` markiert einen Wert, den **du** aus einer vorherigen
 > Ausgabe einsetzt (z. B. `〈VM-IP〉`). „**Auf dem Mac**" = Terminal auf macOS.
@@ -121,12 +122,13 @@ Weiter **in der VM**.
 
 Dieser Lauf ist **vollständig offline** und **reproduzierbar**: Er seedet direkt
 in der Datenbank einen Mandanten + Feed **ohne** Live-Quellen; der Orchestrator
-spawnt daraufhin eine Firefly-Instanz, die die **Frankfurt-Demo-Szene** abspielt
-und CAT062-Tracks sendet. Kein Internet, keine UI nötig.
+spawnt daraufhin eine Firefly-Instanz mit **bewusst leerem Himmel** — sie sendet
+keine Tracks, aber den **CAT065-Heartbeat** (Firefly ADR 0030). Genau der
+beweist die Kette Spawn → Multicast → ASD-Empfang. Kein Internet, keine UI nötig.
 
 | # | Aktion (in der VM, im Ordner `~/asd/wayfinder`) | Erwartetes Ergebnis |
 |---|--------------------------------------------------|---------------------|
-| 4.1 | `./scripts/e2e-orchestrated.sh --mode scene` | Das Skript fährt den Stack hoch, prüft die Kette Punkt für Punkt und räumt am Ende auf. |
+| 4.1 | `./scripts/e2e-orchestrated.sh --mode empty` | Das Skript fährt den Stack hoch, prüft die Kette Punkt für Punkt und räumt am Ende auf. |
 
 **Erwartete Ausgabe — jede dieser Zeilen muss erscheinen (IDs können 1 oder höher sein):**
 
@@ -138,24 +140,23 @@ und CAT062-Tracks sendet. Kein Internet, keine UI nötig.
 → checkpoint 1 — orchestrator spawns the tracker container
   ✓ container running: wayfinder-firefly-feed-1
 → checkpoint 2 — container env matches the spec
-  ✓ endpoint + FIREFLY_SCENE present (placeholder source)
-→ checkpoint 5 — tracks reach the ASD (server /metrics)
-  ✓ ASD received CAT062 tracks (wayfinder_cat062_tracks_received_total > 0)
+  ✓ endpoint + FIREFLY_SOURCES=[] present (empty sky contract)
+→ checkpoint 5 — heartbeat reaches the ASD (server /metrics)
+  ✓ ASD received the feed signal (wayfinder_cat065_heartbeats_received_total > 0)
 → checkpoint 8 — unsubscribe triggers orphan cleanup
   ✓ tracker torn down after unsubscribe
 
-✅ E2E acceptance (scene) passed.
+✅ E2E acceptance (empty) passed.
 ```
 
 **Bestanden heißt eindeutig:**
 
-1. Die **allerletzte** Zeile ist **exakt** `✅ E2E acceptance (scene) passed.`, **und**
-2. bei **checkpoint 5** steht ein **`✓ ASD received CAT062 tracks …`** (nicht `⚠ WARN`).
+1. Die **allerletzte** Zeile ist **exakt** `✅ E2E acceptance (empty) passed.`, **und**
+2. bei **checkpoint 5** steht das **`✓ ASD received the feed signal …`**.
 
-Steht bei checkpoint 5 stattdessen `⚠ WARN: no CAT062 tracks observed …`, ist der
-Spawn-/Aufräum-Teil bestanden, aber es kamen keine Tracks an → siehe
-[Teil 8](#teil-8--fehlerbehebung). Bricht das Skript mit `✗ FAIL:` ab, nennt die
-Zeile den fehlgeschlagenen Prüfpunkt.
+Ein quellenloser Feed sendet **absichtlich keine Tracks** (leerer Himmel) —
+Tracks prüft die eigentliche Abnahme mit echten Quellen in Teil 5. Bricht das
+Skript mit `✗ FAIL:` ab, nennt die Zeile den fehlgeschlagenen Prüfpunkt.
 
 > **Das war's für Teil 4.** Für die eigentliche Abnahme mit echten Daten geht es
 > jetzt in [Teil 5](#teil-5--ui-abnahme-mit-echten-daten) weiter — dort wird der
@@ -168,13 +169,13 @@ Zeile den fehlgeschlagenen Prüfpunkt.
 
 Das ist der **Hauptweg** dieser Abnahme: die komplette Kundeneinrichtung
 (Mandant, Zugang, Feed, Quellen, Sicht, Zuweisung) in der Browser-UI, mit
-**echten** ADS-B- und FLARM-Daten im Raum Frankfurt — **keine** Simulation, keine
-Demo-Szene. Voraussetzung: Der Stack aus **Teil 3.3** läuft (falls du Teil 4
+**echten** ADS-B- und FLARM-Daten im Raum Frankfurt — **keine** Simulation.
+Voraussetzung: Der Stack aus **Teil 3.3** läuft (falls du Teil 4
 gefahren hast, hat es den Stack wieder abgebaut — dann Teil 3.3 erneut
 ausführen).
 
-> **Nicht-deterministisch, mit Absicht.** Anders als die Demo-Szene aus Teil 4
-> hängt das Track-Bild jetzt vom **echten** Flugverkehr ab. Es gibt **keine**
+> **Nicht-deterministisch, mit Absicht.** Anders als der Heartbeat-Smoke-Test
+> aus Teil 4 hängt das Track-Bild jetzt vom **echten** Flugverkehr ab. Es gibt **keine**
 > Garantie auf eine feste Anzahl Tracks zu einem festen Zeitpunkt — das ist
 > erwartet, kein Fehler. ADS-B ist um Frankfurt dicht beflogen und sollte
 > zuverlässig Tracks liefern; **FLARM** (Segelflug/GA) ist wetter- und
@@ -239,9 +240,7 @@ Zentrum `50.04 / 8.56` und Radius `100` NM automatisch aus der Standard-Ansicht
 >
 > **Warum „Multicast-Endpoint automatisch zuweisen" = AN richtig ist:** Der
 > Orchestrator startet die Firefly-Instanz **genau auf der vergebenen Adresse**,
-> und der ASD-Server hört dort zu. (Nur im VM-losen
-> [Anhang A](#anhang-a--schnell-check-ohne-vm-nur-auf-dem-mac) muss man den
-> Endpoint **fest** eintragen.)
+> und der ASD-Server hört dort zu.
 
 > **Neue Sidebar-Gliederung (Issues #115/#116).** In der Lotsen-Sicht ist die
 > Sidebar links **standardmäßig eingeklappt** — nur die schmale Icon-Leiste
@@ -339,7 +338,7 @@ aktuell zugewiesenen Feed aus einem der Prüfschritte 5.4–5.6 aus.
 | **`http://〈VM-IP〉:8081` lädt nicht** im Mac-Browser | Falsche IP, oder `localhost` statt VM-IP verwendet, oder Server noch nicht oben. | 1) Server-Check **in der VM**: `curl -s localhost:8080/health` → muss `ok` sein. 2) IP neu holen: `multipass info asd \| grep IPv4`. 3) **Nicht** `localhost:8081` am Mac benutzen — die Ports liegen auf der VM. |
 | **`docker run hello-world` → `permission denied`** | Schritt 2.4 (Gruppe aktivieren) übersprungen. | `exit`, dann auf dem Mac erneut `multipass shell asd`; 2.5 wiederholen. |
 | **Skript (Teil 4, optional): `✗ FAIL: Firefly image 'firefly:latest' not found`** | Teil 3.2 nicht gemacht. | `cd ~/asd/firefly && docker build -t firefly:latest .`, dann Teil 4 erneut. |
-| **Skript (Teil 4, optional): checkpoint 5 zeigt `⚠ WARN: no CAT062 tracks`** | Multicast überquert den Host nicht, oder die Szene ist still. | Läuft die VM als **echter** Linux-Host (ja bei Multipass)? `docker logs wayfinder-firefly-feed-〈id〉` prüfen: erscheint `CAT062 multicast feed enabled`? |
+| **Skript (Teil 4, optional): checkpoint 5 schlägt fehl (kein Heartbeat)** | Multicast überquert den Host nicht. | Läuft die VM als **echter** Linux-Host (ja bei Multipass)? `docker logs wayfinder-firefly-feed-〈id〉` prüfen: erscheint `CAT062 multicast feed enabled`? |
 | **UI (Teil 5): Karte bleibt leer** | Feed nicht zugewiesen (5.4.1/5.5.1/5.6.1), Sicht-AOI zu klein (Tracks außerhalb), oder gerade kein echter Verkehr im Gebiet (bei FLARM normal, siehe 5.5.3). | Zuweisung prüfen (Status „zugewiesen"); Radius in 5.3.1 auf `100` NM setzen; bei ADS-B länger warten (dichter Verkehr, sollte kommen); bei FLARM ist eine leere Karte **kein Fehler**, solange der Feed-Banner grün ist. |
 | **UI (Teil 5.7): Lufträume/VOR-NDB/Waypoints bleiben leer** | Kein OpenAIP-Schlüssel gesetzt (weder global noch pro Mandant). | Schritt 5.7.2 ausführen (`WAYFINDER_OPENAIP_API_KEY` global oder „OpenAIP-Konfiguration" pro Mandant); danach Karte neu laden. |
 | **`docker compose … up` bricht mit Build-Fehler ab** | Zu wenig RAM/Disk oder Netzwerkabbruch beim ersten Abhängigkeits-Download. | VM größer neu anlegen: `multipass delete asd --purge` und `multipass launch … --memory 8G --disk 40G` erneut. |
@@ -348,37 +347,10 @@ aktuell zugewiesenen Feed aus einem der Prüfschritte 5.4–5.6 aus.
 
 ---
 
-## Anhang A — Schnell-Check ohne VM (nur auf dem Mac)
+## Anhang A — Schnell-Check ohne VM (entfallen → Codespaces)
 
-Wenn du **keinen** vollständigen orchestrierten Lauf brauchst, sondern nur schnell
-die **UI + Live-Tracks** auf dem Mac sehen willst, gibt es einen VM-losen Weg über
-ein **gemeinsames Bridge-Netz** (`docker-compose.bridge.yml`, Details in
-`DOCKER.md`). Container↔Container-Multicast funktioniert dort auch unter Docker
-Desktop.
-
-**Abdeckung — dieser Weg zeigt weniger:**
-
-| Prüf-Baustein | Bridge (Mac, ohne VM) | Voller Lauf (Multipass, Teil 1–6) |
-|---|---|---|
-| UI-Einrichtung (Login, Mandant, Zugang, Feed, Sicht, Zuweisung) | ✅ | ✅ |
-| Live-Tracks auf der Karte | ✅ | ✅ |
-| Orchestrator-**Auto-Spawn je Feed** + Aufräumen (checkpoints 1/2/8) | ❌ | ✅ |
-| Automatischer Skript-Nachweis `e2e-orchestrated.sh` | ❌ | ✅ |
-
-**Ablauf (Kurzform):** Dieser Weg nutzt der Einfachheit halber die
-**Demo-Szene** (kein Orchestrator, also keine Quellen-Konfiguration) — für die
-Abnahme mit echten Daten gilt Teil 5.
-
-1. Firefly-Repo als **Geschwister** von `wayfinder/` klonen (wie Teil 3.1, aber auf
-   dem Mac, z. B. unter `~/asd/`).
-2. `cd ~/asd/wayfinder && docker compose -f docker-compose.bridge.yml up --build`.
-3. Browser: `http://localhost:8081/admin` (Login `admin`/`admin`, Passwortwechsel).
-4. **Entscheidender Unterschied:** Da es hier **keinen** Orchestrator gibt, ist
-   Firefly ein **fester** Sender auf `239.255.0.62:8600`. Beim Anlegen mit
-   **„Feed anlegen"** deshalb Schalter **„Multicast-Endpoint automatisch
-   zuweisen" = AUS** und Gruppe **`239.255.0.62`** / Port **`8600`** **von Hand**
-   eintragen, dann im Mandanten unter „Feed-Zuweisungen" **„Zuweisen"**.
-
-   **Erwartetes Ergebnis:** Nach der Anmeldung als Mandant erscheinen die
-   Frankfurt-Tracks; `curl -s localhost:8080/metrics | grep cat062` zeigt Werte
-   **> 0**.
+Der frühere VM-lose Bridge-Weg (`docker-compose.bridge.yml` mit festem
+Firefly-Sender und Demo-Szene) ist mit dem Ausbau des Szenen-Modus entfallen
+(Firefly ADR 0030). Der Weg ohne eigene Linux-VM ist heute **GitHub
+Codespaces**: derselbe orchestrierte Stack wie in diesem Runbook, komplett im
+Browser, inklusive Auto-Spawn je Feed — Anleitung in `docs/CODESPACES.md`.

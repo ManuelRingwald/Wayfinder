@@ -155,12 +155,11 @@ func TestLoadConfigDockerRequiresImage(t *testing.T) {
 		"WAYFINDER_ORCHESTRATOR_BACKEND": "docker",
 		"WAYFINDER_FIREFLY_IMAGE":        "firefly:1.0",
 		"WAYFINDER_FIREFLY_NETWORK":      "bridge",
-		"WAYFINDER_FIREFLY_SCENE":        "demo",
 	}), nil)
 	if err != nil {
 		t.Fatalf("docker backend with image: %v", err)
 	}
-	if cfg.backend != backendDocker || cfg.fireflyImg != "firefly:1.0" || cfg.fireflyNet != "bridge" || cfg.fireflyScn != "demo" {
+	if cfg.backend != backendDocker || cfg.fireflyImg != "firefly:1.0" || cfg.fireflyNet != "bridge" {
 		t.Fatalf("docker config not parsed: %+v", cfg)
 	}
 }

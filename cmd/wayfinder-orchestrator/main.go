@@ -62,7 +62,6 @@ type config struct {
 	backend    string // WAYFINDER_ORCHESTRATOR_BACKEND: memory | docker
 	fireflyImg string // WAYFINDER_FIREFLY_IMAGE (required for the docker backend)
 	fireflyNet string // WAYFINDER_FIREFLY_NETWORK (default "host"; multicast)
-	fireflyScn string // WAYFINDER_FIREFLY_SCENE (optional placeholder source)
 
 	// secretKey is the deployment key (WAYFINDER_SECRET_KEY, base64 32 bytes) used
 	// to decrypt per-feed source credentials at launch (ORCH-5b, ADR 0012 §6). nil
@@ -134,8 +133,7 @@ func loadConfig(getenv func(string) string, args []string) (config, error) {
 	return config{
 		dsn: dsn, interval: interval, logLevel: level, once: *once,
 		backend: backend, fireflyImg: fireflyImg, fireflyNet: fireflyNet,
-		fireflyScn: getenv("WAYFINDER_FIREFLY_SCENE"),
-		secretKey:  parseSecretKey(getenv("WAYFINDER_SECRET_KEY")),
+		secretKey: parseSecretKey(getenv("WAYFINDER_SECRET_KEY")),
 	}, nil
 }
 
@@ -165,7 +163,7 @@ func newBackend(cfg config, logger *slog.Logger) (instance.Backend, error) {
 		if err != nil {
 			return nil, fmt.Errorf("connect to docker: %w", err)
 		}
-		return dockerbackend.New(client, cfg.fireflyImg, cfg.fireflyNet, cfg.fireflyScn, logger), nil
+		return dockerbackend.New(client, cfg.fireflyImg, cfg.fireflyNet, logger), nil
 	default:
 		return instance.NewMemoryBackend(), nil
 	}

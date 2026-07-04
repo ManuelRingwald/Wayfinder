@@ -813,10 +813,11 @@ managed Container (Orphan-Cleanup). Die Lebenszyklus-Logik steckt hinter einem
 schmalen `ContainerClient`-Interface (Fake-getestet); nur `client.go` importiert
 das Docker-SDK. Env für `docker`: `WAYFINDER_FIREFLY_IMAGE` (Pflicht),
 `WAYFINDER_FIREFLY_NETWORK` (Default `host` — Multicast braucht i. d. R.
-Host-Networking), `WAYFINDER_FIREFLY_SCENE` (optionale Platzhalter-Quelle →
-`FIREFLY_SCENE`). Der Container bekommt `FIREFLY_CAT062_GROUP/PORT` und
-`FIREFLY_COVERAGE_BBOX`; **bei vorhandenen Quellen** zusätzlich `FIREFLY_MODE=live`
-und `FIREFLY_SOURCES` (Fireflys Eingangs-Kontrakt ADR 0023, v1.4.0; `fireflySourcesEnv`
+Host-Networking). Der Container bekommt `FIREFLY_CAT062_GROUP/PORT`,
+`FIREFLY_COVERAGE_BBOX` und **immer** `FIREFLY_SOURCES` — bei einem Feed
+**ohne** Quellen die explizite leere Liste `[]` (leerer Himmel +
+CAT065-Heartbeat, Firefly ADR 0030; der frühere `WAYFINDER_FIREFLY_SCENE`-
+Platzhalter entfällt) (Fireflys Eingangs-Kontrakt ADR 0023, v1.4.0; `fireflySourcesEnv`
 rendert `spec.Sources` → JSON, je credentialled **aufgelöster** Quelle ein
 `cred_env`-**Name**, ORCH-5a; ein `adsb_opensky`-Eintrag trägt additiv sein
 `poll_interval_secs` durch — Firefly ADR 0029). Die Credential-**Werte** löst die Control-Plane auf
@@ -1100,7 +1101,7 @@ sondern ein normaler Tageswechsel.
 
 | Thema | Einschränkung | Workaround / Geplant |
 |-------|---------------|----------------------|
-| **Multicast auf macOS/Windows** | `network_mode: host` nicht verfügbar in Docker Desktop (nur Host↔Container betroffen; Container↔Container funktioniert) | Gemeinsames Bridge-Netz: fertige `docker-compose.bridge.yml` bzw. Master-Compose in `docs/INSTALLATION.md` Schritt 4.A; E2E-Abnahme `docs/E2E-ABNAHME.md` Anhang A (Schnell-Check ohne VM) bzw. Teil 1–6 (voller Lauf in einer Linux-VM) |
+| **Multicast auf macOS/Windows** | `network_mode: host` nicht verfügbar in Docker Desktop (nur Host↔Container betroffen; Container↔Container funktioniert) | Empfohlen: **GitHub Codespace** (voller orchestrierter Stack im Browser, `docs/CODESPACES.md`) oder Linux-VM (`docs/E2E-ABNAHME.md` Teil 1–6); alternativ eigenes Bridge-Compose mit quellen-konfiguriertem Firefly (`docs/INSTALLATION.md` Schritt 4.A) |
 | **Konfigurierbarer System-Referenzpunkt (I062/100)** | I062/100-Koordinaten beziehen sich auf Fireflys Demo-Ursprung (Frankfurt); für andere Gebiete nur I062/105 (WGS84) nutzbar | Geplant in Fireflys Roadmap |
 | **Multicast-Authentifizierung** | UDP-Multicast hat keine eingebaute Absender-Authentifizierung; Schutz liegt auf Netzwerkebene (ADR 0003) | Netz-Isolation; optionaler App-Layer in Planung |
 | **Single-Node** | Wayfinder ist nicht für horizontale Skalierung (mehrere Instanzen hinter Load-Balancer) ausgelegt — jede Instanz hält ihren eigenen WebSocket-State | Für ASD typischerweise nicht nötig |

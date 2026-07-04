@@ -11,14 +11,15 @@
 # admin API is exercised by its own tests.
 #
 # Two modes:
-#   --mode scene        (default) feed WITHOUT live sources → the spawned Firefly
-#                       replays a demo scenario and emits tracks with NO external
-#                       network. Fully offline; proves spawn → multicast → ASD →
-#                       cleanup (checkpoints 1, 2, 5, 8).
+#   --mode empty        (default) feed WITHOUT live sources → the spawned Firefly
+#                       idles with an honest EMPTY SKY (Firefly ADR 0030) but
+#                       emits the CAT065 heartbeat. Fully offline; proves
+#                       spawn → multicast → ASD liveness → cleanup
+#                       (checkpoints 1, 2, 5*, 8; 5 asserts heartbeats, not tracks).
 #   --mode opensky-anon feed WITH an anonymous adsb_opensky source → exercises the
-#                       FIREFLY_SOURCES live path (FIREFLY_MODE=live). Needs
-#                       outbound network to OpenSky; the authenticated variant
-#                       (credential → FIREFLY_SOURCE_0_SECRET) is a manual step in
+#                       FIREFLY_SOURCES live path. Needs outbound network to
+#                       OpenSky; the authenticated variant (credential →
+#                       FIREFLY_SOURCE_0_SECRET) is a manual step in
 #                       docs/E2E-ABNAHME.md.
 #
 # Requirements: a running Docker daemon, docker compose v2, and the Firefly image
@@ -26,7 +27,7 @@
 # or set WAYFINDER_FIREFLY_IMAGE.
 #
 # Usage:
-#   scripts/e2e-orchestrated.sh [--mode scene|opensky-anon] [--keep]
+#   scripts/e2e-orchestrated.sh [--mode empty|opensky-anon] [--keep]
 #
 #   --keep   leave the stack and DB running after the run (for inspection);
 #            default tears everything down.
@@ -34,7 +35,7 @@
 set -euo pipefail
 
 # --- configuration ----------------------------------------------------------
-MODE="scene"
+MODE="empty"
 KEEP=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -44,8 +45,8 @@ while [[ $# -gt 0 ]]; do
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
-if [[ "$MODE" != "scene" && "$MODE" != "opensky-anon" ]]; then
-  echo "invalid --mode: $MODE (want: scene | opensky-anon)" >&2; exit 2
+if [[ "$MODE" != "empty" && "$MODE" != "opensky-anon" ]]; then
+  echo "invalid --mode: $MODE (want: empty | opensky-anon)" >&2; exit 2
 fi
 
 cd "$(dirname "$0")/.."
@@ -103,7 +104,7 @@ psql_q "SELECT 1 FROM information_schema.tables WHERE table_name='feeds'" | grep
 pass "schema ready"
 
 # --- seed the catalogue -----------------------------------------------------
-if [[ "$MODE" == "scene" ]]; then
+if [[ "$MODE" == "empty" ]]; then
   SRC='[]'
 else
   SRC='[{"type":"adsb_opensky","bbox":{"min_lat":47,"min_lon":5,"max_lat":55,"max_lon":16}}]'
@@ -143,34 +144,44 @@ info "checkpoint 2 — container env matches the spec"
 ENVOUT="$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$CONTAINER")"
 echo "$ENVOUT" | grep -q "^FIREFLY_CAT062_GROUP=$GROUP$" || fail "FIREFLY_CAT062_GROUP not set to $GROUP"
 echo "$ENVOUT" | grep -q "^FIREFLY_CAT062_PORT=$PORT$" || fail "FIREFLY_CAT062_PORT not set to $PORT"
-if [[ "$MODE" == "scene" ]]; then
-  echo "$ENVOUT" | grep -q "^FIREFLY_SCENE=" || fail "scene feed should carry FIREFLY_SCENE"
-  pass "endpoint + FIREFLY_SCENE present (placeholder source)"
+if [[ "$MODE" == "empty" ]]; then
+  # No sources → the EXPLICIT empty contract; never a placeholder scene
+  # (Firefly ADR 0030).
+  echo "$ENVOUT" | grep -q "^FIREFLY_SOURCES=\[\]$" || fail "source-less feed should carry FIREFLY_SOURCES=[]"
+  pass "endpoint + FIREFLY_SOURCES=[] present (empty sky contract)"
 else
-  echo "$ENVOUT" | grep -q "^FIREFLY_MODE=live$" || fail "opensky feed should carry FIREFLY_MODE=live"
   echo "$ENVOUT" | grep -q "^FIREFLY_SOURCES=" || fail "opensky feed should carry FIREFLY_SOURCES"
   # An anonymous source carries no cred_env and emits no secret value.
   if echo "$ENVOUT" | grep -q "^FIREFLY_SOURCE_0_SECRET="; then
     fail "anonymous source must not emit a credential env"
   fi
-  pass "endpoint + FIREFLY_MODE=live + FIREFLY_SOURCES present, no credential env"
+  pass "endpoint + FIREFLY_SOURCES present, no credential env"
 fi
 
-# --- checkpoint 5: tracks reach the ASD -------------------------------------
-info "checkpoint 5 — tracks reach the ASD (server /metrics)"
-got_tracks=0
+# --- checkpoint 5: the feed reaches the ASD ---------------------------------
+# empty mode: a source-less Firefly emits NO tracks by design (empty sky) —
+# liveness is proven by the CAT065 heartbeat crossing into the ASD.
+# opensky-anon: real tracks are expected (best-effort; traffic-dependent).
+if [[ "$MODE" == "empty" ]]; then
+  info "checkpoint 5 — heartbeat reaches the ASD (server /metrics)"
+  METRIC_NAME='wayfinder_cat065_heartbeats_received_total'
+else
+  info "checkpoint 5 — tracks reach the ASD (server /metrics)"
+  METRIC_NAME='wayfinder_cat062_tracks_received_total'
+fi
+got_signal=0
 for _ in $(seq 1 $((ASD_TIMEOUT / 3))); do
-  metric="$(curl -fsS "$HEALTH_URL/metrics" 2>/dev/null | grep -E '^wayfinder_cat062_tracks_received_total ' | awk '{print $2}' || true)"
+  metric="$(curl -fsS "$HEALTH_URL/metrics" 2>/dev/null | grep -E "^${METRIC_NAME} " | awk '{print $2}' || true)"
   count="${metric%.*}"  # drop any fractional part so the integer test is safe
-  if [[ "$count" =~ ^[0-9]+$ && "$count" -gt 0 ]]; then got_tracks=1; break; fi
+  if [[ "$count" =~ ^[0-9]+$ && "$count" -gt 0 ]]; then got_signal=1; break; fi
   sleep 3
 done
-if [[ "$got_tracks" -eq 1 ]]; then
-  pass "ASD received CAT062 tracks (wayfinder_cat062_tracks_received_total > 0)"
+if [[ "$got_signal" -eq 1 ]]; then
+  pass "ASD received the feed signal (${METRIC_NAME} > 0)"
+elif [[ "$MODE" == "empty" ]]; then
+  fail "no CAT065 heartbeat within ${ASD_TIMEOUT}s — multicast not crossing the host? check 'docker logs $CONTAINER'"
 else
   echo "  ⚠ WARN: no CAT062 tracks observed within ${ASD_TIMEOUT}s." >&2
-  echo "    For --mode scene this usually means the Firefly image's demo scene is" >&2
-  echo "    quiet or multicast is not crossing the host; check 'docker logs $CONTAINER'." >&2
   echo "    For --mode opensky-anon it may just be sparse traffic in the bbox." >&2
 fi
 

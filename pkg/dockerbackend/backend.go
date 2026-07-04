@@ -72,18 +72,16 @@ type ContainerClient interface {
 // Backend runs Firefly instances as Docker containers. Safe for concurrent use to
 // the extent the underlying ContainerClient is (the Docker SDK client is).
 type Backend struct {
-	client       ContainerClient
-	image        string // Firefly image to run
-	networkMode  string // applied to every container (default "host")
-	sceneDefault string // placeholder FIREFLY_SCENE until real source ingestion (ORCH-5)
-	logger       *slog.Logger
+	client      ContainerClient
+	image       string // Firefly image to run
+	networkMode string // applied to every container (default "host")
+	logger      *slog.Logger
 }
 
 // New builds a Backend. image is the Firefly container image; networkMode is the
 // Docker network mode for spawned containers (multicast needs "host" or an
-// equivalent); sceneDefault, when set, is passed as FIREFLY_SCENE so a spawned
-// instance produces tracks before real live-source ingestion exists (ORCH-5).
-func New(client ContainerClient, image, networkMode, sceneDefault string, logger *slog.Logger) *Backend {
+// equivalent).
+func New(client ContainerClient, image, networkMode string, logger *slog.Logger) *Backend {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -91,11 +89,10 @@ func New(client ContainerClient, image, networkMode, sceneDefault string, logger
 		networkMode = "host"
 	}
 	return &Backend{
-		client:       client,
-		image:        image,
-		networkMode:  networkMode,
-		sceneDefault: sceneDefault,
-		logger:       logger,
+		client:      client,
+		image:       image,
+		networkMode: networkMode,
+		logger:      logger,
 	}
 }
 
@@ -220,17 +217,18 @@ func (b *Backend) find(ctx context.Context, feedID int64) (*ContainerInfo, error
 }
 
 // fireflyEnv translates a Spec into the Firefly container environment: the
-// ratified output config (multicast group/port), the coarse coverage bound, and —
-// when the feed has live sources — Firefly's live mode driven by the FIREFLY_SOURCES
-// input contract (ORCH-5; Firefly ADR 0023). Order is deterministic so the spec
-// hash is stable.
+// ratified output config (multicast group/port), the coarse coverage bound, and
+// the FIREFLY_SOURCES input contract (ORCH-5; Firefly ADR 0023) driving the
+// spawned tracker. Order is deterministic so the spec hash is stable.
 //
 // FIREFLY_SOURCES carries the source *structure* and the cred_env *names*; the
 // resolved credential *values* (spec.ResolvedSecrets, filled by the control plane,
 // ORCH-5b) are emitted as separate FIREFLY_SOURCE_<i>_SECRET envs, never inlined
 // into the JSON blob. A source whose credential is unresolved is rendered without
-// cred_env (Firefly then runs it anonymously). A feed without sources falls back
-// to the optional placeholder scene.
+// cred_env (Firefly then runs it anonymously). A feed WITHOUT sources gets the
+// explicit empty list: the spawned Firefly idles with an honest empty sky while
+// still emitting the CAT065 heartbeat (Firefly ADR 0030) — the earlier
+// placeholder demo scene is gone.
 func (b *Backend) fireflyEnv(spec instance.Spec) []string {
 	env := []string{
 		"FIREFLY_CAT062_GROUP=" + spec.Group,
@@ -257,10 +255,12 @@ func (b *Backend) fireflyEnv(spec instance.Spec) []string {
 			c.MinLat, c.MinLon, c.MaxLat, c.MaxLon))
 	}
 	if sourcesJSON, credEnvs, ok := fireflySourcesEnv(spec.Sources, spec.ResolvedSecrets); ok {
-		env = append(env, "FIREFLY_MODE=live", "FIREFLY_SOURCES="+sourcesJSON)
+		env = append(env, "FIREFLY_SOURCES="+sourcesJSON)
 		env = append(env, credEnvs...)
-	} else if b.sceneDefault != "" {
-		env = append(env, "FIREFLY_SCENE="+b.sceneDefault)
+	} else {
+		// Explicit empty contract: no sources → empty sky + heartbeat, never a
+		// fake picture (Firefly ADR 0030).
+		env = append(env, "FIREFLY_SOURCES=[]")
 	}
 	return env
 }

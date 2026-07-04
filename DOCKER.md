@@ -74,35 +74,16 @@ funktioniert das Multicast-Routing **zwischen den Containern** problemlos (nur
 Host↔Container ist unter Docker Desktop kaputt). Nicht der gemeinsame Ordner an
 sich löst das Problem, sondern das **gemeinsame Bridge-Netz**.
 
-Dafür liegt eine fertige, eingecheckte Compose-Datei bereit:
-**`docker-compose.bridge.yml`**. Beide Repos als Geschwister-Ordner ablegen
-(z. B. unter `~/asd/`) und aus dem Wayfinder-Repo starten:
+Die früher dafür eingecheckte `docker-compose.bridge.yml` (fester
+Firefly-Sender mit Demo-Szene) ist mit dem Ausbau des Szenen-Modus entfallen
+(Firefly ADR 0030). Die heutigen Wege ohne Linux-Host:
 
-```
-~/asd/
-├── firefly/     ← Firefly-Repo (der ../firefly-Build-Kontext)
-└── wayfinder/   ← dieses Repo (von hier starten)
-```
-
-```bash
-cd ~/asd/wayfinder
-docker compose -f docker-compose.bridge.yml up --build
-```
-
-Dann im Browser: **http://localhost:8081/admin** (Login `admin`/`admin`,
-Passwortwechsel).
-
-> **Tracks sichtbar machen (Multi-Tenant).** Da es hier **keinen Orchestrator**
-> gibt, ist Firefly ein fester externer Sender auf `239.255.0.62:8600`. Damit ein
-> angemeldeter Mandant Tracks sieht, einen **Feed mit genau diesem Endpoint**
-> anlegen (`multicast_group: 239.255.0.62`, `port: 8600` — **nicht**
-> auto-allokieren) und einen Mandanten darauf abonnieren. Der vollständige
-> Ablauf (inkl. der festen-Endpoint-Feinheit und der Frankfurt-Szene) steht im
-> Runbook `docs/E2E-ABNAHME.md`, **Anhang A**.
->
-> Alternativ ist derselbe Bridge-Aufbau als Schritt-für-Schritt-Anleitung mit
-> einem Master-Compose im **Überordner** in `docs/INSTALLATION.md`, Schritt 4.A
-> beschrieben (für Einsteiger ohne Docker-Vorwissen).
+- **GitHub Codespaces (empfohlen):** der volle orchestrierte Stack inkl.
+  Auto-Spawn, komplett im Browser — `docs/CODESPACES.md`.
+- **Eigenes Bridge-Compose:** wer lokal auf Docker Desktop bleiben will, legt
+  ein gemeinsames Bridge-Netz mit einem festen, **quellen-konfigurierten**
+  Firefly-Sender an (Anleitung: `docs/INSTALLATION.md`, Schritt 4.A; ohne
+  Quellen bleibt der Himmel leer — Firefly ADR 0030).
 
 ## Details
 
@@ -111,7 +92,6 @@ Passwortwechsel).
 | Datei | Zweck | Netz | Plattform |
 |-------|-------|------|-----------|
 | `docker-compose.onboarding.yml` | Standard-Plattform (Postgres + Server, `builtin`) | Bridge | alle |
-| `docker-compose.bridge.yml` | E2E mit **festem** Firefly-Sender (kein Orchestrator); Live-Tracks auf Docker Desktop | Bridge | alle (v. a. Mac mini / Windows) |
 | `docker-compose.orchestrated.yml` | E2E-Harness mit Firefly-Auto-Spawn (+ Orchestrator) | Host | Linux |
 
 Beide setzen `WAYFINDER_DB_URL` und `WAYFINDER_AUTH_MODE: builtin`; der
