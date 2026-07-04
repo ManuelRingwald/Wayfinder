@@ -13,6 +13,22 @@
 ## 🎯 Stand 2026-07-04
 
 - **Zuletzt aktualisiert:** 2026-07-04
+- **Demo-Ausbau nachgezogen (Fireflys ADR 0030, Wayfinder-Teil):** Der
+  Orchestrator-Platzhalter `WAYFINDER_FIREFLY_SCENE` entfällt — ein Feed
+  **ohne** Quellen bekommt die explizite leere Liste `FIREFLY_SOURCES=[]` und
+  spawnt einen Firefly mit ehrlich leerem Himmel + CAT065-Heartbeat (kein
+  `FIREFLY_MODE` mehr). `docker-compose.bridge.yml` (komplett szenen-basiert)
+  entfernt; VM-loser Weg ist der Codespace. `e2e-orchestrated.sh`: Modus
+  `scene` → `empty` (Prüfpunkt 5 asserted den Heartbeat statt Tracks).
+  Doku-Sweep: DOCKER/INSTALLATION (Compose-Beispiele auf Opt-in-OpenSky),
+  E2E-ABNAHME (Teil 4 + Anhang A), CODESPACES, TECHNICAL, FR-ORCH-002/007,
+  CLAUDE.md §2 (I062/100-Referenzpunkt: ADR 0021 statt Demo-Ursprung).
+  **Zero-Touch-Prüfung:** UI-Kette (Feed + Quellen + Creds per Admin-UI →
+  Auto-Spawn) verifiziert env-frei — `FIREFLY_SOURCES` setzt `enabled` hart;
+  die Opt-in-Flags betreffen nur den Handstart. Offen: Auto-Generierung von
+  `WAYFINDER_SECRET_KEY` im rohen orchestrierten Compose (Folge-Häppchen,
+  damit auch die Zugangsdaten-Eingabe auf jungfräulichen Instanzen
+  zero-touch ist).
 - **Impersonation vervollständigt (B1, ADR 0008 Nachtrag):** „Als Mandant
   ansehen" schaltete bisher nur den `/ws`-Strom auf den Ziel-Mandanten um; alle
   REST-Pfade (whoami → Features/Legende/FL/ICAO, Aero-Overlays, QNH)

@@ -57,9 +57,9 @@ Weitere machst du per UI — genau der Ablauf, den du auch produktiv testest:
    (Reconcile-Intervall 10 s); Tracks erscheinen auf der Karte (**`…/`**).
    Feed löschen/Abo entziehen räumt den Tracker automatisch wieder ab.
 
-> **Hinweis:** Ein Feed **ohne** Quellen wird derzeit mit einer
-> Platzhalter-Szene gespawnt (`WAYFINDER_FIREFLY_SCENE`) — diese Demo-Altlast
-> ist zum Ausbau vorgesehen; für echte Tests immer Quellen konfigurieren.
+> **Hinweis:** Ein Feed **ohne** Quellen spawnt einen Firefly mit bewusst
+> **leerem Himmel** (nur CAT065-Heartbeat, Firefly ADR 0030) — der Feed-Chip
+> wird grün, Tracks kommen erst mit konfigurierten Quellen.
 
 ## 3. Alltag
 
@@ -74,8 +74,8 @@ Weitere machst du per UI — genau der Ablauf, den du auch produktiv testest:
 ## 4. Grenzen
 
 - **OpenSky-Zugangsdaten nötig** für echte ADS-B-Tracks (kostenloses Konto,
-  OAuth2-Client-Credentials — Firefly ADR 0024). Ohne Quellen kein sinnvolles
-  Lagebild (die Platzhalter-Szene ist Altlast, s. o.).
+  OAuth2-Client-Credentials — Firefly ADR 0024). Ohne Quellen bewusst leerer
+  Himmel (Heartbeat läuft, s. o.).
 - **Ressourcen:** 4-Core-Maschine empfohlen (ist als Minimum hinterlegt);
   viele parallele Feeds = mehrere Firefly-Container — für Lasttests weiterhin
   eine echte VM nutzen.

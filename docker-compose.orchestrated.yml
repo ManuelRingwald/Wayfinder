@@ -92,10 +92,10 @@ services:
       # Host networking for the spawned trackers so their multicast reaches the
       # server (matches this compose's host-net topology).
       WAYFINDER_FIREFLY_NETWORK: "host"
-      # Placeholder scene for feeds WITHOUT live sources → the spawned Firefly
-      # replays a demo scenario and emits tracks with no external network. Drives
-      # the offline acceptance run.
-      WAYFINDER_FIREFLY_SCENE: ${WAYFINDER_FIREFLY_SCENE:-frankfurt}
+      # Feeds WITHOUT live sources get the explicit empty contract
+      # (FIREFLY_SOURCES=[]): the spawned Firefly idles with an empty sky and
+      # keeps emitting the CAT065 heartbeat (Firefly ADR 0030) — no placeholder
+      # scene any more.
       # Same key as the server (only needed for credentialled sources, ORCH-5b).
       WAYFINDER_SECRET_KEY: ${WAYFINDER_SECRET_KEY:-}
       # Tighten the reconcile period so the harness converges quickly; the

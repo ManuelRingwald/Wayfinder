@@ -98,10 +98,10 @@ Dies ist das Herzstück und der einzige Berührungspunkt mit Firefly. Wayfinder
   statt auf einen Timeout zu warten.
 - **Koordinaten:** I062/105 liefert **WGS84 direkt** — Wayfinder rendert daraus,
   eine stereografische Rückprojektion ist **nicht** nötig. I062/100 ist die
-  zusätzliche System-Ebene (optional verwertbar); ihr Referenzpunkt ist
-  aktuell der Firefly-Demo-Ursprung (Frankfurt) und damit nur im Demo-Kontext
-  sinnvoll interpretierbar (offener Punkt: "Konfigurierbarer
-  System-Referenzpunkt" in Fireflys Roadmap).
+  zusätzliche System-Ebene (optional verwertbar); ihr Referenzpunkt ist der
+  **System-Referenzpunkt** der Firefly-Instanz (Fireflys ADR 0021: Mitte der
+  Union-BBox der Quellen, überschreibbar via `FIREFLY_SYSTEM_REF_*`). Der
+  frühere Demo-/Szenen-Ursprung entfiel mit Fireflys ADR 0030.
 - **Zeit (I062/070):** 24-Bit-Zähler in 1/128-s-Ticks seit UTC-Mitternacht —
   **springt bei Mitternacht auf 0 zurück**. Wayfinder darf daraus keinen
   monoton steigenden Zeitstempel über Mitternacht hinweg ableiten; ein Sprung

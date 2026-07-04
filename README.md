@@ -26,18 +26,18 @@ docker-compose up
 
 Dann im Browser öffnen: **http://localhost:8081**
 
-Für das volle Bild mit Live-Tracks läuft parallel Firefly mit dem
-Frankfurt-Szenario und aktiviertem CAT062-Feed:
+Für das volle Bild mit Live-Tracks empfiehlt sich der **orchestrierte Stack**
+(`docker-compose.orchestrated.yml`): Feeds samt Quellen (z. B. ADS-B/OpenSky)
+werden komplett in der Admin-UI angelegt, der Orchestrator spawnt je Feed einen
+Firefly — zero-touch, keine Env-Konfiguration (Details: [DOCKER.md](DOCKER.md),
+Browser-only-Variante: [docs/CODESPACES.md](docs/CODESPACES.md)). Standalone
+läuft Firefly alternativ mit eigener Quelle:
 
 ```bash
-# im Firefly-Repo
-FIREFLY_SCENE=frankfurt FIREFLY_CAT062_ENABLED=true docker-compose up
+# im Firefly-Repo (OpenSky-Konto nötig, Firefly ADR 0024/0030)
+FIREFLY_OPENSKY_ENABLED=true FIREFLY_OPENSKY_CREDENTIALS=id:secret \
+FIREFLY_CAT062_ENABLED=true docker-compose up
 ```
-
-> Auf **macOS/Windows (Docker Desktop)** sehen sich zwei separat gestartete
-> `docker-compose up`-Stacks wegen `network_mode: host` nicht — dafür gibt es
-> in [DOCKER.md](DOCKER.md) eine Bridge-Netzwerk-Variante mit gemeinsamem
-> Master-Compose.
 
 Details (insbesondere zur Multicast-/Docker-Netzwerk-Besonderheit) siehe
 [DOCKER.md](DOCKER.md).
@@ -53,11 +53,12 @@ go run ./cmd/wayfinder
 
 Dann im Browser öffnen: **http://localhost:8081**
 
-Für Live-Tracks parallel Firefly mit dem Frankfurt-Szenario starten:
+Für Live-Tracks parallel Firefly mit einer Quelle starten:
 
 ```bash
-# im Firefly-Repo
-FIREFLY_SCENE=frankfurt FIREFLY_CAT062_ENABLED=true cargo run -p firefly-server
+# im Firefly-Repo (OpenSky-Konto nötig)
+FIREFLY_OPENSKY_ENABLED=true FIREFLY_OPENSKY_CREDENTIALS=id:secret \
+FIREFLY_CAT062_ENABLED=true cargo run -p firefly-server
 ```
 
 Wayfinder lauscht standardmäßig auf der CAT062-Multicast-Gruppe

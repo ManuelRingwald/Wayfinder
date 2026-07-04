@@ -229,17 +229,14 @@ Feeds, die ihm zugewiesen wurden. Dazu kommen drei neue Bausteine hinzu:
 > Firefly) direkt zu [Schritt 4.5](#schritt-45--feeds-in-den-katalog-aufnehmen)
 > springen.
 
-> ⚡ **Schneller (ohne selbst Compose schreiben):** Im Wayfinder-Repo liegt eine
-> fertige, eingecheckte Bridge-Compose-Datei `docker-compose.bridge.yml`. Sie
-> erwartet `firefly/` und `wayfinder/` als Geschwister-Ordner (wie in Teil 3) und
-> wird **aus dem Wayfinder-Ordner** gestartet:
-> ```bash
-> cd ~/asd/wayfinder
-> docker compose -f docker-compose.bridge.yml up --build
-> ```
-> Wer lieber alles selbst im Überordner anlegt, folgt dem Rest dieses Schritts.
+> ⚡ **Schneller (ohne selbst Compose schreiben):** Der bequemste Weg ohne
+> eigene Linux-Umgebung ist heute ein **GitHub Codespace** mit dem
+> orchestrierten Stack (Auto-Spawn je Feed, alles per Admin-UI) —
+> `docs/CODESPACES.md`. Die früher eingecheckte `docker-compose.bridge.yml`
+> (fester Sender mit Demo-Szene) ist entfallen (Firefly ADR 0030). Wer lokal
+> auf Docker Desktop bleiben will, folgt dem Rest dieses Schritts.
 > (E2E-Abnahme auf dem Mac mini: **voller** Lauf mit einer Linux-VM in
-> `docs/E2E-ABNAHME.md`, Teil 1–6; **Schnell-Check** ohne VM in Anhang A.)
+> `docs/E2E-ABNAHME.md`, Teil 1–6.)
 
 Legen Sie eine Datei `docker-compose.yml` im **gemeinsamen Überordner** beider
 Repos an. Die Struktur sieht dann so aus:
@@ -278,7 +275,11 @@ services:
     build: ./firefly
     networks: [asd]
     environment:
-      FIREFLY_SCENE: "frankfurt"
+      # Quellen sind Opt-in (Firefly ADR 0030): ohne Quelle sendet Firefly nur
+      # den CAT065-Heartbeat (leerer Himmel). Für echte Tracks z. B. OpenSky
+      # (kostenloses Konto, OAuth2 — Firefly ADR 0024):
+      FIREFLY_OPENSKY_ENABLED: "true"
+      FIREFLY_OPENSKY_CREDENTIALS: "client_id:client_secret"
       FIREFLY_CAT062_ENABLED: "true"
       FIREFLY_CAT062_GROUP: "239.255.0.62"
       FIREFLY_CAT062_PORT: "8600"
@@ -411,7 +412,11 @@ services:
     build: ../firefly
     networks: [asd]
     environment:
-      FIREFLY_SCENE: "frankfurt"
+      # Quellen sind Opt-in (Firefly ADR 0030): ohne Quelle sendet Firefly nur
+      # den CAT065-Heartbeat (leerer Himmel). Für echte Tracks z. B. OpenSky
+      # (kostenloses Konto, OAuth2 — Firefly ADR 0024):
+      FIREFLY_OPENSKY_ENABLED: "true"
+      FIREFLY_OPENSKY_CREDENTIALS: "client_id:client_secret"
       FIREFLY_CAT062_ENABLED: "true"
       FIREFLY_CAT062_GROUP: "239.255.0.62"
       FIREFLY_CAT062_PORT: "8600"

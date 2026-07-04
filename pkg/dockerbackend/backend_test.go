@@ -77,7 +77,7 @@ func spec(id int64, port int) instance.Spec {
 }
 
 func newBackend(c ContainerClient) *Backend {
-	return New(c, "firefly:test", "host", "", discardLogger())
+	return New(c, "firefly:test", "host", discardLogger())
 }
 
 func TestStartCreatesAndRunsContainer(t *testing.T) {
@@ -229,7 +229,7 @@ func TestStartRejectsInvalidSpec(t *testing.T) {
 }
 
 func TestFireflyEnvMapsSpec(t *testing.T) {
-	b := New(newFakeClient(), "firefly:test", "host", "demo", discardLogger())
+	b := New(newFakeClient(), "firefly:test", "host", discardLogger())
 	s := instance.Spec{
 		FeedID: 1, FeedName: "f", Group: "239.0.0.5", Port: 8600,
 		Coverage: &store.BBox{MinLat: 48, MinLon: 7, MaxLat: 50, MaxLon: 9},
@@ -239,7 +239,10 @@ func TestFireflyEnvMapsSpec(t *testing.T) {
 		"FIREFLY_CAT062_GROUP=239.0.0.5":  false,
 		"FIREFLY_CAT062_PORT=8600":        false,
 		"FIREFLY_COVERAGE_BBOX=48,7,50,9": false,
-		"FIREFLY_SCENE=demo":              false,
+		// A feed without sources carries the EXPLICIT empty source list: the
+		// spawned Firefly idles with an empty sky + CAT065 heartbeat instead of
+		// replaying a placeholder scene (Firefly ADR 0030).
+		"FIREFLY_SOURCES=[]": false,
 		// The multicast sender must be explicitly enabled — Firefly's default is off
 		// (Issue #104). Without it the spawned tracker never emits the feed.
 		"FIREFLY_CAT062_ENABLED=true": false,
@@ -258,12 +261,12 @@ func TestFireflyEnvMapsSpec(t *testing.T) {
 		}
 	}
 
-	// No coverage and no scene → group/port + the always-on ENABLED and per-feed
-	// FIREFLY_PORT, deterministic.
-	b2 := New(newFakeClient(), "firefly:test", "host", "", discardLogger())
+	// No coverage → group/port + the always-on ENABLED, the per-feed
+	// FIREFLY_PORT and the explicit empty FIREFLY_SOURCES, deterministic.
+	b2 := New(newFakeClient(), "firefly:test", "host", discardLogger())
 	env2 := b2.fireflyEnv(instance.Spec{FeedID: 1, Group: "239.0.0.5", Port: 8600})
-	if len(env2) != 4 {
-		t.Fatalf("env without coverage/scene = %v, want 4 entries", env2)
+	if len(env2) != 5 {
+		t.Fatalf("env without coverage = %v, want 5 entries", env2)
 	}
 }
 
