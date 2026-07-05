@@ -78,6 +78,56 @@ func airportsHandler(views airportsViewReader, gate airportsFeatureGate, radiusK
 	}
 }
 
+// runwaysHandler serves the "Runways" overlay (#192) as a GeoJSON
+// FeatureCollection of LineString centrelines (LE→HE threshold), scoped to the
+// caller's effective view AOI, else a box around the view centre with the
+// configured radius. Behind the tenant middleware; feature-gated per tenant
+// (feature.Runways) — no entitlement → empty collection (server is the boundary).
+// Data is the embedded offline OurAirports directory (pkg/airport).
+func runwaysHandler(views airportsViewReader, gate airportsFeatureGate, radiusKM float64) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		empty := func() {
+			_ = json.NewEncoder(w).Encode(map[string]any{"type": "FeatureCollection", "features": []any{}})
+		}
+
+		id, ok := tenant.FromContext(r.Context())
+		if !ok {
+			w.WriteHeader(http.StatusUnauthorized)
+			empty()
+			return
+		}
+		readTenant := tenant.ReadTenant(r.Context(), id.TenantID)
+		if gate != nil && !gate.HasFeature(r.Context(), readTenant, feature.Runways) {
+			empty()
+			return
+		}
+		vc, err := views.GetEffective(r.Context(), readTenant, id.UserID)
+		if err != nil {
+			empty()
+			return
+		}
+		bb := aeroBBoxFromView(vc, radiusKM)
+		runways := airport.RunwaysInBBox(bb.MinLat, bb.MinLon, bb.MaxLat, bb.MaxLon, airportMaxResults)
+
+		features := make([]map[string]any, 0, len(runways))
+		for _, rw := range runways {
+			features = append(features, map[string]any{
+				"type": "Feature",
+				"geometry": map[string]any{
+					"type": "LineString",
+					"coordinates": [][2]float64{
+						{rw.LELon, rw.LELat},
+						{rw.HELon, rw.HELat},
+					},
+				},
+				"properties": map[string]any{"icao": rw.ICAO, "ident": rw.Ident},
+			})
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"type": "FeatureCollection", "features": features})
+	}
+}
+
 // Minimal GeoJSON encoders for the airport overlay (no external dependency).
 type geojsonPoint struct {
 	Type        string     `json:"type"`

@@ -35,6 +35,8 @@ const (
 	WeatherWarnings Key = "weather_warnings"
 	// Airport — airport reference-point marker overlay (#192, offline OurAirports).
 	Airport Key = "airport"
+	// Runways — runway centreline overlay (#192, offline OurAirports).
+	Runways Key = "runways"
 )
 
 // entry is a catalog record for one feature: a short human-readable label (the
@@ -84,6 +86,7 @@ var catalog = map[Key]entry{
 	QNH:             {Label: "QNH", Description: "Höhenmesser-Einstellung (QNH) als Infobox in der Kopfzeile."},
 	WeatherWarnings: {Label: "Wetterwarnungen (DWD)", Description: "Amtliche Wetterwarnungen des Deutschen Wetterdienstes als Kartenoverlay."},
 	Airport:         {Label: "Flughäfen", Description: "Blendet Flughäfen als Referenzpunkt-Marker mit Namen ein."},
+	Runways:         {Label: "Runways", Description: "Blendet die Start-/Landebahnen der Flughäfen als Mittellinien ein."},
 }
 
 // IsKnown reports whether key is part of the feature catalog.

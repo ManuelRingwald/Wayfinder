@@ -14,6 +14,8 @@ import {
   addWaypointLayers,
   addAirportLayers,
   updateAirportSource,
+  addRunwayLayers,
+  updateRunwaySource,
   addTracksLayer,
   addLeaderLinesLayer,
   addSelectionLayer,
@@ -50,6 +52,8 @@ import {
   AIRPORT_LAYER_ID,
   AIRPORT_LABEL_LAYER_ID,
   AIRPORT_URL,
+  RUNWAY_LAYER_ID,
+  RUNWAY_URL,
   WEATHER_RADAR_LAYER_ID,
   WEATHER_WARNINGS_FILL_LAYER_ID,
   WEATHER_WARNINGS_LINE_LAYER_ID,
@@ -287,6 +291,12 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
       .then((r) => (r.ok ? r.json() : null))
       .then((geojson) => { if (geojson) updateAirportSource(map, geojson) })
       .catch((err) => console.warn('airports fetch failed:', err))
+    // #192: runway centrelines (offline OurAirports, AOI-scoped by the backend).
+    addRunwayLayers(map, palette)
+    fetch(RUNWAY_URL)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((geojson) => { if (geojson) updateRunwaySource(map, geojson) })
+      .catch((err) => console.warn('runways fetch failed:', err))
     // Coverage rings sit above aeronautical overlays but below track layers,
     // so they provide geographic context without obscuring the air picture.
     addCoverageLayer(map)
@@ -396,6 +406,7 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
       weatherRadar: [WEATHER_RADAR_LAYER_ID],
       weatherWarnings: [WEATHER_WARNINGS_FILL_LAYER_ID, WEATHER_WARNINGS_LINE_LAYER_ID],
       airport: [AIRPORT_LAYER_ID, AIRPORT_LABEL_LAYER_ID], // #192
+      runways: [RUNWAY_LAYER_ID], // #192
     }
     for (const [key, layerIds] of Object.entries(groups)) {
       if (key in vis) {

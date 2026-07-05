@@ -54,6 +54,39 @@ func TestInBBoxRespectsLimit(t *testing.T) {
 	}
 }
 
+// #192: runway overlay — the embedded directory loads and InBBox returns only
+// runways whose centre is in the sector (EDDH has two: 05/23, 15/33).
+func TestRunwaysEmbeddedLoadsAndHamburgHasTwo(t *testing.T) {
+	if RunwayCount() < 1000 {
+		t.Fatalf("embedded runways.tsv looks empty/short: RunwayCount=%d", RunwayCount())
+	}
+	// A tight box around Hamburg (EDDH ~53.63N, 10.0E).
+	got := RunwaysInBBox(53.55, 9.85, 53.75, 10.15, 0)
+	var eddh []string
+	for _, rw := range got {
+		if rw.ICAO == "EDDH" {
+			eddh = append(eddh, rw.Ident)
+		}
+	}
+	if len(eddh) != 2 {
+		t.Fatalf("EDDH runways in box: got %v, want 2 (05/23, 15/33)", eddh)
+	}
+	// Every returned runway's centre must lie inside the box.
+	for _, rw := range got {
+		midLat := (rw.LELat + rw.HELat) / 2
+		midLon := (rw.LELon + rw.HELon) / 2
+		if midLat < 53.55 || midLat > 53.75 || midLon < 9.85 || midLon > 10.15 {
+			t.Fatalf("runway %s/%s centre outside box", rw.ICAO, rw.Ident)
+		}
+	}
+}
+
+func TestRunwaysInBBoxRespectsLimit(t *testing.T) {
+	if n := len(RunwaysInBBox(-90, -180, 90, 180, 3)); n != 3 {
+		t.Fatalf("RunwaysInBBox limit: got %d, want 3", n)
+	}
+}
+
 func TestSearchExactICAOWinsAndFillsCoords(t *testing.T) {
 	got := fixture().Search("EDDH", 10)
 	if len(got) == 0 || got[0].ICAO != "EDDH" {

@@ -53,6 +53,7 @@ export const useAsdStore = defineStore('asd', () => {
     weatherRadar: false, // WX-A: off by default (weather is opt-in context)
     weatherWarnings: false, // WX-C: off by default (opt-in context)
     airport: false, // #192: airport markers off by default (opt-in context)
+    runways: false, // #192: runway centrelines off by default (opt-in context)
   })
 
   // ASD-012: operator-tunable range-ring configuration, applied live. The engine
