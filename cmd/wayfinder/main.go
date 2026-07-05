@@ -544,6 +544,11 @@ func main() {
 	// (feature.Airport) — no entitlement → empty collection.
 	mux.Handle("GET /api/airports.geojson", tenantMW(impReadMW(airportsHandler(qnhViews, featSvc, cfg.OpenAIPRadiusKM))))
 
+	// Runway centreline overlay (#192): GeoJSON LineStrings of runways inside the
+	// caller's view AOI, from the embedded offline OurAirports directory. Same
+	// tenant/impersonation/feature-gate posture as /api/airports.geojson.
+	mux.Handle("GET /api/runways.geojson", tenantMW(impReadMW(runwaysHandler(qnhViews, featSvc, cfg.OpenAIPRadiusKM))))
+
 	// Builtin-mode login/logout (WF2-12.3): only when the auth mode is builtin
 	// (proxy mints no local sessions). These routes are intentionally
 	// unauthenticated — they hand out the session the middleware later checks.

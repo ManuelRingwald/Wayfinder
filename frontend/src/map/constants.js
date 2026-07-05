@@ -29,6 +29,11 @@ export const AIRPORT_SOURCE_ID = 'airports'
 export const AIRPORT_LAYER_ID = 'airports-markers'
 export const AIRPORT_LABEL_LAYER_ID = 'airports-labels'
 export const AIRPORT_URL = '/api/airports.geojson'
+// #192: runway centrelines (offline OurAirports, served AOI-scoped by the
+// backend). A line per runway (LE→HE threshold).
+export const RUNWAY_SOURCE_ID = 'runways'
+export const RUNWAY_LAYER_ID = 'runways-lines'
+export const RUNWAY_URL = '/api/runways.geojson'
 
 // How often the frontend re-pulls the aeronautical GeoJSON. The backend itself
 // refreshes from OpenAIP on the AIRAC-paced interval; this only needs to be

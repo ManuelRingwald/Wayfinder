@@ -74,6 +74,19 @@
         />
       </div>
 
+      <!-- #192: runway centrelines, feature-gated (runways). -->
+      <div v-if="showLayer('runways')" class="filter-row">
+        <v-switch
+          v-model="store.layerVisibility.runways"
+          label="Runways"
+          color="primary"
+          density="compact"
+          hide-details
+          inset
+          @update:model-value="onLayerToggle('runways', $event)"
+        />
+      </div>
+
       <!-- #114: the coverage overlay only has data when coverage sensors are
            configured server-side. Without data the toggle is disabled with an
            explanatory hint instead of silently doing nothing. -->

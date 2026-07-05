@@ -22,6 +22,8 @@ import {
   AIRPORT_SOURCE_ID,
   AIRPORT_LAYER_ID,
   AIRPORT_LABEL_LAYER_ID,
+  RUNWAY_SOURCE_ID,
+  RUNWAY_LAYER_ID,
   LABELS_SOURCE_ID,
   LABELS_LAYER_ID,
   LEADER_LINES_SOURCE_ID,
@@ -550,6 +552,38 @@ export function addAirportLayers(map, palette) {
 // source. A no-op if the source isn't present yet (map still loading).
 export function updateAirportSource(map, geojson) {
   const src = map.getSource(AIRPORT_SOURCE_ID)
+  if (src) src.setData(geojson || { type: 'FeatureCollection', features: [] })
+}
+
+// addRunwayLayers registers the #192 runway-centreline overlay: one line per
+// runway (LE→HE threshold), served AOI-scoped by /api/runways.geojson. Starts
+// hidden; toggled via the sidebar (runways entitlement). A zoom floor keeps it
+// off the far-out scope, where runways are sub-pixel anyway.
+export function addRunwayLayers(map, palette) {
+  map.addSource(RUNWAY_SOURCE_ID, {
+    type: 'geojson',
+    data: { type: 'FeatureCollection', features: [] },
+  })
+
+  map.addLayer({
+    id: RUNWAY_LAYER_ID,
+    type: 'line',
+    source: RUNWAY_SOURCE_ID,
+    minzoom: 8,
+    layout: { visibility: 'none', 'line-cap': 'butt' },
+    paint: {
+      'line-color': palette.airspaceText,
+      // Scale the runway line with zoom so it reads as a strip when zoomed in.
+      'line-width': ['interpolate', ['linear'], ['zoom'], 8, 1.2, 12, 3, 15, 6],
+      'line-opacity': 0.85,
+    },
+  })
+}
+
+// updateRunwaySource pushes a fetched runways FeatureCollection into the source.
+// A no-op if the source isn't present yet (map still loading).
+export function updateRunwaySource(map, geojson) {
+  const src = map.getSource(RUNWAY_SOURCE_ID)
   if (src) src.setData(geojson || { type: 'FeatureCollection', features: [] })
 }
 

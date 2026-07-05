@@ -10,6 +10,19 @@
 
 ---
 
+## 🎯 Stand 2026-07-05 (Runways, #192 abgeschlossen)
+
+- **#192 Runways nachgezogen (zweite Hälfte):** Der OurAirports-`runways.csv`
+  ist jetzt über `raw.githubusercontent.com` erreichbar (der zuvor geblockte
+  Host `davidmegginson.github.io` war das Problem). Generator
+  `pkg/airport/gen/runways.go` → eingebettete `pkg/airport/runways.tsv`
+  (10.328 Runways, ICAO-Aerodrome, nicht geschlossen, beide Schwellen).
+  Runtime-Loader `pkg/airport/runways.go` (`RunwaysInBBox`), AOI-gescopter,
+  feature-gegateter Endpoint `GET /api/runways.geojson` (`runways`-Entitlement),
+  Frontend Line-Layer `addRunwayLayers` + Sidebar-Toggle. Tests: `RunwaysInBBox`
+  (EDDH = 05/23 + 15/33), Katalog-Count 13; Vitest 360; dist neu gebaut.
+  Damit ist **#192 komplett** (Flughafen-Marker aus PR #193 + Runways).
+
 ## 🎯 Stand 2026-07-05 (Sammel-PR #182–#192)
 
 - **Batch #182–#192 umgesetzt (ein PR):**
