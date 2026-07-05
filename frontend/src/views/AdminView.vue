@@ -3,54 +3,79 @@
        is unmounted while it is shown. The role probe (whoami) runs on mount; until
        it resolves we show a spinner, then either the access notice or the panels.
        All tabs are available to the single admin role (ADR 0009). -->
+  <!-- #194: the app bar is responsive. On phones (smAndDown) the section nav
+       collapses to a compact dropdown and the actions become icon-only, so the
+       bar never overflows the ~390px viewport. -->
   <v-app-bar density="comfortable" flat color="surface">
-    <v-app-bar-title>Wayfinder — Administration</v-app-bar-title>
+    <v-app-bar-title class="admin-appbar-title">{{ mdAndUp ? 'Wayfinder — Administration' : 'Admin' }}</v-app-bar-title>
     <!-- ONB-3 (ADR 0011): top-level navigation between the tenant world and the
-         platform-admin world — the strict separation made visible. Hidden during
-         the forced password change (the only reachable action then is the mask). -->
-    <v-btn-toggle
-      v-if="admin.isAuthorized && !admin.mustChangePassword"
-      v-model="section"
-      density="comfortable"
-      variant="text"
-      color="primary"
-      mandatory
-      class="ml-4"
-    >
-      <v-btn value="tenants" prepend-icon="mdi-domain">Mandanten</v-btn>
-      <v-btn value="feeds" prepend-icon="mdi-access-point-network">Feeds</v-btn>
-      <v-btn value="openaip" prepend-icon="mdi-airplane-marker">OpenAIP</v-btn>
-      <v-btn value="admins" prepend-icon="mdi-shield-account">Plattform-Administratoren</v-btn>
-    </v-btn-toggle>
+         platform-admin world. Desktop: a labelled button toggle. Mobile: a
+         compact select carrying the same four sections. Hidden during the forced
+         password change (the only reachable action then is the mask). -->
+    <template v-if="admin.isAuthorized && !admin.mustChangePassword">
+      <v-btn-toggle
+        v-if="mdAndUp"
+        v-model="section"
+        density="comfortable"
+        variant="text"
+        color="primary"
+        mandatory
+        class="ml-4"
+      >
+        <v-btn value="tenants" prepend-icon="mdi-domain">Mandanten</v-btn>
+        <v-btn value="feeds" prepend-icon="mdi-access-point-network">Feeds</v-btn>
+        <v-btn value="openaip" prepend-icon="mdi-airplane-marker">OpenAIP</v-btn>
+        <v-btn value="admins" prepend-icon="mdi-shield-account">Plattform-Administratoren</v-btn>
+      </v-btn-toggle>
+      <v-select
+        v-else
+        v-model="section"
+        :items="sectionItems"
+        density="compact"
+        variant="outlined"
+        hide-details
+        class="ml-2 admin-section-select"
+      />
+    </template>
     <v-spacer />
     <!-- ONB-2 (ADR 0011): chip opens the self-management panel (password change
-         + account deletion) for the currently logged-in principal. -->
+         + account deletion) for the currently logged-in principal. Icon-only on
+         phones to save the horizontal space. -->
     <v-chip
       v-if="admin.isAuthorized"
       size="small"
       color="primary"
       variant="tonal"
-      class="mr-3"
+      class="mr-2"
       style="cursor: pointer"
-      append-icon="mdi-account-cog"
+      :append-icon="mdAndUp ? 'mdi-account-cog' : undefined"
       @click="myAccountOpen = true"
     >
-      {{ admin.identity.subject || 'admin' }} · {{ admin.role }}
+      <template v-if="mdAndUp">{{ admin.identity.subject || 'admin' }} · {{ admin.role }}</template>
+      <v-icon v-else>mdi-account-cog</v-icon>
     </v-chip>
-    <v-btn prepend-icon="mdi-radar" :to="{ name: 'asd' }">Zur Lage</v-btn>
+    <v-btn v-if="mdAndUp" prepend-icon="mdi-radar" :to="{ name: 'asd' }">Zur Lage</v-btn>
+    <v-btn v-else icon="mdi-radar" :to="{ name: 'asd' }" variant="text" aria-label="Zur Lage" />
     <v-btn
-      v-if="admin.isAuthorized"
+      v-if="admin.isAuthorized && mdAndUp"
       prepend-icon="mdi-logout"
       variant="text"
       class="ml-1"
       @click="onLogout"
     >Abmelden</v-btn>
+    <v-btn
+      v-else-if="admin.isAuthorized"
+      icon="mdi-logout"
+      variant="text"
+      aria-label="Abmelden"
+      @click="onLogout"
+    />
   </v-app-bar>
 
   <MyAccountPanel v-model="myAccountOpen" />
 
   <v-main>
-    <v-container class="py-6" style="max-width: 1100px">
+    <v-container class="py-6 admin-container">
       <div v-if="!loaded" class="d-flex justify-center pa-12">
         <v-progress-circular indeterminate color="primary" />
       </div>
@@ -218,6 +243,7 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { useDisplay } from 'vuetify'
 import { useAdminStore } from '@/stores/admin.js'
 import AdminTenants from '@/components/admin/AdminTenants.vue'
 import AdminTenantDetail from '@/components/admin/AdminTenantDetail.vue'
@@ -227,7 +253,15 @@ import AdminGlobalOpenAIP from '@/components/admin/AdminGlobalOpenAIP.vue'
 import MyAccountPanel from '@/components/admin/MyAccountPanel.vue'
 
 const admin = useAdminStore()
+const { mdAndUp } = useDisplay()
 const section = ref('tenants') // 'tenants' | 'feeds' | 'openaip' | 'admins' — header navigation (ONB-3/5/AERO-2)
+// #194: same four sections as the desktop toggle, for the mobile select.
+const sectionItems = [
+  { value: 'tenants', title: 'Mandanten' },
+  { value: 'feeds', title: 'Feeds' },
+  { value: 'openaip', title: 'OpenAIP' },
+  { value: 'admins', title: 'Plattform-Administratoren' },
+]
 const selectedTenant = ref(null) // null = overview; a tenant id = detail page
 const loaded = ref(false)
 const myAccountOpen = ref(false) // ONB-2: "Mein Konto" dialog open state
@@ -292,3 +326,21 @@ async function onLogout() {
   section.value = 'tenants'
 }
 </script>
+
+<style scoped>
+/* #194: readable content column that widens with the display but stays capped so
+   dense admin tables don't stretch uncomfortably on a 24" panel; full width with
+   tighter gutters on phones. */
+.admin-container {
+  max-width: 1180px;
+}
+.admin-section-select {
+  max-width: 220px;
+}
+@media (max-width: 599.98px) {
+  .admin-container {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+}
+</style>

@@ -2,11 +2,14 @@
 <html lang="de">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- #194: viewport-fit=cover exposes the iPhone safe-area insets to CSS
+         (env(safe-area-inset-*)), so the ASD chrome clears the notch/Dynamic
+         Island and the home indicator. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Wayfinder — ASD</title>
     <link href="https://unpkg.com/maplibre-gl@4/dist/maplibre-gl.css" rel="stylesheet" />
-    <script type="module" crossorigin src="/assets/index-BnGcLvY0.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-DuGPL8Q4.css">
+    <script type="module" crossorigin src="/assets/index-EcsP3yLU.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-CkLdcSop.css">
   </head>
   <body>
     <div id="app"></div>

@@ -5,6 +5,8 @@
          viewport actions (recenter / fullscreen) on the right edge. -->
     <MapControls
       @recenter="mapEngine?.recenter()"
+      @zoom-in="mapEngine?.zoomIn()"
+      @zoom-out="mapEngine?.zoomOut()"
     />
     <!-- Häppchen 3: measuring status (hint + readout); the tool buttons now live
          in the navigation rail. -->

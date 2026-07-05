@@ -3,9 +3,27 @@
        map canvas. All controls are purely presentational — they emit named events
        and let MapCanvas delegate to the map engine, keeping the engine
        framework-agnostic. -->
-  <div class="map-controls">
-    <!-- Häppchen 3: zoom moved to the navigation rail; these are the viewport
-         actions (recenter to configured centre, fullscreen toggle). -->
+  <div class="map-controls" :class="{ 'map-controls--mobile': !mdAndUp }">
+    <!-- #194: on phones/tablet-portrait the navigation rail (which hosts zoom) is
+         not rendered, so the zoom controls move here, above the bottom tab bar. -->
+    <v-btn-group
+      v-if="!mdAndUp"
+      direction="vertical"
+      density="compact"
+      color="surface"
+      variant="flat"
+      class="map-controls__group elevation-4 rounded-lg"
+    >
+      <v-btn icon size="small" :ripple="false" aria-label="Zoom in" @click="$emit('zoom-in')">
+        <v-icon>mdi-plus</v-icon>
+      </v-btn>
+      <v-btn icon size="small" :ripple="false" aria-label="Zoom out" @click="$emit('zoom-out')">
+        <v-icon>mdi-minus</v-icon>
+      </v-btn>
+    </v-btn-group>
+
+    <!-- Häppchen 3: zoom moved to the navigation rail (desktop); these are the
+         viewport actions (recenter to configured centre, fullscreen toggle). -->
     <v-btn-group
       direction="vertical"
       density="compact"
@@ -40,9 +58,11 @@
 
 <script setup>
 import { ref } from 'vue'
+import { useDisplay } from 'vuetify'
 
-defineEmits(['recenter'])
+defineEmits(['recenter', 'zoom-in', 'zoom-out'])
 
+const { mdAndUp } = useDisplay()
 const isFullscreen = ref(false)
 
 function toggleFullscreen() {
@@ -67,12 +87,20 @@ function toggleFullscreen() {
      ~100px clears both rows with margin; raised from 50px, which sat on the
      badge row. */
   top: calc(var(--v-layout-top, 0px) + 100px);
-  right: 12px;
+  right: calc(12px + var(--wf-safe-right, 0px));
   z-index: 10;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
+  gap: 10px;
   pointer-events: none; /* pass clicks through to map except on buttons */
+}
+
+/* #194 — Mobile: no rail, so the controls (incl. zoom) sit bottom-right, above
+   the bottom tab bar and clear of the home indicator. */
+.map-controls--mobile {
+  top: auto;
+  bottom: calc(12px + var(--wf-bottom-nav-h, 64px) + var(--wf-safe-bottom, 0px));
 }
 
 .map-controls__group {

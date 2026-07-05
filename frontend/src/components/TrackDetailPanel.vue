@@ -41,9 +41,10 @@ const open = computed(() => store.selectedTrack !== null)
      so no extra top margin is needed to dodge it: top: 12px matches the
      corner-hugging convention used elsewhere (scope-legend-overlay,
      mobile-menu-btn). */
-  top: 12px;
+  top: calc(12px + var(--wf-safe-top, 0px));
   left: 68px;
-  width: 292px;
+  /* #194: fluid width so it never overflows a narrow tablet-landscape viewport. */
+  width: min(292px, calc(100vw - 80px));
   /* Same 76px total inset as before, redistributed: only 12px is spent at the
      top (nothing to clear there once left is out from under the compass), so
      the remaining 64px goes to the bottom — enough to clear the collapsed

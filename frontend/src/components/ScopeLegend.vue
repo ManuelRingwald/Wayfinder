@@ -99,7 +99,9 @@ const states = [
   opacity: 0.6;
 }
 .scope-legend__body {
-  width: 232px; /* fixed open width (design template) */
+  /* #194: fluid open width — 232px design default, but never wider than the
+     viewport minus the corner insets on a narrow phone. */
+  width: min(232px, calc(100vw - 90px));
   padding: 0 12px 10px;
 }
 .scope-legend__section {

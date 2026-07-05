@@ -24,16 +24,10 @@
   />
 
   <template v-else>
-    <v-btn
-      v-if="!mdAndUp"
-      icon="mdi-menu"
-      size="small"
-      elevation="4"
-      class="mobile-menu-btn"
-      @click="drawerOpen = !drawerOpen"
-    />
-
+    <!-- Desktop + tablet-landscape (>=960px): the MD3 navigation rail + panel.
+         Phones and tablet-portrait use the bottom tab bar + sheets below (#194). -->
     <NavigationRail
+      v-if="mdAndUp"
       v-model="drawerOpen"
       @layer-toggle="onLayerToggle"
       @fl-filter-change="onFlFilterChange"
@@ -71,6 +65,57 @@
       </div>
     </v-main>
 
+    <!-- ── Mobile (phone / tablet-portrait): bottom tab bar + sheets (#194) ── -->
+    <template v-if="!mdAndUp">
+      <BottomNav v-model="mobileTab" :is-admin="isAdmin" @select="onMobileTab" />
+
+      <!-- Filter/Layer as a bottom sheet. Measure tools (RBL/DIST/QDM) live in
+           the sheet header on mobile — the rail that normally hosts them is not
+           rendered on phones. -->
+      <v-bottom-sheet v-model="filterSheet" :scrim="true" @update:model-value="onSheetToggle">
+        <v-card class="mobile-sheet" rounded="t-xl">
+          <div class="mobile-sheet__grab" />
+          <div class="mobile-sheet__hd">
+            <span class="mobile-sheet__ttl">Layer &amp; Filter</span>
+            <div class="mobile-sheet__tools">
+              <v-btn
+                v-for="t in measureTools"
+                :key="t.id"
+                :icon="t.icon"
+                size="small"
+                variant="text"
+                :color="tools.activeTool === t.id ? 'primary' : undefined"
+                :aria-label="t.label"
+                @click="tools.selectTool(t.id)"
+              />
+              <v-btn icon="mdi-close" size="small" variant="text" aria-label="Schließen" @click="closeSheets" />
+            </div>
+          </div>
+          <div class="mobile-sheet__body">
+            <LayerFilterContent
+              section="all"
+              @layer-toggle="onLayerToggle"
+              @fl-filter-change="onFlFilterChange"
+            />
+          </div>
+        </v-card>
+      </v-bottom-sheet>
+
+      <!-- Konto as a bottom sheet (account section: subject + logout). -->
+      <v-bottom-sheet v-model="kontoSheet" :scrim="true" @update:model-value="onSheetToggle">
+        <v-card class="mobile-sheet" rounded="t-xl">
+          <div class="mobile-sheet__grab" />
+          <div class="mobile-sheet__hd">
+            <span class="mobile-sheet__ttl">Konto</span>
+            <v-btn icon="mdi-close" size="small" variant="text" aria-label="Schließen" @click="closeSheets" />
+          </div>
+          <div class="mobile-sheet__body">
+            <LayerFilterContent section="account" />
+          </div>
+        </v-card>
+      </v-bottom-sheet>
+    </template>
+
     <TrackDetailPanel
       v-if="store.selectedTrack"
       @close="store.clearTrackSelection()"
@@ -81,10 +126,13 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useDisplay } from 'vuetify'
+import { useRouter } from 'vue-router'
 import { useAsdStore } from '@/stores/asd.js'
 import { useSessionStore } from '@/stores/session.js'
 import { useToolsStore } from '@/stores/tools.js'
+import { useAdminStore } from '@/stores/admin.js'
 import NavigationRail from '@/components/NavigationRail.vue'
+import BottomNav from '@/components/BottomNav.vue'
 import MapCanvas from '@/components/MapCanvas.vue'
 import AsdHeader from '@/components/AsdHeader.vue'
 import ScopeLegend from '@/components/ScopeLegend.vue'
@@ -93,12 +141,49 @@ import FeedStatusChip from '@/components/FeedStatusChip.vue'
 import LoginCard from '@/components/LoginCard.vue'
 
 const { mdAndUp } = useDisplay()
+const router = useRouter()
 const store = useAsdStore()
 const session = useSessionStore()
 const tools = useToolsStore()
+const adminStore = useAdminStore()
 const drawerOpen = ref(true)
 const mapCanvas = ref(null)
 const loginLoading = ref(false)
+
+// #194: mobile navigation state (phone / tablet-portrait). The bottom tab bar
+// selects between the scope and the Filter/Konto sheets; Admin routes away.
+const mobileTab = ref('scope')
+const filterSheet = ref(false)
+const kontoSheet = ref(false)
+const isAdmin = computed(() => adminStore.isAdmin)
+
+// Measure tools relocated into the mobile Filter sheet (the rail that hosts them
+// on desktop is not rendered on phones). Mirrors NavigationRail's list.
+const measureTools = [
+  { id: 'rbl', icon: 'mdi-vector-line', label: 'RBL' },
+  { id: 'dist', icon: 'mdi-ruler', label: 'DIST' },
+  { id: 'qdm', icon: 'mdi-compass-outline', label: 'QDM' },
+]
+
+function closeSheets() {
+  filterSheet.value = false
+  kontoSheet.value = false
+  mobileTab.value = 'scope'
+}
+
+// Bottom-nav tab handler: open the matching sheet, route to Admin, or clear.
+function onMobileTab(id) {
+  if (id === 'filter') { kontoSheet.value = false; filterSheet.value = true }
+  else if (id === 'konto') { filterSheet.value = false; kontoSheet.value = true }
+  else if (id === 'admin') { router.push('/admin') }
+  else { closeSheets() } // scope
+}
+
+// When a sheet is dismissed by swipe/scrim, snap the tab back to Scope so the
+// bar's active state matches what's on screen.
+function onSheetToggle(open) {
+  if (!open && !filterSheet.value && !kontoSheet.value) mobileTab.value = 'scope'
+}
 
 // Make an expiry visible: a dropped session shows "session expired" on the login
 // screen instead of a bare prompt (WF2-12.5).
@@ -109,6 +194,9 @@ const loginNotice = computed(() =>
 // Resolve the session on entry, and slide it forward when the tab regains focus.
 onMounted(() => {
   session.probe()
+  // #194: the bottom tab bar's Admin entry needs the admin probe even on phones,
+  // where NavigationRail (which normally triggers it) is not rendered. Fail-closed.
+  if (!adminStore.isAuthorized) adminStore.loadIdentity()
   document.addEventListener('visibilitychange', onVisible)
 })
 onUnmounted(() => {
@@ -173,20 +261,13 @@ function onTrackClick(track) {
 </script>
 
 <style scoped>
-.mobile-menu-btn {
-  position: fixed;
-  top: 8px;
-  left: 8px;
-  z-index: 1100;
-  background: rgba(var(--v-theme-surface), 0.9) !important;
-}
-
 /* Top-right cluster: ICAO/sector + UTC header next to the feed-status badge,
-   right-aligned so the badge stays at the corner and the header extends left. */
+   right-aligned so the badge stays at the corner and the header extends left.
+   #194: padded past the notch/Dynamic-Island + right safe-area inset. */
 .top-right-cluster {
   position: absolute;
-  top: 12px;
-  right: 12px;
+  top: calc(12px + var(--wf-safe-top, 0px));
+  right: calc(12px + var(--wf-safe-right, 0px));
   z-index: 600;
   display: flex;
   /* Design template: header (ICAO/UTC) and the feed badge stack vertically,
@@ -195,6 +276,8 @@ function onTrackClick(track) {
   align-items: flex-end;
   gap: 8px;
   pointer-events: none;
+  /* Never let the header run under the opposite chrome on a narrow phone. */
+  max-width: calc(100vw - 24px - var(--wf-safe-right, 0px) - var(--wf-safe-left, 0px));
 }
 
 /* ASD-007: cyan radar-scope centre bloom (design template 'nacht' glow). Above
@@ -218,5 +301,56 @@ function onTrackClick(track) {
   left: 68px;
   z-index: 600;
   pointer-events: none;
+}
+
+/* #194 — Mobile (< md): no rail, so the legend hugs the left safe-area edge and
+   sits above the bottom tab bar instead of the (absent) rail. */
+@media (max-width: 959.98px) {
+  .scope-legend-overlay {
+    left: calc(12px + var(--wf-safe-left, 0px));
+    bottom: calc(12px + var(--wf-bottom-nav-h, 64px) + var(--wf-safe-bottom, 0px));
+  }
+}
+
+/* #194 — Mobile Filter/Konto bottom sheet (design mockup): grab handle, header
+   with title + tools, scrollable body. Rounded top; padded past the home
+   indicator. Height is capped so the scope stays partly visible behind it. */
+.mobile-sheet {
+  display: flex;
+  flex-direction: column;
+  max-height: 82vh;
+  background: rgb(var(--v-theme-surface));
+  padding-bottom: var(--wf-safe-bottom, 0px);
+}
+.mobile-sheet__grab {
+  width: 38px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(var(--v-border-color), 0.32);
+  margin: 10px auto 2px;
+  flex-shrink: 0;
+}
+.mobile-sheet__hd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 10px 10px 18px;
+  border-bottom: var(--wf-chrome-border);
+  flex-shrink: 0;
+}
+.mobile-sheet__ttl {
+  font-size: 16px;
+  font-weight: 500;
+  color: rgb(var(--v-theme-on-surface));
+}
+.mobile-sheet__tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.mobile-sheet__body {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 </style>
