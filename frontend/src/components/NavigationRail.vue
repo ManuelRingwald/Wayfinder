@@ -73,11 +73,11 @@
                presentational — they emit and AsdView delegates to the map engine
                (MapCanvas.zoomIn/zoomOut), keeping the engine framework-agnostic. -->
           <div class="nav-rail__btn" role="button" aria-label="Zoom in" @click="emit('zoom-in')">
-            <div class="nav-rail__pill"><v-icon size="20">mdi-plus</v-icon></div>
+            <div class="nav-rail__pill"><v-icon size="20">mdi-magnify-plus-outline</v-icon></div>
             <span class="nav-rail__label">Zoom +</span>
           </div>
           <div class="nav-rail__btn" role="button" aria-label="Zoom out" @click="emit('zoom-out')">
-            <div class="nav-rail__pill"><v-icon size="20">mdi-minus</v-icon></div>
+            <div class="nav-rail__pill"><v-icon size="20">mdi-magnify-minus-outline</v-icon></div>
             <span class="nav-rail__label">Zoom −</span>
           </div>
 
@@ -145,8 +145,8 @@
           @click="tools.selectTool(t.id)"
         />
         <v-divider vertical class="mx-1" />
-        <v-btn icon="mdi-plus" size="small" variant="text" aria-label="Zoom in" @click="emit('zoom-in')" />
-        <v-btn icon="mdi-minus" size="small" variant="text" aria-label="Zoom out" @click="emit('zoom-out')" />
+        <v-btn icon="mdi-magnify-plus-outline" size="small" variant="text" aria-label="Zoom in" @click="emit('zoom-in')" />
+        <v-btn icon="mdi-magnify-minus-outline" size="small" variant="text" aria-label="Zoom out" @click="emit('zoom-out')" />
       </div>
       <v-list-item
         v-if="isAdmin"
@@ -208,7 +208,7 @@ function goAdmin() { router.push('/admin') }
 // bottom of the rail, the Nutzer-Account (logout). Each opens its own panel.
 const sections = [
   { id: 'layers', icon: 'mdi-layers-outline', label: 'Layer' },
-  { id: 'filters', icon: 'mdi-filter-outline', label: 'Filter' },
+  { id: 'filters', icon: 'mdi-tune-variant', label: 'Filter' },
 ]
 
 // #115: the panel starts COLLAPSED — only the rail (sidecar) is visible, so the
