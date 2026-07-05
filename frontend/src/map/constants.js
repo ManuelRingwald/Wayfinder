@@ -115,6 +115,26 @@ export const WEATHER_WARNINGS_COLORS = {
   4: '#c0392b', // extreme — red
 }
 
+// #190: sidebar legend for the warnings overlay — the severity ramp above with
+// German labels, shown only while the layer is toggled on.
+export const WEATHER_WARNINGS_LEGEND = [
+  { color: WEATHER_WARNINGS_COLORS[1], label: 'Wetterwarnung (gering)' },
+  { color: WEATHER_WARNINGS_COLORS[2], label: 'Markante Wetterwarnung' },
+  { color: WEATHER_WARNINGS_COLORS[3], label: 'Unwetterwarnung' },
+  { color: WEATHER_WARNINGS_COLORS[4], label: 'Extremes Unwetter' },
+]
+
+// #190: sidebar legend for the DWD radar — a representative precipitation-
+// intensity ramp (the DWD tiles are pre-coloured; this orients the operator on
+// the light→heavy scale). Approximate DWD reflectivity palette.
+export const WEATHER_RADAR_LEGEND = [
+  { color: '#4a90d9', label: 'leicht' },
+  { color: '#5cc85c', label: 'mäßig' },
+  { color: '#e6d84a', label: 'kräftig' },
+  { color: '#e5622d', label: 'stark' },
+  { color: '#c0392b', label: 'sehr stark' },
+]
+
 // ASD-002: Deconfliction geometry constants (all values in screen pixels).
 // LABEL_TEXT_SIZE      : data-block text size; used as the symbol layer's "text-size".
 // LABEL_SLOT_RADIUS_PX : distance from symbol centre to label anchor candidate.

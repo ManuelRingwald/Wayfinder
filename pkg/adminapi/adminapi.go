@@ -455,6 +455,12 @@ type whoamiDTO struct {
 	CenterLat *float64 `json:"center_lat,omitempty"`
 	CenterLon *float64 `json:"center_lon,omitempty"`
 	Zoom      *float64 `json:"zoom,omitempty"`
+	// AOI is the effective view's area of interest (WGS84 bbox). The ASD clips the
+	// DWD weather overlays (radar raster + warnings) to it so a controller only
+	// sees weather inside their own sector (#189/#190). Nil when the tenant has no
+	// AOI configured → the overlays are shown unclipped. Cosmetic — the server
+	// enforces the track/AOI scope independently (WF2-21.2).
+	AOI *store.BBox `json:"aoi,omitempty"`
 	// ImpersonatedTenantID discloses that the tenant-scoped fields above
 	// (Features/SensorClasses/FLMin/FLMax/ICAO) were resolved against this
 	// tenant instead of the caller's own — admin read-only impersonation
@@ -493,12 +499,14 @@ func (h *Handler) whoami(w http.ResponseWriter, r *http.Request) {
 	var flMin, flMax *int
 	var icao *string
 	var centerLat, centerLon, zoom *float64
+	var aoi *store.BBox
 	if h.views != nil {
 		if vc, err := h.views.GetEffective(r.Context(), readTenant, id.UserID); err == nil {
 			flMin, flMax = vc.FLMin, vc.FLMax
 			icao = vc.ICAO
 			lat, lon, z := vc.CenterLat, vc.CenterLon, vc.Zoom
 			centerLat, centerLon, zoom = &lat, &lon, &z
+			aoi = vc.AOI // #189/#190: clip the DWD weather overlays to the sector
 		}
 	}
 	writeJSON(w, http.StatusOK, whoamiDTO{
@@ -515,6 +523,7 @@ func (h *Handler) whoami(w http.ResponseWriter, r *http.Request) {
 		CenterLat:            centerLat,
 		CenterLon:            centerLon,
 		Zoom:                 zoom,
+		AOI:                  aoi,
 		ImpersonatedTenantID: impersonated,
 	})
 }

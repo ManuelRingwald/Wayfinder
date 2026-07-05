@@ -32,6 +32,18 @@ type Client struct {
 	httpClient *http.Client
 	wmsURL     string
 	layer      string
+	// style is the WMS STYLES parameter (#189). Empty selects the layer's default
+	// style. A non-default style lets an operator pick an echo-only rendering that
+	// omits the measurement-domain fill and radar-station range rings, without a
+	// code change (WAYFINDER_DWD_RADAR_STYLE).
+	style string
+}
+
+// WithStyle sets a non-default WMS style. Empty keeps the layer default. Returns
+// the client for chaining at construction.
+func (c *Client) WithStyle(style string) *Client {
+	c.style = strings.TrimSpace(style)
+	return c
 }
 
 // NewClient builds a WMS tile client. A nil httpClient falls back to
@@ -65,7 +77,7 @@ func (c *Client) tileURL(z, x, y int) (string, error) {
 	q.Set("version", "1.1.1")
 	q.Set("request", "GetMap")
 	q.Set("layers", c.layer)
-	q.Set("styles", "")
+	q.Set("styles", c.style)
 	q.Set("format", "image/png")
 	q.Set("transparent", "true")
 	q.Set("srs", "EPSG:3857")

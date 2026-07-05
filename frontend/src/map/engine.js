@@ -23,9 +23,11 @@ import {
   updateCoverageSource,
   addRangeRingsLayer,
   addWeatherRadarLayer,
+  setWeatherRadarAOI,
   addWeatherWarningsLayer,
   updateWeatherWarnings,
 } from './layers.js'
+import { clipFeatureCollectionToBBox } from './clip.js'
 import { rangeRingsGeoJSON } from './rangerings.js'
 import { updateTracksLayer } from './tracks.js'
 import { renderSources, tickFade } from './render.js'
@@ -67,7 +69,13 @@ import {
 //                  the tenant's own sector; when null it uses the global
 //                  /api/map-config centre (FR-UI-013). Later changes flow through
 //                  applyViewCenter (e.g. an admin switching impersonation target).
-export async function initMap(container, store, onTrackClick, onConnectionChange, initialCenter = null) {
+export async function initMap(container, store, onTrackClick, onConnectionChange, initialCenter = null, initialAOI = null) {
+  // #189/#190: the tenant's AOI (whoami) clips the DWD weather overlays to the
+  // sector. Held in a closure so loadWarnings and applyWeatherAOI can re-clip.
+  let weatherAOI = initialAOI
+  // Last raw (unclipped) warnings FeatureCollection, kept so an AOI change can
+  // re-clip without re-fetching.
+  let lastWarningsRaw = null
   // Fetch map config from the backend.
   const res = await fetch('/api/map-config')
   const cfg = await res.json()
@@ -256,7 +264,7 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
     // WX-A: DWD weather-radar overlay first of all, so it sits directly above the
     // base map and beneath every operational overlay. Starts hidden; toggled via
     // the sidebar (gated by the weather_radar entitlement + availability).
-    addWeatherRadarLayer(map)
+    addWeatherRadarLayer(map, weatherAOI)
     // WX-C: DWD weather-warnings polygons above the radar raster but below the
     // aeronautical/track layers. Starts hidden; toggled via the sidebar
     // (weather_warnings entitlement + availability).
@@ -314,7 +322,13 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
     const loadWarnings = () => {
       fetch(WEATHER_WARNINGS_URL)
         .then((r) => (r.ok ? r.json() : null))
-        .then((geojson) => { if (geojson) updateWeatherWarnings(map, geojson) })
+        .then((geojson) => {
+          if (!geojson) return
+          lastWarningsRaw = geojson
+          // #190: clip the warnings to the tenant AOI so a huge dissolved warning
+          // region is cut to the sector instead of covering the whole map.
+          updateWeatherWarnings(map, clipFeatureCollectionToBBox(geojson, weatherAOI))
+        })
         .catch((err) => console.warn('weather warnings fetch failed:', err))
     }
     loadWarnings()
@@ -400,6 +414,18 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
     doRender()
   }
 
+  // #189/#190: the tenant's AOI resolved after mount or changed (e.g. an admin
+  // switching the impersonation target). Re-bound the radar raster and re-clip
+  // the warnings to the new sector. No-op before the style has loaded.
+  function applyWeatherAOI(aoi) {
+    weatherAOI = aoi
+    if (!state.mapLoaded) return
+    setWeatherRadarAOI(map, aoi)
+    if (lastWarningsRaw) {
+      updateWeatherWarnings(map, clipFeatureCollectionToBBox(lastWarningsRaw, aoi))
+    }
+  }
+
   // ASD-011: update MapLibre filters on the airspace layers to reflect the
   // current airspaceGroupVisibility state. Called by MapCanvas whenever the
   // store changes (or after map load to apply the initial state).
@@ -475,5 +501,5 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
     src.setData(rangeRingsGeoJSON(effectiveCenter.lat, effectiveCenter.lon, spacingNM, count))
   }
 
-  return { map, destroy, reconnect, setLayerVisibility, updateFlFilter, updateAirspaceFilter, updateSelection, updateHistoryConfig, zoomIn, zoomOut, recenter, applyViewCenter, updateRangeRings }
+  return { map, destroy, reconnect, setLayerVisibility, updateFlFilter, updateAirspaceFilter, updateSelection, updateHistoryConfig, applyWeatherAOI, zoomIn, zoomOut, recenter, applyViewCenter, updateRangeRings }
 }

@@ -105,7 +105,7 @@ func main() {
 	// cached for the refresh window.
 	radarEnabled := cfg.DWDRadarEnabled && cfg.DWDWMSURL != ""
 	weatherRadar := weathertiles.NewService(
-		weathertiles.NewClient(&http.Client{Timeout: 15 * time.Second}, cfg.DWDWMSURL, cfg.DWDRadarLayer),
+		weathertiles.NewClient(&http.Client{Timeout: 15 * time.Second}, cfg.DWDWMSURL, cfg.DWDRadarLayer).WithStyle(cfg.DWDRadarStyle),
 		weathertiles.Config{Enabled: radarEnabled, TTL: cfg.DWDRefresh},
 		logger,
 	)
@@ -728,6 +728,7 @@ type Config struct {
 	DWDRadarEnabled bool          // WAYFINDER_DWD_RADAR_ENABLED (default true; false = opt-out)
 	DWDWMSURL       string        // WAYFINDER_DWD_WMS_URL (DWD GeoServer WMS base, default maps.dwd.de)
 	DWDRadarLayer   string        // WAYFINDER_DWD_RADAR_LAYER (default dwd:Niederschlagsradar)
+	DWDRadarStyle   string        // WAYFINDER_DWD_RADAR_STYLE (WMS style; empty = layer default; #189 echo-only)
 	DWDRefresh      time.Duration // WAYFINDER_DWD_REFRESH (radar tile cache TTL, default 5m)
 
 	// QNH infobox (WX-B, ADR 0016; per-tenant CBD-3, ADR 0017): best-effort NOAA/AWC
@@ -1061,6 +1062,9 @@ func loadConfig() Config {
 	if v := strings.TrimSpace(os.Getenv("WAYFINDER_DWD_RADAR_LAYER")); v != "" {
 		cfg.DWDRadarLayer = v
 	}
+	// #189: optional non-default WMS style (e.g. an echo-only rendering without
+	// the measurement-domain fill / station range rings). Empty = layer default.
+	cfg.DWDRadarStyle = strings.TrimSpace(os.Getenv("WAYFINDER_DWD_RADAR_STYLE"))
 	if v := os.Getenv("WAYFINDER_DWD_REFRESH"); v != "" {
 		if d, err := time.ParseDuration(v); err == nil && d > 0 {
 			cfg.DWDRefresh = d

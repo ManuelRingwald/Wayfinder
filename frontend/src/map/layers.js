@@ -297,12 +297,23 @@ export function addTrackIcons(map) {
 // toggled via the sidebar (store.layerVisibility.weatherRadar). A raster source
 // self-fetches, so there is no setData/refresh helper — the backend proxy caps
 // the tile freshness to the DWD radar cadence (~5 min).
-export function addWeatherRadarLayer(map) {
+// #189: when the tenant has an AOI, the raster source is bounded to it so the
+// radar is only fetched/rendered inside the sector (no country-wide extent). The
+// bounds are a rectangle [west, south, east, north]; a null AOI leaves the layer
+// unbounded. bboxToBounds converts the whoami AOI to that tuple.
+function bboxToBounds(aoi) {
+  if (!aoi) return undefined
+  return [aoi.minLon, aoi.minLat, aoi.maxLon, aoi.maxLat]
+}
+
+export function addWeatherRadarLayer(map, aoi = null) {
+  const bounds = bboxToBounds(aoi)
   map.addSource(WEATHER_RADAR_SOURCE_ID, {
     type: 'raster',
     tiles: [WEATHER_RADAR_TILES_URL],
     tileSize: 256,
     attribution: DWD_ATTRIBUTION,
+    ...(bounds ? { bounds } : {}),
   })
   map.addLayer({
     id: WEATHER_RADAR_LAYER_ID,
@@ -311,6 +322,20 @@ export function addWeatherRadarLayer(map) {
     layout: { visibility: 'none' },
     paint: { 'raster-opacity': WEATHER_RADAR_OPACITY },
   })
+}
+
+// setWeatherRadarAOI re-creates the radar raster source with new AOI bounds
+// (#189). Called when the tenant's AOI resolves after mount or changes (e.g. an
+// admin switching the impersonation target). Preserves the layer's current
+// visibility. A raster source's bounds cannot be mutated in place, so the
+// source+layer are removed and re-added.
+export function setWeatherRadarAOI(map, aoi) {
+  if (!map.getLayer(WEATHER_RADAR_LAYER_ID)) return
+  const visibility = map.getLayoutProperty(WEATHER_RADAR_LAYER_ID, 'visibility') || 'none'
+  map.removeLayer(WEATHER_RADAR_LAYER_ID)
+  map.removeSource(WEATHER_RADAR_SOURCE_ID)
+  addWeatherRadarLayer(map, aoi)
+  map.setLayoutProperty(WEATHER_RADAR_LAYER_ID, 'visibility', visibility)
 }
 
 // addWeatherWarningsLayer registers the DWD weather-warnings overlay (WX-C,
