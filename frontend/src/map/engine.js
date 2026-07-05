@@ -413,7 +413,10 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
   // and the chrome layer never needs to reach into it directly.
   function zoomIn()    { map.zoomIn() }
   function zoomOut()   { map.zoomOut() }
-  function recenter()  { map.flyTo({ center: [effectiveCenter.lon, effectiveCenter.lat], zoom: effectiveCenter.zoom }) }
+  // recenter restores the full start view in one click (#169): centre + zoom AND
+  // bearing 0 (north-up) + pitch 0 (top-down), so a rotated/tilted scope snaps
+  // back to exactly how it opened — not just re-centred.
+  function recenter()  { map.flyTo({ center: [effectiveCenter.lon, effectiveCenter.lat], zoom: effectiveCenter.zoom, bearing: 0, pitch: 0 }) }
 
   // applyViewCenter aims the camera at the tenant's effective view centre
   // (session.viewCenter, whoami), keeping recenter()/range-rings in sync. Passing

@@ -449,9 +449,9 @@ Keys werden fail-closed verweigert und über den `unknown_key`-Zähler sichtbar.
 
 | Key | Beschreibung | Default |
 |-----|--------------|---------|
-| `stca` | Short-Term Conflict Alert (ASD-006) | deny |
+| `stca` | Short-Term Conflict Alert (ASD-006) — **reserviert** (#175) | deny |
 | `multi_feed` | Mehrere Sensor-Feeds abonnieren (WF2-41) | deny |
-| `premium_layers` | Premium-ASD-Kartenoverlay | deny |
+| `premium_layers` | Premium-ASD-Kartenoverlay — **reserviert** (#175) | deny |
 | `airspaces` | Luftraum-Overlays (CTR, TMA, restricted, info) — ASD-011 | deny |
 | `range_rings` | Range-Ring-Overlay — ASD-012 | deny |
 | `history_dots` | Track-History-Punkte — ASD-004a | deny |
@@ -460,6 +460,14 @@ Keys werden fail-closed verweigert und über den `unknown_key`-Zähler sichtbar.
 | `weather_radar` | DWD-Wetter-Radar-Overlay — WX-A (ADR 0016) | deny |
 | `qnh` | QNH-Kopfzeilen-Infobox (NOAA-METAR) — WX-B (ADR 0016) | deny |
 | `weather_warnings` | DWD-Wetterwarnungen-Overlay — WX-C (ADR 0016) | deny |
+
+**Reservierte Keys (#175):** `stca` und `premium_layers` sind katalogisiert, haben
+aber **keinen Verbraucher** (Ein-/Ausschalten ist ein No-Op). Sie bleiben im Katalog
+(Round-Trip + fail-closed unverändert), tragen aber im Feature-Katalog das
+`Reserved`-Flag (`feature.Reserved`, im `entitlementDTO.reserved`); das Admin-Panel
+zeigt sie **deaktiviert** mit dem Hinweis „noch nicht aktiv", statt einen wirkungslosen
+Toggle anzubieten (Präzedenz #114). Das Verdrahten (bei `stca`: Firefly-I062/340 +
+Datenblock-Darstellung, cross-project) hebt das Flag auf.
 
 **UI-Gate der ASD-Karte (rein kosmetisch, kein Serverenforcement auf Aero-Daten;
 Issue #106).** Das Layer-/Filter-Panel (`LayerFilterContent.vue`) gated über die
@@ -853,15 +861,18 @@ neuen Wert neu.
 
 **Änderungs-getriebener Reconcile (ORCH-2c 3b):** Der Orchestrator konvergiert
 nicht nur im Intervall-Takt, sondern **sofort** bei einer Katalog-Änderung.
-Statement-Level-Trigger auf `feeds`/`subscriptions` (Migration `00012`) rufen
+Statement-Level-Trigger auf `feeds`/`subscriptions` (Migration `00012`) und
+`feed_secrets` (Migration `00020`, #177) rufen
 `pg_notify('wayfinder_reconcile','')` — DB-seitig, fängt jeden Schreiber. Ein
 `orchestrator.Listener` hält eine **dedizierte** Verbindung (`LISTEN`), wandelt
 jede Notification in ein Reconcile-Signal und feuert nach jedem (Re-)Connect ein
 **Resync**-Signal (verpasste Änderungen während einer Verbindungslücke). Das
 Signal-Senden ist nicht-blockierend auf einen Size-1-Channel → ein Burst
 **coalesct** zu einem Reconcile; das Intervall bleibt Sicherheitsnetz. Leerer
-Payload (der Reconciler liest das volle Soll). `feed_secrets` ist noch **nicht**
-abgedeckt (erst mit der Container-Injection spec-relevant, ORCH-5).
+Payload (der Reconciler liest das volle Soll). **`feed_secrets` ist seit #177
+abgedeckt:** ein hinterlegter/rotierter Credential ändert den Spec-Hash und muss
+die gespawnte Instanz **prompt** neu starten (vorher wirkte ein neuer OpenSky-Key
+erst beim nächsten Intervall-Lauf — für den Betreiber „ohne Wirkung").
 
 **End-to-End-Harness (ORCH-5c):** Die ganze Kette ist in einem lauffähigen
 Single-Host-Stack zusammengesteckt: `Dockerfile.orchestrator` baut das

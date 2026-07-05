@@ -13,15 +13,15 @@
       variant="flat"
       class="map-controls__group elevation-4 rounded-lg"
     >
-      <!-- Recenter — fly back to the configured map center -->
+      <!-- Reset view — centre + zoom + north-up + top-down, the full start view (#169) -->
       <v-btn
         icon
         size="small"
         :ripple="false"
         @click="$emit('recenter')"
       >
-        <v-icon>mdi-crosshairs-gps</v-icon>
-        <v-tooltip activator="parent" location="left" text="Zentrum" />
+        <v-icon>mdi-image-filter-center-focus</v-icon>
+        <v-tooltip activator="parent" location="left" text="Ansicht zurücksetzen" />
       </v-btn>
 
       <!-- Fullscreen toggle -->
@@ -61,10 +61,12 @@ function toggleFullscreen() {
 <style scoped>
 .map-controls {
   position: absolute;
-  /* The feed-status badge now sits alone top-right (top 12px; the account chip
-     was removed in favour of the sidebar "Konto"). Start the control stack just
-     below the badge so nothing overlaps (moved up from 88px). */
-  top: calc(var(--v-layout-top, 0px) + 50px);
+  /* The top-right cluster now stacks TWO rows (ICAO/UTC header + feed badge,
+     AsdView .top-right-cluster, top 12px, 8px gap). Start the control stack
+     clearly below that cluster so the icons never overlap the feed badge (#169).
+     ~100px clears both rows with margin; raised from 50px, which sat on the
+     badge row. */
+  top: calc(var(--v-layout-top, 0px) + 100px);
   right: 12px;
   z-index: 10;
   display: flex;

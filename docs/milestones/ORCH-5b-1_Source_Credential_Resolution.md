@@ -78,3 +78,18 @@ Anforderungs-Register: **FR-ORCH-006** (ORCH-5b-1 ✅; 5b-2 UI folgt) und
 UI-Zwei-Felder im Admin (Feed → Quellen → Secret): Benutzername + Passwort werden
 zu **einem** verschlüsselten `user:pass`-Secret kombiniert (UX-2). Danach
 End-to-End-Abnahme.
+
+## Nachtrag (#177) — Secret-Änderung löst prompten Reconcile aus
+
+Ein hinterlegter/rotierter Credential ist seit ORCH-5b-1 **spec-relevant** (er
+fließt über `Spec.ResolvedSecrets` in den Spec-Hash), wurde aber vom
+**änderungs-getriebenen** Reconcile nicht erfasst: der NOTIFY-Trigger deckte nur
+`feeds`/`subscriptions` ab (`00012`), `feed_secrets` war bewusst ausgenommen — mit
+einer inzwischen überholten Begründung. Folge: ein neu hinterlegter OpenSky-Key
+wirkte erst beim nächsten Intervall-Lauf, für den Betreiber „ohne Wirkung". Fix:
+Migration **`00020`** hängt `feed_secrets` (INSERT/UPDATE/DELETE) an
+`wayfinder_notify_reconcile()` (gleiche Statement-Level-Form wie feeds/subs); der
+überholte Kommentar in `00012` verweist jetzt darauf. Guard-Test
+`pkg/store/migrate_test.go::TestFeedSecretsReconcileTriggerMigration`.
+**Vorbedingung** bleibt ein gültiger `WAYFINDER_SECRET_KEY` (#171) — ohne ihn wird
+gar kein Secret gespeichert/aufgelöst.
