@@ -10,6 +10,23 @@
 
 ---
 
+## 🎯 Stand 2026-07-05 (#194 Responsive — Häppchen 1)
+
+- **ASD + Admin responsive (iPhone/iPad/24″), Design-Mockup umgesetzt (#194):**
+  - **Safe-Area-Fundament:** `viewport-fit=cover` (index.html) + `--wf-safe-*`/
+    `--wf-bottom-nav-h`/`--wf-touch-min` in `base.css`.
+  - **iPhone/Tablet-Portrait:** neue **Bottom-Tab-Leiste** (`BottomNav.vue`:
+    Scope/Filter/Konto[/Admin]) ersetzt Hamburger+Drawer; Filter/Konto als
+    **Bottom-Sheets**; Track-Detail-Sheet (bereits vorhanden); Zoom in den
+    **Map-Controls** über der Leiste; Messwerkzeuge in den Filter-Sheet verlegt.
+  - **iPad-Landscape/Desktop (≥md):** Navigationsschiene+Panel unverändert.
+  - **Fluide Overlays** (`min()`), Safe-Area an Top-Cluster/Legende/Controls.
+  - **Admin:** Appbar responsiv (Sektions-Select + Icon-only-Aktionen auf klein),
+    dichte `v-table`s scrollen horizontal im Card (`base.css`), fluider Container.
+  - Tests: neuer `responsive.test.js` (10), `railTools`-Test nachgezogen; Vitest
+    **368 grün**; Playwright-Boot-Check (iPhone/iPad/24″) fehlerfrei; dist neu
+    gebaut. Reines Frontend/Layout, CAT062 unberührt. (S4, Häppchen 1)
+
 ## 🎯 Stand 2026-07-05 (Runways, #192 abgeschlossen)
 
 - **#192 Runways nachgezogen (zweite Hälfte):** Der OurAirports-`runways.csv`

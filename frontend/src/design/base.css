@@ -13,6 +13,31 @@ body {
   font-family: var(--wf-font-sans);
 }
 
+/* #194 — Responsive foundations (iPhone / iPad / large display).
+   Safe-area insets: with viewport-fit=cover (index.html) the device exposes the
+   notch/Dynamic-Island and home-indicator insets via env(). We normalise them to
+   `--wf-safe-*` tokens (0 on non-notched devices) so ASD chrome can pad against
+   them without per-component env() calls. `--wf-bottom-nav-h` is the height the
+   mobile bottom tab bar reserves at the bottom of the scope; `--wf-touch-min` is
+   the minimum comfortable finger target (Apple HIG / MD3 ~44px). */
+:root {
+  --wf-safe-top: env(safe-area-inset-top, 0px);
+  --wf-safe-right: env(safe-area-inset-right, 0px);
+  --wf-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --wf-safe-left: env(safe-area-inset-left, 0px);
+  --wf-bottom-nav-h: 64px;
+  --wf-touch-min: 44px;
+}
+
+/* #194: dense admin tables (5–6 columns) must scroll INSIDE their card on a
+   narrow phone instead of stretching the page and clipping. The wrapper scrolls
+   horizontally; the card keeps its width. Global (unscoped) so it reaches the
+   admin components' Vuetify v-table wrappers. */
+.v-table > .v-table__wrapper {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 /* Signature readout style: tabular figures in Roboto Mono for squawk,
    flight level, coordinates, track numbers — digit alignment matters. */
 .wf-mono {
