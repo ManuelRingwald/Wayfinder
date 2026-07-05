@@ -28,12 +28,27 @@ const open = computed(() => store.selectedTrack !== null)
 <style scoped>
 .track-detail-card {
   position: fixed;
-  /* Design template: the track detail anchors top-right below the header cluster
-     (top 64, right 12, width 292), not bottom-right — the old bottom-right spot
-     collided with the "<width> NM Breite" readout. */
-  top: 64px;
-  right: 12px;
+  /* #184: top-right was a dead end — it stacked on top of the feed-status
+     badge/header cluster (AsdView .top-right-cluster) AND the map-controls
+     rail (#169, top ~100px), and its max-height could run under the OSM
+     attribution chip (bottom-right). Moved to top-left instead of fighting
+     for space in that column.
+     left: 68px clears the 56px collapsed nav rail + 12px gap — the same
+     offset AsdView's .scope-legend-overlay already uses for the identical
+     reason. That horizontal offset alone also clears the MapLibre compass
+     control (engine.js NavigationControl 'top-left'; MapLibre renders it at
+     left 10px, 29px button — right edge at 39px, well inside our 68px start),
+     so no extra top margin is needed to dodge it: top: 12px matches the
+     corner-hugging convention used elsewhere (scope-legend-overlay,
+     mobile-menu-btn). */
+  top: 12px;
+  left: 68px;
   width: 292px;
+  /* Same 76px total inset as before, redistributed: only 12px is spent at the
+     top (nothing to clear there once left is out from under the compass), so
+     the remaining 64px goes to the bottom — enough to clear the collapsed
+     scope-legend-overlay toggle (~30px tall, anchored at the same left: 68px,
+     bottom: 12px), which would otherwise sit directly under a tall panel. */
   max-height: calc(100vh - 76px);
   overflow-y: auto;
   z-index: 10;
