@@ -82,8 +82,11 @@ watch(() => store.selectedTrack?.track_num, () => {
   mapEngine?.updateSelection()
 })
 
-// ASD-011: apply airspace group filter once after map load (so the initial
-// state is correctly reflected) and whenever the store changes.
+// ASD-011: re-apply the airspace group filter whenever the store changes. The
+// INITIAL application is done by the engine itself in its load handler (#179),
+// so it runs on every mount regardless of the store's false→true edge — this
+// watcher is a belt-and-suspenders re-sync for the first-mount edge and does
+// not carry correctness on a remount (store.mapLoaded is a write-once latch).
 watch(() => store.mapLoaded, (loaded) => {
   if (loaded) mapEngine?.updateAirspaceFilter()
 })
