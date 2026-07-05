@@ -37,3 +37,21 @@ describe('MapCanvas view-centre wiring (FR-UI-013)', () => {
     expect(sfc).toContain('applyViewCenter')
   })
 })
+
+// #179: the airspace type filter must be applied on EVERY map mount, not only on
+// the first one. store.mapLoaded is a write-once-true latch on the singleton
+// Pinia store, so the false→true edge that the MapCanvas watcher keys on never
+// fires on a second mount (logout→login / tenant switch / re-login without a
+// full reload). Without the initial filter the airspace layers keep their wide
+// defaults and render non-mapped, country-wide types (UIR/FIR/ADIZ/TRA …). The
+// fix makes the engine apply the filter itself in its load handler and reset the
+// latch on teardown. Pinned at the source level (no MapLibre unit harness).
+describe('airspace filter is applied on every mount (#179)', () => {
+  it('the load handler applies the airspace filter right after setMapLoaded(true)', () => {
+    expect(engine).toMatch(/store\.setMapLoaded\(true\)[\s\S]*?updateAirspaceFilter\(\)/)
+  })
+
+  it('destroy() resets the mapLoaded latch so the next mount re-fires the edge', () => {
+    expect(engine).toMatch(/function destroy\(\)\s*\{[\s\S]*store\.setMapLoaded\(false\)[\s\S]*\}/)
+  })
+})

@@ -10,6 +10,24 @@
 
 ---
 
+## 🎯 Stand 2026-07-05
+
+- **Bugfix #179: Airspace-Overlay zeigte nach Re-Login initial „ganz
+  Deutschland".** Nach Logout→Login / Mandantenwechsel / Session-Ablauf→Re-Login
+  im selben Tab (ohne Full-Reload) rendern die Airspace-Layer zunächst **alle**
+  OpenAIP-Typen — auch die nicht in `AIRSPACE_GROUPS` gemappten, landesweiten
+  (UIR/FIR/ADIZ/TRA …) — bis zum ersten Gruppen-Toggle. Ursache: Die einmalige
+  Anwendung des Type-Filters hing an der `false→true`-Flanke von
+  `store.mapLoaded`; der Store ist ein Singleton und `mapLoaded` eine
+  „write-once-true"-Latch, die beim zweiten Mount bereits `true` ist → Watcher
+  feuert nicht → Filter läuft initial nie. Fix: (1) `updateAirspaceFilter()` wird
+  jetzt direkt im Engine-Load-Handler nach `setMapLoaded(true)` aufgerufen — der
+  Engine initialisiert seine Layer-Filter auf **jedem** Mount selbst,
+  unabhängig von der Store-Flanke; (2) `destroy()` setzt `setMapLoaded(false)`
+  zurück (Hygiene für weitere flanken-gekoppelte Effekte). Rein
+  Frontend/Reaktivität, CAT062-Vertrag unberührt. Tests: Regressions-Test in
+  `mapCanvasViewCenter.test.js` (Vitest 352); dist neu gebaut. (S2–S3)
+
 ## 🎯 Stand 2026-07-04 (Abend)
 
 - **E2E-Fix: ASD-Karte öffnet auf dem Mandanten-Sektor (FR-UI-013-Nachtrag).**

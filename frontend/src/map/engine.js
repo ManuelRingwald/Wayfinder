@@ -283,6 +283,17 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
     addLabelsLayer(map, palette)      // ASD-002: above track circles
     state.mapLoaded = true
     store.setMapLoaded(true)
+    // ASD-011 (#179): apply the airspace type filter directly on load, so the
+    // engine initialises its own layer filters on EVERY mount — not only on the
+    // first one. The MapCanvas watcher on store.mapLoaded fires only on the
+    // false→true edge, but store.mapLoaded is a write-once-true latch on the
+    // singleton Pinia store: on a second mount (logout→login, tenant switch,
+    // re-login without a full reload) it is already true, so the edge — and thus
+    // the initial filter — never fires. Calling it here makes correctness
+    // independent of the store edge; the non-mapped, country-wide airspace types
+    // (UIR/FIR/ADIZ/TRA …) are filtered out immediately instead of only after
+    // the first group toggle.
+    updateAirspaceFilter()
 
     if (state.pendingTracks) {
       updateTracksLayer(state.pendingTracks, state, doRender, startFadeLoop)
@@ -406,6 +417,11 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
     if (map._aeroInterval) clearInterval(map._aeroInterval)
     if (map._warnInterval) clearInterval(map._warnInterval)
     map.remove()
+    // #179 hygiene: clear the singleton store's map-loaded latch on teardown so
+    // the false→true edge is restored for the next mount. This protects any
+    // other effect keyed on the store.mapLoaded edge (not just the airspace
+    // filter, which the load handler now applies directly and defensively).
+    store.setMapLoaded(false)
   }
 
   // ASD-009: Map control helpers exposed to the Vue chrome layer.
