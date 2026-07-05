@@ -838,6 +838,7 @@ transparente Kacheln, nie einen Fehler).
 | `WAYFINDER_DWD_RADAR_ENABLED` | `true` | Radar-Overlay an/aus. `false` = Opt-out (keine Abfrage an DWD) |
 | `WAYFINDER_DWD_WMS_URL` | `https://maps.dwd.de/geoserver/dwd/wms` | DWD-GeoServer-WMS-Basis-URL (Override, z. B. eigener Mirror) |
 | `WAYFINDER_DWD_RADAR_LAYER` | `dwd:Niederschlagsradar` | WMS-Layer-Name des Radar-/Niederschlagskomposits |
+| `WAYFINDER_DWD_RADAR_STYLE` | (leer) | Optionaler WMS-`STYLES`-Parameter (#189); leer = Default-Style. Für ein echo-only-Rendering ohne Messbereichs-Grau/Stationsringe (Style-Name gegen den DWD-GeoServer verifizieren) |
 | `WAYFINDER_DWD_REFRESH` | `5m` | Cache-Lebensdauer je Radar-Kachel (DWD-Radar aktualisiert ~5 min) |
 
 **QNH-Infobox (NOAA-METAR, WX-B / CBD-3).** Zeigt das aktuelle QNH (Höhenmesser-
