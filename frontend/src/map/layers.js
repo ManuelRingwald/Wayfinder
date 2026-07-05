@@ -19,6 +19,9 @@ import {
   NAVAIDS_LAYER_ID,
   WAYPOINTS_SOURCE_ID,
   WAYPOINTS_LAYER_ID,
+  AIRPORT_SOURCE_ID,
+  AIRPORT_LAYER_ID,
+  AIRPORT_LABEL_LAYER_ID,
   LABELS_SOURCE_ID,
   LABELS_LAYER_ID,
   LEADER_LINES_SOURCE_ID,
@@ -494,6 +497,60 @@ export function addWaypointLayers(map, palette) {
       'text-halo-width': 1,
     },
   })
+}
+
+// addAirportLayers registers the #192 airport reference-point overlay: a small
+// circle marker per aerodrome plus an ICAO label. Data is served AOI-scoped by
+// /api/airports.geojson (offline OurAirports directory). Starts hidden; toggled
+// via the sidebar (airport entitlement). A zoom floor keeps it uncluttered when
+// zoomed far out.
+export function addAirportLayers(map, palette) {
+  map.addSource(AIRPORT_SOURCE_ID, {
+    type: 'geojson',
+    data: { type: 'FeatureCollection', features: [] },
+  })
+
+  map.addLayer({
+    id: AIRPORT_LAYER_ID,
+    type: 'circle',
+    source: AIRPORT_SOURCE_ID,
+    minzoom: 5,
+    layout: { visibility: 'none' },
+    paint: {
+      'circle-radius': 3,
+      'circle-color': palette.airspaceText,
+      'circle-stroke-color': palette.aeroHalo,
+      'circle-stroke-width': 1,
+      'circle-opacity': 0.9,
+    },
+  })
+
+  map.addLayer({
+    id: AIRPORT_LABEL_LAYER_ID,
+    type: 'symbol',
+    source: AIRPORT_SOURCE_ID,
+    minzoom: 6,
+    layout: {
+      visibility: 'none',
+      'text-field': ['coalesce', ['get', 'icao'], ['get', 'name'], ''],
+      'text-font': ['Roboto Mono Medium'],
+      'text-size': 10,
+      'text-offset': [0, 1.0],
+      'text-anchor': 'top',
+    },
+    paint: {
+      'text-color': palette.airspaceText,
+      'text-halo-color': palette.aeroHalo,
+      'text-halo-width': 1,
+    },
+  })
+}
+
+// updateAirportSource pushes a fetched airports FeatureCollection into the
+// source. A no-op if the source isn't present yet (map still loading).
+export function updateAirportSource(map, geojson) {
+  const src = map.getSource(AIRPORT_SOURCE_ID)
+  if (src) src.setData(geojson || { type: 'FeatureCollection', features: [] })
 }
 
 // addTracksLayer registers a GeoJSON source and a symbol layer for rendering

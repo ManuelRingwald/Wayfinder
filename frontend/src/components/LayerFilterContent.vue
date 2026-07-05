@@ -61,6 +61,19 @@
         />
       </div>
 
+      <!-- #192: airport reference-point markers, feature-gated (airport). -->
+      <div v-if="showLayer('airport')" class="filter-row">
+        <v-switch
+          v-model="store.layerVisibility.airport"
+          label="Flughäfen"
+          color="primary"
+          density="compact"
+          hide-details
+          inset
+          @update:model-value="onLayerToggle('airport', $event)"
+        />
+      </div>
+
       <!-- #114: the coverage overlay only has data when coverage sensors are
            configured server-side. Without data the toggle is disabled with an
            explanatory hint instead of silently doing nothing. -->

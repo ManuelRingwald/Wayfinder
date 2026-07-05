@@ -23,6 +23,12 @@ export const NAVAIDS_SOURCE_ID = 'navaids'
 export const NAVAIDS_LAYER_ID = 'navaids-symbols'
 export const WAYPOINTS_SOURCE_ID = 'waypoints'
 export const WAYPOINTS_LAYER_ID = 'waypoints-symbols'
+// #192: airport reference-point overlay (offline OurAirports directory, served
+// AOI-scoped by the backend). A circle marker + ICAO/name label.
+export const AIRPORT_SOURCE_ID = 'airports'
+export const AIRPORT_LAYER_ID = 'airports-markers'
+export const AIRPORT_LABEL_LAYER_ID = 'airports-labels'
+export const AIRPORT_URL = '/api/airports.geojson'
 
 // How often the frontend re-pulls the aeronautical GeoJSON. The backend itself
 // refreshes from OpenAIP on the AIRAC-paced interval; this only needs to be

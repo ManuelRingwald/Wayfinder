@@ -12,6 +12,8 @@ import {
   addAirspaceLayers,
   addNavaidLayers,
   addWaypointLayers,
+  addAirportLayers,
+  updateAirportSource,
   addTracksLayer,
   addLeaderLinesLayer,
   addSelectionLayer,
@@ -45,6 +47,9 @@ import {
   RANGE_RINGS_LAYER_ID,
   RANGE_RINGS_LABEL_LAYER_ID,
   HISTORY_DOTS_LAYER_ID,
+  AIRPORT_LAYER_ID,
+  AIRPORT_LABEL_LAYER_ID,
+  AIRPORT_URL,
   WEATHER_RADAR_LAYER_ID,
   WEATHER_WARNINGS_FILL_LAYER_ID,
   WEATHER_WARNINGS_LINE_LAYER_ID,
@@ -274,6 +279,14 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
     addAirspaceLayers(map, palette)
     addNavaidLayers(map, palette)
     addWaypointLayers(map, palette)
+    // #192: airport reference-point markers (offline OurAirports, AOI-scoped by
+    // the backend). Fetched once; the data is static context. Best-effort — a
+    // failed/empty fetch leaves the overlay empty.
+    addAirportLayers(map, palette)
+    fetch(AIRPORT_URL)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((geojson) => { if (geojson) updateAirportSource(map, geojson) })
+      .catch((err) => console.warn('airports fetch failed:', err))
     // Coverage rings sit above aeronautical overlays but below track layers,
     // so they provide geographic context without obscuring the air picture.
     addCoverageLayer(map)
@@ -382,6 +395,7 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
       historyDots: [HISTORY_DOTS_LAYER_ID],
       weatherRadar: [WEATHER_RADAR_LAYER_ID],
       weatherWarnings: [WEATHER_WARNINGS_FILL_LAYER_ID, WEATHER_WARNINGS_LINE_LAYER_ID],
+      airport: [AIRPORT_LAYER_ID, AIRPORT_LABEL_LAYER_ID], // #192
     }
     for (const [key, layerIds] of Object.entries(groups)) {
       if (key in vis) {

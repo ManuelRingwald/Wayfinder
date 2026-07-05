@@ -96,6 +96,31 @@ func (ix *Index) Lookup(icao string) (Airport, bool) {
 	return a, ok
 }
 
+// InBBox returns the airports whose reference point falls inside the WGS84
+// bounding box, ordered by ICAO for a stable list, capped at limit (#192, the
+// "Flughafen" reference-point overlay). A non-positive limit means unbounded.
+// The box is inclusive; callers pass the tenant AOI so only in-sector aerodromes
+// are returned.
+func (ix *Index) InBBox(minLat, minLon, maxLat, maxLon float64, limit int) []Airport {
+	var out []Airport
+	for _, e := range ix.entries {
+		if e.a.Lat < minLat || e.a.Lat > maxLat || e.a.Lon < minLon || e.a.Lon > maxLon {
+			continue
+		}
+		out = append(out, e.a)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ICAO < out[j].ICAO })
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out
+}
+
+// InBBox runs against the embedded directory. See (*Index).InBBox.
+func InBBox(minLat, minLon, maxLat, maxLon float64, limit int) []Airport {
+	return defaultIndex.InBBox(minLat, minLon, maxLat, maxLon, limit)
+}
+
 // Search returns up to limit airports matching q, best match first. Matching is
 // tiered so an exact ICAO always wins:
 //

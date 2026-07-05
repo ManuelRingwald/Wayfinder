@@ -26,6 +26,34 @@ func icaos(as []Airport) []string {
 	return out
 }
 
+// #192: InBBox returns only aerodromes inside the WGS84 box, ICAO-sorted.
+func TestInBBoxReturnsOnlyInSectorAirportsSorted(t *testing.T) {
+	ix := fixture()
+	// A box around northern Germany: EDDH (Hamburg) and EDDL (Düsseldorf) in,
+	// EDDF (Frankfurt), EGLL (London) and KJFK (New York) out.
+	got := icaos(ix.InBBox(51.0, 6.0, 54.0, 11.0, 0))
+	want := []string{"EDDH", "EDDL"}
+	if len(got) != len(want) {
+		t.Fatalf("InBBox: got %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("InBBox order: got %v, want %v", got, want)
+		}
+	}
+}
+
+func TestInBBoxRespectsLimit(t *testing.T) {
+	ix := fixture()
+	if n := len(ix.InBBox(-90, -180, 90, 180, 1)); n != 1 {
+		t.Fatalf("InBBox limit: got %d, want 1", n)
+	}
+	// Non-positive limit → unbounded (all five fixture airports).
+	if n := len(ix.InBBox(-90, -180, 90, 180, 0)); n != 5 {
+		t.Fatalf("InBBox unbounded: got %d, want 5", n)
+	}
+}
+
 func TestSearchExactICAOWinsAndFillsCoords(t *testing.T) {
 	got := fixture().Search("EDDH", 10)
 	if len(got) == 0 || got[0].ICAO != "EDDH" {
