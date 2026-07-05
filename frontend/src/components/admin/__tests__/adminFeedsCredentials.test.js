@@ -34,3 +34,36 @@ describe('feed source credentials are source-type aware (UX-4)', () => {
     expect(sfc).toContain('WAYFINDER_SECRET_KEY')
   })
 })
+
+describe('cred_ref is regenerated on source-type change (#198)', () => {
+  it('ensureCredRef re-derives unconditionally (no "only if empty" guard)', () => {
+    // The stale guard that kept a mismatched "…-adsb_opensky" ref after switching
+    // to FLARM is gone; the ref is now always derived from (feed_id, type).
+    expect(sfc).not.toContain("if (!(s.cred_ref || '').trim())")
+    expect(sfc).toContain('secret/feed-${sourcesTarget.value?.id ?? \'new\'}-${s.type}')
+  })
+
+  it('an anonymous optional source sends no dangling cred_ref', () => {
+    // buildSourcesPayload only emits cred_ref when required OR a secret is
+    // stored/typed — so anonymous FLARM carries none (no "secret unresolved" log).
+    expect(sfc).toContain('info.required || isSecretConfigured(ref) || secretTyped(i)')
+  })
+})
+
+describe('one "Speichern" persists the source AND its credential (#199)', () => {
+  it('submitSources blocks a required credential that is neither stored nor typed', () => {
+    expect(sfc).toContain('Zugang erforderlich, aber weder hinterlegt noch eingegeben')
+    expect(sfc).toContain('info.required && !configured && !secretTyped(i)')
+  })
+
+  it('submitSources saves typed secrets in the same action', () => {
+    expect(sfc).toContain('if (secretTyped(i) && !(await saveSecret(i)))')
+  })
+
+  it('reports an honest result when a credential fails to persist', () => {
+    expect(sfc).toContain('Quellen gespeichert, aber ein Zugang konnte nicht hinterlegt werden')
+    // saveSecret returns a boolean so the overall result can be judged.
+    expect(sfc).toContain('return true')
+    expect(sfc).toContain('return false')
+  })
+})
