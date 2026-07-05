@@ -33,6 +33,8 @@ const (
 	QNH Key = "qnh"
 	// WeatherWarnings — DWD weather-warnings map overlay display (WX-C, ADR 0016).
 	WeatherWarnings Key = "weather_warnings"
+	// Airport — airport reference-point marker overlay (#192, offline OurAirports).
+	Airport Key = "airport"
 )
 
 // entry is a catalog record for one feature: a short human-readable label (the
@@ -81,6 +83,7 @@ var catalog = map[Key]entry{
 	WeatherRadar:    {Label: "Wetterradar (DWD)", Description: "Niederschlagsradar des Deutschen Wetterdienstes als Kartenoverlay."},
 	QNH:             {Label: "QNH", Description: "Höhenmesser-Einstellung (QNH) als Infobox in der Kopfzeile."},
 	WeatherWarnings: {Label: "Wetterwarnungen (DWD)", Description: "Amtliche Wetterwarnungen des Deutschen Wetterdienstes als Kartenoverlay."},
+	Airport:         {Label: "Flughäfen", Description: "Blendet Flughäfen als Referenzpunkt-Marker mit Namen ein."},
 }
 
 // IsKnown reports whether key is part of the feature catalog.

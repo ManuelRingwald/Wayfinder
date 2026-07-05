@@ -114,8 +114,8 @@ func TestEffectiveDefaultDeny(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Effective err = %v", err)
 	}
-	if len(eff) != 11 {
-		t.Fatalf("Effective len = %d, want 11 (full catalog)", len(eff))
+	if len(eff) != 12 {
+		t.Fatalf("Effective len = %d, want 12 (full catalog)", len(eff))
 	}
 	for k, v := range eff {
 		if v {
@@ -159,8 +159,8 @@ func TestEffectiveStoreErrorFailsClosed(t *testing.T) {
 		t.Error("Effective err = nil, want error")
 	}
 	// Even on error the map is fully populated and all-deny (fail-closed).
-	if len(eff) != 11 {
-		t.Fatalf("Effective len on error = %d, want 11", len(eff))
+	if len(eff) != 12 {
+		t.Fatalf("Effective len on error = %d, want 12", len(eff))
 	}
 	for k, v := range eff {
 		if v {

@@ -65,6 +65,16 @@ export const useSessionStore = defineStore('session', () => {
     return { lat: i.center_lat, lon: i.center_lon, zoom: i.zoom ?? null }
   })
 
+  // aoi mirrors the effective view's area of interest (WGS84 bbox, from whoami).
+  // The ASD clips the DWD weather overlays (radar raster + warnings) to it so a
+  // controller only sees weather in their own sector (#189/#190). Null when the
+  // tenant has no AOI configured → the overlays are shown unclipped.
+  const aoi = computed(() => {
+    const a = identity.value?.aoi
+    if (!a) return null
+    return { minLat: a.min_lat, minLon: a.min_lon, maxLat: a.max_lat, maxLon: a.max_lon }
+  })
+
   // probe resolves the current session via the role-agnostic identity endpoint.
   // 200 → authed; anything else (401 etc.) → anon. A transition from authed → anon
   // marks the session as expired (for the visible "session expired" hint).
@@ -138,7 +148,7 @@ export const useSessionStore = defineStore('session', () => {
 
   return {
     identity, status, error, expired, subject, role, isAdmin,
-    features, hasFeature, sensorClasses, flMin, flMax, icao, viewCenter,
+    features, hasFeature, sensorClasses, flMin, flMax, icao, viewCenter, aoi,
     probe, login, renewNow, startRenew, stopRenew, logout,
   }
 })

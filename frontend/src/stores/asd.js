@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, reactive, computed } from 'vue'
-import { DEFAULT_RANGE_RING_SPACING_NM, DEFAULT_RANGE_RING_COUNT } from '@/map/constants.js'
+import { DEFAULT_RANGE_RING_SPACING_NM, DEFAULT_RANGE_RING_COUNT, DEFAULT_HISTORY_DURATION_S } from '@/map/constants.js'
 
 // The broadcast FeedStatusMessage carries a per-feed traffic-light *color*
 // (green/yellow/red, pkg/broadcast); the chip speaks in states. Mapping the
@@ -52,6 +52,7 @@ export const useAsdStore = defineStore('asd', () => {
     historyDots: true, // AP2: on by default; hidden by feature gate when tenant lacks history_dots
     weatherRadar: false, // WX-A: off by default (weather is opt-in context)
     weatherWarnings: false, // WX-C: off by default (opt-in context)
+    airport: false, // #192: airport markers off by default (opt-in context)
   })
 
   // ASD-012: operator-tunable range-ring configuration, applied live. The engine
@@ -61,6 +62,13 @@ export const useAsdStore = defineStore('asd', () => {
     count: DEFAULT_RANGE_RING_COUNT,
   })
   function setRangeRingConfig(updates) { Object.assign(rangeRingConfig, updates) }
+
+  // #191: history-dots retention window (seconds). The engine prunes/fades the
+  // dots to this duration; MapCanvas watches it and re-renders on change.
+  const historyConfig = reactive({
+    durationS: DEFAULT_HISTORY_DURATION_S,
+  })
+  function setHistoryConfig(updates) { Object.assign(historyConfig, updates) }
 
   // FL filter
   const flFilter = reactive({
@@ -135,6 +143,7 @@ export const useAsdStore = defineStore('asd', () => {
     weatherWarningsAvailable, setWeatherWarningsAvailable,
     airspaceGroupVisibility,
     rangeRingConfig, setRangeRingConfig,
+    historyConfig, setHistoryConfig,
     selectedTrack, labelPins,
     setFeedHealth, resetFeedHealth, setMapLoaded, setPalette, setLayerVisibility,
     setFlFilter,

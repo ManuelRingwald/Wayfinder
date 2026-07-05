@@ -10,7 +10,26 @@
 
 ---
 
-## 🎯 Stand 2026-07-05
+## 🎯 Stand 2026-07-05 (Sammel-PR #182–#192)
+
+- **Batch #182–#192 umgesetzt (ein PR):**
+  - **#182** Label-Drag hält den Anfasspunkt unter dem Cursor (kein Sprung).
+  - **#183** Ausgewählter Track mit cyaner Eck-Klammer-Box (ATC-Look) statt Ring.
+  - **#184** Track-Detail-Panel kollisionsfrei oben links (kein Feed-Badge/OSM-Overlap).
+  - **#185** FLARM als eigenes Dreieck-Symbol (Form = Herkunft) statt Buchstabe „F".
+  - **#186/#188** Rail-Icons an ASD-Vorlage (Lupen-Zoom, Tune-Filter).
+  - **#187** Kompaktere Layer-Toggles, kleinere Labels, größere Überschrift.
+  - **#191** History-Dots nach Dauer konfigurierbar + Alters-Ausfaden (Zeitstempel
+    per `time_ms`, Retention-Fenster, `historyConfig`-Store + Sidebar-Auswahl).
+  - **#189/#190** DWD-Wetter-Overlays auf Mandanten-AOI geclippt (`whoami.aoi`;
+    Radar via `source.bounds`, Warnungen via Sutherland-Hodgman `clip.js`),
+    Legenden für Radar/Warnungen im Panel, Radar-Style konfigurierbar
+    (`WAYFINDER_DWD_RADAR_STYLE`). Echo-only-DWD-Style offline nicht verifizierbar.
+  - **#192 (Teil)** Flughafen-Referenzpunkt-Layer (offline OurAirports,
+    `/api/airports.geojson`, AOI-gescoped, feature-gegated `airport`).
+    **Runways offen:** OurAirports-`runways.csv`-Host per Proxy geblockt (403) →
+    keine echte Runway-Geometrie einbettbar (Charter: keine Fake-Daten).
+  - Tests: Vitest 360 grün, `go test ./...` grün, `vet`/`gofmt` sauber; dist neu gebaut.
 
 - **Bugfix #179: Airspace-Overlay zeigte nach Re-Login initial „ganz
   Deutschland".** Nach Logout→Login / Mandantenwechsel / Session-Ablauf→Re-Login

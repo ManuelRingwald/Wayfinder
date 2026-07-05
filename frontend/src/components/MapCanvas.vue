@@ -44,6 +44,8 @@ onMounted(async () => {
     // FR-UI-013: open on the tenant's own sector (whoami view centre) instead of
     // the global map-config default. Null (no view config) keeps the env centre.
     session.viewCenter,
+    // #189/#190: clip the DWD weather overlays (radar/warnings) to the tenant AOI.
+    session.aoi,
   )
   // Häppchen 4: attach the measurement controller and let the tools store drive
   // it (reporting the live readout back to the store). createMeasure adds a
@@ -100,6 +102,12 @@ watch(() => ({ ...store.rangeRingConfig }), (cfg) => {
   mapEngine?.updateRangeRings(cfg.spacingNM, cfg.count)
 }, { deep: true })
 
+// #191: re-render the history dots when the operator changes the retention
+// window (duration), so the trail length and age fade update immediately.
+watch(() => ({ ...store.historyConfig }), () => {
+  mapEngine?.updateHistoryConfig()
+}, { deep: true })
+
 // WF2-34: when the admin starts/switches/exits read-only impersonation
 // (ADR 0008), reconnect the WebSocket so the new grant cookie — and thus the new
 // tenant scope — takes effect immediately. loadStatus does not bump the nonce, so
@@ -115,6 +123,12 @@ watch(() => imp.reconnectNonce, () => {
 watch(() => session.viewCenter, (vc) => {
   mapEngine?.applyViewCenter(vc)
 })
+
+// #189/#190: re-clip the DWD weather overlays when the effective AOI changes
+// (whoami resolves after mount, or an admin switches the impersonation target).
+watch(() => session.aoi, (a) => {
+  mapEngine?.applyWeatherAOI(a)
+}, { deep: true })
 
 defineExpose({
   // Häppchen 3: zoom is driven from the navigation rail, which delegates here.

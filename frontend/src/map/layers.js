@@ -19,12 +19,16 @@ import {
   NAVAIDS_LAYER_ID,
   WAYPOINTS_SOURCE_ID,
   WAYPOINTS_LAYER_ID,
+  AIRPORT_SOURCE_ID,
+  AIRPORT_LAYER_ID,
+  AIRPORT_LABEL_LAYER_ID,
   LABELS_SOURCE_ID,
   LABELS_LAYER_ID,
   LEADER_LINES_SOURCE_ID,
   LEADER_LINES_LAYER_ID,
   SELECTION_SOURCE_ID,
   SELECTION_LAYER_ID,
+  SELECTION_ICON_ID,
   LABEL_TEXT_SIZE,
   TRACK_STATE_COLORS,
   AIRSPACE_GROUPS,
@@ -176,8 +180,8 @@ const TRACK_ICON_STROKE = '#000000' // dark edge for legibility on both bases
 // makeTrackIcon paints one provenance symbol in the given state colour. Shape
 // encodes the surveillance source per the design legend: ADS-B a diamond ◆, SSR
 // a filled square ■ (cooperative reply, carries identity), PSR a HOLLOW ring ○
-// (raw skin paint, no ID). FLARM/combined stay letter glyphs (F / K) — sources
-// beyond the 3-way design legend that Wayfinder still receives.
+// (raw skin paint, no ID), FLARM an upward triangle ▲ (#185). Combined stays a
+// letter glyph (K) — the multi-sensor superset source beyond the design legend.
 //
 // Geometry mirrors the design template (scope-tracks.jsx symbolNode, s=5):
 // diamond 12 CSS px point-to-point, square 8 CSS px side, circle 9 CSS px dia,
@@ -238,10 +242,25 @@ function makeTrackIcon(shape, color, hollow) {
       strokeOrFill()
       return
     }
-    // flarm / combined: letter glyph in the state colour (F = FLARM, K =
-    // kombiniert/Mehr-Sensor #125) — sources outside the 3-way design legend.
+    if (shape === 'flarm') {
+      // FLARM (#185): an upward triangle — the remaining basic geometric mark,
+      // font-independent and consistent with "shape = provenance" (replacing the
+      // earlier letter "F", which broke the geometric systematics). Sized to the
+      // diamond's footprint (apex at c-12, base at c+10). The vertical-tendency
+      // arrows ▲/▼ (ASD-001b) live in the data block, not on the symbol, so there
+      // is no positional clash. Coasting => outline only (hollow convention).
+      ctx.beginPath()
+      ctx.moveTo(c, c - 12)
+      ctx.lineTo(c + 11, c + 10)
+      ctx.lineTo(c - 11, c + 10)
+      ctx.closePath()
+      strokeOrFill()
+      return
+    }
+    // combined: letter glyph in the state colour (K = kombiniert/Mehr-Sensor
+    // #125) — the multi-sensor superset source outside the 3-way design legend.
     // Coasting => outline the letter (no fill) to match the hollow convention.
-    const letter = { flarm: 'F', combined: 'K' }[shape] ?? '?'
+    const letter = { combined: 'K' }[shape] ?? '?'
     ctx.font = 'bold 22px sans-serif'
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
@@ -281,12 +300,23 @@ export function addTrackIcons(map) {
 // toggled via the sidebar (store.layerVisibility.weatherRadar). A raster source
 // self-fetches, so there is no setData/refresh helper — the backend proxy caps
 // the tile freshness to the DWD radar cadence (~5 min).
-export function addWeatherRadarLayer(map) {
+// #189: when the tenant has an AOI, the raster source is bounded to it so the
+// radar is only fetched/rendered inside the sector (no country-wide extent). The
+// bounds are a rectangle [west, south, east, north]; a null AOI leaves the layer
+// unbounded. bboxToBounds converts the whoami AOI to that tuple.
+function bboxToBounds(aoi) {
+  if (!aoi) return undefined
+  return [aoi.minLon, aoi.minLat, aoi.maxLon, aoi.maxLat]
+}
+
+export function addWeatherRadarLayer(map, aoi = null) {
+  const bounds = bboxToBounds(aoi)
   map.addSource(WEATHER_RADAR_SOURCE_ID, {
     type: 'raster',
     tiles: [WEATHER_RADAR_TILES_URL],
     tileSize: 256,
     attribution: DWD_ATTRIBUTION,
+    ...(bounds ? { bounds } : {}),
   })
   map.addLayer({
     id: WEATHER_RADAR_LAYER_ID,
@@ -295,6 +325,20 @@ export function addWeatherRadarLayer(map) {
     layout: { visibility: 'none' },
     paint: { 'raster-opacity': WEATHER_RADAR_OPACITY },
   })
+}
+
+// setWeatherRadarAOI re-creates the radar raster source with new AOI bounds
+// (#189). Called when the tenant's AOI resolves after mount or changes (e.g. an
+// admin switching the impersonation target). Preserves the layer's current
+// visibility. A raster source's bounds cannot be mutated in place, so the
+// source+layer are removed and re-added.
+export function setWeatherRadarAOI(map, aoi) {
+  if (!map.getLayer(WEATHER_RADAR_LAYER_ID)) return
+  const visibility = map.getLayoutProperty(WEATHER_RADAR_LAYER_ID, 'visibility') || 'none'
+  map.removeLayer(WEATHER_RADAR_LAYER_ID)
+  map.removeSource(WEATHER_RADAR_SOURCE_ID)
+  addWeatherRadarLayer(map, aoi)
+  map.setLayoutProperty(WEATHER_RADAR_LAYER_ID, 'visibility', visibility)
 }
 
 // addWeatherWarningsLayer registers the DWD weather-warnings overlay (WX-C,
@@ -455,6 +499,60 @@ export function addWaypointLayers(map, palette) {
   })
 }
 
+// addAirportLayers registers the #192 airport reference-point overlay: a small
+// circle marker per aerodrome plus an ICAO label. Data is served AOI-scoped by
+// /api/airports.geojson (offline OurAirports directory). Starts hidden; toggled
+// via the sidebar (airport entitlement). A zoom floor keeps it uncluttered when
+// zoomed far out.
+export function addAirportLayers(map, palette) {
+  map.addSource(AIRPORT_SOURCE_ID, {
+    type: 'geojson',
+    data: { type: 'FeatureCollection', features: [] },
+  })
+
+  map.addLayer({
+    id: AIRPORT_LAYER_ID,
+    type: 'circle',
+    source: AIRPORT_SOURCE_ID,
+    minzoom: 5,
+    layout: { visibility: 'none' },
+    paint: {
+      'circle-radius': 3,
+      'circle-color': palette.airspaceText,
+      'circle-stroke-color': palette.aeroHalo,
+      'circle-stroke-width': 1,
+      'circle-opacity': 0.9,
+    },
+  })
+
+  map.addLayer({
+    id: AIRPORT_LABEL_LAYER_ID,
+    type: 'symbol',
+    source: AIRPORT_SOURCE_ID,
+    minzoom: 6,
+    layout: {
+      visibility: 'none',
+      'text-field': ['coalesce', ['get', 'icao'], ['get', 'name'], ''],
+      'text-font': ['Roboto Mono Medium'],
+      'text-size': 10,
+      'text-offset': [0, 1.0],
+      'text-anchor': 'top',
+    },
+    paint: {
+      'text-color': palette.airspaceText,
+      'text-halo-color': palette.aeroHalo,
+      'text-halo-width': 1,
+    },
+  })
+}
+
+// updateAirportSource pushes a fetched airports FeatureCollection into the
+// source. A no-op if the source isn't present yet (map still loading).
+export function updateAirportSource(map, geojson) {
+  const src = map.getSource(AIRPORT_SOURCE_ID)
+  if (src) src.setData(geojson || { type: 'FeatureCollection', features: [] })
+}
+
 // addTracksLayer registers a GeoJSON source and a symbol layer for rendering
 // tracks. WF2-40/#119: the icon GLYPH encodes provenance (A ADS-B / F FLARM /
 // ▢ SSR / ○ PSR) while the baked-in colour encodes track state (the old
@@ -509,27 +607,59 @@ export function addTracksLayer(map) {
   })
 }
 
-// addSelectionLayer registers the ASD-007 selection halo: a cyan ring around the
-// currently selected track (design template symbolNode, r=11, stroke primary).
-// The source holds at most one Point (the selected track's live position, set by
-// renderSources); registered before addTracksLayer so the ring sits UNDER the
-// symbol and the symbol stays crisp on top. A hollow ring = fill opacity 0.
+// makeSelectionBox draws the ASD-007 selection marker as a square frame of four
+// L-shaped corner brackets (ATC-scope convention, design ref EWG84F, #183) in the
+// given colour. Corner brackets rather than a full square keep the track symbol
+// and its data block readable. Drawn on a 32-px canvas at pixelRatio 2, so every
+// value is the template CSS pixel × 2 (see makeIconImage / makeTrackIcon).
+function makeSelectionBox(color) {
+  return makeIconImage((ctx, s) => {
+    const c = s / 2
+    const half = 13 // box half-size (canvas px) — just outside the symbol footprint
+    const arm = 6    // corner-bracket arm length
+    ctx.strokeStyle = color
+    ctx.lineWidth = 2 // 1 CSS px at pixelRatio 2
+    ctx.lineCap = 'round'
+    ctx.lineJoin = 'round'
+    // Each corner: two arms running inward from the corner point.
+    for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+      const x = c + sx * half
+      const y = c + sy * half
+      ctx.beginPath()
+      ctx.moveTo(x - sx * arm, y) // horizontal arm inward
+      ctx.lineTo(x, y)
+      ctx.lineTo(x, y - sy * arm) // vertical arm inward
+      ctx.stroke()
+    }
+  }, 32)
+}
+
+// addSelectionLayer registers the ASD-007 selection marker: a cyan corner-bracket
+// BOX around the currently selected track (#183, replacing the earlier ring — the
+// box matches the ATC-scope look, design ref EWG84F). The source holds at most one
+// Point (the selected track's live position, set by renderSources); registered
+// before addTracksLayer so the box sits UNDER the symbol and the symbol stays
+// crisp on top. The box is a pre-rendered icon in the selection colour.
 export function addSelectionLayer(map, palette) {
   map.addSource(SELECTION_SOURCE_ID, {
     type: 'geojson',
     data: { type: 'FeatureCollection', features: [] },
   })
+  if (!map.hasImage(SELECTION_ICON_ID)) {
+    map.addImage(SELECTION_ICON_ID, makeSelectionBox(palette.selection), { pixelRatio: 2 })
+  }
   map.addLayer({
     id: SELECTION_LAYER_ID,
-    type: 'circle',
+    type: 'symbol',
     source: SELECTION_SOURCE_ID,
+    layout: {
+      'icon-image': SELECTION_ICON_ID,
+      'icon-allow-overlap': true,
+      'icon-ignore-placement': true,
+      'icon-rotation-alignment': 'map',
+    },
     paint: {
-      'circle-radius': 11,
-      'circle-color': 'transparent',
-      'circle-opacity': 0,
-      'circle-stroke-width': 1.4,
-      'circle-stroke-color': palette.selection,
-      'circle-stroke-opacity': 0.9,
+      'icon-opacity': 0.9,
     },
   })
 }
@@ -655,12 +785,19 @@ export function addHistoryDotsLayer(map, palette) {
     paint: {
       'circle-radius': 1.6, // design template: history dots r=1.6 CSS px
       'circle-color': palette.trail,
+      // #191: multiply the base state opacity by an AGE fade so dots grow fainter
+      // toward the older end of the trail (age 0 = newest → 1.0; age 1 = oldest →
+      // 0.12). The base 'case' keeps the ASD-004b/4c coasting/TSE/FL behaviour.
       'circle-opacity': [
-        'case',
-        ['has', 'fade_opacity'], ['*', 0.6, ['get', 'fade_opacity']],
-        ['has', 'fl_opacity'],   ['get', 'fl_opacity'],
-        ['get', 'coasting'], 0.2,
-        0.6,
+        '*',
+        ['interpolate', ['linear'], ['coalesce', ['get', 'age'], 0], 0, 1.0, 1, 0.12],
+        [
+          'case',
+          ['has', 'fade_opacity'], ['*', 0.6, ['get', 'fade_opacity']],
+          ['has', 'fl_opacity'],   ['get', 'fl_opacity'],
+          ['get', 'coasting'], 0.2,
+          0.6,
+        ],
       ],
     },
   })

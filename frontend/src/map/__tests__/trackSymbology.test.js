@@ -53,13 +53,14 @@ describe('track symbol geometry matches the design template (layers.js)', () => 
   })
 })
 
-// ASD-007: cyan selection halo (design template symbolNode: r=11, stroke primary)
-describe('selection halo layer (layers.js)', () => {
-  it('registers a hollow selection ring at r=11 under the symbols', () => {
+// ASD-007 / #183: cyan selection BOX (corner brackets, ATC-scope look, EWG84F)
+describe('selection box layer (layers.js)', () => {
+  it('registers a corner-bracket selection box icon under the symbols', () => {
     expect(layers).toContain('addSelectionLayer')
-    expect(layers).toContain("'circle-radius': 11")
-    expect(layers).toContain("'circle-stroke-color': palette.selection")
-    expect(layers).toContain("'circle-opacity': 0") // hollow: no fill
+    expect(layers).toContain('makeSelectionBox')
+    expect(layers).toContain('SELECTION_ICON_ID')
+    // The box is a symbol layer (pre-rendered icon), no longer a circle ring.
+    expect(layers).toContain("'icon-image': SELECTION_ICON_ID")
   })
 })
 

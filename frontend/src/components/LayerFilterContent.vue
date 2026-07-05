@@ -61,6 +61,19 @@
         />
       </div>
 
+      <!-- #192: airport reference-point markers, feature-gated (airport). -->
+      <div v-if="showLayer('airport')" class="filter-row">
+        <v-switch
+          v-model="store.layerVisibility.airport"
+          label="Flughäfen"
+          color="primary"
+          density="compact"
+          hide-details
+          inset
+          @update:model-value="onLayerToggle('airport', $event)"
+        />
+      </div>
+
       <!-- #114: the coverage overlay only has data when coverage sensors are
            configured server-side. Without data the toggle is disabled with an
            explanatory hint instead of silently doing nothing. -->
@@ -98,6 +111,18 @@
       <div v-if="showLayer('weather_radar') && !store.weatherRadarAvailable" class="filter-hint">
         Keine DWD-Radarquelle konfiguriert (WAYFINDER_DWD_WMS_URL).
       </div>
+      <!-- #190: radar intensity legend, shown only while the layer is on. -->
+      <div
+        v-if="showLayer('weather_radar') && store.weatherRadarAvailable && store.layerVisibility.weatherRadar"
+        class="wx-legend"
+      >
+        <span class="wx-legend-caption">Niederschlag</span>
+        <div class="wx-legend-items">
+          <span v-for="s in WEATHER_RADAR_LEGEND" :key="s.label" class="wx-legend-item">
+            <span class="wx-swatch" :style="{ background: s.color }" />{{ s.label }}
+          </span>
+        </div>
+      </div>
 
       <!-- WX-C (ADR 0016): DWD weather-warnings overlay. Feature-gated per tenant
            (weather_warnings) and disabled when no DWD WFS is configured. -->
@@ -116,6 +141,18 @@
       <div v-if="showLayer('weather_warnings') && !store.weatherWarningsAvailable" class="filter-hint">
         Keine DWD-Warnquelle konfiguriert (WAYFINDER_DWD_WARN_URL).
       </div>
+      <!-- #190: warnings severity legend, shown only while the layer is on. -->
+      <div
+        v-if="showLayer('weather_warnings') && store.weatherWarningsAvailable && store.layerVisibility.weatherWarnings"
+        class="wx-legend"
+      >
+        <span class="wx-legend-caption">Warnstufe</span>
+        <div class="wx-legend-items">
+          <span v-for="s in WEATHER_WARNINGS_LEGEND" :key="s.label" class="wx-legend-item">
+            <span class="wx-swatch" :style="{ background: s.color }" />{{ s.label }}
+          </span>
+        </div>
+      </div>
 
       <div v-if="showLayer('history_dots')" class="filter-row">
         <v-switch
@@ -128,6 +165,23 @@
           @update:model-value="onLayerToggle('historyDots', $event)"
         />
       </div>
+
+      <!-- #191: history retention window, shown only while the layer is active.
+           Older dots fade out toward the end of the trail (engine-side). -->
+      <template v-if="showLayer('history_dots') && store.layerVisibility.historyDots">
+        <div class="filter-row filter-row--sub">
+          <v-select
+            v-model.number="historyDurationS"
+            :items="HISTORY_DURATION_OPTIONS_S"
+            label="Dauer (s)"
+            variant="outlined"
+            density="compact"
+            hide-details
+            class="ring-input"
+            @update:model-value="onHistoryChange"
+          />
+        </div>
+      </template>
 
       <div v-if="showLayer('range_rings')" class="filter-row">
         <v-switch
@@ -272,7 +326,7 @@
 import { ref, computed } from 'vue'
 import { useAsdStore } from '@/stores/asd.js'
 import { useSessionStore } from '@/stores/session.js'
-import { AIRSPACE_GROUPS, RANGE_RING_SPACING_OPTIONS_NM, MAX_RANGE_RING_COUNT } from '@/map/constants.js'
+import { AIRSPACE_GROUPS, RANGE_RING_SPACING_OPTIONS_NM, MAX_RANGE_RING_COUNT, HISTORY_DURATION_OPTIONS_S, WEATHER_RADAR_LEGEND, WEATHER_WARNINGS_LEGEND } from '@/map/constants.js'
 import { filterProvenanceLegend } from '@/map/provenance.js'
 
 // #116: the NavigationRail opens one section at a time on desktop; the mobile
@@ -318,6 +372,13 @@ const ringSpacing = ref(store.rangeRingConfig.spacingNM)
 const ringCount = ref(store.rangeRingConfig.count)
 function onRangeRingChange() {
   store.setRangeRingConfig({ spacingNM: ringSpacing.value, count: ringCount.value })
+}
+
+// #191: history-dots retention window (seconds), mirrored into the store on
+// change (MapCanvas watches store.historyConfig and re-renders the dots).
+const historyDurationS = ref(store.historyConfig.durationS)
+function onHistoryChange() {
+  store.setHistoryConfig({ durationS: historyDurationS.value })
 }
 
 // WF2-40 + Issues #107/#119: track-symbol provenance legend, filtered to the
@@ -372,11 +433,14 @@ async function onLogout() {
    separated (previously only the --spaced variant had a rule, so the first
    "Layer" header had none). */
 .filter-section-header {
-  /* Design System v1: the signature "overline" section header, token-driven. */
+  /* Design System v1: the signature "overline" section header, token-driven.
+     #187: calibrated to the ASD-display template — a more prominent section
+     heading ("LAYER") than the base overline tokens, so it clearly outranks the
+     (now smaller) row labels. Size/weight are set explicitly above the tokens. */
   padding: 10px 14px 6px;
   margin: 0 6px;
-  font-size: var(--wf-overline-size);
-  font-weight: var(--wf-overline-weight);
+  font-size: 0.82rem;
+  font-weight: 700;
   letter-spacing: var(--wf-overline-tracking);
   text-transform: uppercase;
   color: var(--wf-overline-color);
@@ -428,18 +492,26 @@ async function onLogout() {
   flex-shrink: 0;
 }
 
-/* Tighten the switch track to be proportional and not oversized */
+/* Tighten the switch track to be proportional and not oversized.
+   #187: shortened further to match the ASD-display template (24×12, thumb 9). */
 :deep(.v-switch .v-selection-control) {
   min-height: unset;
 }
 :deep(.v-switch .v-switch__track) {
-  height: 14px;
-  width: 28px;
-  border-radius: 7px;
+  height: 12px;
+  width: 24px;
+  border-radius: 6px;
 }
 :deep(.v-switch .v-switch__thumb) {
-  width: 10px;
-  height: 10px;
+  width: 9px;
+  height: 9px;
+}
+
+/* #187: smaller row labels than the Vuetify default, so the section header
+   ("LAYER") clearly outranks them, per the ASD-display template. */
+.filter-row :deep(.v-label) {
+  font-size: 0.8rem;
+  opacity: 0.9;
 }
 
 /* ASD-012 range-ring controls */
@@ -480,6 +552,37 @@ async function onLogout() {
 .prov-label {
   font-size: 0.8rem;
   opacity: 0.85;
+}
+
+/* #190: DWD weather legends (radar intensity / warning severity). Sits directly
+   under the toggle, indented like a sub-row, so it never overlaps the provenance
+   legend or the map chips. Shown only while the layer is on. */
+.wx-legend {
+  padding: 0 14px 8px 20px;
+}
+.wx-legend-caption {
+  display: block;
+  font-size: 10px;
+  color: rgba(var(--v-theme-on-surface), 0.45);
+  margin-bottom: 3px;
+}
+.wx-legend-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+.wx-legend-item {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.72rem;
+  opacity: 0.85;
+}
+.wx-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  margin-right: 4px;
+  flex-shrink: 0;
 }
 
 /* #116 account section */

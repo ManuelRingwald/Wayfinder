@@ -23,6 +23,12 @@ export const NAVAIDS_SOURCE_ID = 'navaids'
 export const NAVAIDS_LAYER_ID = 'navaids-symbols'
 export const WAYPOINTS_SOURCE_ID = 'waypoints'
 export const WAYPOINTS_LAYER_ID = 'waypoints-symbols'
+// #192: airport reference-point overlay (offline OurAirports directory, served
+// AOI-scoped by the backend). A circle marker + ICAO/name label.
+export const AIRPORT_SOURCE_ID = 'airports'
+export const AIRPORT_LAYER_ID = 'airports-markers'
+export const AIRPORT_LABEL_LAYER_ID = 'airports-labels'
+export const AIRPORT_URL = '/api/airports.geojson'
 
 // How often the frontend re-pulls the aeronautical GeoJSON. The backend itself
 // refreshes from OpenAIP on the AIRAC-paced interval; this only needs to be
@@ -35,6 +41,15 @@ export const VECTOR_LOOKAHEAD_S = 60
 
 // Maximum number of past positions kept per track for the trail display.
 export const TRAIL_MAX_POINTS = 20
+
+// #191: history-dots retention is configurable by DURATION (seconds), not a fixed
+// point count — with per-sensor scan periods a point count maps to no defined time
+// span. Points are stamped with the message arrival time (time_ms; monotonic, no
+// midnight wrap, unlike raw ASTERIX ToD) and pruned to this window. HISTORY_HARD_CAP
+// bounds memory for pathological update rates regardless of the window.
+export const DEFAULT_HISTORY_DURATION_S = 120
+export const HISTORY_DURATION_OPTIONS_S = [30, 60, 120, 300, 600]
+export const HISTORY_HARD_CAP = 600
 
 // Mean Earth radius (m), used for the local meters-to-degrees conversion of
 // the vector endpoint. Sufficient accuracy for display purposes.
@@ -56,6 +71,9 @@ export const LEADER_LINES_LAYER_ID = 'track-leader-lines-lines'
 // ring under the symbols so the symbol stays crisp on top.
 export const SELECTION_SOURCE_ID = 'track-selection'
 export const SELECTION_LAYER_ID = 'track-selection-ring'
+// #183: selection is drawn as a square corner-bracket box (ATC-scope look, design
+// ref EWG84F) rather than a ring; this is the pre-rendered box icon's id.
+export const SELECTION_ICON_ID = 'wf-selection-box'
 
 // Paket 6: Sensor coverage ring overlay — radar range circles fetched from
 // /api/coverage/rings as a static GeoJSON FeatureCollection.
@@ -102,6 +120,26 @@ export const WEATHER_WARNINGS_COLORS = {
   3: '#e5622d', // severe — orange-red
   4: '#c0392b', // extreme — red
 }
+
+// #190: sidebar legend for the warnings overlay — the severity ramp above with
+// German labels, shown only while the layer is toggled on.
+export const WEATHER_WARNINGS_LEGEND = [
+  { color: WEATHER_WARNINGS_COLORS[1], label: 'Wetterwarnung (gering)' },
+  { color: WEATHER_WARNINGS_COLORS[2], label: 'Markante Wetterwarnung' },
+  { color: WEATHER_WARNINGS_COLORS[3], label: 'Unwetterwarnung' },
+  { color: WEATHER_WARNINGS_COLORS[4], label: 'Extremes Unwetter' },
+]
+
+// #190: sidebar legend for the DWD radar — a representative precipitation-
+// intensity ramp (the DWD tiles are pre-coloured; this orients the operator on
+// the light→heavy scale). Approximate DWD reflectivity palette.
+export const WEATHER_RADAR_LEGEND = [
+  { color: '#4a90d9', label: 'leicht' },
+  { color: '#5cc85c', label: 'mäßig' },
+  { color: '#e6d84a', label: 'kräftig' },
+  { color: '#e5622d', label: 'stark' },
+  { color: '#c0392b', label: 'sehr stark' },
+]
 
 // ASD-002: Deconfliction geometry constants (all values in screen pixels).
 // LABEL_TEXT_SIZE      : data-block text size; used as the symbol layer's "text-size".

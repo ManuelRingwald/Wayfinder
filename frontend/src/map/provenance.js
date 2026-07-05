@@ -89,16 +89,16 @@ export const PROVENANCE_LABELS = {
 }
 
 // PROVENANCE_LEGEND: the scope's "shape = provenance" key. Each entry pairs the
-// map glyph (◆/●/■ drawn as geometric marks per the design legend, F as a letter
-// for FLARM — see map/layers.js) with its German label and the sensor classes
-// that can produce it. `kind` lets the legend draw the SAME geometric mark the
-// map paints (diamond/square/hollow-ring as inline SVG; a letter for FLARM/
-// combined) instead of a typeface-dependent glyph char. Single source of truth
+// map glyph (◆/●/■/▲ drawn as geometric marks per the design legend — see
+// map/layers.js) with its German label and the sensor classes that can produce
+// it. `kind` lets the legend draw the SAME geometric mark the map paints
+// (diamond/square/hollow-ring/triangle as inline SVG; a letter for combined)
+// instead of a typeface-dependent glyph char. Single source of truth
 // shared by the sidebar (LayerFilterContent) and the floating ScopeLegend; both
 // filter it to the tenant's actual feeds (session.sensorClasses, #107).
 export const PROVENANCE_LEGEND = [
   { kind: 'adsb', glyph: '◆', label: PROVENANCE_LABELS[PROVENANCE_ADSB], classes: ['ADS-B'] },
-  { kind: 'flarm', glyph: 'F', label: PROVENANCE_LABELS[PROVENANCE_FLARM], classes: ['FLARM'] },
+  { kind: 'flarm', glyph: '▲', label: PROVENANCE_LABELS[PROVENANCE_FLARM], classes: ['FLARM'] },
   { kind: 'ssr', glyph: '■', label: PROVENANCE_LABELS[PROVENANCE_SSR], classes: ['SSR', 'MODE_S', 'MLAT'] },
   { kind: 'psr', glyph: '●', label: PROVENANCE_LABELS[PROVENANCE_PSR], classes: ['PSR'] },
 ]

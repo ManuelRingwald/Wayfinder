@@ -16,10 +16,10 @@
       <div v-for="p in provenance" :key="p.label" class="scope-legend__row">
         <!-- Draw the SAME geometric mark the map paints (map/layers.js
              makeTrackIcon): ADS-B diamond, SSR square (filled), PSR a HOLLOW
-             ring; FLARM/combined keep their letter glyph (F/K), which is how
-             the map renders those Wayfinder-superset sources too. -->
+             ring, FLARM an upward triangle (#185); combined keeps its letter
+             glyph (K), which is how the map renders that superset source too. -->
         <svg
-          v-if="p.kind === 'adsb' || p.kind === 'ssr' || p.kind === 'psr'"
+          v-if="p.kind === 'adsb' || p.kind === 'ssr' || p.kind === 'psr' || p.kind === 'flarm'"
           class="scope-legend__mark"
           width="16"
           height="16"
@@ -27,6 +27,7 @@
         >
           <path v-if="p.kind === 'adsb'" d="M8 2 L14 8 L8 14 L2 8 Z" fill="var(--wf-scope-label)" />
           <rect v-else-if="p.kind === 'ssr'" x="2.6" y="2.6" width="10.8" height="10.8" fill="var(--wf-scope-label)" />
+          <path v-else-if="p.kind === 'flarm'" d="M8 2.5 L14 13.5 L2 13.5 Z" fill="var(--wf-scope-label)" />
           <circle v-else cx="8" cy="8" r="5.6" fill="none" stroke="var(--wf-scope-label)" stroke-width="1.8" />
         </svg>
         <span v-else class="scope-legend__glyph">{{ p.glyph }}</span>
