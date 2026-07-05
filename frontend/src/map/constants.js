@@ -36,6 +36,15 @@ export const VECTOR_LOOKAHEAD_S = 60
 // Maximum number of past positions kept per track for the trail display.
 export const TRAIL_MAX_POINTS = 20
 
+// #191: history-dots retention is configurable by DURATION (seconds), not a fixed
+// point count — with per-sensor scan periods a point count maps to no defined time
+// span. Points are stamped with the message arrival time (time_ms; monotonic, no
+// midnight wrap, unlike raw ASTERIX ToD) and pruned to this window. HISTORY_HARD_CAP
+// bounds memory for pathological update rates regardless of the window.
+export const DEFAULT_HISTORY_DURATION_S = 120
+export const HISTORY_DURATION_OPTIONS_S = [30, 60, 120, 300, 600]
+export const HISTORY_HARD_CAP = 600
+
 // Mean Earth radius (m), used for the local meters-to-degrees conversion of
 // the vector endpoint. Sufficient accuracy for display purposes.
 export const EARTH_RADIUS_M = 6371000
@@ -56,6 +65,9 @@ export const LEADER_LINES_LAYER_ID = 'track-leader-lines-lines'
 // ring under the symbols so the symbol stays crisp on top.
 export const SELECTION_SOURCE_ID = 'track-selection'
 export const SELECTION_LAYER_ID = 'track-selection-ring'
+// #183: selection is drawn as a square corner-bracket box (ATC-scope look, design
+// ref EWG84F) rather than a ring; this is the pre-rendered box icon's id.
+export const SELECTION_ICON_ID = 'wf-selection-box'
 
 // Paket 6: Sensor coverage ring overlay — radar range circles fetched from
 // /api/coverage/rings as a static GeoJSON FeatureCollection.

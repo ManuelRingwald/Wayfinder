@@ -25,6 +25,7 @@ import {
   LEADER_LINES_LAYER_ID,
   SELECTION_SOURCE_ID,
   SELECTION_LAYER_ID,
+  SELECTION_ICON_ID,
   LABEL_TEXT_SIZE,
   TRACK_STATE_COLORS,
   AIRSPACE_GROUPS,
@@ -176,8 +177,8 @@ const TRACK_ICON_STROKE = '#000000' // dark edge for legibility on both bases
 // makeTrackIcon paints one provenance symbol in the given state colour. Shape
 // encodes the surveillance source per the design legend: ADS-B a diamond ◆, SSR
 // a filled square ■ (cooperative reply, carries identity), PSR a HOLLOW ring ○
-// (raw skin paint, no ID). FLARM/combined stay letter glyphs (F / K) — sources
-// beyond the 3-way design legend that Wayfinder still receives.
+// (raw skin paint, no ID), FLARM an upward triangle ▲ (#185). Combined stays a
+// letter glyph (K) — the multi-sensor superset source beyond the design legend.
 //
 // Geometry mirrors the design template (scope-tracks.jsx symbolNode, s=5):
 // diamond 12 CSS px point-to-point, square 8 CSS px side, circle 9 CSS px dia,
@@ -238,10 +239,25 @@ function makeTrackIcon(shape, color, hollow) {
       strokeOrFill()
       return
     }
-    // flarm / combined: letter glyph in the state colour (F = FLARM, K =
-    // kombiniert/Mehr-Sensor #125) — sources outside the 3-way design legend.
+    if (shape === 'flarm') {
+      // FLARM (#185): an upward triangle — the remaining basic geometric mark,
+      // font-independent and consistent with "shape = provenance" (replacing the
+      // earlier letter "F", which broke the geometric systematics). Sized to the
+      // diamond's footprint (apex at c-12, base at c+10). The vertical-tendency
+      // arrows ▲/▼ (ASD-001b) live in the data block, not on the symbol, so there
+      // is no positional clash. Coasting => outline only (hollow convention).
+      ctx.beginPath()
+      ctx.moveTo(c, c - 12)
+      ctx.lineTo(c + 11, c + 10)
+      ctx.lineTo(c - 11, c + 10)
+      ctx.closePath()
+      strokeOrFill()
+      return
+    }
+    // combined: letter glyph in the state colour (K = kombiniert/Mehr-Sensor
+    // #125) — the multi-sensor superset source outside the 3-way design legend.
     // Coasting => outline the letter (no fill) to match the hollow convention.
-    const letter = { flarm: 'F', combined: 'K' }[shape] ?? '?'
+    const letter = { combined: 'K' }[shape] ?? '?'
     ctx.font = 'bold 22px sans-serif'
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
@@ -509,27 +525,59 @@ export function addTracksLayer(map) {
   })
 }
 
-// addSelectionLayer registers the ASD-007 selection halo: a cyan ring around the
-// currently selected track (design template symbolNode, r=11, stroke primary).
-// The source holds at most one Point (the selected track's live position, set by
-// renderSources); registered before addTracksLayer so the ring sits UNDER the
-// symbol and the symbol stays crisp on top. A hollow ring = fill opacity 0.
+// makeSelectionBox draws the ASD-007 selection marker as a square frame of four
+// L-shaped corner brackets (ATC-scope convention, design ref EWG84F, #183) in the
+// given colour. Corner brackets rather than a full square keep the track symbol
+// and its data block readable. Drawn on a 32-px canvas at pixelRatio 2, so every
+// value is the template CSS pixel × 2 (see makeIconImage / makeTrackIcon).
+function makeSelectionBox(color) {
+  return makeIconImage((ctx, s) => {
+    const c = s / 2
+    const half = 13 // box half-size (canvas px) — just outside the symbol footprint
+    const arm = 6    // corner-bracket arm length
+    ctx.strokeStyle = color
+    ctx.lineWidth = 2 // 1 CSS px at pixelRatio 2
+    ctx.lineCap = 'round'
+    ctx.lineJoin = 'round'
+    // Each corner: two arms running inward from the corner point.
+    for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+      const x = c + sx * half
+      const y = c + sy * half
+      ctx.beginPath()
+      ctx.moveTo(x - sx * arm, y) // horizontal arm inward
+      ctx.lineTo(x, y)
+      ctx.lineTo(x, y - sy * arm) // vertical arm inward
+      ctx.stroke()
+    }
+  }, 32)
+}
+
+// addSelectionLayer registers the ASD-007 selection marker: a cyan corner-bracket
+// BOX around the currently selected track (#183, replacing the earlier ring — the
+// box matches the ATC-scope look, design ref EWG84F). The source holds at most one
+// Point (the selected track's live position, set by renderSources); registered
+// before addTracksLayer so the box sits UNDER the symbol and the symbol stays
+// crisp on top. The box is a pre-rendered icon in the selection colour.
 export function addSelectionLayer(map, palette) {
   map.addSource(SELECTION_SOURCE_ID, {
     type: 'geojson',
     data: { type: 'FeatureCollection', features: [] },
   })
+  if (!map.hasImage(SELECTION_ICON_ID)) {
+    map.addImage(SELECTION_ICON_ID, makeSelectionBox(palette.selection), { pixelRatio: 2 })
+  }
   map.addLayer({
     id: SELECTION_LAYER_ID,
-    type: 'circle',
+    type: 'symbol',
     source: SELECTION_SOURCE_ID,
+    layout: {
+      'icon-image': SELECTION_ICON_ID,
+      'icon-allow-overlap': true,
+      'icon-ignore-placement': true,
+      'icon-rotation-alignment': 'map',
+    },
     paint: {
-      'circle-radius': 11,
-      'circle-color': 'transparent',
-      'circle-opacity': 0,
-      'circle-stroke-width': 1.4,
-      'circle-stroke-color': palette.selection,
-      'circle-stroke-opacity': 0.9,
+      'icon-opacity': 0.9,
     },
   })
 }
@@ -655,12 +703,19 @@ export function addHistoryDotsLayer(map, palette) {
     paint: {
       'circle-radius': 1.6, // design template: history dots r=1.6 CSS px
       'circle-color': palette.trail,
+      // #191: multiply the base state opacity by an AGE fade so dots grow fainter
+      // toward the older end of the trail (age 0 = newest → 1.0; age 1 = oldest →
+      // 0.12). The base 'case' keeps the ASD-004b/4c coasting/TSE/FL behaviour.
       'circle-opacity': [
-        'case',
-        ['has', 'fade_opacity'], ['*', 0.6, ['get', 'fade_opacity']],
-        ['has', 'fl_opacity'],   ['get', 'fl_opacity'],
-        ['get', 'coasting'], 0.2,
-        0.6,
+        '*',
+        ['interpolate', ['linear'], ['coalesce', ['get', 'age'], 0], 0, 1.0, 1, 0.12],
+        [
+          'case',
+          ['has', 'fade_opacity'], ['*', 0.6, ['get', 'fade_opacity']],
+          ['has', 'fl_opacity'],   ['get', 'fl_opacity'],
+          ['get', 'coasting'], 0.2,
+          0.6,
+        ],
       ],
     },
   })

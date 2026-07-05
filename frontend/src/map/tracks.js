@@ -2,7 +2,7 @@
 // All state (trackHistory, trackFlHistory, trackCoasting, fadingTracks,
 // liveTrackFeatures, liveVectorFeatures) is carried in a single `state`
 // object passed by the caller (engine.js), keeping this module pure.
-import { TRAIL_MAX_POINTS, FADE_DURATION_MS, VECTOR_LOOKAHEAD_S, EARTH_RADIUS_M } from './constants.js'
+import { HISTORY_HARD_CAP, DEFAULT_HISTORY_DURATION_S, FADE_DURATION_MS, VECTOR_LOOKAHEAD_S, EARTH_RADIUS_M } from './constants.js'
 import { buildLabel } from './label.js'
 import { trackProvenance } from './provenance.js'
 
@@ -43,11 +43,16 @@ export function flOpacity(flightLevelFt, flFilter) {
   return flFilter.hide ? 0.0 : 0.15
 }
 
-// updateTrackHistory appends each track's current position to its trail
-// history (capped at TRAIL_MAX_POINTS) and drops history for tracks that are
-// no longer present — but keeps history alive for tracks currently fading out
-// (ASD-004c), so their trail and dots remain visible during the fade.
-export function updateTrackHistory(tracks, state) {
+// updateTrackHistory appends each track's current position to its trail history
+// and drops history for tracks that are no longer present — but keeps history
+// alive for tracks currently fading out (ASD-004c), so their trail and dots
+// remain visible during the fade.
+//
+// #191: each point is stored as { c: [lon, lat], t } where t is the message
+// arrival time (ms). Retention is by DURATION (retentionMs) rather than a fixed
+// point count, so "last N minutes" is well-defined regardless of the per-sensor
+// scan period. HISTORY_HARD_CAP still bounds memory for pathological rates.
+export function updateTrackHistory(tracks, state, nowMs = Date.now(), retentionMs = DEFAULT_HISTORY_DURATION_S * 1000) {
   const seen = new Set()
 
   tracks.forEach((track) => {
@@ -57,10 +62,12 @@ export function updateTrackHistory(tracks, state) {
       hist = []
       state.trackHistory.set(track.track_num, hist)
     }
-    hist.push([track.longitude, track.latitude])
-    if (hist.length > TRAIL_MAX_POINTS) {
-      hist.shift()
-    }
+    hist.push({ c: [track.longitude, track.latitude], t: nowMs })
+    // Drop points older than the retention window (measured from this update).
+    const cutoff = nowMs - retentionMs
+    while (hist.length > 0 && hist[0].t < cutoff) hist.shift()
+    // Absolute safety cap on point count (memory bound), independent of duration.
+    if (hist.length > HISTORY_HARD_CAP) hist.splice(0, hist.length - HISTORY_HARD_CAP)
   })
 
   for (const trackNum of state.trackHistory.keys()) {
@@ -74,7 +81,7 @@ export function updateTrackHistory(tracks, state) {
 // it routes TSE tracks into the fade-out map (ASD-004c), computes per-track
 // vertical tendency and labels (ASD-001), builds live GeoJSON features, and
 // kicks off the fade-animation loop when needed.
-export function updateTracksLayer(msg, state, renderSources, startFadeLoop) {
+export function updateTracksLayer(msg, state, renderSources, startFadeLoop, retentionMs = DEFAULT_HISTORY_DURATION_S * 1000) {
   // TSE (Track-Service-End) tracks: register them for a graceful fade-out
   // (ASD-004c) instead of removing them instantly. Only the first TSE for a
   // given track_num sets the deadline; duplicates are ignored.
@@ -95,7 +102,10 @@ export function updateTracksLayer(msg, state, renderSources, startFadeLoop) {
   // from the fading map so it does not render with a stale fade_opacity.
   tracks.forEach((t) => state.fadingTracks.delete(t.track_num))
 
-  updateTrackHistory(tracks, state)
+  // Stamp history points with the message arrival time (time_ms; wall-clock,
+  // monotonic). Falls back to Date.now() for messages without it (e.g. tests).
+  const nowMs = typeof msg.time_ms === 'number' ? msg.time_ms : Date.now()
+  updateTrackHistory(tracks, state, nowMs, retentionMs)
 
   // Build the set of track_nums that need ongoing state (live + fading).
   const liveNums = new Set(tracks.map((t) => t.track_num))

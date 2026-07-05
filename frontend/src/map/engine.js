@@ -151,7 +151,13 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
     if (!state.mapLoaded) return
     // Pass the selected track number so renderSources keeps the selection halo
     // (ASD-007) pinned to the moving symbol; undefined clears the ring.
-    renderSources(map, state, store.flFilter, state.labelPins, palette, store.selectedTrack?.track_num)
+    // #191: pass the configured history retention (ms) so the dot age fade uses
+    // the operator's chosen window.
+    renderSources(
+      map, state, store.flFilter, state.labelPins, palette,
+      store.selectedTrack?.track_num,
+      store.historyConfig.durationS * 1000,
+    )
   }
 
   // Fade-loop management: start interval if not already running.
@@ -205,7 +211,7 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
           return
         }
         if (state.mapLoaded) {
-          updateTracksLayer(msg, state, doRender, startFadeLoop)
+          updateTracksLayer(msg, state, doRender, startFadeLoop, store.historyConfig.durationS * 1000)
         } else {
           state.pendingTracks = msg
         }
@@ -296,7 +302,7 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
     updateAirspaceFilter()
 
     if (state.pendingTracks) {
-      updateTracksLayer(state.pendingTracks, state, doRender, startFadeLoop)
+      updateTracksLayer(state.pendingTracks, state, doRender, startFadeLoop, store.historyConfig.durationS * 1000)
       state.pendingTracks = null
     }
 
@@ -386,6 +392,14 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
     doRender()
   }
 
+  // #191: history retention/fade changed — re-render immediately so the new
+  // window takes effect without waiting for the next WS update. (Points already
+  // stored are only pruned on the next updateTrackHistory, but the age fade and
+  // any future pruning use the new value at once.)
+  function updateHistoryConfig() {
+    doRender()
+  }
+
   // ASD-011: update MapLibre filters on the airspace layers to reflect the
   // current airspaceGroupVisibility state. Called by MapCanvas whenever the
   // store changes (or after map load to apply the initial state).
@@ -461,5 +475,5 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
     src.setData(rangeRingsGeoJSON(effectiveCenter.lat, effectiveCenter.lon, spacingNM, count))
   }
 
-  return { map, destroy, reconnect, setLayerVisibility, updateFlFilter, updateAirspaceFilter, updateSelection, zoomIn, zoomOut, recenter, applyViewCenter, updateRangeRings }
+  return { map, destroy, reconnect, setLayerVisibility, updateFlFilter, updateAirspaceFilter, updateSelection, updateHistoryConfig, zoomIn, zoomOut, recenter, applyViewCenter, updateRangeRings }
 }

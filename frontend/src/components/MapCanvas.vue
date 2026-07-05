@@ -100,6 +100,12 @@ watch(() => ({ ...store.rangeRingConfig }), (cfg) => {
   mapEngine?.updateRangeRings(cfg.spacingNM, cfg.count)
 }, { deep: true })
 
+// #191: re-render the history dots when the operator changes the retention
+// window (duration), so the trail length and age fade update immediately.
+watch(() => ({ ...store.historyConfig }), () => {
+  mapEngine?.updateHistoryConfig()
+}, { deep: true })
+
 // WF2-34: when the admin starts/switches/exits read-only impersonation
 // (ADR 0008), reconnect the WebSocket so the new grant cookie — and thus the new
 // tenant scope — takes effect immediately. loadStatus does not bump the nonce, so

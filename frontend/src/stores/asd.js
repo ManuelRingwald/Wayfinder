@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, reactive, computed } from 'vue'
-import { DEFAULT_RANGE_RING_SPACING_NM, DEFAULT_RANGE_RING_COUNT } from '@/map/constants.js'
+import { DEFAULT_RANGE_RING_SPACING_NM, DEFAULT_RANGE_RING_COUNT, DEFAULT_HISTORY_DURATION_S } from '@/map/constants.js'
 
 // The broadcast FeedStatusMessage carries a per-feed traffic-light *color*
 // (green/yellow/red, pkg/broadcast); the chip speaks in states. Mapping the
@@ -61,6 +61,13 @@ export const useAsdStore = defineStore('asd', () => {
     count: DEFAULT_RANGE_RING_COUNT,
   })
   function setRangeRingConfig(updates) { Object.assign(rangeRingConfig, updates) }
+
+  // #191: history-dots retention window (seconds). The engine prunes/fades the
+  // dots to this duration; MapCanvas watches it and re-renders on change.
+  const historyConfig = reactive({
+    durationS: DEFAULT_HISTORY_DURATION_S,
+  })
+  function setHistoryConfig(updates) { Object.assign(historyConfig, updates) }
 
   // FL filter
   const flFilter = reactive({
@@ -135,6 +142,7 @@ export const useAsdStore = defineStore('asd', () => {
     weatherWarningsAvailable, setWeatherWarningsAvailable,
     airspaceGroupVisibility,
     rangeRingConfig, setRangeRingConfig,
+    historyConfig, setHistoryConfig,
     selectedTrack, labelPins,
     setFeedHealth, resetFeedHealth, setMapLoaded, setPalette, setLayerVisibility,
     setFlFilter,

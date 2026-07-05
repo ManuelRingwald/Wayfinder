@@ -11,6 +11,7 @@ import {
   FADE_DURATION_MS,
   VECTOR_LOOKAHEAD_S,
   EARTH_RADIUS_M,
+  DEFAULT_HISTORY_DURATION_S,
 } from './constants.js'
 import { buildLabel } from './label.js'
 import { isFlFiltered, flOpacity } from './tracks.js'
@@ -38,7 +39,7 @@ function vectorEndpoint(lat, lon, vx, vy) {
 //   flFilter         — { minFL, maxFL, hide } from Pinia store
 //   labelPins        — Map<track_num, {dx, dy}> manual label overrides
 //   palette          — active foreground colour palette
-export function renderSources(map, state, flFilter, labelPins, palette, selectedTrackNum) {
+export function renderSources(map, state, flFilter, labelPins, palette, selectedTrackNum, historyRetentionMs = DEFAULT_HISTORY_DURATION_S * 1000) {
   const now = Date.now()
 
   // Live-track features: re-evaluate FL filter (ASD-005) each render call so
@@ -148,13 +149,20 @@ export function renderSources(map, state, flFilter, labelPins, palette, selected
       : undefined
     const flFt = state.trackFlHistory.get(trackNum)
     const flOp = flOpacity(flFt, flFilter)
-    for (const coord of hist) {
-      const props = { track_num: trackNum, coasting: isCoasting }
+    // #191: dot age is measured against the NEWEST point of this track (not the
+    // wall clock), so the trail fades from bright (newest) to faint (oldest)
+    // even when a coasting track has stopped updating. 0 = newest … 1 = oldest.
+    const newestT = hist.length ? hist[hist.length - 1].t : now
+    for (const { c, t } of hist) {
+      const age = historyRetentionMs > 0
+        ? Math.min(1, Math.max(0, (newestT - t) / historyRetentionMs))
+        : 0
+      const props = { track_num: trackNum, coasting: isCoasting, age }
       if (fadeOpacity !== undefined) props.fade_opacity = fadeOpacity
       if (flOp !== undefined) props.fl_opacity = flOp
       dotsFeatures.push({
         type: 'Feature',
-        geometry: { type: 'Point', coordinates: coord },
+        geometry: { type: 'Point', coordinates: c },
         properties: props,
       })
     }
@@ -181,7 +189,8 @@ export function renderSources(map, state, flFilter, labelPins, palette, selected
       if (flOp !== undefined) props.fl_opacity = flOp
       trailFeatures.push({
         type: 'Feature',
-        geometry: { type: 'LineString', coordinates: hist },
+        // #191: history points are now { c, t }; the line uses the coordinates.
+        geometry: { type: 'LineString', coordinates: hist.map((h) => h.c) },
         properties: props,
       })
     }
