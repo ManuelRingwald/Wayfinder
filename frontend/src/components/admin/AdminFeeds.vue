@@ -515,10 +515,15 @@ function credInfo(type) { return CREDENTIAL[type] || null }
 // its ref cleared. An already-persisted ref is kept, so a stored secret stays
 // linked to its source.
 function ensureCredRef(s) {
+  // #198: always (re)derive the ref for a credentialled source so a source-type
+  // change (adsb_opensky ↔ flarm_aprs) yields a ref whose suffix matches the NEW
+  // type. Previously it was set only when empty, so after switching to FLARM the
+  // stale "…-adsb_opensky" ref stuck around — a reference to a secret that never
+  // existed, producing endless "secret unresolved" noise in the orchestrator. The
+  // ref is deterministic from (feed_id, type), so re-deriving is idempotent for an
+  // unchanged type and self-heals an already-broken one on the next load + save.
   if (credInfo(s.type)) {
-    if (!(s.cred_ref || '').trim()) {
-      s.cred_ref = `secret/feed-${sourcesTarget.value?.id ?? 'new'}-${s.type}`
-    }
+    s.cred_ref = `secret/feed-${sourcesTarget.value?.id ?? 'new'}-${s.type}`
   } else {
     s.cred_ref = ''
   }
@@ -536,6 +541,13 @@ function secretError(i) {
   const p = secretPass.value[i] || ''
   if (!u && !p) return ''
   return validateCredential(u, p)
+}
+
+// secretTyped reports whether a complete, VALID credential pair was typed for
+// source row i — so submitSources can persist it in the same action (#199) and
+// buildSourcesPayload knows an optional source is about to get a secret (#198).
+function secretTyped(i) {
+  return combineCredential(secretUser.value[i], secretPass.value[i]) !== null
 }
 
 // loadFeedSecretsState reads which cred_refs are configured for the feed. A 503
@@ -559,9 +571,10 @@ async function saveSecret(i) {
   const ref = (sources.value[i]?.cred_ref || '').trim()
   // Combine the two fields into the single "user:pass" value the store keeps;
   // null means the pair is invalid (empty field / colon in username) — never store
-  // a malformed value the resolver would later misread.
+  // a malformed value the resolver would later misread. Returns true on success
+  // so submitSources can report an honest overall result (#199).
   const value = combineCredential(secretUser.value[i], secretPass.value[i])
-  if (!ref || value === null) return
+  if (!ref || value === null) return false
   secretBusy.value = i
   const r = await admin.setFeedSecret(sourcesTarget.value.id, ref, value)
   secretBusy.value = -1
@@ -569,9 +582,10 @@ async function saveSecret(i) {
     secretRefs.value = new Set(secretRefs.value).add(ref)
     secretUser.value = { ...secretUser.value, [i]: '' }
     secretPass.value = { ...secretPass.value, [i]: '' }
-  } else {
-    sourcesError.value = r.error || 'Secret konnte nicht gespeichert werden.'
+    return true
   }
+  sourcesError.value = r.error || 'Secret konnte nicht gespeichert werden.'
+  return false
 }
 
 async function clearSecret(i) {
@@ -685,7 +699,7 @@ function formatBBox(b) {
 // yields no bbox (the server treats it as unbounded, as before).
 function buildSourcesPayload() {
   return {
-    sources: sources.value.map((s) => {
+    sources: sources.value.map((s, i) => {
       const out = { type: s.type }
       if (isAreaType(s.type)) {
         const box = radiusNmToBbox(s.center_lat, s.center_lon, s.radius_nm)
@@ -707,8 +721,17 @@ function buildSourcesPayload() {
         const listen = (s.listen || '').trim()
         if (listen) out.listen = listen
       }
+      // #198: only carry a cred_ref that will actually resolve — a required
+      // credential (OpenSky always expects one) or an optional one that has a
+      // secret already stored or validly typed (about to be saved, #199). An
+      // anonymous FLARM source with no secret sends NO ref, so the orchestrator
+      // never logs "secret unresolved" for a reference that was never meant to
+      // exist.
       const ref = (s.cred_ref || '').trim()
-      if (ref) out.cred_ref = ref
+      const info = credInfo(s.type)
+      if (ref && info && (info.required || isSecretConfigured(ref) || secretTyped(i))) {
+        out.cred_ref = ref
+      }
       return out
     }),
   }
@@ -716,19 +739,52 @@ function buildSourcesPayload() {
 
 async function submitSources() {
   sourcesError.value = ''
+  // #199: pre-save validation. A source whose credential is REQUIRED (OpenSky)
+  // with neither a stored nor a validly typed secret must NOT be saved — that is
+  // the silent failure this fixes (a green toast, but the source runs anonymously
+  // and gets rate-limited). Also block an invalid typed secret rather than
+  // dropping it. Only meaningful when the secret store is on.
+  if (secretStoreEnabled.value) {
+    for (let i = 0; i < sources.value.length; i++) {
+      const info = credInfo(sources.value[i].type)
+      if (!info) continue
+      if (secretError(i)) {
+        sourcesError.value = `${info.title}: ${secretError(i)}`
+        return
+      }
+      const configured = isSecretConfigured((sources.value[i].cred_ref || '').trim())
+      if (info.required && !configured && !secretTyped(i)) {
+        sourcesError.value = `${info.title}: Zugang erforderlich, aber weder hinterlegt noch eingegeben.`
+        return
+      }
+    }
+  }
   busy.value = true
   const r = await admin.saveFeedSources(sourcesTarget.value.id, buildSourcesPayload())
-  if (r.ok) {
-    sources.value = (r.data.sources || []).map(toFormSource)
-    sources.value.forEach(ensureCredRef) // UX-4: auto-manage the credential ref
-    coveragePreview.value = formatBBox(r.data.coverage_bbox)
-    // #112: the feed row's sensor-mix chips are derived from its sources; reload
-    // the catalogue so the change shows immediately, without a manual tab switch.
-    await admin.loadFeeds()
-  } else {
+  if (!r.ok) {
     sourcesError.value = r.error || 'Speichern fehlgeschlagen.'
+    busy.value = false
+    return
   }
+  sources.value = (r.data.sources || []).map(toFormSource)
+  sources.value.forEach(ensureCredRef) // UX-4: auto-manage the credential ref
+  coveragePreview.value = formatBBox(r.data.coverage_bbox)
+  // #199: persist any typed secrets in the SAME action — one "Speichern" click
+  // saves the source AND its credential (previously the secret needed a separate,
+  // easily-missed button and was silently dropped by the main save).
+  let secretsOk = true
+  for (let i = 0; i < sources.value.length; i++) {
+    if (secretTyped(i) && !(await saveSecret(i))) secretsOk = false
+  }
+  // #112: the feed row's sensor-mix chips are derived from its sources; reload
+  // the catalogue so the change shows immediately, without a manual tab switch.
+  await admin.loadFeeds()
   busy.value = false
+  // #199: honest result — if a credential failed to persist, surface it in the
+  // dialog instead of leaving only the "Quellen gespeichert." toast standing.
+  if (!secretsOk && !sourcesError.value) {
+    sourcesError.value = 'Quellen gespeichert, aber ein Zugang konnte nicht hinterlegt werden.'
+  }
 }
 
 async function submitDelete() {
