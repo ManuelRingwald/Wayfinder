@@ -38,23 +38,36 @@ export function setupLabelDrag(map, state, onRender) {
     const [lon, lat] = trackFeature.geometry.coordinates
     const sym = map.project([lon, lat])
 
-    // If already pinned, use existing offset as the drag start point.
-    const currentPin = state.labelPins.get(trackNum) ?? {
-      dx: e.point.x - sym.x,
-      dy: e.point.y - sym.y,
+    // Current label screen position — the label feature carries the position
+    // it was actually rendered at (auto-placed or previously pinned), set by
+    // deconflictLabels(). Using this (instead of the symbol position) is what
+    // keeps the grabbed point under the cursor for not-yet-pinned labels.
+    const labelPos = map.project(feat.geometry.coordinates)
+
+    // Offset from the label's origin to the exact point grabbed by the mouse,
+    // so that point — not the label's origin — tracks the cursor while dragging.
+    const grab = { x: e.point.x - labelPos.x, y: e.point.y - labelPos.y }
+
+    // If already pinned, keep the existing offset as the drag start point;
+    // otherwise derive it from the current auto-placed label position.
+    const startPin = state.labelPins.get(trackNum) ?? {
+      dx: labelPos.x - sym.x,
+      dy: labelPos.y - sym.y,
     }
 
     drag = {
       trackNum,
       sym,
-      startMouse: { x: e.point.x, y: e.point.y },
-      startPin: currentPin,
+      grab,
+      startPin,
     }
     map.dragPan.disable()
 
     const onMove = (moveE) => {
-      const dx = drag.startPin.dx + (moveE.point.x - drag.startMouse.x)
-      const dy = drag.startPin.dy + (moveE.point.y - drag.startMouse.y)
+      // Re-derive the pin offset so the grabbed point (not the label origin)
+      // stays exactly under the cursor — no snap on the first move.
+      const dx = (moveE.point.x - drag.grab.x) - drag.sym.x
+      const dy = (moveE.point.y - drag.grab.y) - drag.sym.y
       state.labelPins.set(drag.trackNum, { dx, dy })
       onRender()
     }
