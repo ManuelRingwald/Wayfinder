@@ -219,3 +219,56 @@ Wayfinder zeichnet sie **geodätisch** (gleiche Distanz in jede Richtung), damit
 sie auf der Web-Mercator-Projektion nicht „gequetscht" erscheinen (ASD-012).
 **Abzugrenzen** vom *Coverage-Ring* (Paket 6), der die **Reichweite eines
 Sensors** zeigt, nicht ein Distanz-Raster.
+
+## Verantwortungsbereich (AoR / Area of Responsibility)
+
+Das **Luftraum-Volumen, das eine ATC-Einheit tatsächlich kontrolliert** und in
+dem sie Verkehr staffelt — für einen Flughafen-ANSP typischerweise die **CTR**
+(Tower) und die **TMA/CTA** (Approach). Es ist ein **definiertes Gebiet**
+(Koordinaten-Polygon mit Vertikalgrenzen und Luftraumklasse, im AIP publiziert),
+**kein Radius**. In Wayfinder ist die AoR eine **Darstellungs-Ebene** (Overlay),
+**kein** Track-Filter — sie sagt „das kontrolliere *ich*", nicht „diese Tracks
+zeige ich" (ADR 0021). Quelle der Polygone aktuell OpenAIP (ADR 0004).
+
+## Area of Interest (AoI) / Track-Scope
+
+Das **Volumen, das das System verfolgt und dem Lotsen anzeigt**. Die AoI
+**schließt die AoR ein, reicht aber bewusst darüber hinaus** (Größenordnung
+100–300 NM über die AoR-Grenze, ≈ 15–45 min Flugzeit), damit **anfliegender
+Verkehr früh** sichtbar ist — der Kernsatz **„sehen ≠ besitzen":** der Lotse
+*sieht* mehr, als er *kontrolliert*. In Wayfinder ist die AoI der **Track-Scope**:
+technisch die pro-Mandant **`view_configs.AOI`** (BBox) + FL-Band, server-seitig
+erzwungen (WF2-21.2), grob vorgelagert durch Fireflys `FIREFLY_COVERAGE_BBOX`
+(ADR 0012). **Das ist der „Radius, der nur die Tracks betrifft"** — bewusst
+größer als der Verantwortungsbereich (ADR 0021).
+
+## CTR (Control Zone / Kontrollzone)
+
+Kontrollierter Luftraum um einen (oder mehrere) Flughafen, **vom Boden** bis zu
+einer festgelegten Obergrenze; lateral mindestens ~5 NM in Anflugrichtung. Wird
+i. d. R. vom **Tower** kontrolliert. Im AIP unter **AD 2.17 „ATS airspace"** je
+Flughafen publiziert. Für Wayfinder ein typischer Bestandteil des
+**Verantwortungsbereichs** (AoR).
+
+## TMA (Terminal Manoeuvring Area / Terminal Control Area)
+
+Kontrollierter Luftraum **über** einer oder mehreren CTRs, am Zusammenlauf der
+ATS-Routen; Untergrenze ist ein **Level über Grund** (nicht der Boden). Wird
+i. d. R. von **Approach** kontrolliert. Im AIP zentral unter **ENR 2.1**
+publiziert (nicht je Flughafen wiederholt). Zweiter typischer Bestandteil der
+**AoR** eines Flughafen-ANSP.
+
+## CTA (Control Area / Kontrollbezirk)
+
+Kontrollierter Luftraum ab einem festgelegten Level über Grund aufwärts
+(zwischen CTR/TMA und den Luftstraßen bzw. en-route). Je nach Zuschnitt von
+Approach oder Area Control (ACC) kontrolliert. Für Wayfinder als AoR-/Kontext-
+Overlay relevant.
+
+## ATZ (Aerodrome Traffic Zone)
+
+Kleine Schutzzone unmittelbar am Flughafen (Boden bis wenige tausend Fuß). Anders
+als CTR/TMA ist die ATZ vielerorts ein **echter Zylinder** (Radius um den
+Bezugspunkt der Piste) — der Sonderfall, in dem ein Radius tatsächlich die
+Geometrie definiert.
+
