@@ -132,10 +132,11 @@ func main() {
 	broadcastFeedSnapshot := func(feedID int64, snap health.FeedSnapshot) {
 		_ = broadcaster.Send(broadcast.Message{
 			FeedStatus: &broadcast.FeedStatusMessage{
-				FeedID:        feedID,
-				Color:         snap.Color(),
-				SensorsActive: snap.SensorsActive,
-				SensorsTotal:  snap.SensorsTotal,
+				FeedID:         feedID,
+				Color:          snap.Color(),
+				SensorsActive:  snap.SensorsActive,
+				SensorsTotal:   snap.SensorsTotal,
+				DegradedReason: snap.DegradedReason,
 			},
 		})
 	}
@@ -173,7 +174,9 @@ func main() {
 				active++
 			}
 		}
-		feedRegistry.RecordSensors(feedID, active, len(statuses))
+		// The dominant per-source failure reason of the degraded sensors (ADR 0033)
+		// — surfaced on the feed-health chip so the operator sees WHY (#197).
+		feedRegistry.RecordSensors(feedID, active, len(statuses), cat063.DominantReason(statuses))
 		broadcastFeedSnapshot(feedID, feedRegistry.Snapshot(feedID, time.Now()))
 		return nil
 	}

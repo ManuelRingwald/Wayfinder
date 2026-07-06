@@ -84,6 +84,75 @@ const conBits = 0xC0
 // i06360FX is the FX bit (bit 1) of the variable-length I063/060 item.
 const i06360FX = 0x01
 
+// reSrcReasonBit marks the SRC-REASON sub-field present in the I063/RE
+// sub-field-spec octet (Firefly ADR 0033).
+const reSrcReasonBit = 0x80
+
+// Per-source failure reason codes carried in the I063/RE SRC-REASON sub-field
+// (Firefly ADR 0033, ICD 3.1.0). Exposed as strings so they travel unchanged to
+// the browser (feed_status.degraded_reason) and drive the feed-health chip.
+const (
+	// ReasonUnreachable — the source could not be reached (network/firewall/DNS/
+	// timeout). Credentials, if any, are fine.
+	ReasonUnreachable = "unreachable"
+	// ReasonAuth — authentication/authorisation failed (HTTP 401/403).
+	ReasonAuth = "auth"
+	// ReasonRateLimited — the source rate-limited the request (HTTP 429).
+	ReasonRateLimited = "rate_limited"
+)
+
+// reasonFromCode maps an I063/RE SRC-REASON octet to a reason string. Code 0
+// ("ok") is never sent on the wire; an unknown non-zero code is treated as
+// "degraded, reason unknown" ("") rather than guessed — forward tolerance
+// (Firefly ICD §9).
+func reasonFromCode(code byte) string {
+	switch code {
+	case 1:
+		return ReasonUnreachable
+	case 2:
+		return ReasonAuth
+	case 3:
+		return ReasonRateLimited
+	default:
+		return ""
+	}
+}
+
+// reasonPriority ranks reasons for the feed-level summary: the most
+// operator-actionable reason wins when a feed's degraded sensors disagree. A
+// wrong credential (auth) is the most directly fixable, then a rate limit, then
+// an unreachable network. Unknown/absent reasons rank lowest.
+func reasonPriority(reason string) int {
+	switch reason {
+	case ReasonAuth:
+		return 3
+	case ReasonRateLimited:
+		return 2
+	case ReasonUnreachable:
+		return 1
+	default:
+		return 0
+	}
+}
+
+// DominantReason returns the single most operator-actionable failure reason
+// among the degraded sensors in a block, or "" if none carry one. It collapses
+// a multi-sensor CAT063 block into the one reason the feed-health chip shows
+// (Firefly ADR 0033 / Wayfinder ADR 0020). Only degraded (non-operational)
+// sensors contribute; an operational sensor never carries a reason.
+func DominantReason(statuses []SensorStatus) string {
+	best := ""
+	for _, s := range statuses {
+		if s.Operational || s.Reason == "" {
+			continue
+		}
+		if reasonPriority(s.Reason) > reasonPriority(best) {
+			best = s.Reason
+		}
+	}
+	return best
+}
+
 // DecodeError is a CAT063 parsing error.
 type DecodeError struct{ msg string }
 
@@ -109,6 +178,11 @@ type SensorStatus struct {
 	TimeOfDay float64
 	// I063/060 CON — true when the sensor reports itself operational (CON = 00).
 	Operational bool
+	// I063/RE SRC-REASON — the per-source failure reason for a degraded sensor
+	// (Firefly ADR 0033): "unreachable", "auth", "rate_limited", or "" when no RE
+	// field is present (operational, or reason unknown). One of the Reason*
+	// constants.
+	Reason string
 }
 
 // DecodeSensorBlock parses a CAT063 data block: [CAT=0x3F][LEN: u16 BE][Record...].
@@ -214,19 +288,38 @@ func decodeRecord(data []byte, offset, end int) (SensorStatus, int, error) {
 				}
 				octet = ext[0]
 			}
-		case frnReservedExp, frnSpecialPurpose:
-			// RE (Reserved Expansion) and SP (Special Purpose) are
-			// explicit-length fields: the first octet is a length indicator that
-			// counts itself. Skip the whole field length-aware — this is how the
-			// decoder tolerates the per-source failure reason a later ICD adds in
-			// the RE field (ADR 0033) without breaking on it (forward-compat).
+		case frnReservedExp:
+			// I063/RE Reserved Expansion Field: [LEN][SUBFIELD_SPEC][SRC-REASON…].
+			// LEN counts itself. Parse the SRC-REASON sub-field (Firefly ADR 0033)
+			// so the feed-health chip can show WHY a source is degraded; anything
+			// past it is skipped by length. RE is self-delimiting, so an unknown
+			// trailing sub-field never desynchronises the parse.
 			lb, err := take(1)
 			if err != nil {
 				return s, offset, err
 			}
 			fieldLen := int(lb[0])
 			if fieldLen < 1 {
-				return s, offset, newErr("FRN %d explicit length is zero", frn)
+				return s, offset, newErr("RE field length is zero")
+			}
+			body, err := take(fieldLen - 1)
+			if err != nil {
+				return s, offset, err
+			}
+			// body[0] = sub-field spec; body[1] = SRC-REASON when its bit is set.
+			if len(body) >= 2 && body[0]&reSrcReasonBit != 0 {
+				s.Reason = reasonFromCode(body[1])
+			}
+		case frnSpecialPurpose:
+			// SP (Special Purpose) is an explicit-length field the decoder does not
+			// interpret: skip it length-aware (first octet = length incl. itself).
+			lb, err := take(1)
+			if err != nil {
+				return s, offset, err
+			}
+			fieldLen := int(lb[0])
+			if fieldLen < 1 {
+				return s, offset, newErr("SP field length is zero")
 			}
 			if _, err := take(fieldLen - 1); err != nil {
 				return s, offset, err

@@ -10,6 +10,24 @@
 
 ---
 
+## 🎯 Stand 2026-07-06 (CAT063 per-Quelle-Fehlergrund H4 → schließt #197)
+
+- **ADR 0020 — CAT063 `SRC-REASON` dekodieren + Feed-Health-Chip zeigt den Grund
+  (additiv, Fireflys ICD 3.1.0/ADR 0033):** Der CAT063-Decoder **liest** jetzt das
+  I063/RE-Feld (`[LEN][SUBFIELD=0x80][SRC-REASON]`) statt es nur zu überspringen →
+  `SensorStatus.Reason` ∈ {`unreachable`,`auth`,`rate_limited`,``}.
+  `cat063.DominantReason` verdichtet auf den dominanten Grund (Priorität
+  `auth`>`rate_limited`>`unreachable`); er fließt über
+  `RecordSensors(…, reason)` → `FeedSnapshot.DegradedReason` →
+  `FeedStatusMessage.degraded_reason` (WS + Admin-Endpoint) → ASD-Store
+  `feedDegradedReason` → **`FeedStatusChip`**: `SENSOR AUSFALL · NICHT ERREICHBAR`
+  / `· AUTH-FEHLER` / `· RATENLIMIT` + Tooltip. Grund beeinflusst die Farbe nicht.
+  Der Betreiber sieht damit **warum** eine Quelle still ist (Firewall vs. falsche
+  Credentials vs. Ratenlimit) — **schließt #197**. Rein additiv, kein
+  Lockstep-Zwang (älterer Firefly ohne RE → Chip wie bisher). Neue Decoder-/Store-/
+  Chip-Tests; FR-DATA-006, Milestone WF-CAT063, ADR 0020. `go test ./...`,
+  `go vet`, `gofmt`, `golangci-lint`, `vitest` (397) grün.
+
 ## 🎯 Stand 2026-07-06 (CAT063-UAP-Standardisierung H2, lockstep zu Firefly ADR 0032)
 
 - **ADR 0019 — CAT063-Decoder auf Standard-UAP (ICD 3.0.0, BREAKING, lockstep):**

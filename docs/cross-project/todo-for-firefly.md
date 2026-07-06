@@ -209,11 +209,16 @@ Admin-Ampel.
 >   SDPS, **NEU** I063/050 = Sensor, FSPEC `0xB8`; ICD 3.0.0 breaking (ADR 0032).
 > - **H2 (Wayfinder, erledigt):** Decoder auf Standard-UAP (Sensor aus I063/050)
 >   + RE/SP längen-tolerant (ADR 0019). **Lockstep mit H1 deployen.**
-> - **H3 (Firefly, offen):** echtes **I063/RE** (Reserved Expansion Field) mit
->   Vendor-Subfeld `SRC-REASON` (`0=ok, 1=unreachable, 2=auth, 3=rate_limited`)
->   + Reason-Ableitung aus den Poller-Fehlerpfaden; ICD additiv; ADR.
-> - **H4 (Wayfinder, offen):** RE-Reason dekodieren + Feed-Health-Chip →
->   Fixes #197.
+> - **H3 (Firefly, erledigt):** echtes **I063/RE** (Reserved Expansion Field) mit
+>   Vendor-Subfeld `SRC-REASON` (`0=ok, 1=unreachable, 2=auth, 3=rate_limited`,
+>   Layout `[LEN=0x03][0x80][code]`) + Reason-Ableitung aus den HTTP-Poller-
+>   Fehlerpfaden (`is_rate_limited`/`is_auth`); ICD 3.1.0 additiv, ADR 0033.
+>   FLARM/Radar ohne Grund.
+> - **H4 (Wayfinder, erledigt):** RE-`SRC-REASON` dekodiert (`SensorStatus.Reason`,
+>   `DominantReason`), über `FeedSnapshot.DegradedReason` →
+>   `FeedStatusMessage.degraded_reason` → **`FeedStatusChip`** (`· NICHT
+>   ERREICHBAR`/`· AUTH-FEHLER`/`· RATENLIMIT` + Tooltip); ADR 0020. Rein additiv.
+>   → **schließt #197**.
 
 ---
 

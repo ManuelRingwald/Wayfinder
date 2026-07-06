@@ -12,6 +12,7 @@
     variant="tonal"
     class="font-weight-bold feed-badge"
     prepend-icon="mdi-access-point"
+    :title="chipTitle"
   >
     {{ chipLabel }}
   </v-chip>
@@ -30,12 +31,40 @@ const chipColor = computed(() => ({
   unknown: 'secondary',
 }[store.feedStatus] ?? 'secondary'))
 
-const chipLabel = computed(() => ({
-  ok: 'FEED OK',
-  degraded: 'SENSOR AUSFALL',
-  stale: 'FEED STALE',
-  unknown: 'FEED ?',
-}[store.feedStatus] ?? 'FEED ?'))
+// Short German label for the CAT063 SRC-REASON (Firefly ADR 0033), appended to
+// the degraded chip so the operator sees WHY a source is down (#197): a firewall
+// (nicht erreichbar) needs no credential re-entry, unlike an auth failure.
+const REASON_LABEL = {
+  unreachable: 'NICHT ERREICHBAR',
+  auth: 'AUTH-FEHLER',
+  rate_limited: 'RATENLIMIT',
+}
+const REASON_TITLE = {
+  unreachable: 'Quelle nicht erreichbar (Netz/Firewall) — die Zugangsdaten sind vermutlich in Ordnung.',
+  auth: 'Authentifizierung fehlgeschlagen — Zugangsdaten der Quelle prüfen.',
+  rate_limited: 'Quelle drosselt die Abfragen (Rate Limit) — Abfrageintervall erhöhen oder warten.',
+}
+
+const chipLabel = computed(() => {
+  const base = {
+    ok: 'FEED OK',
+    degraded: 'SENSOR AUSFALL',
+    stale: 'FEED STALE',
+    unknown: 'FEED ?',
+  }[store.feedStatus] ?? 'FEED ?'
+  if (store.feedStatus === 'degraded' && REASON_LABEL[store.feedDegradedReason]) {
+    return `${base} · ${REASON_LABEL[store.feedDegradedReason]}`
+  }
+  return base
+})
+
+const chipTitle = computed(() => {
+  if (store.feedStatus === 'degraded') {
+    return REASON_TITLE[store.feedDegradedReason]
+      ?? 'Sensor-Teilausfall — mindestens eine Quelle liefert keine Daten.'
+  }
+  return undefined
+})
 </script>
 
 <style scoped>

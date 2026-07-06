@@ -224,7 +224,9 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
         // is the per-feed `color` (green/yellow/red, pkg/broadcast); the store
         // maps it to chip states and aggregates across feeds (#117).
         if (msg.feed_status) {
-          store.setFeedHealth(msg.feed_status.feed_id, msg.feed_status.color)
+          // degraded_reason (CAT063 I063/RE SRC-REASON, Firefly ADR 0033) is
+          // present only on a degraded feed with a known cause; the chip shows it.
+          store.setFeedHealth(msg.feed_status.feed_id, msg.feed_status.color, msg.feed_status.degraded_reason)
           return
         }
         if (state.mapLoaded) {

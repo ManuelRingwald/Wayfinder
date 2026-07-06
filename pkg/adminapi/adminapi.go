@@ -1225,6 +1225,10 @@ type feedHealthDTO struct {
 	// SensorsTotal drives Color "yellow" (degraded fusion).
 	SensorsActive int `json:"sensors_active"`
 	SensorsTotal  int `json:"sensors_total"`
+	// DegradedReason is the per-source failure reason for a degraded feed
+	// ("unreachable" / "auth" / "rate_limited"), from CAT063 I063/RE SRC-REASON
+	// (Firefly ADR 0033). Omitted when empty (healthy or reason unknown).
+	DegradedReason string `json:"degraded_reason,omitempty"`
 }
 
 // getFeedsHealth returns the current health state for every known feed.
@@ -1254,6 +1258,7 @@ func (h *Handler) getFeedsHealth(w http.ResponseWriter, r *http.Request) {
 			TrackCountRecent:  s.TrackCountRecent,
 			SensorsActive:     s.SensorsActive,
 			SensorsTotal:      s.SensorsTotal,
+			DegradedReason:    s.DegradedReason,
 		}
 	}
 	writeJSON(w, http.StatusOK, out)

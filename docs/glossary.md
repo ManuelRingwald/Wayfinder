@@ -198,6 +198,18 @@ verlässlich und auditierbar bleiben. **Wichtig:** Der Sensor-Mix ist ein
 **Feed-Metadatum**, kein Per-Track-Tag (ADR 0005 §6.4) — die *track-abgeleitete*
 Herkunft am Symbol (WF2-40) ist davon unabhängig.
 
+## Ausfallgrund einer Quelle (SRC-REASON)
+
+Wenn eine Quelle keine Daten mehr liefert, sagt der Feed-Health-Chip nicht nur
+**dass**, sondern auch **warum**. Firefly schickt den Grund im CAT063-Strom mit
+(Feld I063/RE), Wayfinder zeigt ihn am Chip: **nicht erreichbar** (`unreachable` —
+Netz/Firewall blockiert; die Zugangsdaten sind vermutlich in Ordnung),
+**Auth-Fehler** (`auth` — falsche/fehlende Zugangsdaten) oder **Ratenlimit**
+(`rate_limited` — die Quelle drosselt die Abfragen). So weiß der Betreiber sofort,
+ob ein Nachtippen der Zugangsdaten überhaupt hilft (nur bei `auth`) oder ob das
+Problem woanders liegt. Bei mehreren betroffenen Quellen zeigt der Chip den am
+direktesten behebbaren Grund zuerst (`auth` vor `rate_limited` vor `unreachable`).
+
 ## Range-Ring (Entfernungsring)
 
 Konzentrische Kreise **konstanter Boden-Distanz** (in nautischen Meilen) um einen

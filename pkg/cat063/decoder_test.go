@@ -223,6 +223,105 @@ func TestDecodeRejectsTruncatedInput(t *testing.T) {
 	}
 }
 
+// referenceDegradedWithReason returns the byte-exact CAT063 block Firefly emits
+// for one degraded sensor carrying an I063/RE SRC-REASON (Firefly ICD 3.1.0 §9,
+// ADR 0033). reasonCode is the last octet (1=unreachable, 2=auth, 3=rate_limited).
+//
+// 0x3F 0x00 0x10 0xB9 0x04 0x19 0x02 0x00 0x00 0x00 0x00 0x01 0x40 0x03 0x80 <code>
+// LEN=16; FSPEC=0xB9 0x04 (FRN 1+3+4+5 + FRN 13 RE); I063/060=0x40 (degraded);
+// I063/RE=[LEN=3][SUBFIELD=0x80][SRC-REASON].
+func referenceDegradedWithReason(reasonCode byte) []byte {
+	return []byte{
+		0x3F, 0x00, 0x10,
+		0xB9, 0x04,
+		0x19, 0x02,
+		0x00, 0x00, 0x00,
+		0x00, 0x01,
+		0x40,
+		0x03, 0x80, reasonCode,
+	}
+}
+
+// TestDecodeReasonFromReservedExpansion verifies the decoder reads the SRC-REASON
+// from the I063/RE field against Firefly's ICD 3.1.0 reference dump.
+func TestDecodeReasonFromReservedExpansion(t *testing.T) {
+	statuses, err := DecodeSensorBlock(referenceDegradedWithReason(0x01))
+	if err != nil {
+		t.Fatalf("DecodeSensorBlock: %v", err)
+	}
+	if len(statuses) != 1 {
+		t.Fatalf("expected 1 status, got %d", len(statuses))
+	}
+	s := statuses[0]
+	if s.Operational {
+		t.Errorf("operational: got true, want false (degraded)")
+	}
+	if s.SAC != 0 || s.SIC != 1 {
+		t.Errorf("sensor: got %02x/%02x, want 00/01", s.SAC, s.SIC)
+	}
+	if s.Reason != ReasonUnreachable {
+		t.Errorf("reason: got %q, want %q", s.Reason, ReasonUnreachable)
+	}
+}
+
+// TestDecodeReasonCodes maps every defined SRC-REASON code to its string, and an
+// unknown code to "" (degraded, reason unknown — forward tolerance).
+func TestDecodeReasonCodes(t *testing.T) {
+	cases := map[byte]string{
+		0x01: ReasonUnreachable,
+		0x02: ReasonAuth,
+		0x03: ReasonRateLimited,
+		0x09: "", // unknown → reason unknown
+	}
+	for code, want := range cases {
+		statuses, err := DecodeSensorBlock(referenceDegradedWithReason(code))
+		if err != nil {
+			t.Fatalf("code 0x%02x: %v", code, err)
+		}
+		if got := statuses[0].Reason; got != want {
+			t.Errorf("code 0x%02x: reason got %q, want %q", code, got, want)
+		}
+	}
+}
+
+// TestOperationalSensorHasNoReason confirms the plain (no-RE) reference block
+// decodes to an empty reason.
+func TestOperationalSensorHasNoReason(t *testing.T) {
+	statuses, err := DecodeSensorBlock(referenceSingleSensor())
+	if err != nil {
+		t.Fatalf("DecodeSensorBlock: %v", err)
+	}
+	if statuses[0].Reason != "" {
+		t.Errorf("operational reason: got %q, want empty", statuses[0].Reason)
+	}
+}
+
+// TestDominantReason picks the most operator-actionable reason among degraded
+// sensors and ignores operational ones.
+func TestDominantReason(t *testing.T) {
+	// auth outranks rate_limited outranks unreachable.
+	got := DominantReason([]SensorStatus{
+		{Operational: false, Reason: ReasonUnreachable},
+		{Operational: false, Reason: ReasonAuth},
+		{Operational: false, Reason: ReasonRateLimited},
+	})
+	if got != ReasonAuth {
+		t.Errorf("dominant: got %q, want %q", got, ReasonAuth)
+	}
+	// An operational sensor's reason is ignored; only the degraded one counts.
+	got = DominantReason([]SensorStatus{
+		{Operational: true, Reason: ReasonAuth},
+		{Operational: false, Reason: ReasonUnreachable},
+	})
+	if got != ReasonUnreachable {
+		t.Errorf("dominant with operational: got %q, want %q", got, ReasonUnreachable)
+	}
+	// All operational / no reasons → "".
+	if got := DominantReason([]SensorStatus{{Operational: true}}); got != "" {
+		t.Errorf("dominant all-ok: got %q, want empty", got)
+	}
+}
+
 // TestDecodeLENExceedsData checks the bounds check when LEN > actual data.
 func TestDecodeLENExceedsData(t *testing.T) {
 	block := referenceSingleSensor()
