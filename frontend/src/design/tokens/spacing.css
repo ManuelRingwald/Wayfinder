@@ -24,4 +24,6 @@
   --wf-panel-pad: 8px 0 16px;      /* filter panel padding */
   --wf-card-pad: 16px;             /* pa-4 card interior */
   --wf-overlay-gap: 12px;          /* floating overlay inset from map edge */
+  --wf-overlay-legend-width: 232px; /* scope legend open width (#194 Häppchen 3) */
+  --wf-overlay-detail-width: 292px; /* track-detail card width (#194 Häppchen 3) */
 }

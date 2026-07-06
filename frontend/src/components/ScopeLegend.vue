@@ -99,9 +99,10 @@ const states = [
   opacity: 0.6;
 }
 .scope-legend__body {
-  /* #194: fluid open width — 232px design default, but never wider than the
-     viewport minus the corner insets on a narrow phone. */
-  width: min(232px, calc(100vw - 90px));
+  /* #194: fluid open width — token default (232px, one step wider on a 24″
+     display, Häppchen 3), but never wider than the viewport minus the corner
+     insets on a narrow phone. */
+  width: min(var(--wf-overlay-legend-width, 232px), calc(100vw - 90px));
   padding: 0 12px 10px;
 }
 .scope-legend__section {

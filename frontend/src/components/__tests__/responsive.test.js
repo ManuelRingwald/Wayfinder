@@ -12,12 +12,14 @@ import mapControls from '../MapControls.vue?raw'
 import trackDetail from '../TrackDetailPanel.vue?raw'
 import scopeLegend from '../ScopeLegend.vue?raw'
 import navigationRail from '../NavigationRail.vue?raw'
+import adminFeeds from '../admin/AdminFeeds.vue?raw'
 
 // CSS/HTML `?raw` imports come back empty under Vitest's transform, so read the
 // files directly for the foundation assertions.
 const read = (rel) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8')
 const base = read('../../design/base.css')
 const indexHtml = read('../../../index.html')
+const spacingTokens = read('../../design/tokens/spacing.css')
 
 describe('safe-area foundation (#194)', () => {
   it('index.html opts into viewport-fit=cover', () => {
@@ -64,9 +66,11 @@ describe('fluid overlays + mobile controls (#194)', () => {
     expect(mapControls).toContain('map-controls--mobile')
     expect(mapControls).toContain('var(--wf-bottom-nav-h')
   })
-  it('the track-detail card and scope legend use fluid widths', () => {
-    expect(trackDetail).toContain('width: min(292px')
-    expect(scopeLegend).toContain('width: min(232px')
+  it('the track-detail card and scope legend use fluid, token-driven widths', () => {
+    // #194 Häppchen 3: the base width is a token (so it grows a step on 24″),
+    // still capped by the viewport via min().
+    expect(trackDetail).toContain('width: min(var(--wf-overlay-detail-width, 292px)')
+    expect(scopeLegend).toContain('width: min(var(--wf-overlay-legend-width, 232px)')
   })
 })
 
@@ -125,5 +129,39 @@ describe('iPad / tablet-landscape rail (#194 Häppchen 2)', () => {
     expect(mapControls).toContain("'map-controls--touch': tabletLandscape")
     expect(mapControls).toContain('.map-controls--touch .map-controls__group :deep(.v-btn)')
     expect(mapControls).toContain('var(--wf-touch-min, 44px)')
+  })
+})
+
+describe('large display / 24" scaling (#194 Häppchen 3)', () => {
+  it('spacing tokens declare overlay width defaults; base.css steps them up on xl', () => {
+    expect(spacingTokens).toContain('--wf-overlay-legend-width: 232px')
+    expect(spacingTokens).toContain('--wf-overlay-detail-width: 292px')
+    // xl band (≥1920px) widens the gap + overlay widths one step so 24" breathes.
+    expect(base).toContain('@media (min-width: 1920px)')
+    expect(base).toContain('--wf-overlay-gap: 20px')
+    expect(base).toContain('--wf-overlay-legend-width: 268px')
+    expect(base).toContain('--wf-overlay-detail-width: 336px')
+  })
+  it('the ASD edge insets derive from the overlay-gap token so they breathe on xl', () => {
+    // Top-right cluster, scope legend and map controls all read the gap token
+    // rather than a hardcoded 12px, so the xl step reaches every corner.
+    expect(asdView).toContain('top: calc(var(--wf-overlay-gap, 12px) + var(--wf-safe-top, 0px))')
+    expect(asdView).toContain('bottom: var(--wf-overlay-gap, 12px)')
+    expect(mapControls).toContain('right: calc(var(--wf-overlay-gap, 12px) + var(--wf-safe-right, 0px))')
+  })
+})
+
+describe('admin panel large + narrow (#194 Häppchen 4)', () => {
+  it('the admin content column widens a step on a 24" display', () => {
+    expect(adminView).toContain('.admin-container {\n  max-width: 1180px;\n}')
+    expect(adminView).toContain('@media (min-width: 1920px)')
+    expect(adminView).toContain('max-width: 1440px')
+  })
+  it('admin dialogs cap to the viewport on a narrow phone', () => {
+    // A 460/520/720px dialog would overflow a 360px phone; min(px, 94vw) caps it.
+    expect(adminFeeds).toContain('max-width="min(720px, 94vw)"')
+    expect(adminFeeds).toContain('max-width="min(520px, 94vw)"')
+    // No bare numeric max-width left on an admin dialog.
+    expect(adminFeeds).not.toMatch(/<v-dialog[^>]*max-width="\d+"/)
   })
 })
