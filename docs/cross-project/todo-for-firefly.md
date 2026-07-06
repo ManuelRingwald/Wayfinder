@@ -24,6 +24,24 @@ trägt optionales `poll_interval_secs` (Kontrakt v1.4.0, additiv; nur `> 0`
 
 ---
 
+## ADS-B ohne Zugang: Community-Aggregator — erledigt ✅ (Firefly #53 / Wayfinder #201)
+
+**Beobachtung (Diagnose 2026-07-05):** OpenSky verwirft Verbindungen aus
+Datacenter-IP-Ranges (GitHub Codespaces/Azure: DNS ok, TCP-Timeout) — der
+`adsb_opensky`-Pfad ist aus solchen Umgebungen strukturell tot; zusätzlich ist
+der OAuth2-Zugang die häufigste Fehlkonfigurations-Quelle (#198/#199).
+**Firefly-Antwort: ADR 0031 / PR #54 (Issue #53, `from-wayfinder`)** — neuer
+Quell-Typ `adsb_aggregator` (Kontrakt **v1.5.0**, additiv): auth-freier
+ADS-B-Bezug über adsb.lol (Default) / adsb.fi, `provider`-Feld, BBox→Umkreis
+(max 250 NM, Clamp mit WARN) + Rückfilter, `poll_interval_secs` gilt auch hier,
+`cred_env` wird ignoriert. airplanes.live zurückgestellt (Radius-Einheit
+unverifiziert). **Wayfinder-Folge (umgesetzt, #201):** Store-Vokabular +
+`provider`-Whitelist, Docker-Backend-Passthrough, UI-Typ
+„ADS-B (Community-Aggregator)" mit Anbieter-Select, ohne Credential-Block.
+OpenSky bleibt vollwertig daneben (Anbieterwahl pro Quelle).
+
+---
+
 ## Stand nach Fireflys ADR 0014 (Pivot Lernprojekt → Produktion, CAT062-Konsum)
 
 Die ursprünglichen Issues #6–#10 wurden formuliert, als Wayfinder noch gegen den

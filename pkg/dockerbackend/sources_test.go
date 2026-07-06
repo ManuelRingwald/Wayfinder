@@ -130,6 +130,40 @@ func TestFireflySourcesEnvPollIntervalPassthrough(t *testing.T) {
 	}
 }
 
+// provider is passed through into the FIREFLY_SOURCES JSON for an
+// adsb_aggregator source (contract v1.5.0 / ADR 0031); a source without it
+// omits the field so Firefly keeps its default (adsb_lol). The type is
+// auth-free, so no cred_env is emitted even when a resolved map is present.
+func TestFireflySourcesEnvAggregatorProviderPassthrough(t *testing.T) {
+	sources := store.SourceConfig{
+		{Type: store.SourceADSBAggregator, BBox: &store.BBox{MinLat: 1, MinLon: 2, MaxLat: 3, MaxLon: 4}, Provider: "adsb_fi", PollIntervalSecs: ptrInt(15)},
+		{Type: store.SourceADSBAggregator, BBox: &store.BBox{MinLat: 1, MinLon: 2, MaxLat: 3, MaxLon: 4}},
+	}
+	js, credEnvs, ok := fireflySourcesEnv(sources, map[string]string{"secret/unrelated": "v"})
+	if !ok {
+		t.Fatal("expected ok")
+	}
+	var got []map[string]any
+	if err := json.Unmarshal([]byte(js), &got); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if got[0]["type"] != "adsb_aggregator" || got[0]["provider"] != "adsb_fi" {
+		t.Errorf("first source = %v, want adsb_aggregator with provider adsb_fi", got[0])
+	}
+	if got[0]["poll_interval_secs"] != 15.0 {
+		t.Errorf("poll_interval_secs = %v, want 15", got[0]["poll_interval_secs"])
+	}
+	if _, has := got[1]["provider"]; has {
+		t.Error("source without provider must omit the field (Firefly default adsb_lol)")
+	}
+	if _, has := got[0]["cred_env"]; has {
+		t.Error("aggregator source must not carry a cred_env (auth-free)")
+	}
+	if len(credEnvs) != 0 {
+		t.Errorf("credEnvs = %v, want none", credEnvs)
+	}
+}
+
 // cred_env names and value envs are assigned by list position.
 func TestFireflySourcesEnvCredByIndex(t *testing.T) {
 	sources := store.SourceConfig{
