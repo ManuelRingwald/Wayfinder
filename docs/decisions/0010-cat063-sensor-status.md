@@ -1,7 +1,16 @@
 # ADR 0010 — CAT063 Sensor Status Decoder (Per-Sensor-Liveness)
 
-- **Status:** akzeptiert
+- **Status:** akzeptiert; UAP-Format **abgelöst durch ADR 0019**
 - **Datum:** 2026-06-25
+
+> ⚠️ **Nachtrag (ADR 0019, 2026-07-06):** Das hier beschriebene Record-Format
+> (FSPEC `0xE0`; Sensor-Identität in I063/010; I063/030 auf FRN 2, I063/060 auf
+> FRN 3) folgte Fireflys damaliger, **nicht standardkonformer** CAT063-UAP. Mit
+> Fireflys ADR 0032 (ICD 3.0.0, breaking) wurde die UAP auf die echten
+> EUROCONTROL-FRN-Slots gebracht; Wayfinders Decoder zieht in **ADR 0019** nach
+> (Sensor aus I063/050, FSPEC `0xB8`, RE/SP längen-tolerant). Zweck und
+> Verdrahtung (WF-2/WF-3, Health-Registry, Banner) bleiben gültig; nur das
+> Byte-Format ist überholt.
 - **Schnittstellen-relevant:** ja (CAT063/`0x3F` neu auf dem Multicast-Strom,
   ICD → 2.5.0, additiv; Auslöser Firefly ADR 0022 / Issue #32 `from-wayfinder`)
 - **Bezug:** Spiegel zu Fireflys ADR 0022; schließt den Blocker für das gelbe

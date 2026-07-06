@@ -3,26 +3,27 @@ package cat063
 import "testing"
 
 // referenceSingleSensor returns the byte-exact CAT063 block Firefly emits for
-// one operational sensor (SIC=1, SAC=0, midnight). This is the cross-project
-// ground truth from Firefly ICD §9 / ADR 0022.
+// one operational sensor (sensor SIC=1, SAC=0; SDPS 25/2; midnight). This is the
+// cross-project ground truth from Firefly ICD §9 (3.0.0 / ADR 0032).
 //
-// 0x3F 0x00 0x0A 0xE0 0x00 0x01 0x00 0x00 0x00 0x00
-// LEN=10; FSPEC=0xE0; I063/010=00 01; I063/030=00 00 00; I063/060=0x00.
+// 0x3F 0x00 0x0C 0xB8 0x19 0x02 0x00 0x00 0x00 0x00 0x01 0x00
+// LEN=12; FSPEC=0xB8 (FRN 1+3+4+5); I063/010=19 02 (SDPS 25/2);
+// I063/030=00 00 00; I063/050=00 01 (sensor 0/1); I063/060=0x00 (CON operational).
 func referenceSingleSensor() []byte {
-	return []byte{0x3F, 0x00, 0x0A, 0xE0, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00}
+	return []byte{0x3F, 0x00, 0x0C, 0xB8, 0x19, 0x02, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00}
 }
 
 // referenceTwoSensors returns the byte-exact CAT063 block with two sensors
-// (SIC=1 operational, SIC=2 degraded). From Firefly ICD §9.
+// (SIC=1 operational, SIC=2 degraded). From Firefly ICD §9 (3.0.0).
 //
-// 0x3F 0x00 0x11
-// 0xE0 0x00 0x01 0x00 0x00 0x00 0x00   Sensor 1 operational
-// 0xE0 0x00 0x02 0x00 0x00 0x00 0x40   Sensor 2 degraded (NOGO 0x40)
+// 0x3F 0x00 0x15
+// 0xB8 0x19 0x02 0x00 0x00 0x00 0x00 0x01 0x00   Sensor 1 operational
+// 0xB8 0x19 0x02 0x00 0x00 0x00 0x00 0x02 0x40   Sensor 2 degraded (CON 0x40)
 func referenceTwoSensors() []byte {
 	return []byte{
-		0x3F, 0x00, 0x11,
-		0xE0, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
-		0xE0, 0x00, 0x02, 0x00, 0x00, 0x00, 0x40,
+		0x3F, 0x00, 0x15,
+		0xB8, 0x19, 0x02, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00,
+		0xB8, 0x19, 0x02, 0x00, 0x00, 0x00, 0x00, 0x02, 0x40,
 	}
 }
 
@@ -37,8 +38,13 @@ func TestDecodeSingleOperationalSensor(t *testing.T) {
 		t.Fatalf("expected 1 status, got %d", len(statuses))
 	}
 	s := statuses[0]
+	// Sensor identity now comes from I063/050 (ADR 0032), not I063/010.
 	if s.SAC != 0 || s.SIC != 1 {
-		t.Errorf("source: got %02x/%02x, want 00/01", s.SAC, s.SIC)
+		t.Errorf("sensor (I063/050): got %02x/%02x, want 00/01", s.SAC, s.SIC)
+	}
+	// I063/010 now carries the SDPS identity (25/2 = 0x19/0x02).
+	if s.SDPSSAC != 25 || s.SDPSSIC != 2 {
+		t.Errorf("SDPS (I063/010): got %d/%d, want 25/2", s.SDPSSAC, s.SDPSSIC)
 	}
 	if s.TimeOfDay != 0 {
 		t.Errorf("time of day: got %f, want 0", s.TimeOfDay)
@@ -60,25 +66,31 @@ func TestDecodeTwoSensors(t *testing.T) {
 	}
 
 	if statuses[0].SAC != 0 || statuses[0].SIC != 1 {
-		t.Errorf("sensor 1 source: got %02x/%02x, want 00/01", statuses[0].SAC, statuses[0].SIC)
+		t.Errorf("sensor 1 (I063/050): got %02x/%02x, want 00/01", statuses[0].SAC, statuses[0].SIC)
 	}
 	if !statuses[0].Operational {
 		t.Errorf("sensor 1: expected operational, got degraded")
 	}
 
 	if statuses[1].SAC != 0 || statuses[1].SIC != 2 {
-		t.Errorf("sensor 2 source: got %02x/%02x, want 00/02", statuses[1].SAC, statuses[1].SIC)
+		t.Errorf("sensor 2 (I063/050): got %02x/%02x, want 00/02", statuses[1].SAC, statuses[1].SIC)
 	}
 	if statuses[1].Operational {
 		t.Errorf("sensor 2: expected degraded, got operational")
 	}
+	// Every record carries the same SDPS identity (I063/010 = 25/2).
+	for i, s := range statuses {
+		if s.SDPSSAC != 25 || s.SDPSSIC != 2 {
+			t.Errorf("record %d SDPS: got %d/%d, want 25/2", i, s.SDPSSAC, s.SDPSSIC)
+		}
+	}
 }
 
 // TestDecodeTimeOfDay checks the 1/128-s scaling of I063/030.
-// 01:00:00 = 3600 s → 3600 × 128 = 460800 = 0x070800.
+// 01:00:00 = 3600 s → 3600 × 128 = 460800 = 0x070800. In the 3.0.0 layout the
+// ToD octets sit at offsets 6–8 (after CAT/LEN/FSPEC/I063/010).
 func TestDecodeTimeOfDay(t *testing.T) {
 	block := referenceSingleSensor()
-	// Overwrite ToD bytes (offsets 6–8) with 0x07 0x08 0x00.
 	block[6], block[7], block[8] = 0x07, 0x08, 0x00
 	statuses, err := DecodeSensorBlock(block)
 	if err != nil {
@@ -89,31 +101,93 @@ func TestDecodeTimeOfDay(t *testing.T) {
 	}
 }
 
-// TestDecodeDegradedSensor checks that NOGO=0x40 (I063/060 bits 8/7 = 01) is
+// TestDecodeDegradedSensor checks that CON=0x40 (I063/060 bits 8/7 = 01) is
 // decoded as Operational=false.
 func TestDecodeDegradedSensor(t *testing.T) {
 	block := referenceSingleSensor()
-	block[len(block)-1] = 0x40 // NOGO = 0x40 → degraded
+	block[len(block)-1] = 0x40 // CON = 0x40 → degraded
 	statuses, err := DecodeSensorBlock(block)
 	if err != nil {
 		t.Fatalf("DecodeSensorBlock: %v", err)
 	}
 	if statuses[0].Operational {
-		t.Errorf("operational: got true, want false for NOGO=0x40")
+		t.Errorf("operational: got true, want false for CON=0x40")
 	}
 }
 
-// TestDecodeNotConnected checks that NOGO=0x80 (bits 8/7 = 10) is also not
-// operational (extends beyond Firefly's current encoding, forward-compat).
+// TestDecodeNotConnected checks that CON=0xC0 (bits 8/7 = 11, "not connected")
+// is also not operational (extends beyond Firefly's current encoding,
+// forward-compat).
 func TestDecodeNotConnected(t *testing.T) {
 	block := referenceSingleSensor()
-	block[len(block)-1] = 0x80 // NOGO = 0x80 → not connected
+	block[len(block)-1] = 0xC0 // CON = 0xC0 → not connected
 	statuses, err := DecodeSensorBlock(block)
 	if err != nil {
 		t.Fatalf("DecodeSensorBlock: %v", err)
 	}
 	if statuses[0].Operational {
-		t.Errorf("operational: got true, want false for NOGO=0x80")
+		t.Errorf("operational: got true, want false for CON=0xC0")
+	}
+}
+
+// TestDecodeStandardFSPEC guards against a regression to the old non-standard
+// compacted UAP (0xE0): the standard UAP subset is FRN 1+3+4+5 → FSPEC 0xB8.
+func TestDecodeStandardFSPEC(t *testing.T) {
+	block := referenceSingleSensor()
+	if block[3] != 0xB8 {
+		t.Fatalf("reference FSPEC: got 0x%02x, want 0xB8", block[3])
+	}
+	if _, err := DecodeSensorBlock(block); err != nil {
+		t.Errorf("standard-UAP block should decode: %v", err)
+	}
+}
+
+// TestDecodeSkipsReservedExpansion verifies the decoder length-skips a Reserved
+// Expansion Field (RE, FRN 13) it does not consume — the forward-compatibility
+// path for the per-source failure reason a later ICD adds (Firefly ADR 0033).
+// The record still decodes to the sensor status that precedes the RE field.
+func TestDecodeSkipsReservedExpansion(t *testing.T) {
+	// FSPEC [0xB9, 0x04]: FRN 1+3+4+5 (0xB8) + FX (0x01) → second octet, FRN 13
+	// (0x04). RE field: [0x03, 0xAA, 0xBB] (length octet 3 counts itself + 2).
+	record := []byte{
+		0xB9, 0x04, // FSPEC: FRN 1+3+4+5 + FRN 13 (RE)
+		0x19, 0x02, // I063/010 SDPS 25/2
+		0x00, 0x00, 0x00, // I063/030 time=0
+		0x00, 0x01, // I063/050 sensor 0/1
+		0x00,             // I063/060 CON operational
+		0x03, 0xAA, 0xBB, // RE: explicit length 3 (skip 2 payload octets)
+	}
+	block := append([]byte{0x3F, 0x00, byte(3 + len(record))}, record...)
+	statuses, err := DecodeSensorBlock(block)
+	if err != nil {
+		t.Fatalf("DecodeSensorBlock with RE field: %v", err)
+	}
+	if len(statuses) != 1 {
+		t.Fatalf("expected 1 status, got %d", len(statuses))
+	}
+	if statuses[0].SAC != 0 || statuses[0].SIC != 1 {
+		t.Errorf("sensor: got %02x/%02x, want 00/01", statuses[0].SAC, statuses[0].SIC)
+	}
+	if !statuses[0].Operational {
+		t.Errorf("operational: got false, want true")
+	}
+}
+
+// TestDecodeRejectsSpareFRN ensures a present bit for a spare/unknown FRN whose
+// length the decoder cannot know is rejected (not silently mis-parsed). FRN 12
+// is spare in the CAT063 UAP.
+func TestDecodeRejectsSpareFRN(t *testing.T) {
+	// FSPEC [0xB9, 0x08]: FRN 1+3+4+5 + FX, then FRN 12 (0x08) present.
+	record := []byte{
+		0xB9, 0x08,
+		0x19, 0x02,
+		0x00, 0x00, 0x00,
+		0x00, 0x01,
+		0x00,
+	}
+	block := append([]byte{0x3F, 0x00, byte(3 + len(record))}, record...)
+	if _, err := DecodeSensorBlock(block); err == nil {
+		t.Errorf("expected error for spare FRN 12, got nil")
 	}
 }
 
@@ -153,7 +227,7 @@ func TestDecodeRejectsTruncatedInput(t *testing.T) {
 func TestDecodeLENExceedsData(t *testing.T) {
 	block := referenceSingleSensor()
 	block[1] = 0x00
-	block[2] = 0xFF // LEN=255 but data is only 10 bytes
+	block[2] = 0xFF // LEN=255 but data is only 12 bytes
 	if _, err := DecodeSensorBlock(block); err == nil {
 		t.Errorf("expected error for LEN > len(data), got nil")
 	}

@@ -38,18 +38,34 @@ viele Radare betroffen sind.
 
 **Neues Paket** nach dem Muster von `pkg/cat065`.
 
-### Format (FSPEC `0xE0`)
+### Format (FSPEC `0xB8`, Standard-UAP ab ICD 3.0.0)
 
-Jeder Record: 3 Items hintereinander, kein FX-Bit.
+> ⚠️ **UAP-Standardisierung (ICD 3.0.0, Fireflys ADR 0032 / Wayfinder ADR 0019,
+> BREAKING).** Bis ICD 2.6.1 trug der Record eine kompaktierte UAP (FSPEC `0xE0`;
+> Sensor-Identität in I063/010; I063/030 auf FRN 2, I063/060 auf FRN 3). Ab
+> 3.0.0 gelten die echten EUROCONTROL-FRN-Slots: I063/010 = **SDPS**-Identität
+> (FRN 1), I063/030 (FRN 3), **NEU** I063/050 = **Sensor**-Identität (FRN 4),
+> I063/060 (FRN 5) → FSPEC `0xB8`, 9-Oktett-Records. Der Decoder liest die
+> Sensor-Identität aus I063/050.
+
+Jeder Record trägt FSPEC `0xB8` (FRN 1 + 3 + 4 + 5), I063/060 ist variabel (FX).
 
 | Byte | Inhalt |
 |------|--------|
-| 0 | SAC (System Area Code des Sensors) |
-| 1 | SIC (System Identification Code des Sensors) |
-| 2–4 | Time of Day, 24 Bit, 1/128 s seit UTC-Mitternacht |
-| 5 | NOGO-Byte: `0x00`=operationell, `0x40`=degradiert, `0x80`=nicht verbunden, `0xC0`=nicht initialisiert |
+| 0 | FSPEC `0xB8` |
+| 1–2 | I063/010 — SAC/SIC des **SDPS** (25/2 wie I062/010) |
+| 3–5 | I063/030 — Time of Day, 24 Bit, 1/128 s seit UTC-Mitternacht |
+| 6–7 | I063/050 — SAC/SIC des **Sensors** (SAC 0, SIC = `sensor_id`) |
+| 8 | I063/060 — CON-Byte: `0x00`=operationell, `0x40`=degradiert, `0x80`=Initialisierung, `0xC0`=nicht verbunden (variabel via FX) |
 
-**Operationell:** `(NOGO & 0xC0) == 0x00` → `SensorStatus.Operational = true`.
+**Operationell:** `(CON & 0xC0) == 0x00` → `SensorStatus.Operational = true`. Die
+Sensor-Identität steht in `SensorStatus.SAC`/`.SIC` (aus I063/050), die
+SDPS-Identität in `.SDPSSAC`/`.SDPSSIC` (aus I063/010).
+
+**Vorwärtskompatibilität.** Der Decoder kennt die Längen-Regeln der übrigen
+Standard-Items (I063/015, I063/070–092) und überspringt das Reserved-Expansion-
+(RE) und Special-Purpose-(SP)-Feld längen-bewusst — so bricht er nicht, wenn eine
+spätere ICD den per-Quelle-Fehlergrund im RE-Feld nachreicht (Fireflys ADR 0033).
 
 ### Robustheit
 
