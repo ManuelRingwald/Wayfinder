@@ -63,9 +63,31 @@ Sensor-Identität steht in `SensorStatus.SAC`/`.SIC` (aus I063/050), die
 SDPS-Identität in `.SDPSSAC`/`.SDPSSIC` (aus I063/010).
 
 **Vorwärtskompatibilität.** Der Decoder kennt die Längen-Regeln der übrigen
-Standard-Items (I063/015, I063/070–092) und überspringt das Reserved-Expansion-
-(RE) und Special-Purpose-(SP)-Feld längen-bewusst — so bricht er nicht, wenn eine
-spätere ICD den per-Quelle-Fehlergrund im RE-Feld nachreicht (Fireflys ADR 0033).
+Standard-Items (I063/015, I063/070–092) und überspringt das Special-Purpose-(SP)-
+Feld längen-bewusst.
+
+### Per-Quelle-Fehlergrund (I063/RE `SRC-REASON`, ADR 0020)
+
+Seit Fireflys ICD 3.1.0 (ADR 0033) trägt ein **degradierter** Sensor mit bekanntem
+Grund das **Reserved Expansion Field** (FRN 13, FSPEC dann `0xB9 0x04`):
+`[LEN=0x03][SUBFIELD=0x80][SRC-REASON]`. Der Decoder liest den `SRC-REASON`-Code in
+`SensorStatus.Reason`:
+
+| Code | `SensorStatus.Reason` | Bedeutung |
+|------|-----------------------|-----------|
+| `0x01` | `"unreachable"` | Netz/Firewall — Zugangsdaten sind ok |
+| `0x02` | `"auth"` | Authentifizierung fehlgeschlagen (401/403) |
+| `0x03` | `"rate_limited"` | Drosselung (429) |
+| — / unbek. | `""` | kein RE-Feld / unbekannter Code (tolerant) |
+
+`cat063.DominantReason([]SensorStatus)` verdichtet die degradierten Sensoren eines
+Blocks auf **einen** Grund (Priorität **auth > rate_limited > unreachable**). Der
+Grund fließt über `RecordSensors(feedID, active, total, reason)` →
+`FeedSnapshot.DegradedReason` → `FeedStatusMessage.degraded_reason` (WS,
+`omitempty`) → ASD-Store `feedDegradedReason` → **`FeedStatusChip`**, der bei
+bekanntem Grund ein Label anhängt (`SENSOR AUSFALL · NICHT ERREICHBAR` /
+`· AUTH-FEHLER` / `· RATENLIMIT`) + erklärenden Tooltip. Der Grund beeinflusst die
+**Farbe nicht** (gelb bleibt gelb); er ist rein informativ und schließt #197.
 
 ### Robustheit
 
@@ -74,7 +96,7 @@ spätere ICD den per-Quelle-Fehlergrund im RE-Feld nachreicht (Fireflys ADR 0033
 - Falscher CAT-Wert: sofortiger `DecodeError`.
 - Alle Fehlerpfade geben `error`, kein Panic.
 
-### Tests (`pkg/cat063/decoder_test.go`, 9 Tests)
+### Tests (`pkg/cat063/decoder_test.go`)
 
 Alle gegen byte-genaue Referenz-Vektoren aus Fireflys ICD §9 (gleiche
 Vektoren wie Fireflys eigene Encoder-Tests):

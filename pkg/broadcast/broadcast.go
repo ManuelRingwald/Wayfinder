@@ -37,6 +37,11 @@ type FeedStatusMessage struct {
 	// SensorsTotal is the total number of sensors from the last CAT063 block.
 	// 0 when no CAT063 data has arrived yet (unknown).
 	SensorsTotal int `json:"sensors_total"`
+	// DegradedReason is the per-source failure reason for a degraded feed
+	// ("unreachable" / "auth" / "rate_limited"), from the CAT063 I063/RE
+	// SRC-REASON sub-field (Firefly ADR 0033). Omitted when empty (healthy feed
+	// or no known reason) so the healthy path stays byte-for-byte unchanged.
+	DegradedReason string `json:"degraded_reason,omitempty"`
 }
 
 // TrackBatch is a set of decoded tracks attributed to the feed they arrived on.

@@ -25,6 +25,13 @@ type FeedSnapshot struct {
 	// ("unknown") and Color() never returns "yellow".
 	SensorsTotal  int
 	SensorsActive int
+
+	// DegradedReason is the per-source failure reason for a degraded feed
+	// ("unreachable" / "auth" / "rate_limited"), decoded from the CAT063 I063/RE
+	// SRC-REASON sub-field (Firefly ADR 0033). "" when the feed is healthy or the
+	// degradation carries no known reason. Purely informational — it does not
+	// affect Color().
+	DegradedReason string
 }
 
 // Color returns the display colour for this feed:
@@ -45,11 +52,12 @@ func (s FeedSnapshot) Color() string {
 // feedEntry holds per-feed heartbeat tracking and the most-recently-received
 // block size (used as the "recent track count" proxy) and sensor counts.
 type feedEntry struct {
-	fh            *FeedHealth
-	mu            sync.Mutex
-	block         int64 // size of last received CAT062 block
-	sensorsActive int   // active sensors from last CAT063 block
-	sensorsTotal  int   // total sensors from last CAT063 block
+	fh             *FeedHealth
+	mu             sync.Mutex
+	block          int64  // size of last received CAT062 block
+	sensorsActive  int    // active sensors from last CAT063 block
+	sensorsTotal   int    // total sensors from last CAT063 block
+	degradedReason string // per-source failure reason from last CAT063 block (ADR 0033)
 }
 
 // Registry tracks health and recent track activity per feed ID. Feeds are
@@ -112,14 +120,17 @@ func (r *Registry) RecordTracks(feedID int64, count int) {
 	e.mu.Unlock()
 }
 
-// RecordSensors records the sensor counts from the most recent CAT063 block
-// for feedID. active is the number of operational sensors; total is the total
-// number of sensors in the block (Firefly ICD 2.5.0, ADR 0022).
-func (r *Registry) RecordSensors(feedID int64, active, total int) {
+// RecordSensors records the sensor counts and the degraded-source reason from
+// the most recent CAT063 block for feedID. active is the number of operational
+// sensors; total is the total number of sensors in the block (Firefly ADR 0022).
+// reason is the dominant per-source failure reason of the degraded sensors
+// ("" when none), decoded from I063/RE SRC-REASON (Firefly ADR 0033).
+func (r *Registry) RecordSensors(feedID int64, active, total int, reason string) {
 	e := r.getOrCreate(feedID)
 	e.mu.Lock()
 	e.sensorsActive = active
 	e.sensorsTotal = total
+	e.degradedReason = reason
 	e.mu.Unlock()
 }
 
@@ -142,6 +153,7 @@ func (r *Registry) Snapshot(feedID int64, now time.Time) FeedSnapshot {
 	block := e.block
 	sensorsActive := e.sensorsActive
 	sensorsTotal := e.sensorsTotal
+	degradedReason := e.degradedReason
 	e.mu.Unlock()
 	return FeedSnapshot{
 		EverSeen:          st.EverSeen,
@@ -150,6 +162,7 @@ func (r *Registry) Snapshot(feedID int64, now time.Time) FeedSnapshot {
 		TrackCountRecent:  block,
 		SensorsActive:     sensorsActive,
 		SensorsTotal:      sensorsTotal,
+		DegradedReason:    degradedReason,
 	}
 }
 

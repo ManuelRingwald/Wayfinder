@@ -7,6 +7,10 @@ import { DEFAULT_RANGE_RING_SPACING_NM, DEFAULT_RANGE_RING_COUNT, DEFAULT_HISTOR
 // vocabulary here (not in the chip) keeps the wire contract in one place (#117).
 const FEED_COLOR_TO_STATE = { green: 'ok', yellow: 'degraded', red: 'stale' }
 const FEED_STATE_RANK = { ok: 0, degraded: 1, stale: 2 }
+// Per-source failure reason ranking (CAT063 I063/RE SRC-REASON, Firefly ADR 0033):
+// when several degraded feeds disagree, the chip shows the most operator-actionable
+// reason. Mirrors the backend's cat063.reasonPriority so the two never diverge.
+const FEED_REASON_RANK = { auth: 3, rate_limited: 2, unreachable: 1 }
 
 export const useAsdStore = defineStore('asd', () => {
   // Map/app state
@@ -17,12 +21,28 @@ export const useAsdStore = defineStore('asd', () => {
   // can be subscribed to several feeds; the chip shows the WORST state so a dead
   // feed is never masked by a healthy one. 'unknown' until the first status.
   const feedHealth = ref(new Map())
+  // feedId → per-source failure reason string ('' when none). Parallel to
+  // feedHealth so the existing state map keeps its simple shape (#117).
+  const feedReasons = ref(new Map())
   const feedStatus = computed(() => {
     let worst = null
     for (const state of feedHealth.value.values()) {
       if (worst === null || FEED_STATE_RANK[state] > FEED_STATE_RANK[worst]) worst = state
     }
     return worst ?? 'unknown'
+  })
+  // feedDegradedReason is the reason shown on the chip when the aggregate state
+  // is 'degraded': the most operator-actionable reason among the degraded feeds
+  // (CAT063 I063/RE, Firefly ADR 0033). '' when not degraded or no known reason.
+  const feedDegradedReason = computed(() => {
+    if (feedStatus.value !== 'degraded') return ''
+    let best = ''
+    for (const [feedId, state] of feedHealth.value) {
+      if (state !== 'degraded') continue
+      const reason = feedReasons.value.get(feedId) || ''
+      if ((FEED_REASON_RANK[reason] || 0) > (FEED_REASON_RANK[best] || 0)) best = reason
+    }
+    return best
   })
 
   // #114: whether server-side coverage sensors are configured at all. The
@@ -111,14 +131,21 @@ export const useAsdStore = defineStore('asd', () => {
   // unknown color is ignored (fail-safe: never corrupt the chip on a newer
   // server vocabulary). resetFeedHealth clears all entries — called on WS
   // (re)connect so statuses from a previous scope never linger.
-  function setFeedHealth(feedId, color) {
+  function setFeedHealth(feedId, color, reason = '') {
     const state = FEED_COLOR_TO_STATE[color]
     if (!state) return
+    const id = feedId ?? 0
     const m = new Map(feedHealth.value)
-    m.set(feedId ?? 0, state)
+    m.set(id, state)
     feedHealth.value = m
+    const rm = new Map(feedReasons.value)
+    rm.set(id, reason || '')
+    feedReasons.value = rm
   }
-  function resetFeedHealth() { feedHealth.value = new Map() }
+  function resetFeedHealth() {
+    feedHealth.value = new Map()
+    feedReasons.value = new Map()
+  }
   function setMapLoaded(val) { mapLoaded.value = val }
   function setPalette(p) { palette.value = p }
   function setLayerVisibility(layer, val) { layerVisibility[layer] = val }
@@ -138,7 +165,7 @@ export const useAsdStore = defineStore('asd', () => {
   }
 
   return {
-    mapLoaded, palette, feedStatus, feedHealth, layerVisibility, flFilter,
+    mapLoaded, palette, feedStatus, feedHealth, feedDegradedReason, layerVisibility, flFilter,
     coverageAvailable, setCoverageAvailable,
     weatherRadarAvailable, setWeatherRadarAvailable,
     weatherWarningsAvailable, setWeatherWarningsAvailable,

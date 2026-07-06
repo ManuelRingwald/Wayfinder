@@ -74,6 +74,40 @@ describe('asd store — per-feed health aggregation (#117)', () => {
     s.resetFeedHealth()
     expect(s.feedStatus).toBe('unknown')
   })
+
+  it('surfaces the degraded reason from the CAT063 RE field (#197)', () => {
+    const s = useAsdStore()
+    s.setFeedHealth(1, 'yellow', 'auth')
+    expect(s.feedStatus).toBe('degraded')
+    expect(s.feedDegradedReason).toBe('auth')
+  })
+
+  it('shows no reason unless the aggregate state is degraded', () => {
+    const s = useAsdStore()
+    // A healthy feed with a (stale) reason must not leak a reason onto the chip.
+    s.setFeedHealth(1, 'green', '')
+    expect(s.feedDegradedReason).toBe('')
+    // A dead (stale) feed outranks degraded, so no degraded reason is shown.
+    s.setFeedHealth(2, 'red', '')
+    s.setFeedHealth(3, 'yellow', 'unreachable')
+    expect(s.feedStatus).toBe('stale')
+    expect(s.feedDegradedReason).toBe('')
+  })
+
+  it('picks the most actionable reason across degraded feeds (auth > rate_limited > unreachable)', () => {
+    const s = useAsdStore()
+    s.setFeedHealth(1, 'yellow', 'unreachable')
+    s.setFeedHealth(2, 'yellow', 'auth')
+    s.setFeedHealth(3, 'yellow', 'rate_limited')
+    expect(s.feedDegradedReason).toBe('auth')
+  })
+
+  it('resetFeedHealth also clears reasons', () => {
+    const s = useAsdStore()
+    s.setFeedHealth(1, 'yellow', 'auth')
+    s.resetFeedHealth()
+    expect(s.feedDegradedReason).toBe('')
+  })
 })
 
 // WX-A: DWD weather-radar overlay is off by default and gated by an

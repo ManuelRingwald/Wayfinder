@@ -184,7 +184,12 @@ Die Nachricht trägt pro Feed ein **Ampel-`color`-Feld** (`green`/`yellow`/`red`
 auf Chip-Zustände (`green→ok`, `yellow→degraded`, `red→stale`) und **aggregiert
 über alle abonnierten Feeds nach „worst-wins"** — so maskiert ein gesunder Feed
 nie einen toten. `FeedStatusChip` zeigt daraus `FEED OK` / `SENSOR AUSFALL` /
-`FEED STALE` bzw. `FEED ?` (noch kein Heartbeat). Bei WS-(Re)Connect wird der
+`FEED STALE` bzw. `FEED ?` (noch kein Heartbeat). Bei einem degradierten Feed hängt
+der Chip den **per-Quelle-Fehlergrund** an (CAT063 I063/RE `SRC-REASON`, Fireflys
+ADR 0033 / Wayfinder ADR 0020): `· NICHT ERREICHBAR` / `· AUTH-FEHLER` /
+`· RATENLIMIT` (aus `feed_status.degraded_reason`, dominanter Grund via
+`cat063.DominantReason`, Priorität `auth`>`rate_limited`>`unreachable`) — so sieht
+der Betreiber **warum** eine Quelle still ist. Bei WS-(Re)Connect wird der
 Per-Feed-Zustand zurückgesetzt (`resetFeedHealth`), damit ein alter Scope nicht
 nachhängt. (Zuvor las das Frontend fälschlich ein nicht existentes `state`-Feld →
 dauerhaft „FEED ?", #117.)
@@ -276,7 +281,7 @@ immer aktiv — ADR 0014); statische Frontend-Routen werden ausgeliefert.
 | `/api/admin/me/password` | PUT | **ONB-1:** eigenes Passwort ändern (`{current_password, new_password}`, neu min. 8); aktuelles Passwort falsch → 401; setzt `must_change_password=false`; **auch im Pflichtwechsel-Zustand erreichbar** |
 | `/api/admin/me` | DELETE | **ONB-1:** eigenes Konto löschen; **„letzter aktiver Admin"-Guard** (letzter Admin → 409, keine Selbst-Aussperrung) |
 | `/api/admin/overview` | GET | **AP3:** Mandanten-Dashboard als Aggregat — je Mandant `{id, slug, name, status, features[], feeds[], user_count}` in einem Call; **admin** |
-| `/api/admin/feeds/health` | GET | **AP4:** Gesundheitszustand aller Feeds — je Feed `{feed_id, color, stale, ever_seen, last_heartbeat_ago_s, track_count_recent, sensors_active, sensors_total}` aus der In-Memory-Health-Registry; `color` ist **grün** (Heartbeat frisch, unabhängig vom Verkehr — leerer Himmel ist kein Fehler) / **gelb** (Sensor-Teilausfall: `sensors_active < sensors_total > 0`; CAT063, ADR 0010) / **rot** (kein Heartbeat = toter Feed oder nie gesehen); **admin** |
+| `/api/admin/feeds/health` | GET | **AP4:** Gesundheitszustand aller Feeds — je Feed `{feed_id, color, stale, ever_seen, last_heartbeat_ago_s, track_count_recent, sensors_active, sensors_total, degraded_reason?}` aus der In-Memory-Health-Registry (`degraded_reason`: `unreachable`/`auth`/`rate_limited` bei degradiertem Feed, CAT063 I063/RE, ADR 0020; `omitempty`); `color` ist **grün** (Heartbeat frisch, unabhängig vom Verkehr — leerer Himmel ist kein Fehler) / **gelb** (Sensor-Teilausfall: `sensors_active < sensors_total > 0`; CAT063, ADR 0010) / **rot** (kein Heartbeat = toter Feed oder nie gesehen); **admin** |
 | `/api/admin/feeds` | POST | **ONB-5 (ADR 0011) + ORCH-4 (ADR 0012):** neuen Feed anlegen (`{name, multicast_group?, port?, region?, sensor_mix?}`) → 201. **Endpoint optional:** `multicast_group`/`port` **weglassen** ⇒ der Server allokiert kollisionsfrei den nächsten freien Endpoint aus dem Pool (eine Gruppe je Feed) und gibt ihn zurück; **beide setzen** ⇒ manueller Override (`multicast_group` IPv4-Multicast 224.0.0.0–239.255.255.255, `port` 1..65535); **nur eines** → 400. `sensor_mix` gegen das Vokabular validiert (unbekannt → 400); doppelter Name → 409; belegter Endpoint (manuell) → **409**; Pool erschöpft → **507**. **Der Live-Receiver tritt der (allokierten oder gesetzten) Gruppe sofort bei**; scheitert der Beitritt, wird die Katalogzeile zurückgerollt; **admin** |
 | `/api/admin/feeds/{id}` | DELETE | **ONB-5:** Feed löschen → 204; **der Live-Receiver verlässt die Multicast-Gruppe sofort**; kaskadiert (ON DELETE CASCADE) auf die Abos, die ihn referenzierten (Guard C: kein Blockieren bei bestehenden Abos — Grants kaskadieren); unbekannter Feed → 404; **admin** |
 | `/api/admin/feeds/{id}/sources` | GET | **ORCH-1b (ADR 0012):** Quell-Konfiguration des Feeds — `{sources:[{type, bbox?, sac?, sic?, cred_ref?, poll_interval_secs?}], coverage_bbox}`; `sources` serialisiert als `[]` (nie `null`); unbekannter Feed → 404; **admin** |
