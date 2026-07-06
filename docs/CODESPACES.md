@@ -96,3 +96,35 @@ Weitere machst du per UI — genau der Ablauf, den du auch produktiv testest:
   Codespace — dort normal gegeben.
 - Die weitergeleitete URL wechselt mit dem Codespace-Namen; Lesezeichen nach
   einem Neuanlegen aktualisieren.
+
+## 5. Fehlerbehebung
+
+- **404 auf der Codespace-URL nach dem Aufwachen** (obwohl `curl localhost:8081`
+  im Terminal `200` liefert): Nicht die App ist kaputt, sondern der
+  **Port-Forwarding-Tunnel** des Codespaces ist beim Einschlafen/Aufwachen
+  verwaist. Die Einträge im „Ports"-Panel bleiben bestehen, aber der Tunnel zum
+  `app.github.dev`-Edge routet nicht mehr — Ergebnis ist ein **404 für jeden
+  Port**, unabhängig von Private/Public. **Fix: Kommandopalette (F1) →
+  „Developer: Reload Window".** Das baut den Tunnel-Client neu auf, die
+  Weiterleitungen hängen sich wieder an einen lebenden Tunnel. Globus-Klick oder
+  „Port entfernen/neu anlegen" helfen **nicht** (die berühren nur die
+  Registrierung, nicht den Tunnel). Bleibt es nach dem Reload kaputt:
+  „Codespaces: Rebuild Container" (DB-Volume + `.env` bleiben erhalten). Wer den
+  Web-Tunnel ganz umgehen will, öffnet den Codespace in **VS Code Desktop** bzw.
+  nutzt lokal `gh codespace ports forward 8081:8081` (SSH-Tunnel auf
+  `localhost`).
+- **Keine Tracks trotz grünem Stack** und im Feed-Log
+  (`docker logs wayfinder-firefly-feed-<id>`) steht `unknown variant`
+  (z. B. `adsb_aggregator`): Das gespawnte `firefly:latest`-Image ist **älter**
+  als der Quelltyp, den die Wayfinder-UI anbietet — der Tracker lehnt
+  `FIREFLY_SOURCES` ab und crash-loopt, der Feed-Chip wird nie grün. `start.sh`
+  zieht das Image seit dem Codespace-Deploy-Fix bei **jedem** Start frisch nach
+  (`git -C ../firefly pull` + Rebuild + Neu-Spawn der Tracker), das sollte also
+  nicht mehr auftreten. Zieht Fireflys `main` **mitten in einer laufenden
+  Sitzung** weiter, von Hand nachziehen:
+  ```bash
+  git -C ../firefly pull --ff-only
+  docker build -t firefly:latest ../firefly
+  docker ps -aq --filter "label=wayfinder.managed=true" | xargs -r docker rm -f
+  ```
+  Der Orchestrator spawnt die Tracker binnen Sekunden aus dem frischen Image neu.

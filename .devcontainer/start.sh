@@ -18,11 +18,27 @@ if [ ! -d "../firefly/.git" ]; then
 fi
 
 # The per-feed Firefly image the orchestrator spawns (WAYFINDER_FIREFLY_IMAGE,
-# default firefly:latest). Built once from the sibling checkout (Rust release
-# build, several minutes on first boot); later starts reuse the cached image.
-if ! docker image inspect firefly:latest >/dev/null 2>&1; then
-	echo "Building the Firefly tracker image (first boot only, several minutes)…"
-	docker build -t firefly:latest ../firefly
+# default firefly:latest), built from the sibling checkout. We pull the checkout
+# and (re)build the image on EVERY start — deliberately NOT "build once, then keep
+# the cache". A once-built image silently goes stale against Wayfinder's main: a
+# newer FIREFLY_SOURCES variant (e.g. adsb_aggregator, contract v1.5.0) is then
+# rejected by the old tracker, which crash-loops with "unknown variant" and the
+# feed never turns green — no track ever reaches the map. Thanks to Docker's layer
+# cache this is a seconds-long no-op when Firefly is unchanged; the real (several-
+# minute Rust) build only runs when Firefly's main actually moved.
+echo "Syncing the Firefly checkout…"
+git -C ../firefly pull --ff-only || echo "  (pull skipped — building from the current checkout)"
+echo "Building the Firefly tracker image (cached & fast unless Firefly changed)…"
+# Keep a rebuild failure (e.g. Firefly's main momentarily red) from bricking the
+# whole start: bring the stack — and with it the browser UI — up anyway, falling
+# back to the previously built image, and say so loudly. Only a build failure with
+# NO image at all leaves trackers unspawnable (the UI still comes up).
+if ! docker build -t firefly:latest ../firefly; then
+	if docker image inspect firefly:latest >/dev/null 2>&1; then
+		echo "  ⚠ Firefly rebuild failed — continuing with the previously built firefly:latest."
+	else
+		echo "  ⚠ Firefly build failed and no firefly:latest exists — feeds cannot spawn a tracker until this is fixed."
+	fi
 fi
 
 # Codespace-local secrets (compose reads .env for substitution; gitignored,
@@ -48,6 +64,16 @@ fi
 
 echo "Starting the orchestrated stack (Postgres + Wayfinder + Orchestrator)…"
 docker compose -f docker-compose.orchestrated.yml up --build -d
+
+# A freshly (re)built firefly:latest does NOT by itself replace already-running
+# spawned trackers: the orchestrator keys its drift check on the image *name*
+# (firefly:latest), not the digest, so an old-image container reads as "converged"
+# and is left crash-looping. Remove the spawned per-feed trackers once so the
+# orchestrator respawns them from the current image on its next reconcile
+# (≤ WAYFINDER_ORCHESTRATOR_INTERVAL). A brief empty-map gap on start is fine;
+# no-op when none exist yet (fresh codespace).
+echo "Refreshing spawned Firefly trackers so they pick up the current image…"
+docker ps -aq --filter "label=wayfinder.managed=true" | xargs -r docker rm -f || true
 
 echo -n "Waiting for Wayfinder /health "
 for _ in $(seq 1 60); do
