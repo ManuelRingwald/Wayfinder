@@ -10,6 +10,24 @@
 
 ---
 
+## 🎯 Stand 2026-07-06 (CAT063-UAP-Standardisierung H2, lockstep zu Firefly ADR 0032)
+
+- **ADR 0019 — CAT063-Decoder auf Standard-UAP (ICD 3.0.0, BREAKING, lockstep):**
+  Wayfinders CAT063-Decoder zieht Fireflys UAP-Korrektur (ADR 0032) nach. Der
+  Record folgt jetzt der echten EUROCONTROL-UAP: FSPEC `0xB8`, I063/010 =
+  **SDPS**-Identität (25/2), **NEU** I063/050 = **Sensor**-Identität (SAC 0,
+  SIC = `sensor_id`), I063/030@FRN3, I063/060@FRN5 (CON, variabel via FX).
+  `SensorStatus.SAC`/`.SIC` = Sensor (aus I063/050), neu `.SDPSSAC`/`.SDPSSIC`
+  = SDPS. **Vorwärtskompatibel:** kennt die Längen der übrigen Standard-Items
+  (I063/015, I063/070–092) und überspringt RE (FRN 13) / SP (FRN 14) über ihr
+  Längen-Oktett — Fundament für den per-Quelle-Fehlergrund im RE-Feld (Fireflys
+  ADR 0033 → H4, Fixes #197). Byte-genaue Referenz-Vektoren + 3 neue Tests
+  (StandardFSPEC, SkipsReservedExpansion, RejectsSpareFRN). Konsument-Verdrahtung
+  (Health-Registry, gelbes Banner) unberührt — sie wertet nur `Operational` aus.
+  **Deploy-Kopplung:** zusammen mit Firefly ADR 0032 ausrollen (Firefly #55).
+  `go test ./...`, `go vet`, `gofmt`, `golangci-lint` grün; FR-DATA-006, Milestone
+  WF-CAT063, ADR 0010-Nachtrag aktualisiert.
+
 ## 🎯 Stand 2026-07-06 (#194 Responsive — Häppchen 3 + 4, abgeschlossen)
 
 - **#194 vollständig (ASD iPhone/iPad/24″ + Admin):** Die restlichen zwei

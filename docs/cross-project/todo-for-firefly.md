@@ -198,6 +198,23 @@ erweitern (`Color()`: gelb = `0 < aktiv < gesamt`, „leerer Himmel" raus aus
 gelb) · WF-3 UI „2 / 3 Radare aktiv (Sensor 2 still)" in `FeedStatusChip` +
 Admin-Ampel.
 
+> **Nachtrag 2026-07-06 — CAT063-UAP-Standardisierung + per-Quelle-Fehlergrund
+> (ICD 3.0.0, [Firefly #55](https://github.com/manuelringwald/firefly/issues/55)
+> `from-wayfinder`).** Anlass: die Feed-Health-UI zeigt bei degradiertem Feed nur
+> **dass**, nicht **warum** (Betreiber muss unreachable / auth / rate-limited
+> unterscheiden, #197). Bei der Konformitätsprüfung fiel Fireflys **nicht
+> standardkonforme** CAT063-UAP auf; Entscheidung (Option 2, strikt): **erst UAP
+> geraderücken, dann Grund-Code im RE-Feld**.
+> - **H1 (Firefly, erledigt):** UAP auf echte EUROCONTROL-FRNs — I063/010 =
+>   SDPS, **NEU** I063/050 = Sensor, FSPEC `0xB8`; ICD 3.0.0 breaking (ADR 0032).
+> - **H2 (Wayfinder, erledigt):** Decoder auf Standard-UAP (Sensor aus I063/050)
+>   + RE/SP längen-tolerant (ADR 0019). **Lockstep mit H1 deployen.**
+> - **H3 (Firefly, offen):** echtes **I063/RE** (Reserved Expansion Field) mit
+>   Vendor-Subfeld `SRC-REASON` (`0=ok, 1=unreachable, 2=auth, 3=rate_limited`)
+>   + Reason-Ableitung aus den Poller-Fehlerpfaden; ICD additiv; ADR.
+> - **H4 (Wayfinder, offen):** RE-Reason dekodieren + Feed-Health-Chip →
+>   Fixes #197.
+
 ---
 
 ## ORCH-5 (Auto-Orchestrierung) — Quell-Eingangs-Kontrakt + Live-Input-Adapter ⏳
