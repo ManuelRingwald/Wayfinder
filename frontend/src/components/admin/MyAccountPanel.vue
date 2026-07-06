@@ -2,7 +2,7 @@
   <!-- ONB-2 (ADR 0011): self-management panel. Password change and account
        deletion are available at any time from the dashboard header — not only
        during the forced-change flow. Backend endpoints are from ONB-1. -->
-  <v-dialog :model-value="modelValue" max-width="480" @update:model-value="$emit('update:modelValue', $event)">
+  <v-dialog :model-value="modelValue" max-width="min(480px, 94vw)" @update:model-value="$emit('update:modelValue', $event)">
     <v-card>
       <v-card-title class="pa-4 pb-2">Mein Konto</v-card-title>
       <v-card-subtitle class="px-4 pb-0">{{ identity?.subject }}</v-card-subtitle>

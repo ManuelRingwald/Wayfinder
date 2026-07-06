@@ -81,7 +81,7 @@
   </v-card>
 
   <!-- Create tenant dialog (ONB-4) -->
-  <v-dialog v-model="createDialog" max-width="460">
+  <v-dialog v-model="createDialog" max-width="min(460px, 94vw)">
     <v-card>
       <v-card-title class="text-subtitle-1">Mandant anlegen</v-card-title>
       <v-card-text>

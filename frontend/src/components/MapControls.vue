@@ -91,7 +91,9 @@ function toggleFullscreen() {
      ~100px clears both rows with margin; raised from 50px, which sat on the
      badge row. */
   top: calc(var(--v-layout-top, 0px) + 100px);
-  right: calc(12px + var(--wf-safe-right, 0px));
+  /* Edge inset from the overlay-gap token (12px, wider on a 24″ display —
+     #194 Häppchen 3), plus the right safe-area on notched phones. */
+  right: calc(var(--wf-overlay-gap, 12px) + var(--wf-safe-right, 0px));
   z-index: 10;
   display: flex;
   flex-direction: column;

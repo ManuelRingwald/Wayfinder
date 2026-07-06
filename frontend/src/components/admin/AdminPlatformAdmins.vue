@@ -79,7 +79,7 @@
   </v-card>
 
   <!-- Create admin dialog -->
-  <v-dialog v-model="createDialog" max-width="460">
+  <v-dialog v-model="createDialog" max-width="min(460px, 94vw)">
     <v-card>
       <v-card-title class="text-subtitle-1">Administrator anlegen</v-card-title>
       <v-card-text>
@@ -104,7 +104,7 @@
   </v-dialog>
 
   <!-- Password reset dialog -->
-  <v-dialog v-model="passwordDialog" max-width="460">
+  <v-dialog v-model="passwordDialog" max-width="min(460px, 94vw)">
     <v-card>
       <v-card-title class="text-subtitle-1">Passwort setzen</v-card-title>
       <v-card-text>
@@ -127,7 +127,7 @@
   </v-dialog>
 
   <!-- Delete confirmation -->
-  <v-dialog v-model="deleteDialog" max-width="420">
+  <v-dialog v-model="deleteDialog" max-width="min(420px, 94vw)">
     <v-card>
       <v-card-title class="text-subtitle-1">Administrator löschen</v-card-title>
       <v-card-text>

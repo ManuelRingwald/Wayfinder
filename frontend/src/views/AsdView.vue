@@ -266,8 +266,11 @@ function onTrackClick(track) {
    #194: padded past the notch/Dynamic-Island + right safe-area inset. */
 .top-right-cluster {
   position: absolute;
-  top: calc(12px + var(--wf-safe-top, 0px));
-  right: calc(12px + var(--wf-safe-right, 0px));
+  /* Edge inset from the overlay-gap token: 12px normally, one step wider on a
+     24″ display so the cluster breathes rather than clinging to the corner
+     (#194 Häppchen 3). */
+  top: calc(var(--wf-overlay-gap, 12px) + var(--wf-safe-top, 0px));
+  right: calc(var(--wf-overlay-gap, 12px) + var(--wf-safe-right, 0px));
   z-index: 600;
   display: flex;
   /* Design template: header (ICAO/UTC) and the feed badge stack vertically,
@@ -294,7 +297,7 @@ function onTrackClick(track) {
    are off; the legend itself re-enables them so its toggle stays clickable. */
 .scope-legend-overlay {
   position: absolute;
-  bottom: 12px;
+  bottom: var(--wf-overlay-gap, 12px);
   /* Clear the navigation rail (left edge) + a gap, so the legend is not painted
      over by the opaque fixed drawer. Derived from --wf-nav-rail-width so it
      tracks the rail: 68px on desktop (56+12), 88px on the iPad band (76+12,

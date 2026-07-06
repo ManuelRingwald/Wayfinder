@@ -10,6 +10,25 @@
 
 ---
 
+## 🎯 Stand 2026-07-06 (#194 Responsive — Häppchen 3 + 4, abgeschlossen)
+
+- **#194 vollständig (ASD iPhone/iPad/24″ + Admin):** Die restlichen zwei
+  Häppchen umgesetzt, damit ist das Issue zu.
+  - **Häppchen 3 (24″/Desktop):** Auf dem Vuetify-`xl`-Band (≥1920px) atmen die
+    ASD-Overlays token-getrieben — `--wf-overlay-gap` 12→20px und die Overlay-
+    Breiten (`--wf-overlay-legend-width` 232→268px, `--wf-overlay-detail-width`
+    292→336px) je eine Stufe größer. Alle Rand-Abstände (Top-Right-Cluster,
+    Scope-Legende, Map-Controls, Track-Detail-Karte) lesen den Gap-Token, sodass
+    die eine Media-Query-Stufe jede Ecke erreicht statt hartem 12px.
+  - **Häppchen 4 (Admin):** Content-Spalte weitet auf `xl` von 1180→1440px;
+    alle Admin-Dialoge kappen auf schmalen Phones via `max-width: min(<px>, 94vw)`
+    (ein 460–720px-Dialog lief sonst auf 360px über). Dichte Tabellen scrollen
+    bereits seit Häppchen 1 horizontal im Card (`.v-table__wrapper`).
+  - Token-Stufen im echten Browser verifiziert (Playwright: 24″ → gap 20px/
+    Legende 268px, iPad → rail 76px, Desktop kompakt). Reine Layout/CSS,
+    CAT062 unberührt. Vitest **390 grün** (Häppchen-1-Breiten-Test auf die
+    Tokens nachgezogen, 3 neue Fälle); dist neu gebaut.
+
 ## 🎯 Stand 2026-07-06 (#194 Responsive — Häppchen 2: iPad-ASD)
 
 - **ASD auf dem iPad touch-optimiert (#194 Häppchen 2):** Auf dem

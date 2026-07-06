@@ -73,7 +73,7 @@
   </v-card>
 
   <!-- Create feed dialog -->
-  <v-dialog v-model="createDialog" max-width="520">
+  <v-dialog v-model="createDialog" max-width="min(520px, 94vw)">
     <v-card>
       <v-card-title class="text-subtitle-1">Feed anlegen</v-card-title>
       <v-card-text>
@@ -135,7 +135,7 @@
        derives coverage when omitted, so this builder is convenience, not the
        boundary. cred_ref is only a reference to a per-feed secret, never the
        secret value (the secret store follows ORCH-2). -->
-  <v-dialog v-model="sourcesDialog" max-width="720">
+  <v-dialog v-model="sourcesDialog" max-width="min(720px, 94vw)">
     <v-card>
       <v-card-title class="text-subtitle-1">
         Quellen — {{ sourcesTarget?.name }}
@@ -371,7 +371,7 @@
   </v-dialog>
 
   <!-- Delete confirmation -->
-  <v-dialog v-model="deleteDialog" max-width="460">
+  <v-dialog v-model="deleteDialog" max-width="min(460px, 94vw)">
     <v-card>
       <v-card-title class="text-subtitle-1">Feed löschen</v-card-title>
       <v-card-text>

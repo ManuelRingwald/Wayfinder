@@ -41,13 +41,14 @@ const open = computed(() => store.selectedTrack !== null)
      — right edge at 39px, well inside the rail offset), so no extra top margin
      is needed to dodge it: top: 12px matches the corner-hugging convention used
      elsewhere (scope-legend-overlay). */
-  top: calc(12px + var(--wf-safe-top, 0px));
+  top: calc(var(--wf-overlay-gap, 12px) + var(--wf-safe-top, 0px));
   /* Derived from --wf-nav-rail-width so it clears the rail on every breakpoint:
      68px desktop (56+12), 88px on the iPad band (76+12, #194 Häppchen 2). */
   left: calc(var(--wf-nav-rail-width, 56px) + var(--wf-overlay-gap, 12px));
   /* #194: fluid width so it never overflows a narrow tablet-landscape viewport.
-     The subtrahend follows the rail offset so the card keeps a right-edge gap. */
-  width: min(292px, calc(100vw - var(--wf-nav-rail-width, 56px) - 24px));
+     Token default (292px, one step wider on a 24″ display, Häppchen 3); the
+     subtrahend follows the rail offset so the card keeps a right-edge gap. */
+  width: min(var(--wf-overlay-detail-width, 292px), calc(100vw - var(--wf-nav-rail-width, 56px) - 24px));
   /* Same 76px total inset as before, redistributed: only 12px is spent at the
      top (nothing to clear there once left is out from under the compass), so
      the remaining 64px goes to the bottom — enough to clear the collapsed

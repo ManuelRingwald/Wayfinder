@@ -60,7 +60,7 @@
   </v-alert>
 
   <!-- Delete tenant confirmation (ONB-4) -->
-  <v-dialog v-model="deleteDialog" max-width="480">
+  <v-dialog v-model="deleteDialog" max-width="min(480px, 94vw)">
     <v-card>
       <v-card-title class="text-subtitle-1">Mandant löschen</v-card-title>
       <v-card-text>

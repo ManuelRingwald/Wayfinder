@@ -44,6 +44,19 @@ body {
   }
 }
 
+/* #194 Häppchen 3 — large display (Vuetify `xl` band, ≥1920px / 24″+): the
+   floating ASD overlays should use the extra room instead of clinging to the
+   corner. One token step: a wider edge gap so chrome breathes, and slightly
+   larger scope-legend / track-detail widths. Every overlay derives its inset
+   and width from these tokens, so this single block scales them together. */
+@media (min-width: 1920px) {
+  :root {
+    --wf-overlay-gap: 20px;
+    --wf-overlay-legend-width: 268px;
+    --wf-overlay-detail-width: 336px;
+  }
+}
+
 /* #194: dense admin tables (5–6 columns) must scroll INSIDE their card on a
    narrow phone instead of stretching the page and clipping. The wrapper scrolls
    horizontally; the card keeps its width. Global (unscoped) so it reaches the

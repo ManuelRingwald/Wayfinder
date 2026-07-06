@@ -334,6 +334,13 @@ async function onLogout() {
 .admin-container {
   max-width: 1180px;
 }
+/* #194 Häppchen 4: on a 24″ display let the content column widen a step so the
+   dense admin panels use the room instead of sitting in a narrow strip. */
+@media (min-width: 1920px) {
+  .admin-container {
+    max-width: 1440px;
+  }
+}
 .admin-section-select {
   max-width: 220px;
 }
