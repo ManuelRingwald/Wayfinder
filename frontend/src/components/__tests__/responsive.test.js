@@ -11,6 +11,7 @@ import adminView from '../../views/AdminView.vue?raw'
 import mapControls from '../MapControls.vue?raw'
 import trackDetail from '../TrackDetailPanel.vue?raw'
 import scopeLegend from '../ScopeLegend.vue?raw'
+import navigationRail from '../NavigationRail.vue?raw'
 
 // CSS/HTML `?raw` imports come back empty under Vitest's transform, so read the
 // files directly for the foundation assertions.
@@ -85,5 +86,44 @@ describe('dense tables scroll inside their card on narrow screens (#194)', () =>
   it('base.css makes the Vuetify table wrapper scroll horizontally', () => {
     expect(base).toContain('.v-table__wrapper')
     expect(base).toContain('overflow-x: auto')
+  })
+})
+
+describe('iPad / tablet-landscape rail (#194 Häppchen 2)', () => {
+  it('base.css widens the rail + panel tokens on the md band (960–1279px)', () => {
+    expect(base).toContain('@media (min-width: 960px) and (max-width: 1279.98px)')
+    expect(base).toContain('--wf-nav-rail-width: 76px')
+    expect(base).toContain('--wf-nav-panel-width: 304px')
+  })
+  it('NavigationRail is token-driven and touch-sizes on the md band', () => {
+    // Width from the token, not a hardcoded 56px, so the CSS band drives it.
+    expect(navigationRail).toContain('width: var(--wf-nav-rail-width')
+    // `md` (exactly the tablet-landscape band) toggles the touch treatment.
+    expect(navigationRail).toContain('const { mdAndUp, md } = useDisplay()')
+    expect(navigationRail).toContain("'nav-rail--touch': tabletLandscape")
+    expect(navigationRail).toContain('.nav-rail--touch .nav-rail__pill')
+    // 44px finger target + 24px icons on the tablet band.
+    expect(navigationRail).toContain('width: 44px')
+    expect(navigationRail).toContain('tabletLandscape.value ? 24 : 20')
+  })
+  it('NavigationRail widths: 76px rail / 304px panel on tablet, 56/248 desktop', () => {
+    expect(navigationRail).toContain('const rail = tabletLandscape.value ? 76 : 56')
+    expect(navigationRail).toContain('const panel = tabletLandscape.value ? 304 : 248')
+  })
+  it('the floating overlays derive their left offset from the rail-width token', () => {
+    // So a wider iPad rail shifts the legend + detail card in lockstep (no
+    // hardcoded 68px that would overlap the 76px rail).
+    const offset = 'calc(var(--wf-nav-rail-width, 56px) + var(--wf-overlay-gap, 12px))'
+    expect(asdView).toContain(offset)
+    expect(trackDetail).toContain(offset)
+    // The actual CSS declaration is the derived calc, not a hardcoded 68px
+    // (explanatory comments may still mention 68px as the desktop value).
+    expect(asdView).not.toMatch(/left:\s*68px;/)
+    expect(trackDetail).not.toMatch(/left:\s*68px;/)
+  })
+  it('MapControls buttons reach a 44px target on the md band', () => {
+    expect(mapControls).toContain("'map-controls--touch': tabletLandscape")
+    expect(mapControls).toContain('.map-controls--touch .map-controls__group :deep(.v-btn)')
+    expect(mapControls).toContain('var(--wf-touch-min, 44px)')
   })
 })

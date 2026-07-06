@@ -29,6 +29,21 @@ body {
   --wf-touch-min: 44px;
 }
 
+/* #194 Häppchen 2 — iPad / tablet-landscape (Vuetify `md` band, 960–1279px):
+   the navigation rail is touch-optimised, so it grows from the compact 56px
+   desktop strip to 76px (design mockup) and the secondary panel to 304px.
+   The floating ASD overlays (scope legend, track-detail card) derive their left
+   offset from `--wf-nav-rail-width`, so widening the rail shifts them in
+   lockstep — no per-overlay breakpoint needed. The `md` band is exactly where
+   AsdView still renders the rail (`mdAndUp`) but the display is a touch tablet
+   rather than a desktop; `lg`+ keeps the compact rail. */
+@media (min-width: 960px) and (max-width: 1279.98px) {
+  :root {
+    --wf-nav-rail-width: 76px;
+    --wf-nav-panel-width: 304px;
+  }
+}
+
 /* #194: dense admin tables (5–6 columns) must scroll INSIDE their card on a
    narrow phone instead of stretching the page and clipping. The wrapper scrolls
    horizontally; the card keeps its width. Global (unscoped) so it reaches the

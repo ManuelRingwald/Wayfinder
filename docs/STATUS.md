@@ -10,6 +10,24 @@
 
 ---
 
+## 🎯 Stand 2026-07-06 (#194 Responsive — Häppchen 2: iPad-ASD)
+
+- **ASD auf dem iPad touch-optimiert (#194 Häppchen 2):** Auf dem
+  Vuetify-`md`-Band (960–1279px, iPad-Landscape) wächst die Navigationsschiene
+  von der kompakten 56-px-Desktop-Leiste auf **76 px** mit **44-px-Touch-Zielen**
+  und **24-px-Icons**; das Sekundär-Panel öffnet auf **304 px** (Design-Mockup).
+  `lg`+ (Desktop, iPad-Pro) behält die kompakte Leiste. Umsetzung
+  **token-getrieben**: `--wf-nav-rail-width` (base.css-Media-Query) treibt die
+  Schienenbreite; die schwebenden Overlays (Scope-Legende, Track-Detail-Karte)
+  leiten ihren Links-Offset daraus ab (`calc(rail + gap)` = 68 px Desktop /
+  88 px iPad) statt hartem `68px` — sie wandern in Lockstep mit der Schiene.
+  Map-Controls bekommen auf dem `md`-Band ebenfalls 44-px-Buttons. Kern im
+  echten Browser verifiziert (Playwright: iPad 1194px → 76px, iPhone/iPad-Pro/
+  24″ → 56px, sauberer Boot). Reine Layout/CSS-Arbeit, CAT062 unberührt.
+  Vitest **386 grün** (5 neue Fälle in `responsive.test.js`, `trackSymbology`-
+  Test nachgezogen); dist neu gebaut. **Offen bleiben Häppchen 3** (24″-Overlay-
+  Skalierung) **und 4** (Admin-Tabellen als Card/Stack). (S3–S4)
+
 ## 🎯 Stand 2026-07-06 (#201 ADS-B ohne Zugang — Community-Aggregator)
 
 - **Quell-Typ `adsb_aggregator` (Firefly-Kontrakt v1.5.0, ADR 0031 dort, #201):**
