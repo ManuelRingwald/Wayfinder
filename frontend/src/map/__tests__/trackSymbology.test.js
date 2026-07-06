@@ -73,8 +73,10 @@ describe('scope legend mirrors the map (ScopeLegend.vue)', () => {
 
 describe('legend is not hidden behind the navigation rail (AsdView.vue)', () => {
   it('offsets the bottom-left legend past the rail', () => {
-    // left:12px sat under the 56px rail; the fix clears it.
-    expect(asdView).toContain('left: 68px')
+    // left:12px sat under the 56px rail; the fix clears it. Since #194
+    // Häppchen 2 the offset is derived from --wf-nav-rail-width (68px desktop,
+    // 88px on the iPad band) rather than a hardcoded 68px.
+    expect(asdView).toContain('left: calc(var(--wf-nav-rail-width, 56px) + var(--wf-overlay-gap, 12px))')
     expect(asdView).not.toMatch(/\.scope-legend-overlay\s*\{[^}]*left:\s*12px/)
   })
 })

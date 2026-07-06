@@ -16,8 +16,11 @@
     <template v-if="mdAndUp">
       <div class="nav-two-col">
 
-        <!-- Rail: 56px icon strip, always visible -->
-        <div class="nav-rail">
+        <!-- Rail: icon strip, always visible. Width is token-driven
+             (--wf-nav-rail-width): 56px on desktop, 76px on the iPad/
+             tablet-landscape band (#194 Häppchen 2), where the `--touch` class
+             also enlarges the pill + icon to comfortable finger targets. -->
+        <div class="nav-rail" :class="{ 'nav-rail--touch': tabletLandscape }">
           <!-- Brand glyph pinned to the top of the rail (design template): a
                30×30 rounded tile with the cyan radar mark on a state-selected
                fill. Static for now; earmarked to become the ASD⇄EFS switch. -->
@@ -44,7 +47,7 @@
             @click="tools.selectTool(t.id)"
           >
             <div class="nav-rail__pill">
-              <v-icon size="20">{{ t.icon }}</v-icon>
+              <v-icon :size="railIconSize">{{ t.icon }}</v-icon>
             </div>
             <span class="nav-rail__label">{{ t.label }}</span>
           </div>
@@ -62,7 +65,7 @@
             @click="togglePanel(s.id)"
           >
             <div class="nav-rail__pill">
-              <v-icon size="20">{{ s.icon }}</v-icon>
+              <v-icon :size="railIconSize">{{ s.icon }}</v-icon>
             </div>
             <span class="nav-rail__label">{{ s.label }}</span>
           </div>
@@ -73,11 +76,11 @@
                presentational — they emit and AsdView delegates to the map engine
                (MapCanvas.zoomIn/zoomOut), keeping the engine framework-agnostic. -->
           <div class="nav-rail__btn" role="button" aria-label="Zoom in" @click="emit('zoom-in')">
-            <div class="nav-rail__pill"><v-icon size="20">mdi-magnify-plus-outline</v-icon></div>
+            <div class="nav-rail__pill"><v-icon :size="railIconSize">mdi-magnify-plus-outline</v-icon></div>
             <span class="nav-rail__label">Zoom +</span>
           </div>
           <div class="nav-rail__btn" role="button" aria-label="Zoom out" @click="emit('zoom-out')">
-            <div class="nav-rail__pill"><v-icon size="20">mdi-magnify-minus-outline</v-icon></div>
+            <div class="nav-rail__pill"><v-icon :size="railIconSize">mdi-magnify-minus-outline</v-icon></div>
             <span class="nav-rail__label">Zoom −</span>
           </div>
 
@@ -91,7 +94,7 @@
             @click="goAdmin"
           >
             <div class="nav-rail__pill">
-              <v-icon size="20">mdi-shield-account</v-icon>
+              <v-icon :size="railIconSize">mdi-shield-account</v-icon>
             </div>
             <span class="nav-rail__label">Admin</span>
           </div>
@@ -106,7 +109,7 @@
             @click="togglePanel('account')"
           >
             <div class="nav-rail__pill">
-              <v-icon size="20">mdi-account</v-icon>
+              <v-icon :size="railIconSize">mdi-account</v-icon>
             </div>
             <span class="nav-rail__label">Konto</span>
           </div>
@@ -178,7 +181,15 @@ const emit = defineEmits([
   'update:modelValue', 'layer-toggle', 'fl-filter-change', 'panel-resize', 'zoom-in', 'zoom-out',
 ])
 
-const { mdAndUp } = useDisplay()
+// #194 Häppchen 2: `md` is the iPad / tablet-landscape band (960–1279px) — the
+// rail is still shown (mdAndUp) but the display is a touch tablet, so it gets a
+// wider, touch-sized rail (76px, 44px targets, 24px icons) and a wider 304px
+// panel; `lg`+ keeps the compact desktop rail (56px/248px). The CSS side widens
+// the rail purely via the --wf-nav-rail-width token (base.css); this JS side
+// only has to feed the matching drawer width + icon size to Vuetify.
+const { mdAndUp, md } = useDisplay()
+const tabletLandscape = md
+const railIconSize = computed(() => (tabletLandscape.value ? 24 : 20))
 
 // Häppchen 3: the measurement tools live in the rail now. activeTool is global
 // (tools store) and drives the map's measure controller via MapCanvas, so the
@@ -222,8 +233,12 @@ const drawerOpen = computed({
 
 const drawerWidth = computed(() => {
   if (!mdAndUp.value) return 280
-  // Rail 56px collapsed; open panel 248px (design template AsdFilterPanel width).
-  return activePanel.value ? 248 : 56
+  // iPad/tablet-landscape band: touch-sized 76px rail, 304px open panel (design
+  // mockup). Desktop keeps the compact 56px rail / 248px panel. These match the
+  // token-driven CSS widths in base.css so the drawer chrome and the rail agree.
+  const rail = tabletLandscape.value ? 76 : 56
+  const panel = tabletLandscape.value ? 304 : 248
+  return activePanel.value ? panel : rail
 })
 
 function togglePanel(id) {
@@ -254,15 +269,34 @@ function onFlFilterChange(payload) { emit('fl-filter-change', payload) }
   padding: 8px 12px;
 }
 
-/* Rail: fixed 56px strip */
+/* Rail: token-driven width — 56px desktop, 76px on the iPad/tablet-landscape
+   band (base.css widens --wf-nav-rail-width there). The width comes from CSS so
+   the strip is correct even before Vuetify hydrates the matching drawer width. */
 .nav-rail {
-  width: 56px;
+  width: var(--wf-nav-rail-width, 56px);
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   padding-top: 12px;
   gap: 4px;
+}
+
+/* #194 Häppchen 2 — touch-optimised rail (iPad/tablet-landscape): the indicator
+   pill and its tap area grow to a comfortable finger target (~44px), matching
+   the 24px icons bound in the template. The whole .nav-rail__btn is clickable,
+   so with the taller padding each item clears 44×44 easily. */
+.nav-rail--touch .nav-rail__btn {
+  padding: 10px 0;
+}
+.nav-rail--touch .nav-rail__pill {
+  width: 44px;
+  height: 36px;
+  border-radius: 18px;
+}
+.nav-rail--touch .nav-rail__brand-box {
+  width: 36px;
+  height: 36px;
 }
 
 /* Brand glyph at the top of the rail (future ASD⇄EFS switch) */

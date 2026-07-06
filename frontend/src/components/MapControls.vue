@@ -3,7 +3,7 @@
        map canvas. All controls are purely presentational — they emit named events
        and let MapCanvas delegate to the map engine, keeping the engine
        framework-agnostic. -->
-  <div class="map-controls" :class="{ 'map-controls--mobile': !mdAndUp }">
+  <div class="map-controls" :class="{ 'map-controls--mobile': !mdAndUp, 'map-controls--touch': tabletLandscape }">
     <!-- #194: on phones/tablet-portrait the navigation rail (which hosts zoom) is
          not rendered, so the zoom controls move here, above the bottom tab bar. -->
     <v-btn-group
@@ -62,7 +62,11 @@ import { useDisplay } from 'vuetify'
 
 defineEmits(['recenter', 'zoom-in', 'zoom-out'])
 
-const { mdAndUp } = useDisplay()
+// #194 Häppchen 2: on the iPad/tablet-landscape band (`md`) the control buttons
+// grow to a 44px finger target (design mockup); phones already get the mobile
+// treatment, desktop keeps the compact size.
+const { mdAndUp, md } = useDisplay()
+const tabletLandscape = md
 const isFullscreen = ref(false)
 
 function toggleFullscreen() {
@@ -109,5 +113,12 @@ function toggleFullscreen() {
   pointer-events: all;
   background: rgb(var(--v-theme-surface)) !important;
   border: var(--wf-chrome-border);
+}
+
+/* #194 Häppchen 2 — iPad/tablet-landscape: enlarge the compact icon buttons to a
+   comfortable 44px finger target (the size="small" default is ~28px). */
+.map-controls--touch .map-controls__group :deep(.v-btn) {
+  width: var(--wf-touch-min, 44px);
+  height: var(--wf-touch-min, 44px);
 }
 </style>

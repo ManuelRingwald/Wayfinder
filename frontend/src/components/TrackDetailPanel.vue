@@ -33,23 +33,27 @@ const open = computed(() => store.selectedTrack !== null)
      rail (#169, top ~100px), and its max-height could run under the OSM
      attribution chip (bottom-right). Moved to top-left instead of fighting
      for space in that column.
-     left: 68px clears the 56px collapsed nav rail + 12px gap — the same
-     offset AsdView's .scope-legend-overlay already uses for the identical
-     reason. That horizontal offset alone also clears the MapLibre compass
-     control (engine.js NavigationControl 'top-left'; MapLibre renders it at
-     left 10px, 29px button — right edge at 39px, well inside our 68px start),
-     so no extra top margin is needed to dodge it: top: 12px matches the
-     corner-hugging convention used elsewhere (scope-legend-overlay,
-     mobile-menu-btn). */
+     The left offset clears the collapsed nav rail + a gap — derived from
+     --wf-nav-rail-width, the same offset AsdView's .scope-legend-overlay uses
+     for the identical reason (68px desktop, 88px on the iPad band). That
+     horizontal offset alone also clears the MapLibre compass control (engine.js
+     NavigationControl 'top-left'; MapLibre renders it at left 10px, 29px button
+     — right edge at 39px, well inside the rail offset), so no extra top margin
+     is needed to dodge it: top: 12px matches the corner-hugging convention used
+     elsewhere (scope-legend-overlay). */
   top: calc(12px + var(--wf-safe-top, 0px));
-  left: 68px;
-  /* #194: fluid width so it never overflows a narrow tablet-landscape viewport. */
-  width: min(292px, calc(100vw - 80px));
+  /* Derived from --wf-nav-rail-width so it clears the rail on every breakpoint:
+     68px desktop (56+12), 88px on the iPad band (76+12, #194 Häppchen 2). */
+  left: calc(var(--wf-nav-rail-width, 56px) + var(--wf-overlay-gap, 12px));
+  /* #194: fluid width so it never overflows a narrow tablet-landscape viewport.
+     The subtrahend follows the rail offset so the card keeps a right-edge gap. */
+  width: min(292px, calc(100vw - var(--wf-nav-rail-width, 56px) - 24px));
   /* Same 76px total inset as before, redistributed: only 12px is spent at the
      top (nothing to clear there once left is out from under the compass), so
      the remaining 64px goes to the bottom — enough to clear the collapsed
-     scope-legend-overlay toggle (~30px tall, anchored at the same left: 68px,
-     bottom: 12px), which would otherwise sit directly under a tall panel. */
+     scope-legend-overlay toggle (~30px tall, anchored at the same rail-derived
+     left offset, bottom 12px), which would otherwise sit directly under a tall
+     panel. */
   max-height: calc(100vh - 76px);
   overflow-y: auto;
   z-index: 10;

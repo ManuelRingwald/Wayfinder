@@ -295,10 +295,12 @@ function onTrackClick(track) {
 .scope-legend-overlay {
   position: absolute;
   bottom: 12px;
-  /* Clear the 56px navigation rail (left edge) + a 12px gap, so the legend is
-     not painted over by the opaque fixed drawer. v-main spans full width
-     (padding:0), so this offset is measured from the viewport left. */
-  left: 68px;
+  /* Clear the navigation rail (left edge) + a gap, so the legend is not painted
+     over by the opaque fixed drawer. Derived from --wf-nav-rail-width so it
+     tracks the rail: 68px on desktop (56+12), 88px on the iPad band (76+12,
+     #194 Häppchen 2). v-main spans full width (padding:0), so this offset is
+     measured from the viewport left. */
+  left: calc(var(--wf-nav-rail-width, 56px) + var(--wf-overlay-gap, 12px));
   z-index: 600;
   pointer-events: none;
 }
