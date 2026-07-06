@@ -47,6 +47,29 @@
   Test nachgezogen); dist neu gebaut. **Offen bleiben Häppchen 3** (24″-Overlay-
   Skalierung) **und 4** (Admin-Tabellen als Card/Stack). (S3–S4)
 
+## 🎯 Stand 2026-07-06 (Codespace-Deploy härten)
+
+- **Veraltetes `firefly:latest` → stumme Crash-Loop-Feeds (Kern-Fix):**
+  `.devcontainer/start.sh` baute das gespawnte Tracker-Image nur, *wenn es fehlte*,
+  und cachte es danach für immer. Sobald Fireflys `main` einen neuen Quelltyp
+  bekommt (hier `adsb_aggregator`, v1.5.0), lehnt der alte Tracker das
+  `FIREFLY_SOURCES`-JSON ab (`unknown variant`), crash-loopt und der Feed wird nie
+  grün — keine Tracks, ohne sichtbaren Fehler in der UI. Jetzt: bei **jedem**
+  Start `git -C ../firefly pull --ff-only` + `docker build` (Layer-Cache ⇒ No-op in
+  Sekunden, wenn Firefly unverändert) und danach **Neu-Spawn** der Tracker
+  (`docker rm` der `wayfinder.managed`-Container; der Spec-Hash hängt nur am
+  Image-*Namen*, nicht am Digest, sonst bliebe der alte Container hängen).
+  Rebuild-Fehler sind **nicht-fatal** (Rückfall auf vorhandenes Image + laute
+  Warnung), damit ein rotes Firefly-`main` nicht die ganze UI blockiert. (S2)
+- **404 auf der Codespace-URL nach dem Aufwachen (Diagnose + Doku):** Ursache ist
+  der beim Idle-Resume verwaiste **Port-Forwarding-Tunnel** (Panel-Einträge
+  bleiben, Edge routet nicht → 404 für jeden Port, egal Private/Public; App selbst
+  liefert lokal `200`). Fix: **F1 → „Developer: Reload Window"** (baut den
+  Tunnel-Client neu auf). Globus-Klick/Port-neu-anlegen fassen nur die
+  Registrierung an, nicht den Tunnel. Als `## 5. Fehlerbehebung` in
+  `docs/CODESPACES.md` dokumentiert (inkl. Stale-Image-Fall + Desktop/`gh`-Umgehung).
+- CAT062/Draht-Vertrag **unberührt** — reiner Deploy-/Harness-Pfad.
+
 ## 🎯 Stand 2026-07-06 (#201 ADS-B ohne Zugang — Community-Aggregator)
 
 - **Quell-Typ `adsb_aggregator` (Firefly-Kontrakt v1.5.0, ADR 0031 dort, #201):**
