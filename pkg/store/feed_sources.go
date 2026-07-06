@@ -21,6 +21,11 @@ const (
 	// SourceADSBOpenSky polls the OpenSky REST API (states/all) inside a query
 	// bbox — a crowdsourced internet source, area-bounded, optional credentials.
 	SourceADSBOpenSky SourceType = "adsb_opensky"
+	// SourceADSBAggregator polls an ADSBExchange-v2-compatible community
+	// aggregator (adsb.lol / adsb.fi) inside a query bbox — the auth-free second
+	// ADS-B procurement path next to OpenSky (Firefly ADR 0031, contract v1.5.0).
+	// It carries NO credential; the provider is selected per source.
+	SourceADSBAggregator SourceType = "adsb_aggregator"
 	// SourceFLARMAPRS ingests OGN/APRS-IS (GA/gliders) inside a query bbox.
 	SourceFLARMAPRS SourceType = "flarm_aprs"
 	// SourceRadarASTERIX ingests a real surveillance sensor (CAT048/CAT001,
@@ -31,24 +36,45 @@ const (
 // knownSourceTypes is the closed catalogue; isAreaBounded marks the kinds whose
 // coverage is a geographic query window (vs. a physical sensor with a SAC/SIC).
 var knownSourceTypes = map[SourceType]bool{
-	SourceADSBOpenSky:  true,
-	SourceFLARMAPRS:    true,
-	SourceRadarASTERIX: true,
+	SourceADSBOpenSky:    true,
+	SourceADSBAggregator: true,
+	SourceFLARMAPRS:      true,
+	SourceRadarASTERIX:   true,
 }
 
 func (t SourceType) isAreaBounded() bool {
-	return t == SourceADSBOpenSky || t == SourceFLARMAPRS
+	return t == SourceADSBOpenSky || t == SourceADSBAggregator || t == SourceFLARMAPRS
 }
 
-// Poll-interval bounds for an adsb_opensky source (ADR 0029 in Firefly). The
-// floor is OpenSky's fastest authenticated cadence (~5 s) — below it even an
-// authenticated client risks HTTP 429; the ceiling (1 h) rejects a nonsensically
-// slow poll. Firefly itself stays lenient (any value > 0, else its 10 s default);
-// this tighter range is enforced here, at the operator's write boundary.
+// isPolled marks the kinds whose input is a periodic REST poll (and may
+// therefore carry a poll_interval_secs override): OpenSky (ADR 0029) and the
+// community aggregator (ADR 0031). FLARM/APRS is a push stream; radar has its
+// own antenna scan period.
+func (t SourceType) isPolled() bool {
+	return t == SourceADSBOpenSky || t == SourceADSBAggregator
+}
+
+// Poll-interval bounds for a polled source (Firefly ADR 0029/0031). The floor is
+// OpenSky's fastest authenticated cadence (~5 s) — below it even an
+// authenticated client risks HTTP 429, and the community aggregators' public
+// endpoints allow ~1 req/s, so 5 s stays polite there too; the ceiling (1 h)
+// rejects a nonsensically slow poll. Firefly itself stays lenient (any value
+// > 0, else its 10 s default); this tighter range is enforced here, at the
+// operator's write boundary.
 const (
 	minPollIntervalSecs = 5
 	maxPollIntervalSecs = 3600
 )
+
+// knownAggregatorProviders is the closed provider vocabulary for an
+// adsb_aggregator source (Firefly contract v1.5.0, ADR 0031). airplanes.live is
+// deliberately absent until the unit of its radius parameter is verified (a
+// wrong unit would silently shrink the coverage circle — see the ADR). Empty
+// means Firefly's default (adsb_lol).
+var knownAggregatorProviders = map[string]bool{
+	"adsb_lol": true,
+	"adsb_fi":  true,
+}
 
 // sensorClassBySourceType maps each live source kind to the surveillance sensor
 // class it contributes, so a feed's sensor mix (feed metadata, pkg/sensorclass)
@@ -57,9 +83,10 @@ const (
 // CAT048 target reports carry a SAC/SIC identity. The mapping is intentionally
 // coarse — the sensor mix is informational metadata, not a rendering input.
 var sensorClassBySourceType = map[SourceType]sensorclass.Class{
-	SourceADSBOpenSky:  sensorclass.ADSB,
-	SourceFLARMAPRS:    sensorclass.FLARM,
-	SourceRadarASTERIX: sensorclass.SSR,
+	SourceADSBOpenSky:    sensorclass.ADSB,
+	SourceADSBAggregator: sensorclass.ADSB,
+	SourceFLARMAPRS:      sensorclass.FLARM,
+	SourceRadarASTERIX:   sensorclass.SSR,
 }
 
 // DerivedSensorMix returns the feed's sensor mix implied by its configured source
@@ -93,13 +120,19 @@ type Source struct {
 	SAC     *int       `json:"sac,omitempty"`
 	SIC     *int       `json:"sic,omitempty"`
 	CredRef *string    `json:"cred_ref,omitempty"`
-	// PollIntervalSecs overrides the OpenSky poll cadence for an adsb_opensky
-	// source (whole seconds; Firefly contract v1.4.0, ADR 0029 there). It only
-	// applies to adsb_opensky — FLARM/APRS is a push stream and radar has its own
-	// scan period — so the write boundary rejects it for any other type. Absent →
-	// Firefly's default (10 s). The operator sets it to respect OpenSky's rate
-	// limit (anonymous ~10 s, authenticated ~5 s) and avoid HTTP 429.
+	// PollIntervalSecs overrides the poll cadence of a *polled* source
+	// (whole seconds; Firefly contract v1.4.0/v1.5.0, ADR 0029/0031 there). It
+	// only applies to adsb_opensky and adsb_aggregator — FLARM/APRS is a push
+	// stream and radar has its own scan period — so the write boundary rejects it
+	// for any other type. Absent → Firefly's default (10 s). The operator sets it
+	// to respect the provider's rate limit and avoid HTTP 429.
 	PollIntervalSecs *int `json:"poll_interval_secs,omitempty"`
+	// Provider selects which community aggregator an adsb_aggregator source
+	// polls (Firefly contract v1.5.0, ADR 0031): "adsb_lol" or "adsb_fi". Only
+	// valid on adsb_aggregator; empty means Firefly's default (adsb_lol). The
+	// write boundary enforces the closed vocabulary so the orchestrator never
+	// launches an instance that aborts on an unknown provider.
+	Provider string `json:"provider,omitempty"`
 	// Radar location (radar_asterix only, Firefly contract v1.3.0 / #91): CAT048
 	// is polar *relative to the radar* and does not carry the site, so Firefly
 	// needs Lat/Lon (WGS84 degrees, required) to lift polar plots into the
@@ -158,13 +191,25 @@ func (s Source) validate(idx int) error {
 		}
 	}
 
-	// poll_interval_secs applies only to the polled OpenSky source (ADR 0029).
+	// poll_interval_secs applies only to the polled sources (ADR 0029/0031).
 	if s.PollIntervalSecs != nil {
-		if s.Type != SourceADSBOpenSky {
-			return &InvalidSourceError{Index: idx, Reason: fmt.Sprintf("poll_interval_secs only applies to %s", SourceADSBOpenSky)}
+		if !s.Type.isPolled() {
+			return &InvalidSourceError{Index: idx, Reason: fmt.Sprintf("poll_interval_secs only applies to %s and %s", SourceADSBOpenSky, SourceADSBAggregator)}
 		}
 		if *s.PollIntervalSecs < minPollIntervalSecs || *s.PollIntervalSecs > maxPollIntervalSecs {
 			return &InvalidSourceError{Index: idx, Reason: fmt.Sprintf("poll_interval_secs must be in %d..%d", minPollIntervalSecs, maxPollIntervalSecs)}
+		}
+	}
+
+	// provider selects the community aggregator (contract v1.5.0, ADR 0031) and
+	// is meaningless on every other type. An unknown provider would make the
+	// spawned Firefly instance abort at startup — reject at the write boundary.
+	if s.Provider != "" {
+		if s.Type != SourceADSBAggregator {
+			return &InvalidSourceError{Index: idx, Reason: fmt.Sprintf("provider only applies to %s", SourceADSBAggregator)}
+		}
+		if !knownAggregatorProviders[s.Provider] {
+			return &InvalidSourceError{Index: idx, Reason: fmt.Sprintf("unknown aggregator provider %q (expected adsb_lol or adsb_fi)", s.Provider)}
 		}
 	}
 

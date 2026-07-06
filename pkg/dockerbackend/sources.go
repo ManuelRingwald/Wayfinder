@@ -31,9 +31,15 @@ type fireflySource struct {
 	HeightM *float64 `json:"height_m,omitempty"`
 	Listen  string   `json:"listen,omitempty"`
 	CredEnv string   `json:"cred_env,omitempty"`
-	// PollIntervalSecs is passed through to Firefly for an adsb_opensky source
-	// (contract v1.4.0 / ADR 0029 there); absent → Firefly's default (10 s).
+	// PollIntervalSecs is passed through to Firefly for a polled source
+	// (adsb_opensky since contract v1.4.0 / ADR 0029, adsb_aggregator since
+	// v1.5.0 / ADR 0031); absent → Firefly's default (10 s).
 	PollIntervalSecs *int `json:"poll_interval_secs,omitempty"`
+	// Provider is passed through for an adsb_aggregator source (contract
+	// v1.5.0 / ADR 0031): which community aggregator to poll (adsb_lol /
+	// adsb_fi). Absent → Firefly's default (adsb_lol). The type is auth-free,
+	// so it never carries a cred_env.
+	Provider string `json:"provider,omitempty"`
 }
 
 // credEnvName is the deterministic env name carrying the resolved credential for
@@ -70,6 +76,7 @@ func fireflySourcesEnv(sources store.SourceConfig, resolved map[string]string) (
 			HeightM:          s.HeightM,
 			Listen:           s.Listen,
 			PollIntervalSecs: s.PollIntervalSecs,
+			Provider:         s.Provider,
 		}
 		if s.CredRef != nil {
 			if v, found := resolved[*s.CredRef]; found && v != "" {

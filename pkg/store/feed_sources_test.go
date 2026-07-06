@@ -126,6 +126,33 @@ func TestSourceConfigValidate(t *testing.T) {
 			wantErr: true, wantIdx: 0,
 		},
 		{
+			name: "valid aggregator with bbox and provider (#201)",
+			cfg:  SourceConfig{{Type: SourceADSBAggregator, BBox: bbox(48, 7, 50, 9), Provider: "adsb_fi"}},
+		},
+		{
+			name: "valid aggregator without provider (Firefly default adsb_lol)",
+			cfg:  SourceConfig{{Type: SourceADSBAggregator, BBox: bbox(48, 7, 50, 9)}},
+		},
+		{
+			name: "valid aggregator with poll_interval_secs (ADR 0031)",
+			cfg:  SourceConfig{{Type: SourceADSBAggregator, BBox: bbox(48, 7, 50, 9), PollIntervalSecs: ptrInt(15)}},
+		},
+		{
+			name:    "aggregator without bbox rejected",
+			cfg:     SourceConfig{{Type: SourceADSBAggregator}},
+			wantErr: true, wantIdx: 0,
+		},
+		{
+			name:    "unknown aggregator provider rejected",
+			cfg:     SourceConfig{{Type: SourceADSBAggregator, BBox: bbox(48, 7, 50, 9), Provider: "airplanes_live"}},
+			wantErr: true, wantIdx: 0,
+		},
+		{
+			name:    "provider on non-aggregator type rejected",
+			cfg:     SourceConfig{{Type: SourceADSBOpenSky, BBox: bbox(48, 7, 50, 9), Provider: "adsb_lol"}},
+			wantErr: true, wantIdx: 0,
+		},
+		{
 			name: "error reports offending index",
 			cfg: SourceConfig{
 				{Type: SourceADSBOpenSky, BBox: bbox(48, 7, 50, 9)},

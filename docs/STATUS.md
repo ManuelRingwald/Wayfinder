@@ -10,6 +10,22 @@
 
 ---
 
+## 🎯 Stand 2026-07-06 (#201 ADS-B ohne Zugang — Community-Aggregator)
+
+- **Quell-Typ `adsb_aggregator` (Firefly-Kontrakt v1.5.0, ADR 0031 dort, #201):**
+  ADS-B jetzt auch **ohne Zugangsdaten** über adsb.lol (Default) / adsb.fi —
+  zweiter Bezugsweg **neben** OpenSky (kein Ersatz), nutzbar aus Umgebungen mit
+  Datacenter-IP-Sperre (Codespaces-Diagnose 2026-07-05: OpenSky droppt
+  Azure-IPs). Store: neue Konstante + `isPolled` + `provider`-Whitelist
+  (`adsb_lol`/`adsb_fi`; airplanes.live bis zur Verifikation der
+  Radius-Einheit zurückgestellt), `poll_interval_secs` gilt für beide
+  gepollten Typen. Orchestrator: `provider`-Pass-through nach
+  `FIREFLY_SOURCES`, **kein** `cred_env` (auth-frei). UI: Typ
+  „ADS-B (Community-Aggregator)" mit Anbieter-Select (Labels adsb.lol/adsb.fi,
+  Wire-Werte bleiben intern), Poll-Feld + Höflichkeits-Infobox, **kein**
+  Credential-Block. Firefly-Seite zuvor gemergt (PR #54, Issue #53 zu).
+  CAT062-Draht unberührt. (S3, Häppchen 2 zu Firefly ADR 0031)
+
 ## 🎯 Stand 2026-07-05 (#194 Responsive — Häppchen 1)
 
 - **ASD + Admin responsive (iPhone/iPad/24″), Design-Mockup umgesetzt (#194):**

@@ -276,10 +276,13 @@ services:
     networks: [asd]
     environment:
       # Quellen sind Opt-in (Firefly ADR 0030): ohne Quelle sendet Firefly nur
-      # den CAT065-Heartbeat (leerer Himmel). Für echte Tracks z. B. OpenSky
-      # (kostenloses Konto, OAuth2 — Firefly ADR 0024):
-      FIREFLY_OPENSKY_ENABLED: "true"
-      FIREFLY_OPENSKY_CREDENTIALS: "client_id:client_secret"
+      # den CAT065-Heartbeat (leerer Himmel). Für echte Tracks OHNE Konto der
+      # Community-Aggregator (adsb.lol/adsb.fi — Firefly ADR 0031; funktioniert
+      # auch dort, wo OpenSky Datacenter-IPs sperrt, z. B. Codespaces):
+      FIREFLY_ADSBAGG_ENABLED: "true"
+      # …oder alternativ OpenSky (kostenloses Konto, OAuth2 — Firefly ADR 0024):
+      # FIREFLY_OPENSKY_ENABLED: "true"
+      # FIREFLY_OPENSKY_CREDENTIALS: "client_id:client_secret"
       FIREFLY_CAT062_ENABLED: "true"
       FIREFLY_CAT062_GROUP: "239.255.0.62"
       FIREFLY_CAT062_PORT: "8600"
@@ -413,10 +416,13 @@ services:
     networks: [asd]
     environment:
       # Quellen sind Opt-in (Firefly ADR 0030): ohne Quelle sendet Firefly nur
-      # den CAT065-Heartbeat (leerer Himmel). Für echte Tracks z. B. OpenSky
-      # (kostenloses Konto, OAuth2 — Firefly ADR 0024):
-      FIREFLY_OPENSKY_ENABLED: "true"
-      FIREFLY_OPENSKY_CREDENTIALS: "client_id:client_secret"
+      # den CAT065-Heartbeat (leerer Himmel). Für echte Tracks OHNE Konto der
+      # Community-Aggregator (adsb.lol/adsb.fi — Firefly ADR 0031; funktioniert
+      # auch dort, wo OpenSky Datacenter-IPs sperrt, z. B. Codespaces):
+      FIREFLY_ADSBAGG_ENABLED: "true"
+      # …oder alternativ OpenSky (kostenloses Konto, OAuth2 — Firefly ADR 0024):
+      # FIREFLY_OPENSKY_ENABLED: "true"
+      # FIREFLY_OPENSKY_CREDENTIALS: "client_id:client_secret"
       FIREFLY_CAT062_ENABLED: "true"
       FIREFLY_CAT062_GROUP: "239.255.0.62"
       FIREFLY_CAT062_PORT: "8600"

@@ -200,10 +200,28 @@
               <v-text-field v-model.number="s.radius_nm" type="number" label="Radius (NM)" density="compact" hide-details style="max-width: 130px" />
             </div>
 
-            <!-- Poll-Intervall (ADR 0029) — nur OpenSky (FLARM ist Push). Leer =
-                 Firefly-Default (10 s). Die Infobox erklärt die OpenSky-Grenzen,
-                 damit der Betreiber das Rate-Limit (HTTP 429) respektiert. -->
-            <div v-if="s.type === 'adsb_opensky'" class="mt-2">
+            <!-- Provider (#201) — nur Community-Aggregator: welcher freie Dienst
+                 abgefragt wird. Beide sprechen dasselbe API-Format; die Auswahl
+                 ist der Ausweichweg bei Ausfall/Drosselung eines Anbieters. -->
+            <div v-if="s.type === 'adsb_aggregator'" class="mt-2">
+              <v-select
+                v-model="s.provider"
+                :items="AGG_PROVIDERS"
+                item-title="label"
+                item-value="value"
+                label="Anbieter"
+                hint="Frei und ohne Zugangsdaten. Bei Ausfall einfach auf den anderen Anbieter umstellen."
+                persistent-hint
+                density="compact"
+                style="max-width: 240px"
+              />
+            </div>
+
+            <!-- Poll-Intervall (ADR 0029/0031) — nur gepollte Quellen (FLARM ist
+                 Push). Leer = Firefly-Default (10 s). Die Infobox erklärt die
+                 Grenzen des jeweiligen Dienstes, damit der Betreiber das
+                 Rate-Limit (HTTP 429) respektiert. -->
+            <div v-if="isPolledType(s.type)" class="mt-2">
               <v-text-field
                 v-model.number="s.poll_interval_secs"
                 type="number"
@@ -214,10 +232,15 @@
                 density="compact"
                 style="max-width: 240px"
               />
-              <v-alert type="info" variant="tonal" density="compact" class="mt-2">
+              <v-alert v-if="s.type === 'adsb_opensky'" type="info" variant="tonal" density="compact" class="mt-2">
                 OpenSky ist ratenbegrenzt: <strong>anonym ~1 Abfrage/10 s</strong>,
                 <strong>authentifiziert ~1/5 s</strong>. Ein zu kurzes Intervall läuft in
                 HTTP&nbsp;429 — lieber am Limit bleiben oben oder Zugangsdaten hinterlegen.
+              </v-alert>
+              <v-alert v-else type="info" variant="tonal" density="compact" class="mt-2">
+                Community-Dienst ohne Zugangsdaten, betrieben von Freiwilligen. Öffentliche
+                Grenze ~1 Abfrage/s — der Standard von {{ DEFAULT_POLL_SECS }}&nbsp;s bleibt
+                bewusst höflich darunter.
               </v-alert>
             </div>
           </div>
@@ -461,13 +484,30 @@ function openDelete(f) {
 // carry a query bbox; radar carries a SAC/SIC identity.
 const SOURCE_TYPES = [
   { value: 'adsb_opensky', label: 'ADS-B (OpenSky)' },
+  { value: 'adsb_aggregator', label: 'ADS-B (Community-Aggregator)' },
   { value: 'flarm_aprs', label: 'FLARM (OGN/APRS)' },
   { value: 'radar_asterix', label: 'Radar (ASTERIX CAT048/001)' },
 ]
-const AREA_TYPES = new Set(['adsb_opensky', 'flarm_aprs'])
+const AREA_TYPES = new Set(['adsb_opensky', 'adsb_aggregator', 'flarm_aprs'])
 function isAreaType(t) {
   return AREA_TYPES.has(t)
 }
+// Polled sources may carry a poll-interval override (Firefly ADR 0029/0031);
+// FLARM is a push stream, radar has its own scan period.
+const POLLED_TYPES = new Set(['adsb_opensky', 'adsb_aggregator'])
+function isPolledType(t) {
+  return POLLED_TYPES.has(t)
+}
+
+// Community-aggregator providers (#201; Firefly contract v1.5.0, ADR 0031).
+// Human-readable labels only in the UI — the snake_case values stay wire/DB
+// internal. airplanes.live is deliberately absent until its radius unit is
+// verified (ADR 0031 in Firefly).
+const AGG_PROVIDERS = [
+  { value: 'adsb_lol', label: 'adsb.lol' },
+  { value: 'adsb_fi', label: 'adsb.fi' },
+]
+const DEFAULT_AGG_PROVIDER = 'adsb_lol'
 
 // OpenSky poll-interval bounds (ADR 0029). Mirrors the server's write-boundary
 // range (pkg/store minPollIntervalSecs..maxPollIntervalSecs); the field is
@@ -499,10 +539,12 @@ const secretPass = ref({})
 const secretBusy = ref(-1)
 
 // Credential applicability + operator-facing labels per source type (UX-4). Radar
-// (CAT048) is a network endpoint with no auth → no credential UI. ADS-B needs an
-// OpenSky OAuth2 client (required); FLARM/APRS-IS is optional (anonymous read-only
-// works, or a callsign + passcode for an account). Both fields still combine into
-// the single "id:secret" value the store keeps (credential.js).
+// (CAT048) is a network endpoint with no auth and the community aggregator
+// (#201) is an open service — both get NO credential UI (no map entry). ADS-B
+// via OpenSky needs an OAuth2 client (required); FLARM/APRS-IS is optional
+// (anonymous read-only works, or a callsign + passcode for an account). Both
+// fields still combine into the single "id:secret" value the store keeps
+// (credential.js).
 const CREDENTIAL = {
   adsb_opensky: { required: true, title: 'OpenSky-Zugang (OAuth2)', user: 'OpenSky Client-ID', pass: 'OpenSky Client-Secret' },
   flarm_aprs: { required: false, title: 'APRS-IS-Zugang (optional)', user: 'APRS-IS Rufzeichen', pass: 'APRS-IS Passcode' },
@@ -610,11 +652,14 @@ function blankSource(type = 'adsb_opensky') {
   return {
     type, center_lat: null, center_lon: null, radius_nm: null, tenant_id: null,
     sac: null, sic: null, lat: null, lon: null, height_m: null, listen: '',
-    // #172: prefill the OpenSky poll interval with the visible default so the
-    // field shows "10" instead of an empty box — the operator sees which value
-    // applies without focusing it. Still editable/clearable (empty ⇒ Firefly
-    // default). Other source types have no poll field, so leave them null.
-    cred_ref: '', poll_interval_secs: type === 'adsb_opensky' ? DEFAULT_POLL_SECS : null,
+    // #201: the provider backs the aggregator's select; harmless on other types
+    // (only sent for adsb_aggregator, see buildSourcesPayload).
+    provider: DEFAULT_AGG_PROVIDER,
+    // #172: prefill the poll interval of a polled source with the visible
+    // default so the field shows "10" instead of an empty box — the operator
+    // sees which value applies without focusing it. Still editable/clearable
+    // (empty ⇒ Firefly default). Push/scan source types have no poll field.
+    cred_ref: '', poll_interval_secs: isPolledType(type) ? DEFAULT_POLL_SECS : null,
   }
 }
 
@@ -636,6 +681,7 @@ function toFormSource(s) {
     lon: s.lon ?? null,
     height_m: s.height_m ?? null,
     listen: s.listen ?? '',
+    provider: s.provider ?? DEFAULT_AGG_PROVIDER,
     cred_ref: s.cred_ref ?? '',
     poll_interval_secs: s.poll_interval_secs ?? null,
   }
@@ -706,10 +752,17 @@ function buildSourcesPayload() {
         if (box) {
           out.bbox = box // already the backend wire shape (min_lat/min_lon/max_lat/max_lon)
         }
-        // Poll interval is OpenSky-only (ADR 0029); FLARM is a push stream. Send
-        // it only when set, so an empty field keeps Firefly's default (10 s).
-        if (s.type === 'adsb_opensky' && s.poll_interval_secs != null && s.poll_interval_secs !== '') {
+        // Poll interval applies to the polled sources (ADR 0029/0031); FLARM is
+        // a push stream. Send it only when set, so an empty field keeps
+        // Firefly's default (10 s).
+        if (isPolledType(s.type) && s.poll_interval_secs != null && s.poll_interval_secs !== '') {
           out.poll_interval_secs = Number(s.poll_interval_secs)
+        }
+        // #201: the aggregator provider — only meaningful (and only accepted by
+        // the server) on this type; other types keep the form value to
+        // themselves.
+        if (s.type === 'adsb_aggregator' && s.provider) {
+          out.provider = s.provider
         }
       } else {
         out.sac = s.sac
