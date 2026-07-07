@@ -122,6 +122,101 @@ func TestBoundingBoxFromCenterIsRoughlySquare(t *testing.T) {
 	}
 }
 
+// sampleAirspaces exercises the AoR enrichment (ASD-014): one fully-attributed
+// airspace (stable id, ICAO class, floor/ceiling triples) and one bare airspace
+// whose absent fields must be omitted, not emitted as zero values.
+const sampleAirspaces = `{
+  "items": [
+    {"_id": "62a1f0c0abcdef0123456789", "name": "HAMBURG CTR", "type": 4, "icaoClass": 3,
+     "lowerLimit": {"value": 0, "unit": 1, "referenceDatum": 0},
+     "upperLimit": {"value": 1500, "unit": 1, "referenceDatum": 1},
+     "geometry": {"type": "Polygon", "coordinates": [[[9.9,53.5],[10.1,53.5],[10.1,53.7],[9.9,53.5]]]}},
+    {"name": "BARE TMA", "type": 7,
+     "geometry": {"type": "Polygon", "coordinates": [[[9,53],[10,53],[10,54],[9,53]]]}}
+  ]
+}`
+
+func TestFetchEnrichesAirspaceProperties(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(sampleAirspaces))
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.Client(), srv.URL, "")
+	fc, err := c.Fetch(context.Background(), KindAirspace, BoundingBox{})
+	if err != nil {
+		t.Fatalf("Fetch: %v", err)
+	}
+	if len(fc.Features) != 2 {
+		t.Fatalf("expected 2 features, got %d", len(fc.Features))
+	}
+
+	// First airspace carries the full enrichment.
+	p := fc.Features[0].Properties
+	if p["kind"] != "airspace" || p["name"] != "HAMBURG CTR" {
+		t.Fatalf("unexpected base props %v", p)
+	}
+	if p["id"] != "62a1f0c0abcdef0123456789" {
+		t.Errorf("expected stable id, got %v", p["id"])
+	}
+	if p["icao_class"] != 3 {
+		t.Errorf("expected icao_class 3, got %v", p["icao_class"])
+	}
+	lower, ok := p["lower"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected lower band object, got %T", p["lower"])
+	}
+	if lower["value"] != float64(0) || lower["unit"] != 1 || lower["referenceDatum"] != 0 {
+		t.Errorf("unexpected lower band %v", lower)
+	}
+	upper, ok := p["upper"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected upper band object, got %T", p["upper"])
+	}
+	if upper["value"] != float64(1500) || upper["unit"] != 1 || upper["referenceDatum"] != 1 {
+		t.Errorf("unexpected upper band %v", upper)
+	}
+
+	// Second airspace: absent fields must be omitted, not emitted as zero/empty.
+	q := fc.Features[1].Properties
+	for _, k := range []string{"id", "icao_class", "lower", "upper"} {
+		if _, present := q[k]; present {
+			t.Errorf("expected %q omitted when absent, got %v", k, q[k])
+		}
+	}
+}
+
+func TestEnrichmentFieldsAreAirspaceOnly(t *testing.T) {
+	// Even if OpenAIP returns _id/icaoClass/limits on a non-airspace object, the
+	// AoR enrichment must not leak onto navaid/waypoint output (backward compat).
+	const body = `{"items":[{"name":"X","type":3,"_id":"abc","icaoClass":2,
+	  "lowerLimit":{"value":0,"unit":1,"referenceDatum":0},
+	  "geometry":{"type":"Point","coordinates":[8,50]}}]}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(body))
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.Client(), srv.URL, "")
+	fc, err := c.Fetch(context.Background(), KindNavaid, BoundingBox{})
+	if err != nil {
+		t.Fatalf("Fetch: %v", err)
+	}
+	if len(fc.Features) != 1 {
+		t.Fatalf("expected 1 feature, got %d", len(fc.Features))
+	}
+	p := fc.Features[0].Properties
+	for _, k := range []string{"id", "icao_class", "lower", "upper"} {
+		if _, present := p[k]; present {
+			t.Errorf("navaid must not carry airspace field %q, got %v", k, p[k])
+		}
+	}
+	if p["navaid_kind"] != "VOR" {
+		t.Errorf("expected navaid still transformed, got %v", p["navaid_kind"])
+	}
+}
+
 func TestValidGeometryRejectsBadInput(t *testing.T) {
 	cases := []struct {
 		raw  string
