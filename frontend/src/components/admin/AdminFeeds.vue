@@ -170,9 +170,29 @@
               style="max-width: 260px"
               @update:model-value="ensureCredRef(s)"
             />
+            <!-- #212: the concrete community-aggregator provider sits directly
+                 beside the type field, so the ADS-B source it refines is visually
+                 obvious. It used to render further down (above the poll interval),
+                 detached from the type. Only the aggregator type has a provider. -->
+            <v-select
+              v-if="s.type === 'adsb_aggregator'"
+              v-model="s.provider"
+              :items="AGG_PROVIDERS"
+              item-title="label"
+              item-value="value"
+              label="Anbieter"
+              density="compact"
+              hide-details
+              style="max-width: 200px"
+            />
             <v-spacer />
             <v-btn size="small" color="error" variant="text" icon="mdi-delete" @click="removeSource(i)" />
           </div>
+          <!-- #212: the provider's failover note, kept as a caption so the header
+               row stays aligned (both selects run hide-details). -->
+          <p v-if="s.type === 'adsb_aggregator'" class="text-caption text-medium-emphasis mb-2">
+            Anbieter frei und ohne Zugangsdaten. Bei Ausfall/Drosselung einfach auf den anderen Anbieter umstellen.
+          </p>
 
           <!-- Area-bounded sources: centre + radius (#109/#113). The tenant
                dropdown fills these from that tenant's Standard-Ansicht; the query
@@ -198,23 +218,6 @@
               <v-text-field v-model.number="s.center_lat" type="number" label="Zentrum Breite (°)" density="compact" hide-details style="max-width: 160px" />
               <v-text-field v-model.number="s.center_lon" type="number" label="Zentrum Länge (°)" density="compact" hide-details style="max-width: 160px" />
               <v-text-field v-model.number="s.radius_nm" type="number" label="Radius (NM)" density="compact" hide-details style="max-width: 130px" />
-            </div>
-
-            <!-- Provider (#201) — nur Community-Aggregator: welcher freie Dienst
-                 abgefragt wird. Beide sprechen dasselbe API-Format; die Auswahl
-                 ist der Ausweichweg bei Ausfall/Drosselung eines Anbieters. -->
-            <div v-if="s.type === 'adsb_aggregator'" class="mt-2">
-              <v-select
-                v-model="s.provider"
-                :items="AGG_PROVIDERS"
-                item-title="label"
-                item-value="value"
-                label="Anbieter"
-                hint="Frei und ohne Zugangsdaten. Bei Ausfall einfach auf den anderen Anbieter umstellen."
-                persistent-hint
-                density="compact"
-                style="max-width: 240px"
-              />
             </div>
 
             <!-- Poll-Intervall (ADR 0029/0031) — nur gepollte Quellen (FLARM ist
