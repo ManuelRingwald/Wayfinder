@@ -167,12 +167,62 @@ type openaipItem struct {
 	Identifier string          `json:"identifier"`
 	Frequency  *openaipValue   `json:"frequency"`
 	Geometry   json.RawMessage `json:"geometry"`
+
+	// Airspace-only enrichment (AoR overlays, ASD-014). `_id` is OpenAIP's stable
+	// identifier — the robust key for pinning a specific airspace as part of a
+	// tenant's Area of Responsibility (a name is free-form and drifts per AIRAC).
+	// icaoClass is a numeric enum; lowerLimit/upperLimit are altitude triples.
+	// These are decoded here but only surfaced for KindAirspace (see properties).
+	ID         string          `json:"_id"`
+	ICAOClass  json.RawMessage `json:"icaoClass"`
+	LowerLimit *openaipLimit   `json:"lowerLimit"`
+	UpperLimit *openaipLimit   `json:"upperLimit"`
 }
 
 // openaipValue is OpenAIP's {value, unit} pair (e.g. a navaid frequency).
 type openaipValue struct {
 	Value string          `json:"value"`
 	Unit  json.RawMessage `json:"unit"`
+}
+
+// openaipLimit is OpenAIP's vertical-limit triple {value, unit, referenceDatum}
+// for an airspace floor/ceiling. All three are kept raw and parsed defensively:
+// value is numeric, unit and referenceDatum are numeric enums (unit 0=m, 1=ft,
+// 6=FL; referenceDatum 0=GND, 1=MSL, 2=STD). The referenceDatum is deliberately
+// preserved (never collapsed into a single scaled number): a "FL195" or "1500 ft
+// GND" limit only becomes an absolute height with pressure/terrain, so keeping
+// the datum keeps the band convertible for altitude filtering today and a
+// possible 3-D extrusion later (ASD-014).
+type openaipLimit struct {
+	Value          json.RawMessage `json:"value"`
+	Unit           json.RawMessage `json:"unit"`
+	ReferenceDatum json.RawMessage `json:"referenceDatum"`
+}
+
+// props renders the limit as a GeoJSON property object, keeping only the
+// sub-fields that parse. A nil receiver or an all-unparsable limit yields nil so
+// the caller omits the property entirely.
+func (l *openaipLimit) props() map[string]any {
+	if l == nil {
+		return nil
+	}
+	m := map[string]any{}
+	var v float64
+	if err := json.Unmarshal(l.Value, &v); err == nil {
+		m["value"] = v
+	}
+	var u int
+	if err := json.Unmarshal(l.Unit, &u); err == nil {
+		m["unit"] = u
+	}
+	var r int
+	if err := json.Unmarshal(l.ReferenceDatum, &r); err == nil {
+		m["referenceDatum"] = r
+	}
+	if len(m) == 0 {
+		return nil
+	}
+	return m
 }
 
 // properties builds the GeoJSON properties for an item, including a normalised
@@ -197,6 +247,26 @@ func (it openaipItem) properties(kind Kind) map[string]any {
 	}
 	if it.Frequency != nil && it.Frequency.Value != "" {
 		props["frequency"] = it.Frequency.Value
+	}
+	if kind == KindAirspace {
+		// AoR enrichment (ASD-014): a stable id to pin the airspace, the ICAO
+		// class, and the vertical band. Airspace-only so navaid/waypoint output
+		// is unchanged (additive, backward compatible).
+		if it.ID != "" {
+			props["id"] = it.ID
+		}
+		if len(it.ICAOClass) > 0 {
+			var c int
+			if err := json.Unmarshal(it.ICAOClass, &c); err == nil {
+				props["icao_class"] = c
+			}
+		}
+		if lower := it.LowerLimit.props(); lower != nil {
+			props["lower"] = lower
+		}
+		if upper := it.UpperLimit.props(); upper != nil {
+			props["upper"] = upper
+		}
 	}
 	return props
 }

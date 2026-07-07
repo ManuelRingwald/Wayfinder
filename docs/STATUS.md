@@ -34,6 +34,25 @@
     `mapCanvasViewCenter.test.js`. Gates: **vitest 416 grün** (+1),
     `go test`/`vet`/`gofmt` grün, `vite build` + eingebettetes `dist` neu.
 
+## 🎯 Stand 2026-07-07 (ASD-014 Slice 1 — OpenAIP-Transform-Anreicherung für AoR)
+
+- **ASD-014.1 — OpenAIP-Transform-Anreicherung (Backend-Vorbau, FR-AERO-002):**
+  Der OpenAIP→GeoJSON-Transform (`pkg/aeronautical/client.go`) führt für
+  **Lufträume** jetzt zusätzlich mit: **`id`** (stabile OpenAIP-`_id` — robuste
+  Referenz für die AoR-Auswahl, Option 1), **`icao_class`** (numerisch) und die
+  **Vertikalgrenzen `lower`/`upper`** als `{value, unit, referenceDatum}`-Objekt.
+  Additiv/rückwärtskompatibel (nur `kind==airspace`, fehlende Felder weggelassen;
+  Navaid/Waypoint unverändert). **Höhenbänder datum-vollständig** gehalten (nie zu
+  einer Zahl verrechnet) → bereit für Höhen-Filter und späteres 3-D (3-D wird
+  jetzt **nicht** gebaut).
+- **Neuer Typ** `openaipLimit` + `properties()`-Airspace-Block; neue Tests
+  `TestFetchEnrichesAirspaceProperties`, `TestEnrichmentFieldsAreAirspaceOnly`.
+  Doku: Milestone `ASD-014.1`, FR-AERO-002, TECHNICAL `/api/airspace`.
+  Gates grün: `go test ./...`, `go vet`, `gofmt`, `golangci-lint` (0 issues).
+- **Nächster Schritt (noch nicht freigegeben):** **Slice 2** — AoR-`_id`-Liste pro
+  Mandant (View-Config) + `/api/airspace`-Tagging (`aor: true`); danach **Slice 3**
+  Frontend-Highlight.
+
 ## 🎯 Stand 2026-07-07 (#208 — Admin ohne eigenes ASD, ADR 0022; Serie komplett)
 
 - **ADR 0022 — Admin ohne eigenes ASD + pfad-unabhängiges Passwort-Gate
