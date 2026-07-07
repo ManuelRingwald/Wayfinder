@@ -202,3 +202,33 @@ Merksatz: **Ebene 1 = Sichtfeld (großzügig), Ebene 2 = Zuständigkeitsgebiet
   Stand, aber ein bewusster Vorbehalt für eine spätere kommerzielle Nutzung.
 - **AIRAC-Drift** (28 Tage) und die 2-D-Natur von MapLibre (Vertikalgrenzen sind
   Attribute, kein 3-D-Volumen) bleiben bestehende Grenzen der Darstellung.
+
+---
+
+## Nachtrag (2026-07-07): Datenquellen-Bewertung (A/B/C)
+
+Auf Betreiber-Frage geprüft, ob neben OpenAIP auch **EuroScope-Sectorfiles** oder
+die **offizielle DFS-AIP** als Quelle der AoR-Geometrie in Frage kommen. Ergebnis
+(recherchiert und verifiziert):
+
+| Quelle | Rolle | Begründung |
+|--------|-------|------------|
+| **A — OpenAIP** | **jetzt gewählt** | Einzige integrierte, offene Quelle (**CC BY-NC**, nicht-kommerziell + Attribution). Reich genug: liefert je Luftraum `type` (CTR=4, TMA=7, CTA=26, ATZ=13), **`icaoClass`** (A–G), **Floor/Ceiling** (`lowerLimit`/`upperLimit` als `{value, unit ft/FL/m, referenceDatum}`) **und eine stabile `_id`**. Kein Flughafen-Link (räumlich/über Namen abzuleiten). |
+| **B — EuroScope-Sectorfiles** (VATSIM/IVAO, `.sct`/`.ese`) | **verworfen** | Technisch parsebar und als einzige Quelle mit expliziter Ownership-Zuordnung (`SECTOR`/`OWNER`/`BORDER`). Aber: **Lizenz** (GNG/AeroNav „nur für private Flugsimulation", „nicht außerhalb des Controller-Clients ohne ausdrückliche Zustimmung", GitHub-Pakete ohne Open-Lizenz) und **fehlende Autorität** (sim-adaptierte, netz-definierte Sektorisierung, **nicht AIRAC-zertifiziert**). Beides disqualifiziert für ein zertifizierungs-orientiertes Produkt. |
+| **C — DFS-AIP / AIXM 5.1.1** | **Produktionsziel** | Autoritativ, AIRAC-deterministisch (CTR in AD 2.17, TMA/CTA in ENR 2.1). AIXM-**Download** ist erlaubt, aber **Redistribution abgeleiteter Daten / kommerzielle Nutzung brauchen vermutlich DFS-Zustimmung**; Pipeline (GDAL/GMLAS, Kurven-Densifizierung, TimeSlice-Flattening) ≈ 3–5 Tage. **Nachverfolgt: Issue #215, Roadmap ASD-015.** |
+
+**Übergreifender Befund:** **Keine** Quelle trägt einen expliziten
+Flughafen→Luftraum-Link (bei OpenAIP *und* AIP ist die Zuordnung räumlich oder
+über den Namen). Der Link muss also von uns hergestellt werden — unabhängig von
+der Quelle.
+
+**Daraus folgende Festlegungen:**
+
+1. **Auswahl-Semantik = Option 1** (explizite, pro-Mandant konfigurierte Liste
+   der AoR-Lufträume). Dank OpenAIPs **stabiler `_id`** referenziert der Betreiber
+   IDs statt fragiler Namens-Strings — robust gegen AIRAC-Drift. (Räumliche
+   ICAO-Vorbefüllung als spätere Komfort-Stufe Richtung Option 3 bleibt offen.)
+2. **Vorbau-Schritt am OpenAIP-Transform:** `pkg/aeronautical` verwirft heute
+   `_id`, `lowerLimit`/`upperLimit` und `icaoClass` — diese Felder werden
+   mitgeführt (Nutzen: stabile Referenz für die AoR-Liste, Höhenbänder,
+   Klassenfilter). Wird als eigenes Häppchen umgesetzt.
