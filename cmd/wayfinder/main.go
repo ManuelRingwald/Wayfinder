@@ -458,9 +458,16 @@ func main() {
 	}
 	scopeResolver := newScopeResolver(store.NewSubscriptionRepo(dbPool), store.NewViewConfigRepo(dbPool), impChecker, cfg.SessionKey, logger)
 	wsHandler := ws.New(broadcaster, logger, cfg.AllowedOrigins, scopeResolver)
+	// #208 (ADR 0022): while a principal's must_change_password flag is set, the
+	// well-known seed credential must reach NOTHING but the password-change flow.
+	// The admin API enforces that via its allowlist (pkg/adminapi); pwGate extends
+	// the same fail-closed rule to every operational data path mounted below
+	// (/ws, overlays, weather) — path-independent, no matter which URL the
+	// principal logged in through.
+	pwGate := tenant.RequirePasswordChanged
 	// The live picture is tenant-scoped: gate /ws with the tenant middleware, which
 	// sets the Identity the resolver reads.
-	mux.Handle("/ws", tenantMW(wsHandler))
+	mux.Handle("/ws", tenantMW(pwGate(wsHandler)))
 
 	// Serve the ASD frontend (static HTML/JS/CSS) and its map configuration.
 	frontend, err := webui.Handler()
@@ -487,7 +494,7 @@ func main() {
 	// the effective read tenant (ADR 0008 Nachtrag), readTenantOf serves that
 	// tenant's cache — so an impersonating admin sees the target's overlays and
 	// the feature gate below judges the target's entitlements.
-	aeroMW := func(next http.Handler) http.Handler { return tenantMW(impReadMW(next)) }
+	aeroMW := func(next http.Handler) http.Handler { return tenantMW(pwGate(impReadMW(next))) }
 	aeroRegistry.Register(mux, aeroMW, readTenantOf, func(ctx context.Context, tenantID int64, kind aeronautical.Kind) bool {
 		// Server-enforced feature gate: a tenant whose airspaces/vor_ndb/waypoints
 		// entitlement is off receives an empty collection for that kind (the overlay
@@ -510,7 +517,7 @@ func main() {
 	// the aeronautical endpoints); the overlay itself is gated per tenant in the
 	// UI via the weather_radar entitlement. A disabled/unreachable source serves
 	// transparent tiles, never an error.
-	mux.Handle("GET /api/weather/radar/{z}/{x}/{y}", tenantMW(weatherRadar.TileHandler()))
+	mux.Handle("GET /api/weather/radar/{z}/{x}/{y}", tenantMW(pwGate(weatherRadar.TileHandler())))
 
 	// QNH infobox (WX-B, ADR 0016; per-tenant CBD-3): the header polls this for the
 	// current QNH of the caller's own aerodrome (view_configs.qnh_icao), resolved
@@ -522,7 +529,7 @@ func main() {
 	// tenant's view config (ADR 0008 Nachtrag) — an impersonating admin has no
 	// user override there, so this is the tenant default, exactly what a fresh
 	// tenant user would see.
-	mux.Handle("GET /api/weather/qnh", tenantMW(impReadMW(weatherQNH.TenantHandler(func(r *http.Request) []string {
+	mux.Handle("GET /api/weather/qnh", tenantMW(pwGate(impReadMW(weatherQNH.TenantHandler(func(r *http.Request) []string {
 		id, ok := tenant.FromContext(r.Context())
 		if !ok {
 			return nil
@@ -532,25 +539,25 @@ func main() {
 			return nil
 		}
 		return []string{*vc.QNHICAO}
-	}))))
+	})))))
 
 	// Weather-warnings GeoJSON (WX-C, ADR 0016): the map fetches this and renders
 	// warning polygons coloured by severity. Behind the tenant middleware;
 	// best-effort (empty collection when disabled), never an error. UI-gated per
 	// tenant via the weather_warnings entitlement.
-	mux.Handle("GET /api/weather/warnings.geojson", tenantMW(weatherWarn.Handler()))
+	mux.Handle("GET /api/weather/warnings.geojson", tenantMW(pwGate(weatherWarn.Handler())))
 
 	// Airport reference-point overlay (#192): GeoJSON markers of aerodromes inside
 	// the caller's view AOI, from the embedded offline OurAirports directory.
 	// Behind the tenant middleware (impReadMW resolves impersonation into the read
 	// tenant, like the aeronautical overlays); feature-gated per tenant
 	// (feature.Airport) — no entitlement → empty collection.
-	mux.Handle("GET /api/airports.geojson", tenantMW(impReadMW(airportsHandler(qnhViews, featSvc, cfg.OpenAIPRadiusKM))))
+	mux.Handle("GET /api/airports.geojson", tenantMW(pwGate(impReadMW(airportsHandler(qnhViews, featSvc, cfg.OpenAIPRadiusKM)))))
 
 	// Runway centreline overlay (#192): GeoJSON LineStrings of runways inside the
 	// caller's view AOI, from the embedded offline OurAirports directory. Same
 	// tenant/impersonation/feature-gate posture as /api/airports.geojson.
-	mux.Handle("GET /api/runways.geojson", tenantMW(impReadMW(runwaysHandler(qnhViews, featSvc, cfg.OpenAIPRadiusKM))))
+	mux.Handle("GET /api/runways.geojson", tenantMW(pwGate(impReadMW(runwaysHandler(qnhViews, featSvc, cfg.OpenAIPRadiusKM)))))
 
 	// Builtin-mode login/logout (WF2-12.3): only when the auth mode is builtin
 	// (proxy mints no local sessions). These routes are intentionally
@@ -1357,6 +1364,22 @@ func newScopeResolver(subs feedLister, views viewGetter, tenants impersonation.T
 				return nil, err
 			}
 			decision = d
+		}
+
+		// #208 (ADR 0022): a platform admin has no own air picture. Admins are
+		// tenant-less by database invariant (migration 00007: admin XOR tenant),
+		// so the only legitimate ASD read for an admin is through an ACTIVE
+		// read-only impersonation grant (guest mode, ADR 0008). Reject the
+		// handshake fail-closed otherwise — including when impersonation is
+		// disabled platform-wide (no signing key) and when a grant has expired;
+		// the earlier "empty own picture" fallback is deliberately gone.
+		if id.Role == store.RoleAdmin && !decision.Active {
+			audit.Warn("ws scope denied: admin without impersonation grant",
+				slog.String("event", "ws_admin_denied"),
+				slog.Int64("user_id", id.UserID),
+				slog.String("subject", id.Subject),
+				slog.String("remote", r.RemoteAddr))
+			return nil, fmt.Errorf("admin has no own ASD scope: start read-only guest mode (ADR 0022)")
 		}
 
 		readTenant := id.TenantID

@@ -564,6 +564,14 @@ docker compose up -d --build
 - **Benutzername:** `admin`
 - **Passwort:** `admin` (bei Zero-Touch-Schnellstart — Sie werden sofort zum Wechsel gezwungen) **oder** das in Schritt 4.4 selbst gewählte Passwort
 
+> **Hinweis (ADR 0022):** Der Passwortwechsel wird auf **jedem** Anmeldeweg
+> erzwungen — auch eine Anmeldung über die Lagebild-Seite (`/`) führt direkt in
+> die Verwaltung zur Passwort-Maske; bis zur Änderung weist der Server alle
+> Daten-Pfade ab (`403 password_change_required`). Außerdem hat ein Admin
+> **kein eigenes Lagebild**: der Aufruf von `/` als Admin leitet nach `/admin`
+> um; die Lage sehen Sie als Admin ausschließlich über den **Gastmodus**
+> (Schritt 4.11).
+
 Sie sehen die Admin-Oberfläche. Seit AP3 (ADR 0009) ist sie
 **mandantenzentriert**: eine **Übersicht aller Mandanten** (mit Status und
 aktiven Features). Die betrieblichen Funktionen haben in der Übersicht **je eine
@@ -680,7 +688,9 @@ So funktioniert es im Browser:
 2. Die Karte öffnet sofort **dessen** Feeds und Sicht; ein **gelber Banner** zeigt
    „Sie betrachten **Kunde Nord GmbH** — nur Lesen".
 3. Im Banner kann man per **„Mandant wechseln"** direkt zu einem anderen Kunden
-   springen oder mit **„Beenden"** zur eigenen Sicht zurückkehren.
+   springen oder mit **„Beenden"** in die Verwaltung (`/admin`) zurückkehren —
+   ein eigenes Admin-Lagebild gibt es nicht (ADR 0022); ohne aktiven Gastmodus
+   weist der Server den Lagebild-Zugang eines Admins ab.
 
 **Wichtig zu wissen:**
 

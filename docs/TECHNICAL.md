@@ -725,8 +725,17 @@ Invariante per **CHECK-Constraint** (`admin` ⇒ `tenant_id IS NULL`, `user` ⇒
 Konstruktoren `Create` (Nutzer, mit Mandant) und `CreateAdmin` (Admin, ohne);
 `runBootstrap` verzweigt nach Rolle (Admin braucht **kein** `-tenant`); der
 Login-Pfad überspringt die Mandanten-Pause-Kaskade für tenantlose Admins (sonst
-Selbst-Aussperrung); ein Admin hat auf der ASD-Karte ohne „Als Mandant ansehen"
-(WF2-34) kein Feed-Scope (TenantID 0 → leeres Bild — gewollt). Admin-Verwaltung
+Selbst-Aussperrung); ein Admin **hat kein eigenes ASD** (ADR 0022, #208): ohne
+**aktives** Read-Only-Gastmodus-Grant (ADR 0008) lehnt der `/ws`-Scope-Resolver
+den Handshake fail-closed ab (403, Audit-Event `ws_admin_denied`) — auch bei
+abgelaufenem Grant und bei deaktivierter Impersonation (kein Session-Key); das
+Frontend leitet einen Admin von `/` nach `/admin` um. Zusätzlich gilt das
+Passwort-Gate **pfad-unabhängig** (`tenant.RequirePasswordChanged`): solange
+`must_change_password` gesetzt ist, weisen `/ws` und alle operativen
+Daten-Routen (Aero-Overlays, Wetter, Airports/Runways) mit
+`403 password_change_required` ab; erreichbar bleiben Login/Logout,
+`GET /api/whoami`, `POST /api/session/renew` und die adminapi-Allowlist.
+Admin-Verwaltung
 läuft über die **dedizierten** Routen `/api/admin/admins` (siehe Endpunkt-Tabelle);
 die per-Mandant-Route `/api/admin/tenants/{id}/users` verwaltet ausschließlich
 Nutzer. Der **„letzter aktiver Admin"-Guard** (`wouldOrphanAdmins` →

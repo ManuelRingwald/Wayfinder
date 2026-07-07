@@ -7,8 +7,11 @@
        picture is up, the session is slid forward (WF2-12.5) so an active console
        is never logged out; a real expiry surfaces as the login screen, not a
        silent frozen map. -->
+  <!-- #208 (ADR 0022): the spinner also covers the post-auth admin gate — an
+       authenticated principal stays here until adminGate resolves, so the map
+       (and /ws) never mounts for an admin who is about to be redirected. -->
   <v-main
-    v-if="session.status === 'loading'"
+    v-if="session.status === 'loading' || (session.status === 'authed' && adminGate !== 'ok')"
     class="d-flex justify-center align-center"
     style="min-height: 100vh"
   >
@@ -131,6 +134,7 @@ import { useAsdStore } from '@/stores/asd.js'
 import { useSessionStore } from '@/stores/session.js'
 import { useToolsStore } from '@/stores/tools.js'
 import { useAdminStore } from '@/stores/admin.js'
+import { useImpersonationStore } from '@/stores/impersonation.js'
 import NavigationRail from '@/components/NavigationRail.vue'
 import BottomNav from '@/components/BottomNav.vue'
 import MapCanvas from '@/components/MapCanvas.vue'
@@ -146,9 +150,38 @@ const store = useAsdStore()
 const session = useSessionStore()
 const tools = useToolsStore()
 const adminStore = useAdminStore()
+const imp = useImpersonationStore()
 const drawerOpen = ref(true)
 const mapCanvas = ref(null)
 const loginLoading = ref(false)
+
+// #208 (ADR 0022): admins have no own air picture; the server rejects their /ws
+// without an active guest-mode grant. This gate decides AFTER authentication
+// whether the map may mount: a must-change principal goes to /admin (the forced
+// password mask lives there, and the server refuses every data path anyway); an
+// admin goes to /admin unless read-only impersonation is active. 'pending' keeps
+// the spinner up so the map never opens a doomed /ws.
+const adminGate = ref('pending') // 'pending' | 'ok'
+
+async function applyAdminGate() {
+  if (session.mustChangePassword) {
+    router.replace('/admin')
+    return
+  }
+  if (session.isAdmin) {
+    await imp.loadStatus()
+    if (!imp.active) {
+      router.replace('/admin')
+      return
+    }
+  }
+  adminGate.value = 'ok'
+}
+
+watch(() => session.status, (s) => {
+  if (s === 'authed') applyAdminGate()
+  else adminGate.value = 'pending'
+}, { immediate: true })
 
 // #194: mobile navigation state (phone / tablet-portrait). The bottom tab bar
 // selects between the scope and the Filter/Konto sheets; Admin routes away.
@@ -225,6 +258,14 @@ async function onConnectionChange(state) {
     session.renewNow()
   } else if (state === 'closed' && session.status === 'authed') {
     session.probe()
+    // #208 (ADR 0022): for an admin the /ws drop may mean the guest-mode grant
+    // expired (TTL) — the server then rejects every reconnect. Re-check the
+    // grant and return to /admin instead of letting the map spin on a dead
+    // stream.
+    if (session.isAdmin) {
+      await imp.loadStatus()
+      if (!imp.active) router.replace('/admin')
+    }
   }
 }
 
