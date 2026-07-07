@@ -279,120 +279,6 @@
     </v-card-text>
   </v-card>
 
-  <!-- OpenAIP per tenant (ONB-6, ADR 0011). The key is a secret: the server
-       reports only whether one is set and never returns it, so the field starts
-       empty and shows the configured status separately. Saving an empty field
-       clears the key (falls back to the global key). -->
-  <v-card variant="tonal" class="mb-4">
-    <v-card-title class="text-subtitle-1">OpenAIP-Konfiguration</v-card-title>
-    <v-card-text>
-      <div class="d-flex align-center ga-2 mb-3 flex-wrap">
-        <span>Eigener Schlüssel:</span>
-        <v-chip
-          :color="openaipConfigured ? 'success' : 'default'"
-          size="small"
-          variant="tonal"
-        >
-          {{ openaipConfigured ? 'gesetzt' : 'nicht gesetzt (globaler Schlüssel)' }}
-        </v-chip>
-        <!-- AERO-1/2: cache freshness for this tenant + a "refresh now" button. -->
-        <v-chip v-if="openaipFetchedAt" size="small" variant="text" prepend-icon="mdi-clock-outline">
-          zuletzt geholt: {{ formatFetchedAt(openaipFetchedAt) }} · {{ openaipFeatureCount }} Objekte
-        </v-chip>
-        <v-chip v-else size="small" variant="text" class="text-medium-emphasis">
-          noch nichts gecacht
-        </v-chip>
-        <v-btn
-          size="small"
-          variant="tonal"
-          prepend-icon="mdi-refresh"
-          :loading="busy"
-          @click="refreshOpenAIP"
-        >
-          Jetzt aktualisieren
-        </v-btn>
-      </div>
-      <!-- AERO-3: change-impact of the last refresh, per layer. Robuster
-           Count-Delta; +hinzu/−entfernt ist Churn (In-Place-Edit zählt als −1/+1). -->
-      <div v-if="openaipChanges.length" class="mb-3">
-        <div class="text-caption text-medium-emphasis mb-1">Letzte Änderung je Ebene:</div>
-        <div class="d-flex flex-wrap ga-2">
-          <v-chip v-for="c in openaipChanges" :key="c.kind" size="small" variant="tonal">
-            {{ layerLabel(c.kind) }}:
-            <template v-if="c.prev_feature_count != null">
-              {{ c.prev_feature_count }} → {{ c.feature_count }}
-              <span :class="churnClass(c)" class="ml-1">(+{{ c.added ?? 0 }}/−{{ c.removed ?? 0 }})</span>
-            </template>
-            <template v-else>{{ c.feature_count }} (Erstbefüllung)</template>
-          </v-chip>
-        </div>
-      </div>
-      <div class="d-flex flex-wrap ga-3 align-center">
-        <v-text-field
-          v-model="openaipKey"
-          label="OpenAIP-API-Schlüssel"
-          placeholder="Neuen Schlüssel eingeben…"
-          variant="outlined"
-          density="compact"
-          hide-details
-          autocomplete="off"
-          :type="showKey ? 'text' : 'password'"
-          :append-inner-icon="showKey ? 'mdi-eye-off' : 'mdi-eye'"
-          style="max-width: 420px"
-          @click:append-inner="showKey = !showKey"
-        />
-        <v-btn color="primary" :loading="busy" :disabled="!openaipKey" @click="saveOpenAIPKey">
-          Schlüssel speichern
-        </v-btn>
-        <v-btn
-          v-if="openaipConfigured"
-          color="error"
-          variant="tonal"
-          :loading="busy"
-          @click="clearOpenAIPKey"
-        >
-          Schlüssel entfernen
-        </v-btn>
-      </div>
-      <p class="text-caption text-medium-emphasis mt-2">
-        Der gesetzte Schlüssel wird aus Sicherheitsgründen nie wieder angezeigt.
-        Mandanten ohne eigenen Schlüssel nutzen den globalen Schlüssel. Eine
-        Änderung greift sofort (kein Neustart); die Luftraumdaten werden gegen die
-        Standard-Ansicht (Zentrum/Radius) dieses Mandanten abgerufen.
-      </p>
-    </v-card-text>
-  </v-card>
-
-  <!-- Feeds (cross-tenant provisioning, embedded) -->
-  <v-card variant="tonal" class="mb-4">
-    <v-card-title class="d-flex align-center text-subtitle-1">
-      Feeds
-      <!-- AP4: health chips for feeds the tenant currently subscribes to -->
-      <span v-if="tenant?.feeds?.length" class="ml-2 d-flex ga-1 flex-wrap align-center">
-        <v-chip
-          v-for="f in tenant.feeds"
-          :key="f.id"
-          size="x-small"
-          variant="flat"
-          :color="feedColor(f.id)"
-          :title="feedTitle(f.id)"
-        >
-          {{ f.name }}
-        </v-chip>
-      </span>
-    </v-card-title>
-    <v-card-text>
-      <AdminProvisioning :tenant-id="tenantId" @changed="onFeedsChanged" />
-    </v-card-text>
-  </v-card>
-
-  <!-- Zugänge (access accounts, embedded) -->
-  <v-card variant="tonal">
-    <v-card-title class="text-subtitle-1">Zugänge</v-card-title>
-    <v-card-text>
-      <AdminUsers :tenant-id="tenantId" />
-    </v-card-text>
-  </v-card>
 </template>
 
 <script setup>
@@ -401,9 +287,6 @@ import { useRouter } from 'vue-router'
 import { useAdminStore } from '@/stores/admin.js'
 import { useImpersonationStore } from '@/stores/impersonation.js'
 import { radiusNmToBbox, bboxToRadius } from '@/admin/geo.js'
-import { describeFeedHealth } from '@/admin/feedHealth.js'
-import AdminProvisioning from '@/components/admin/AdminProvisioning.vue'
-import AdminUsers from '@/components/admin/AdminUsers.vue'
 
 const props = defineProps({
   tenantId: { type: Number, required: true },
@@ -436,25 +319,6 @@ async function viewAsTenant() {
 }
 const entitlements = ref([])
 const deleteDialog = ref(false) // ONB-4: delete-tenant confirmation
-
-// ONB-6: per-tenant OpenAIP key. The server never returns the key, only whether
-// one is configured; the input is for entering a *new* key (or clearing it).
-const openaipConfigured = ref(false)
-const openaipKey = ref('')
-const showKey = ref(false)
-// AERO-1/2: persistent-cache freshness for this tenant + refresh button.
-const openaipFetchedAt = ref(null)
-const openaipFeatureCount = ref(0)
-// AERO-3: per-layer change-impact of the last refresh.
-const openaipChanges = ref([])
-
-const LAYER_LABELS = { airspace: 'Luftraum', navaid: 'Navaids', waypoint: 'Wegpunkte' }
-function layerLabel(kind) {
-  return LAYER_LABELS[kind] || kind
-}
-function churnClass(c) {
-  return (c.added ?? 0) + (c.removed ?? 0) > 0 ? 'text-warning' : 'text-medium-emphasis'
-}
 
 // The tenant header (name/status) comes from the overview the parent loaded.
 const tenant = computed(() => admin.overview.find((t) => t.id === props.tenantId) || null)
@@ -572,60 +436,6 @@ async function toggleFeature(e, enabled) {
   busy.value = false
 }
 
-// ONB-6/AERO-1: load whether this tenant has its own OpenAIP key (status only) plus
-// the persistent-cache freshness (last fetch time + cached feature count).
-async function loadOpenAIP() {
-  const r = await admin.loadTenantOpenAIP(props.tenantId)
-  if (r.ok && r.data) {
-    openaipConfigured.value = !!r.data.configured
-    openaipFetchedAt.value = r.data.fetched_at ?? null
-    openaipFeatureCount.value = r.data.feature_count ?? 0
-  } else {
-    openaipConfigured.value = false
-    openaipFetchedAt.value = null
-    openaipFeatureCount.value = 0
-  }
-  const c = await admin.loadTenantOpenAIPChanges(props.tenantId)
-  openaipChanges.value = c.ok && Array.isArray(c.data) ? c.data : []
-}
-
-// AERO-2: force a fresh OpenAIP fetch for this tenant, then reload the status so the
-// timestamp updates once the (async) fetch has had a moment to land.
-async function refreshOpenAIP() {
-  busy.value = true
-  const r = await admin.refreshTenantOpenAIP(props.tenantId)
-  busy.value = false
-  if (r.ok) await loadOpenAIP()
-}
-
-// formatFetchedAt renders an ISO/RFC3339 timestamp in the operator's locale.
-function formatFetchedAt(ts) {
-  const d = new Date(ts)
-  return Number.isNaN(d.getTime()) ? String(ts) : d.toLocaleString()
-}
-
-async function saveOpenAIPKey() {
-  if (!openaipKey.value) return
-  busy.value = true
-  const r = await admin.setTenantOpenAIPKey(props.tenantId, openaipKey.value)
-  busy.value = false
-  if (r.ok) {
-    openaipKey.value = ''
-    showKey.value = false
-    await loadOpenAIP()
-  }
-}
-
-async function clearOpenAIPKey() {
-  busy.value = true
-  const r = await admin.setTenantOpenAIPKey(props.tenantId, null)
-  busy.value = false
-  if (r.ok) {
-    openaipKey.value = ''
-    await loadOpenAIP()
-  }
-}
-
 async function toggleStatus() {
   if (!tenant.value) return
   busy.value = true
@@ -653,26 +463,7 @@ function round(n) {
   return Math.round(n * 10) / 10
 }
 
-// onFeedsChanged reacts to a grant/revoke in the embedded provisioning table.
-// The header feed chips derive from admin.overview (loaded once by the parent),
-// so without this refresh they drift out of sync with the assignment table below
-// (chips still show the old feed set). Reload the overview (chips) and feed health
-// (chip colour/title) so the whole Feeds card reflects the new assignment at once.
-async function onFeedsChanged() {
-  await Promise.all([admin.loadOverview(), admin.loadFeedsHealth()])
-}
-
-// Feed-health chip colour/title from the shared helper (AP4 + status
-// granularity): red splits into "nie gestartet" vs "abgerissen".
-function feedColor(feedId) {
-  return describeFeedHealth(admin.feedsHealth[feedId]).color
-}
-
-function feedTitle(feedId) {
-  return describeFeedHealth(admin.feedsHealth[feedId]).title
-}
-
 onMounted(async () => {
-  await Promise.all([loadView(), loadEntitlements(), loadOpenAIP(), admin.loadFeedsHealth()])
+  await Promise.all([loadView(), loadEntitlements()])
 })
 </script>
