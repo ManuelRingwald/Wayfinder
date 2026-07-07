@@ -10,6 +10,29 @@
 
 ---
 
+## 🎯 Stand 2026-07-07 (ASD-014 Slice 2 — AoR-Auswahl pro Mandant, Backend)
+
+- **ASD-014.2 — AoR-Auswahl pro Mandant (Backend, FR-AERO-003):** Der Mandant
+  konfiguriert seinen **Verantwortungsbereich** (CTR/TMA) als **explizite Liste
+  stabiler OpenAIP-`id`s** (Auswahl-Semantik **Option 1**). Umgesetzt als **Variante
+  A (whoami-Surfacing)** — `pkg/aeronautical` bleibt unangetastet:
+  - **Store:** neue Spalte `view_configs.aor_airspace_ids` (JSONB, Migration
+    `00021`, nullable = keine AoR); `ViewConfig.AoRAirspaceIDs` in Columns/Upserts/
+    `viewJSONParams`/`scanViewConfig`.
+  - **Admin-API:** `viewDTO`/`whoamiDTO`-Feld `aor_airspace_ids` (`omitempty`);
+    `validateView` (Anzahl ≤ 500, id ≤ 64, keine Steuerzeichen), `normalizeAoRIDs`
+    (Trim/Dedup/Reihenfolge). Editierbar über die bestehenden View-Routen (kein
+    neuer Endpunkt). whoami liefert die effektive Liste an die ASD-SPA.
+- **Tests:** Store-Round-Trip (real-PG) + `TestViewJSONParams`;
+  `TestValidateViewAoRAirspaceIDs`/`TestNormalizeAoRIDs`/
+  `TestWhoamiIncludesAoRAirspaceIDs`/`TestWhoamiOmitsAoRWhenUnset`.
+  Doku: Milestone `ASD-014.2`, FR-AERO-003, TECHNICAL (`whoami`/`00021`).
+  Gates grün: `go test ./...`, `go vet`, `gofmt`, `golangci-lint` (0 issues).
+- **Nächster Schritt (noch nicht freigegeben):** **Slice 3 (Frontend)** —
+  Highlight-Styling der AoR-Lufträme (Match `id` ∈ `aor_airspace_ids` aus whoami)
+  + Legende + Editor (Lufträume nach Namen wählen → `id` speichern, mit
+  Client-`validateView`-Parität); optional Höhenband-Label/-Filter aus `lower`/`upper`.
+
 ## 🎯 Stand 2026-07-07 (#219 — Gastmodus: „Ansicht zurücksetzen" springt auf Frankfurt)
 
 - **Bugfix #219 (Regression aus #208 / ADR 0022; S2–S3, rein Frontend,
