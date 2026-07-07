@@ -10,6 +10,45 @@
 
 ---
 
+## 🎯 Stand 2026-07-07 (Admin-/Mandanten-UX-Überarbeitung — 4 von 5 Häppchen)
+
+Auf Basis von fünf neu angelegten Issues (#208–#212) den Admin-/Mandanten-Bereich
+umgebaut. Vier Frontend-Häppchen umgesetzt (je eigener Commit), reine UI/UX-Arbeit
+— **CAT062-Draht-Vertrag unberührt**:
+
+- **#212 — Anbieter-Dropdown neben das Typ-Feld:** Im Feed-Quellenkonfigurator
+  (`AdminFeeds.vue`) sitzt das Anbieter-Select für „ADS-B (Community-Aggregator)"
+  jetzt direkt neben „Quell-Typ" statt über der Poll-Zeit; Failover-Hinweis als
+  Caption. (S2)
+- **#210 — Feeds/OpenAIP/Nutzer in die Übersicht:** Der überladene Konfig-Dialog
+  ist entschlackt. Feeds, OpenAIP und Zugänge sind aus `AdminTenantDetail`
+  herausgelöst und liegen in der Mandanten-Übersicht (`AdminTenants.vue`) je in
+  einer eigenen Spalte mit Konfig-Icon (⚙ `mdi-cog-outline`), das einen
+  fokussierten Dialog öffnet. Neue Komponente `AdminTenantOpenAIP.vue` (Auslagerung
+  des Inline-Blocks). Feed-Refresh-bei-Änderung wandert mit. (S3–S4)
+- **#211 — globaler Speichern + Abbrechen:** Die schlanke Detailseite
+  (Standard-Ansicht + Features) speichert global. Feature-Toggles werden lokal
+  gepuffert (`featureEdits`) und erst beim „Speichern" persistiert/aktiv — vorher
+  schaltete ein Toggle sofort frei. Speichern → zurück in die Übersicht; Abbrechen
+  → zurück ohne Wirkung. (S3)
+- **#209 — Gastmodus nur über Augen-Icon:** Read-Only-Einblick (Impersonation,
+  ADR 0008) startet nur noch über ein Augen-Icon (`mdi-eye-outline`) in der neuen
+  Spalte „Gastmodus" der Übersicht. Detail-Button und Start-Menü der
+  `ImpersonationBar` entfernt; die Bar rendert nur noch als aktives
+  Read-Only-Banner. (S2–S3)
+
+Doku: `INSTALLATION.md` (Admin-Oberfläche, Schritte 4.7/4.8b/4.9/4.11) auf die
+neuen Bedienwege gezogen. Gates: **vitest 409 grün** (neue Tests
+`adminTenantsConfigColumns`, `adminTenantDetailSave`, `adminGuestModeEntry`;
+Aggregator- und Provisioning-Refresh-Test nachgezogen), `vite build`,
+`go test ./...`, `go vet`, `gofmt` grün; `dist` neu eingebettet.
+
+**Offen — #208 (Anker, S4, sicherheits-/architektur-relevant):** Der erzwungene
+Passwortwechsel greift nur unter `/admin`, nicht beim `/`-Login; der Admin soll
+kein eigenes ASD mehr haben (nur noch Read-Only via Gastmodus). Braucht eine
+Design-Entscheidung + ADR (Charter §10) und Server-Änderungen — **vor der
+Umsetzung abzustimmen**.
+
 ## 🎯 Stand 2026-07-06 (CAT063 per-Quelle-Fehlergrund H4 → schließt #197)
 
 - **ADR 0020 — CAT063 `SRC-REASON` dekodieren + Feed-Health-Chip zeigt den Grund

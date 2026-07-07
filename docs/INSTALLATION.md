@@ -565,11 +565,16 @@ docker compose up -d --build
 - **Passwort:** `admin` (bei Zero-Touch-Schnellstart — Sie werden sofort zum Wechsel gezwungen) **oder** das in Schritt 4.4 selbst gewählte Passwort
 
 Sie sehen die Admin-Oberfläche. Seit AP3 (ADR 0009) ist sie
-**mandantenzentriert**: zuerst eine **Übersicht aller Mandanten** (mit Status,
-aktiven Features, zugewiesenen Feeds und Anzahl der Zugänge); ein Klick auf
-**„Konfigurieren"** öffnet die **Detailseite** des Mandanten, auf der Sie an
-einem Ort die **Standard-Ansicht** (Zentrum + Radius, FL-Band), die **Features**,
-die **Feeds** und die **Zugänge** dieses Kunden verwalten.
+**mandantenzentriert**: eine **Übersicht aller Mandanten** (mit Status und
+aktiven Features). Die betrieblichen Funktionen haben in der Übersicht **je eine
+eigene Spalte mit einem Konfigurations-Icon (⚙)**, das einen fokussierten Dialog
+öffnet: **Feeds**, **OpenAIP** und **Nutzer** (Zugänge). Ein Klick auf
+**„Konfigurieren"** öffnet die **Detailseite** des Mandanten, die auf die
+**Standard-Ansicht** (Zentrum + Radius, FL-Band) und die **Features** reduziert
+ist; dort werden Änderungen erst mit dem **einen globalen „Speichern"** aktiv
+(„Abbrechen" verwirft sie), und danach kehren Sie in die Übersicht zurück. Der
+Read-Only-Einblick in einen Kunden startet über das **Augen-Icon** in der Spalte
+**„Gastmodus"** (Schritt 4.11).
 
 > **Feed-Gesundheit (AP4, ADR 0009):** Die einem Mandanten zugewiesenen Feeds
 > tragen in Übersicht und Detailseite einen farbigen **Ampel-Chip**:
@@ -613,9 +618,10 @@ docker compose run --rm \
 
 ### Schritt 4.8b — Weitere Zugänge verwalten (Oberfläche, AP6)
 
-Im Admin-Bereich öffnen Sie in der **Mandanten-Übersicht** den gewünschten
-Mandanten („Konfigurieren") und verwalten im Abschnitt **„Zugänge"** dessen
-Login-Konten direkt im Browser — **ohne** `bootstrap`/SQL:
+Im Admin-Bereich öffnen Sie in der **Mandanten-Übersicht** über das
+Konfigurations-Icon (⚙) in der Spalte **„Nutzer"** den Zugänge-Dialog des
+gewünschten Mandanten und verwalten dessen Login-Konten direkt im Browser —
+**ohne** `bootstrap`/SQL:
 
 - **Zugang anlegen** (Benutzername, optional E-Mail und Passwort; Rolle ist
   immer `user`; ein Passwort muss mindestens 8 Zeichen haben). Ohne Passwort
@@ -636,8 +642,8 @@ Damit der neue Kunde Flugzeuge sieht, muss ihm ein Feed **zugewiesen** werden.
 Das darf nur ein `admin`. Zwei Wege:
 
 **Weg A — über die Admin-Oberfläche (empfohlen):** In `/admin` als `admin`
-angemeldet, in der Mandanten-Übersicht **„Kunde Nord GmbH"** öffnen
-(„Konfigurieren") und im Abschnitt **„Feeds"** den Feed **„Frankfurt"** zuweisen.
+angemeldet, in der Mandanten-Übersicht in der Zeile **„Kunde Nord GmbH"** über das
+Konfigurations-Icon (⚙) in der Spalte **„Feeds"** den Feed **„Frankfurt"** zuweisen.
 
 **Weg B — über die Befehlszeile (mit `curl`):** Zuerst Mandanten- und Feed-IDs
 herausfinden, dann zuweisen. (`{tenant-id}` / `feed_id` aus `feed list` bzw. der
@@ -668,10 +674,10 @@ lesend, vollständig protokolliert (ADR 0008).
 
 So funktioniert es im Browser:
 
-1. Als `admin` am Lagebild **<http://localhost:8081>** angemeldet,
-   erscheint oben mittig die Schaltfläche **„Als Mandant ansehen"**.
-2. Mandanten auswählen (z. B. „Kunde Nord GmbH") → die Karte wechselt sofort auf
-   **dessen** Feeds und Sicht; ein **gelber Banner** zeigt
+1. Als `admin` im Admin-Bereich **<http://localhost:8081/admin>** in der
+   **Mandanten-Übersicht** in der Spalte **„Gastmodus"** auf das **Augen-Icon**
+   der gewünschten Zeile (z. B. „Kunde Nord GmbH") klicken.
+2. Die Karte öffnet sofort **dessen** Feeds und Sicht; ein **gelber Banner** zeigt
    „Sie betrachten **Kunde Nord GmbH** — nur Lesen".
 3. Im Banner kann man per **„Mandant wechseln"** direkt zu einem anderen Kunden
    springen oder mit **„Beenden"** zur eigenen Sicht zurückkehren.
