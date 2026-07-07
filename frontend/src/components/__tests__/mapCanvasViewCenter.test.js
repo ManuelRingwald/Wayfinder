@@ -36,6 +36,16 @@ describe('MapCanvas view-centre wiring (FR-UI-013)', () => {
     expect(sfc).toMatch(/watch\(\(\)\s*=>\s*session\.viewCenter/)
     expect(sfc).toContain('applyViewCenter')
   })
+
+  // #219: initMap is async; when an admin enters read-only guest mode the
+  // impersonation-aware whoami can land WHILE initMap awaits, so the viewCenter/aoi
+  // watchers fire against a still-null mapEngine and the re-aim is lost — the map
+  // (and "Ansicht zurücksetzen") stays pinned to the global Frankfurt default. After
+  // initMap resolves, MapCanvas must reconcile the map to the CURRENT effective view.
+  it('reconciles centre + AOI after initMap resolves so a late whoami is not lost (#219)', () => {
+    expect(sfc).toMatch(/mapEngine\s*=\s*await initMap\([\s\S]*?\)\s*[\s\S]*?mapEngine\.applyViewCenter\(session\.viewCenter\)/)
+    expect(sfc).toContain('mapEngine.applyWeatherAOI(session.aoi)')
+  })
 })
 
 // #179: the airspace type filter must be applied on EVERY map mount, not only on

@@ -10,6 +10,30 @@
 
 ---
 
+## 🎯 Stand 2026-07-07 (#219 — Gastmodus: „Ansicht zurücksetzen" springt auf Frankfurt)
+
+- **Bugfix #219 (Regression aus #208 / ADR 0022; S2–S3, rein Frontend,
+  CAT062-Draht-Vertrag unberührt):** Im Read-Only-Gastmodus (Impersonation,
+  ADR 0008) öffnete die Karte nicht auf dem angesehenen Mandanten und
+  „Ansicht zurücksetzen" zentrierte auf den globalen `WAYFINDER_MAP_CENTER_*`-
+  Default (Demo: Frankfurt) statt z. B. auf EDDH.
+  - **Ursache:** `initMap` ist asynchron. Beim Betreten des Gastmodus hält der
+    Session-Store beim `MapCanvas`-Mount noch die veraltete, nicht-impersonierte
+    Sicht (leeres `viewCenter`); das impersonation-aware `GET /api/whoami` landet
+    erst *während* des `await initMap`. Der `watch(session.viewCenter →
+    applyViewCenter)` feuert dann gegen ein noch `null`es `mapEngine` → die
+    Nach-Zielung auf EDDH geht verloren, `effectiveCenter` (Ziel von `recenter()`)
+    bleibt auf Frankfurt. Gastmodus-spezifisch, da nur der Admin den `adminGate`
+    aus #208 durchläuft.
+  - **Fix:** `MapCanvas` gleicht **nach** dem Auflösen von `initMap` die Karte auf
+    die aktuelle effektive Sicht ab (`applyViewCenter(session.viewCenter)` +
+    `applyWeatherAOI(session.aoi)`; No-op bei unveränderter Sicht). Deckt alle
+    Race-Reihenfolgen ab (früh aufgelöst → `initMap`-Argument; während `initMap`
+    → Reconcile; nach `initMap` → bestehender Watcher).
+  - Doku: FR-UI-013 (Nachtrag #219), Regressionstest
+    `mapCanvasViewCenter.test.js`. Gates: **vitest 416 grün** (+1),
+    `go test`/`vet`/`gofmt` grün, `vite build` + eingebettetes `dist` neu.
+
 ## 🎯 Stand 2026-07-07 (ASD-014 Slice 1 — OpenAIP-Transform-Anreicherung für AoR)
 
 - **ASD-014.1 — OpenAIP-Transform-Anreicherung (Backend-Vorbau, FR-AERO-002):**
