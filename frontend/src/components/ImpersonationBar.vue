@@ -1,60 +1,34 @@
 <template>
-  <!-- Cross-tenant read-only impersonation control (ADR 0008, WF2-34).
-       Admin only (ADR 0009). When inactive it is an unobtrusive entry ("Als
-       Mandant ansehen"); when active it becomes a prominent read-only banner
-       with a tenant switcher and an exit. The server enforces the actual scope. -->
-  <div v-if="admin.isAdmin" class="imp-bar" :class="{ 'imp-bar--active': imp.active }">
-    <template v-if="imp.active">
-      <v-icon size="18">mdi-eye-outline</v-icon>
-      <span class="imp-bar__text">
-        Sie betrachten <strong>{{ activeName }}</strong> — nur Lesen
-      </span>
+  <!-- Cross-tenant read-only impersonation banner (ADR 0008, WF2-34). Admin only
+       (ADR 0009). Since #209 the *entry* into the guest mode is the eye icon in the
+       tenant overview ("Gastmodus" column); this bar renders only while a grant is
+       active, as the prominent read-only banner with a tenant switcher and an exit.
+       The server enforces the actual scope. -->
+  <div v-if="admin.isAdmin && imp.active" class="imp-bar imp-bar--active">
+    <v-icon size="18">mdi-eye-outline</v-icon>
+    <span class="imp-bar__text">
+      Sie betrachten <strong>{{ activeName }}</strong> — nur Lesen
+    </span>
 
-      <v-menu v-if="otherTenants.length">
-        <template #activator="{ props }">
-          <v-btn v-bind="props" size="small" variant="text" append-icon="mdi-menu-down">
-            Mandant wechseln
-          </v-btn>
-        </template>
-        <v-list density="compact">
-          <v-list-item
-            v-for="t in otherTenants"
-            :key="t.id"
-            :title="t.name"
-            @click="imp.start(t.id)"
-          />
-        </v-list>
-      </v-menu>
+    <v-menu v-if="otherTenants.length">
+      <template #activator="{ props }">
+        <v-btn v-bind="props" size="small" variant="text" append-icon="mdi-menu-down">
+          Mandant wechseln
+        </v-btn>
+      </template>
+      <v-list density="compact">
+        <v-list-item
+          v-for="t in otherTenants"
+          :key="t.id"
+          :title="t.name"
+          @click="imp.start(t.id)"
+        />
+      </v-list>
+    </v-menu>
 
-      <v-btn size="small" variant="flat" color="surface" @click="imp.stop()">
-        Beenden
-      </v-btn>
-    </template>
-
-    <template v-else>
-      <v-menu>
-        <template #activator="{ props }">
-          <v-btn
-            v-bind="props"
-            size="small"
-            variant="tonal"
-            prepend-icon="mdi-account-eye-outline"
-            append-icon="mdi-menu-down"
-          >
-            Als Mandant ansehen
-          </v-btn>
-        </template>
-        <v-list density="compact">
-          <v-list-subheader v-if="!admin.tenants.length">Keine Mandanten</v-list-subheader>
-          <v-list-item
-            v-for="t in admin.tenants"
-            :key="t.id"
-            :title="t.name"
-            @click="imp.start(t.id)"
-          />
-        </v-list>
-      </v-menu>
-    </template>
+    <v-btn size="small" variant="flat" color="surface" @click="imp.stop()">
+      Beenden
+    </v-btn>
   </div>
 </template>
 

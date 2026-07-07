@@ -31,6 +31,22 @@ describe('community-aggregator source type (#201)', () => {
     expect(sfc).toContain(':items="AGG_PROVIDERS"')
   })
 
+  it('#212: renders the provider select in the type header row, not above the poll interval', () => {
+    // The provider select must sit directly beside the "Quell-Typ" select — in the
+    // header flex row, before the delete button (v-spacer) — so the concrete ADS-B
+    // community source is visually tied to the ADS-B type.
+    const headerStart = sfc.indexOf('label="Quell-Typ"')
+    const spacerIdx = sfc.indexOf('<v-spacer />', headerStart)
+    const header = sfc.slice(headerStart, spacerIdx)
+    expect(header).toContain(':items="AGG_PROVIDERS"')
+    // Only one template binding of the provider items remains (the old block below
+    // the centre/radius fields was removed, not duplicated).
+    const occurrences = sfc.split(':items="AGG_PROVIDERS"').length - 1
+    expect(occurrences).toBe(1)
+    // Ordering guard: the provider select precedes the poll-interval field.
+    expect(sfc.indexOf(':items="AGG_PROVIDERS"')).toBeLessThan(sfc.indexOf('Poll-Intervall'))
+  })
+
   it('sends provider only for the aggregator type', () => {
     expect(sfc).toContain("s.type === 'adsb_aggregator' && s.provider")
     expect(sfc).toContain('out.provider = s.provider')
