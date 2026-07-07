@@ -12,8 +12,8 @@ describe('AdminTenants config columns (#210)', () => {
     expect(tenants).toContain('<th class="text-center">Feeds</th>')
     expect(tenants).toContain('<th class="text-center">OpenAIP</th>')
     expect(tenants).toContain('<th class="text-center">Nutzer</th>')
-    // The empty-state colspan grew to the new column count.
-    expect(tenants).toContain('colspan="7"')
+    // The empty-state colspan spans every column (incl. the #209 Gastmodus column).
+    expect(tenants).toContain('colspan="8"')
   })
 
   it('opens each config column via a classic config icon', () => {

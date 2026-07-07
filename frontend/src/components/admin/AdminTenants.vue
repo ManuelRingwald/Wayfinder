@@ -19,6 +19,17 @@
       </v-btn>
     </v-card-title>
     <v-card-text>
+      <!-- #209: surfaced only when minting the read-only guest-mode grant failed. -->
+      <v-alert
+        v-if="impError"
+        type="error"
+        density="compact"
+        class="mb-3"
+        closable
+        @click:close="impError = null"
+      >
+        {{ impError }}
+      </v-alert>
       <v-table density="comfortable">
         <thead>
           <tr>
@@ -29,11 +40,12 @@
             <th class="text-center">OpenAIP</th>
             <th class="text-center">Nutzer</th>
             <th class="text-right">Aktion</th>
+            <th class="text-center">Gastmodus</th>
           </tr>
         </thead>
         <tbody>
           <tr v-if="!admin.overview.length">
-            <td colspan="7" class="text-medium-emphasis">Keine Mandanten.</td>
+            <td colspan="8" class="text-medium-emphasis">Keine Mandanten.</td>
           </tr>
           <tr v-for="t in admin.overview" :key="t.id">
             <td>
@@ -118,6 +130,20 @@
                 Konfigurieren
               </v-btn>
             </td>
+            <!-- #209: the single entry into read-only guest mode — an eye icon that
+                 mints the impersonation grant for this tenant and jumps to the ASD. -->
+            <td class="text-center">
+              <v-btn
+                icon="mdi-eye-outline"
+                size="small"
+                variant="text"
+                color="primary"
+                :title="`Als Mandant ansehen (nur Lesen) — ${t.name}`"
+                :aria-label="`Als Mandant ansehen (nur Lesen) — ${t.name}`"
+                :loading="impBusyId === t.id"
+                @click="viewAsTenant(t)"
+              />
+            </td>
           </tr>
         </tbody>
       </v-table>
@@ -201,7 +227,9 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { useAdminStore } from '@/stores/admin.js'
+import { useImpersonationStore } from '@/stores/impersonation.js'
 import { describeFeedHealth } from '@/admin/feedHealth.js'
 import AdminProvisioning from '@/components/admin/AdminProvisioning.vue'
 import AdminTenantOpenAIP from '@/components/admin/AdminTenantOpenAIP.vue'
@@ -211,6 +239,26 @@ defineEmits(['select'])
 
 const admin = useAdminStore()
 const loading = ref(false)
+
+// #209: read-only guest mode. The eye icon in each row is the single entry into
+// impersonation (ADR 0008): mint the grant for that tenant, then jump to the ASD,
+// where the ImpersonationBar shows the read-only banner. Errors surface inline.
+const imp = useImpersonationStore()
+const router = useRouter()
+const impBusyId = ref(null)
+const impError = ref(null)
+
+async function viewAsTenant(t) {
+  impError.value = null
+  impBusyId.value = t.id
+  const ok = await imp.start(t.id)
+  impBusyId.value = null
+  if (ok) {
+    router.push('/')
+    return
+  }
+  impError.value = imp.error || 'Ansehen als Mandant fehlgeschlagen.'
+}
 
 // ONB-4: create-tenant dialog state. Issue #105: the admin only enters a name; the
 // slug is derived from it (see slugify) rather than typed by hand.

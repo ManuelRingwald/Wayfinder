@@ -1,27 +1,15 @@
 <template>
-  <!-- AP3 (ADR 0009): per-tenant central configuration. One page bundling a
-       tenant's status, default view (entered as centre + radius in NM, stored as
-       an AOI bbox), feature entitlements, feed grants and access accounts. The
-       server enforces every boundary (requireAdmin → 403); this is convenience. -->
+  <!-- AP3 (ADR 0009): per-tenant configuration, slimmed since #210 to the default
+       view (entered as centre + radius in NM, stored as an AOI bbox) and the
+       feature entitlements; Feeds, OpenAIP and access accounts moved to their own
+       overview dialogs. #211: a single global save persists both, then returns to
+       the overview. The server enforces every boundary (requireAdmin → 403). -->
   <div class="d-flex align-center mb-4 ga-3">
     <div class="text-h6">{{ tenant?.name || ('Mandant #' + tenantId) }}</div>
     <v-chip v-if="tenant" :color="tenant.status === 'paused' ? 'warning' : 'success'" size="small" variant="tonal">
       {{ tenant.status === 'paused' ? 'pausiert' : 'aktiv' }}
     </v-chip>
     <v-spacer />
-    <!-- WF2-34 (ADR 0008): read-only "View as Tenant" straight from the tenant's
-         admin page — mints the grant and jumps to the map, where the
-         ImpersonationBar shows the yellow read-only banner with the exit. -->
-    <v-btn
-      size="small"
-      color="primary"
-      variant="tonal"
-      prepend-icon="mdi-account-eye-outline"
-      :loading="impBusy"
-      @click="viewAsTenant"
-    >
-      Als Mandant ansehen
-    </v-btn>
     <v-btn
       v-if="tenant"
       size="small"
@@ -45,18 +33,6 @@
       Mandant löschen
     </v-btn>
   </div>
-
-  <!-- WF2-34: surfaced only when minting the read-only grant failed. -->
-  <v-alert
-    v-if="impError"
-    type="error"
-    density="compact"
-    class="mb-4"
-    closable
-    @click:close="impError = null"
-  >
-    {{ impError }}
-  </v-alert>
 
   <!-- Delete tenant confirmation (ONB-4) -->
   <v-dialog v-model="deleteDialog" max-width="min(480px, 94vw)">
@@ -286,9 +262,7 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted, nextTick } from 'vue'
-import { useRouter } from 'vue-router'
 import { useAdminStore } from '@/stores/admin.js'
-import { useImpersonationStore } from '@/stores/impersonation.js'
 import { radiusNmToBbox, bboxToRadius } from '@/admin/geo.js'
 
 const props = defineProps({
@@ -299,27 +273,6 @@ const emit = defineEmits(['back'])
 const admin = useAdminStore()
 const busy = ref(false)
 
-// WF2-34 (ADR 0008): "Als Mandant ansehen" from the admin page. The server
-// mints the HttpOnly grant cookie; navigating to the map hands over to the
-// ImpersonationBar (banner, switcher, exit) and the /ws connect picks up the
-// target scope. Read-only by construction — no admin action here writes any
-// tenant user's view.
-const imp = useImpersonationStore()
-const router = useRouter()
-const impBusy = ref(false)
-const impError = ref(null)
-
-async function viewAsTenant() {
-  impBusy.value = true
-  impError.value = null
-  const ok = await imp.start(props.tenantId)
-  impBusy.value = false
-  if (ok) {
-    router.push('/')
-    return
-  }
-  impError.value = imp.error || 'Ansehen als Mandant fehlgeschlagen.'
-}
 const entitlements = ref([])
 // #211: feature toggles are buffered here and only persisted on the global save —
 // flipping a switch no longer takes effect immediately. cancel() drops the buffer.
