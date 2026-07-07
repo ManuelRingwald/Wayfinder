@@ -12,7 +12,7 @@
 
 ## 🎯 Stand 2026-07-07 (ASD-014 Slice 2 — AoR-Auswahl pro Mandant, Backend)
 
-- **ASD-014.2 — AoR-Auswahl pro Mandant (Backend, FR-AERO-003):** Der Mandant
+- **ASD-014.2 — AoR-Auswahl pro Mandant (Backend, FR-AERO-005):** Der Mandant
   konfiguriert seinen **Verantwortungsbereich** (CTR/TMA) als **explizite Liste
   stabiler OpenAIP-`id`s** (Auswahl-Semantik **Option 1**). Umgesetzt als **Variante
   A (whoami-Surfacing)** — `pkg/aeronautical` bleibt unangetastet:
@@ -26,7 +26,7 @@
 - **Tests:** Store-Round-Trip (real-PG) + `TestViewJSONParams`;
   `TestValidateViewAoRAirspaceIDs`/`TestNormalizeAoRIDs`/
   `TestWhoamiIncludesAoRAirspaceIDs`/`TestWhoamiOmitsAoRWhenUnset`.
-  Doku: Milestone `ASD-014.2`, FR-AERO-003, TECHNICAL (`whoami`/`00021`).
+  Doku: Milestone `ASD-014.2`, FR-AERO-005, TECHNICAL (`whoami`/`00021`).
   Gates grün: `go test ./...`, `go vet`, `gofmt`, `golangci-lint` (0 issues).
 - **Nächster Schritt (noch nicht freigegeben):** **Slice 3 (Frontend)** —
   Highlight-Styling der AoR-Lufträme (Match `id` ∈ `aor_airspace_ids` aus whoami)
@@ -59,7 +59,7 @@
 
 ## 🎯 Stand 2026-07-07 (ASD-014 Slice 1 — OpenAIP-Transform-Anreicherung für AoR)
 
-- **ASD-014.1 — OpenAIP-Transform-Anreicherung (Backend-Vorbau, FR-AERO-002):**
+- **ASD-014.1 — OpenAIP-Transform-Anreicherung (Backend-Vorbau, FR-AERO-004):**
   Der OpenAIP→GeoJSON-Transform (`pkg/aeronautical/client.go`) führt für
   **Lufträume** jetzt zusätzlich mit: **`id`** (stabile OpenAIP-`_id` — robuste
   Referenz für die AoR-Auswahl, Option 1), **`icao_class`** (numerisch) und die
@@ -70,7 +70,7 @@
   jetzt **nicht** gebaut).
 - **Neuer Typ** `openaipLimit` + `properties()`-Airspace-Block; neue Tests
   `TestFetchEnrichesAirspaceProperties`, `TestEnrichmentFieldsAreAirspaceOnly`.
-  Doku: Milestone `ASD-014.1`, FR-AERO-002, TECHNICAL `/api/airspace`.
+  Doku: Milestone `ASD-014.1`, FR-AERO-004, TECHNICAL `/api/airspace`.
   Gates grün: `go test ./...`, `go vet`, `gofmt`, `golangci-lint` (0 issues).
 - **Nächster Schritt (noch nicht freigegeben):** **Slice 2** — AoR-`_id`-Liste pro
   Mandant (View-Config) + `/api/airspace`-Tagging (`aor: true`); danach **Slice 3**
