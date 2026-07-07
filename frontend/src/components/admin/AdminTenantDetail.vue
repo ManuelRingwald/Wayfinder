@@ -4,7 +4,6 @@
        an AOI bbox), feature entitlements, feed grants and access accounts. The
        server enforces every boundary (requireAdmin → 403); this is convenience. -->
   <div class="d-flex align-center mb-4 ga-3">
-    <v-btn variant="text" prepend-icon="mdi-arrow-left" @click="$emit('back')">Übersicht</v-btn>
     <div class="text-h6">{{ tenant?.name || ('Mandant #' + tenantId) }}</div>
     <v-chip v-if="tenant" :color="tenant.status === 'paused' ? 'warning' : 'success'" size="small" variant="tonal">
       {{ tenant.status === 'paused' ? 'pausiert' : 'aktiv' }}
@@ -128,7 +127,7 @@
       </v-autocomplete>
       <p class="text-caption text-medium-emphasis mb-3">
         <template v-if="airportApplied">
-          <span class="text-success">Übernommen: {{ airportApplied }}</span> — bei Bedarf unten anpassen, dann „Ansicht speichern“.
+          <span class="text-success">Übernommen: {{ airportApplied }}</span> — bei Bedarf unten anpassen, dann „Speichern“.
         </template>
         <template v-else>
           ICAO-Code (z. B. <code>EDDH</code>) oder Name eingeben und einen Treffer wählen — Zentrum-Koordinaten, ICAO-Kürzel und QNH-Flugplatz werden dann automatisch gefüllt.
@@ -243,9 +242,6 @@
         <code>EDDH</code>), dessen aktuelles QNH die Kopfzeile zeigt (NOAA-METAR).
         Braucht zusätzlich das Feature <code>qnh</code>. Leer = keine QNH-Anzeige.
       </p>
-      <div class="mt-3">
-        <v-btn color="primary" :loading="busy" @click="save">Ansicht speichern</v-btn>
-      </div>
     </v-card-text>
   </v-card>
 
@@ -265,20 +261,27 @@
           </div>
           <div class="text-caption text-medium-emphasis">{{ e.description }}</div>
         </div>
+        <!-- #211: buffered locally — the switch updates featureEdits only; nothing
+             is persisted until the global save below. -->
         <v-switch
-          :model-value="e.enabled"
+          :model-value="featureEdits[e.key]"
           color="primary"
           density="compact"
           hide-details
           inset
-          :loading="busy"
           :disabled="e.reserved"
-          @update:model-value="toggleFeature(e, $event)"
+          @update:model-value="featureEdits[e.key] = $event"
         />
       </div>
     </v-card-text>
   </v-card>
 
+  <!-- #211: one global save persists the default view AND the feature toggles at
+       once, then returns to the overview; cancel returns without persisting. -->
+  <div class="d-flex justify-end ga-3 mb-2">
+    <v-btn variant="text" :disabled="busy" @click="cancel">Abbrechen</v-btn>
+    <v-btn color="primary" :loading="busy" @click="saveAll">Speichern</v-btn>
+  </div>
 </template>
 
 <script setup>
@@ -318,6 +321,9 @@ async function viewAsTenant() {
   impError.value = imp.error || 'Ansehen als Mandant fehlgeschlagen.'
 }
 const entitlements = ref([])
+// #211: feature toggles are buffered here and only persisted on the global save —
+// flipping a switch no longer takes effect immediately. cancel() drops the buffer.
+const featureEdits = reactive({})
 const deleteDialog = ref(false) // ONB-4: delete-tenant confirmation
 
 // The tenant header (name/status) comes from the overview the parent loaded.
@@ -336,7 +342,7 @@ const form = reactive({
 
 // ICAO airport search (offline directory, /api/admin/airports). Selecting a hit
 // is the confirmation: the map centre plus the ICAO fields (header + QNH) fill
-// in, all still editable and nothing persisted until "Ansicht speichern". The
+// in, all still editable and nothing persisted until the global "Speichern". The
 // search is debounced so it doesn't fire on every keystroke.
 const airportHits = ref([])
 const airportSearching = ref(false)
@@ -405,8 +411,10 @@ async function loadView() {
   // A 404 (no view yet) simply leaves the defaults in place.
 }
 
-async function save() {
-  busy.value = true
+// buildViewDto assembles the Standard-Ansicht wire payload from the form. The AOI
+// is derived from centre + radius (radiusNmToBbox); optional fields are sent only
+// when set, so an empty field clears nothing it shouldn't.
+function buildViewDto() {
   const dto = {
     center_lat: form.centerLat,
     center_lon: form.centerLon,
@@ -420,20 +428,38 @@ async function save() {
   if (form.flMax !== null && form.flMax !== '') dto.fl_max = form.flMax
   if (form.icao && form.icao.trim()) dto.icao = form.icao.trim()
   if (form.qnhIcao && form.qnhIcao.trim()) dto.qnh_icao = form.qnhIcao.trim().toUpperCase()
-  await admin.saveTenantView(props.tenantId, dto)
-  busy.value = false
+  return dto
 }
 
 async function loadEntitlements() {
   const r = await admin.loadTenantEntitlements(props.tenantId)
   entitlements.value = r.ok ? r.data : []
+  // #211: seed the local edit buffer from the server state. Reserved keys are
+  // included so their (disabled) switch still renders, but they are skipped on save.
+  for (const e of entitlements.value) featureEdits[e.key] = !!e.enabled
 }
 
-async function toggleFeature(e, enabled) {
+// #211: the single global save. Persist the default view AND every feature toggle
+// that actually changed against the loaded state, then return to the overview.
+// Nothing here takes effect until this runs, so an admin can toggle freely and back
+// out via cancel().
+async function saveAll() {
   busy.value = true
-  const r = await admin.setTenantEntitlement(props.tenantId, e.key, enabled)
-  if (r.ok) await loadEntitlements()
+  await admin.saveTenantView(props.tenantId, buildViewDto())
+  for (const e of entitlements.value) {
+    if (e.reserved) continue
+    const desired = !!featureEdits[e.key]
+    if (desired !== !!e.enabled) {
+      await admin.setTenantEntitlement(props.tenantId, e.key, desired)
+    }
+  }
   busy.value = false
+  emit('back')
+}
+
+// #211: discard the buffered edits and return to the overview without persisting.
+function cancel() {
+  emit('back')
 }
 
 async function toggleStatus() {
