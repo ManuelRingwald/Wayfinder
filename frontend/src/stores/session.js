@@ -28,6 +28,12 @@ export const useSessionStore = defineStore('session', () => {
   const role = computed(() => identity.value?.role ?? null)
   const isAdmin = computed(() => role.value === 'admin')
 
+  // mustChangePassword mirrors the whoami flag (ONB-1, ADR 0011): the principal is
+  // still on the well-known seed credential and the server refuses every data path
+  // (403 password_change_required, #208/ADR 0022). The ASD gate redirects such a
+  // principal to /admin, where the forced-change mask lives.
+  const mustChangePassword = computed(() => identity.value?.must_change_password === true)
+
   // Feature entitlements of the logged-in principal's tenant, delivered by the
   // role-agnostic whoami (WF2-50). The ASD map uses these to show a lotse only the
   // layers/filters their tenant is entitled to (Issue #106). Cosmetic gating — the
@@ -147,7 +153,7 @@ export const useSessionStore = defineStore('session', () => {
   }
 
   return {
-    identity, status, error, expired, subject, role, isAdmin,
+    identity, status, error, expired, subject, role, isAdmin, mustChangePassword,
     features, hasFeature, sensorClasses, flMin, flMax, icao, viewCenter, aoi,
     probe, login, renewNow, startRenew, stopRenew, logout,
   }

@@ -26,7 +26,7 @@
       </v-list>
     </v-menu>
 
-    <v-btn size="small" variant="flat" color="surface" @click="imp.stop()">
+    <v-btn size="small" variant="flat" color="surface" @click="exitGuestMode">
       Beenden
     </v-btn>
   </div>
@@ -34,11 +34,21 @@
 
 <script setup>
 import { computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { useAdminStore } from '@/stores/admin.js'
 import { useImpersonationStore } from '@/stores/impersonation.js'
 
 const admin = useAdminStore()
 const imp = useImpersonationStore()
+const router = useRouter()
+
+// #208 (ADR 0022): an admin has no own air picture to fall back to — ending the
+// guest mode returns to the admin area instead of leaving a map whose /ws the
+// server now rejects.
+async function exitGuestMode() {
+  await imp.stop()
+  router.push('/admin')
+}
 
 onMounted(async () => {
   // Probe identity once (fail-closed: a non-admin renders nothing). Only an admin

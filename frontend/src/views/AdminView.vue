@@ -54,8 +54,9 @@
       <template v-if="mdAndUp">{{ admin.identity.subject || 'admin' }} · {{ admin.role }}</template>
       <v-icon v-else>mdi-account-cog</v-icon>
     </v-chip>
-    <v-btn v-if="mdAndUp" prepend-icon="mdi-radar" :to="{ name: 'asd' }">Zur Lage</v-btn>
-    <v-btn v-else icon="mdi-radar" :to="{ name: 'asd' }" variant="text" aria-label="Zur Lage" />
+    <!-- #208 (ADR 0022): no "Zur Lage" shortcut — an admin has no own air
+         picture; the ASD is reached only via the guest-mode eye icon in the
+         tenant overview (#209). -->
     <v-btn
       v-if="admin.isAuthorized && mdAndUp"
       prepend-icon="mdi-logout"
