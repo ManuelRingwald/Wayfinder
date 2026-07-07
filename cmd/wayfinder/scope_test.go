@@ -240,9 +240,11 @@ func TestScopeResolverImpersonationExpiredFallsBack(t *testing.T) {
 	resolve := impersonationResolver()
 	expired := impersonation.MintGrant(9, -time.Minute, impKey)
 
-	// An expired grant carries no authority → the default path (the admin's OWN
-	// tenant), byte-identical to no impersonation, with no error.
-	scope, err := resolve(requestAs(7, store.RoleAdmin, expired))
+	// An expired grant carries no authority → the default path, byte-identical
+	// to no impersonation, with no error. For a USER that is their own tenant's
+	// scope; a stale cookie left over from an earlier admin session must never
+	// grant anything.
+	scope, err := resolve(requestAs(7, store.RoleUser, expired))
 	if err != nil {
 		t.Fatalf("expired grant must fall back to the default path, got %v", err)
 	}
@@ -252,20 +254,56 @@ func TestScopeResolverImpersonationExpiredFallsBack(t *testing.T) {
 	if scope.TenantID != 7 {
 		t.Errorf("default path must keep the real tenant id, got %d", scope.TenantID)
 	}
+
+	// For an ADMIN the default path no longer exists (#208, ADR 0022): an
+	// expired grant means no active impersonation, so the handshake is rejected
+	// instead of serving the earlier "empty own picture".
+	if _, err := resolve(requestAs(0, store.RoleAdmin, expired)); err == nil {
+		t.Error("admin with an expired grant must be rejected, not fall back")
+	}
+}
+
+// #208 (ADR 0022): a platform admin has no own ASD scope. Without an ACTIVE
+// impersonation grant the /ws handshake is rejected fail-closed — the guest
+// mode (eye icon in the tenant overview) is the only way an admin reads the
+// air picture.
+func TestScopeResolverAdminWithoutGrantRejected(t *testing.T) {
+	resolve := impersonationResolver()
+
+	// No grant cookie at all → rejected.
+	if _, err := resolve(requestAs(0, store.RoleAdmin, "")); err == nil {
+		t.Error("admin without an impersonation grant must be rejected")
+	}
+
+	// With an ACTIVE grant the admin reads the TARGET tenant (unchanged).
+	grant := impersonation.MintGrant(9, time.Hour, impKey)
+	scope, err := resolve(requestAs(0, store.RoleAdmin, grant))
+	if err != nil {
+		t.Fatalf("admin with active grant: %v", err)
+	}
+	if !scope.AllowsFeed(2) || !scope.AllowsFeed(3) {
+		t.Error("admin with active grant must read the target tenant's feeds")
+	}
 }
 
 func TestScopeResolverImpersonationDisabledWithoutKey(t *testing.T) {
-	// No checker/key → impersonation disabled platform-wide: even an admin's
-	// valid-looking grant is ignored, the caller sees their own tenant.
+	// No checker/key → impersonation disabled platform-wide: a valid-looking
+	// grant is ignored. A USER keeps their own tenant scope; an ADMIN is
+	// rejected (#208, ADR 0022) — with impersonation off there is no legitimate
+	// ASD read for an admin at all.
 	feeds := feedsByTenant{7: {1}, 9: {2, 3}}
 	resolve := newScopeResolver(feeds, noView, nil, nil, discardLogger())
 	grant := impersonation.MintGrant(9, time.Hour, impKey)
 
-	scope, err := resolve(requestAs(7, store.RoleAdmin, grant))
+	scope, err := resolve(requestAs(7, store.RoleUser, grant))
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
 	if !scope.AllowsFeed(1) || scope.AllowsFeed(2) {
 		t.Error("with impersonation disabled the grant must be ignored (own tenant scope)")
+	}
+
+	if _, err := resolve(requestAs(0, store.RoleAdmin, grant)); err == nil {
+		t.Error("with impersonation disabled an admin has no ASD path and must be rejected")
 	}
 }
