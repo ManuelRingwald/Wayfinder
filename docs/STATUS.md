@@ -36,6 +36,25 @@
     (neu `asdAdminGate`, Resolver-Tests auf neue Semantik), dist neu gebaut.
   - Damit ist die **Admin-/Mandanten-UX-Serie #208–#212 vollständig**.
 
+## 🎯 Stand 2026-07-07 (ADR 0021 Nachtrag — Datenquellen-Bewertung A/B/C für AoR)
+
+- **ADR-0021-Nachtrag „Datenquellen-Bewertung (A/B/C)" (rein dokumentarisch):**
+  Geprüft, ob neben OpenAIP auch EuroScope-Sectorfiles oder DFS-AIP als Quelle
+  der AoR-Geometrie taugen (recherchiert/verifiziert):
+  - **A OpenAIP** — jetzt gewählt (CC BY-NC); liefert `type`, `icaoClass`,
+    Floor/Ceiling **und stabile `_id`** (unser Transform verwirft das heute noch).
+  - **B EuroScope-Sectorfiles** — **verworfen**: Lizenz (nur außerhalb des
+    Controller-Clients mit Zustimmung; keine Open-Lizenz) + sim-adaptiert, nicht
+    AIRAC-zertifiziert.
+  - **C DFS-AIXM** — **Produktionsziel**: autoritativ, aber Backend-Pipeline
+    (~3–5 Tage) + DFS-Lizenzklärung. **Nachverfolgt: Issue #215 + Roadmap ASD-015.**
+- **Festlegungen:** Auswahl-Semantik = **Option 1** (explizite, pro-Mandant
+  konfigurierte `_id`-Liste). Vorbau: OpenAIP-Transform um `_id`/Floor-Ceiling/
+  `icaoClass` erweitern. Roadmap um **ASD-014** (AoR-Overlay) + **ASD-015**
+  (DFS-AIXM, #215) ergänzt.
+- **Nächster Schritt (noch nicht freigegeben):** Slice-Ankündigung für ASD-014
+  (Transform-Ausbau + AoR-Liste + Frontend-Highlight), dann Bau nach „Go".
+
 ## 🎯 Stand 2026-07-07 (Admin-/Mandanten-UX-Überarbeitung — 4 von 5 Häppchen)
 
 Auf Basis von fünf neu angelegten Issues (#208–#212) den Admin-/Mandanten-Bereich
