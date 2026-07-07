@@ -10,6 +10,29 @@
 
 ---
 
+## 🎯 Stand 2026-07-06 (ADR 0021 — Geografie-Begriffsmodell AoR/AoI/Kartenrahmen)
+
+- **ADR 0021 — AoR vs. AoI/Track-Scope vs. Kartenrahmen (rein dokumentarisch):**
+  Auf Betreiber-Frage („zeigen wir dem Nutzer einen *Radius*, obwohl ein
+  Flughafen-ANSP *Gebiete* verantwortet?") die drei heute vermischten
+  geografischen Ebenen sauber benannt und getrennt:
+  1. **Track-Scope = Area of Interest (AoI)** — Daten-/Sichtfeld, bewusst *größer*
+     als der Verantwortungsbereich; heute die `view_configs.AOI`-BBox + FL-Band
+     (WF2-21.2) → `FIREFLY_COVERAGE_BBOX` (ADR 0012). **Das ist der „Radius, der
+     nur die Tracks betrifft".**
+  2. **Verantwortungsbereich = Area of Responsibility (AoR)** — CTR/TMA als
+     hervorgehobenes Overlay, Quelle **OpenAIP** (ADR 0004), **kein** Track-Filter.
+  3. **Kartenrahmen** — Center/Zoom, Range Rings, FL-Filter (reine Darstellung).
+  Fachlicher Kern: **„sehen ≠ besitzen"** (SKYbrary AoR/AoI). Neuer ADR +
+  Glossar-Begriffe (AoR, AoI/Track-Scope, CTR, TMA, CTA, ATZ). **Kein Code, keine
+  neuen Env-Variablen, kein Register-Eintrag** — die funktionale Anforderung
+  entsteht erst mit dem Folge-Häppchen.
+- **Nächster Schritt (noch nicht freigegeben):** flughafengebundene,
+  hervorgehobene **AoR-Overlay-Ebene** auf OpenAIP-Basis (Beispiel EDDH). Offene
+  Design-Frage dort: **Auswahl-Semantik** — welche OpenAIP-Lufträume gelten als
+  AoR eines Flughafens (explizite Namens-/ID-Liste pro Mandant, ggf. per
+  räumlichem Test vorbefüllt), plus optional `center+radius→BBox` für die AOI.
+
 ## 🎯 Stand 2026-07-06 (CAT063 per-Quelle-Fehlergrund H4 → schließt #197)
 
 - **ADR 0020 — CAT063 `SRC-REASON` dekodieren + Feed-Health-Chip zeigt den Grund
