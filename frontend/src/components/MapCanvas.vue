@@ -49,6 +49,17 @@ onMounted(async () => {
     // #189/#190: clip the DWD weather overlays (radar/warnings) to the tenant AOI.
     session.aoi,
   )
+  // #219: initMap is async (it awaits /api/map-config), so session.viewCenter /
+  // session.aoi can resolve DURING that await — most notably when an admin enters
+  // read-only guest mode: the session store still holds the stale, non-impersonated
+  // view (empty centre) when the map mounts, and the impersonation-aware whoami
+  // lands a moment later. The viewCenter/aoi watchers below fire against a still-null
+  // mapEngine in that window, so their re-aim is silently lost and the map stays on
+  // — and "Ansicht zurücksetzen" resets to — the global Frankfurt default instead of
+  // the impersonated tenant's sector. Reconcile once the engine exists so the opening
+  // centre + AOI always reflect the CURRENT effective view (no-op when unchanged).
+  mapEngine.applyViewCenter(session.viewCenter)
+  mapEngine.applyWeatherAOI(session.aoi)
   // Häppchen 4: attach the measurement controller and let the tools store drive
   // it (reporting the live readout back to the store). createMeasure adds a
   // source + layers, so it MUST run after the style has loaded — initMap returns
