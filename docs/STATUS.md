@@ -10,6 +10,32 @@
 
 ---
 
+## 🎯 Stand 2026-07-07 (#208 — Admin ohne eigenes ASD, ADR 0022; Serie komplett)
+
+- **ADR 0022 — Admin ohne eigenes ASD + pfad-unabhängiges Passwort-Gate
+  (Issue #208, Anker der Serie #208–#212; NFR-SEC-006):** Server-hart umgesetzt
+  (Option A, Freigabe des Betreibers; S4, umgesetzt auf Fable 5):
+  - **Server:** `tenant.RequirePasswordChanged` weist bei gesetztem
+    `must_change_password` **alle** operativen Daten-Pfade ab (`/ws`,
+    Aero-Overlays, Wetter, Airports/Runways; `403 password_change_required`) —
+    der `/`-Login kann den Zwangs-Passwortwechsel nicht mehr umgehen. Der
+    `/ws`-Scope-Resolver lehnt einen **Admin ohne aktives Gastmodus-Grant**
+    fail-closed ab (403 + Audit `ws_admin_denied`); der frühere Fallback
+    „leeres eigenes Bild" (TenantID 0) entfällt — auch bei abgelaufenem Grant
+    und deaktivierter Impersonation.
+  - **Frontend:** `adminGate` in `AsdView` — must-change-Principals und Admins
+    ohne Gastmodus werden von `/` nach `/admin` umgeleitet (Spinner hält, bis
+    entschieden; kein totes `/ws`); TTL-Ablauf des Grants → Drop-Handler kehrt
+    nach `/admin` zurück; Gastmodus-„Beenden" → `/admin`; „Zur Lage"-Shortcut
+    der Admin-App-Bar entfernt. `session.mustChangePassword` aus dem whoami.
+  - **Altstand:** bereits durch Migration 00007 bereinigt (admin XOR tenant,
+    CHECK-Constraint) — keine neue Migration.
+  - Doku: ADR 0022, NFR-SEC-006 im Register, TECHNICAL.md (Admin/Nutzer-
+    Trennung + Gate-Semantik), INSTALLATION.md (4.7-Hinweis, 4.11 „Beenden" →
+    Verwaltung). Gates: `go test`/`vet`/`gofmt` grün, **vitest 415** grün
+    (neu `asdAdminGate`, Resolver-Tests auf neue Semantik), dist neu gebaut.
+  - Damit ist die **Admin-/Mandanten-UX-Serie #208–#212 vollständig**.
+
 ## 🎯 Stand 2026-07-07 (Admin-/Mandanten-UX-Überarbeitung — 4 von 5 Häppchen)
 
 Auf Basis von fünf neu angelegten Issues (#208–#212) den Admin-/Mandanten-Bereich
