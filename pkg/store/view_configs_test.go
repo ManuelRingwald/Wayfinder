@@ -8,26 +8,35 @@ import (
 )
 
 func TestViewJSONParams(t *testing.T) {
-	// No AOI -> nil (SQL NULL); empty layers -> "{}".
-	aoi, layers, err := viewJSONParams(ViewConfig{})
+	// No AOI/AoR -> nil (SQL NULL); empty layers -> "{}".
+	aoi, aor, layers, err := viewJSONParams(ViewConfig{})
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
 	if aoi != nil {
 		t.Errorf("aoi = %v, want nil", aoi)
 	}
+	if aor != nil {
+		t.Errorf("aor = %v, want nil", aor)
+	}
 	if layers != "{}" {
 		t.Errorf("layers = %q, want {}", layers)
 	}
 
 	box := &BBox{MinLat: 49, MinLon: 8, MaxLat: 51, MaxLon: 9}
-	aoi, layers, err = viewJSONParams(ViewConfig{AOI: box, Layers: map[string]bool{"airspace": true}})
+	aoi, aor, layers, err = viewJSONParams(ViewConfig{
+		AOI: box, Layers: map[string]bool{"airspace": true}, AoRAirspaceIDs: []string{"a1", "b2"},
+	})
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
 	s, ok := aoi.(string)
 	if !ok || !strings.Contains(s, `"min_lat":49`) {
 		t.Errorf("aoi json = %v", aoi)
+	}
+	as, ok := aor.(string)
+	if !ok || !strings.Contains(as, `"a1"`) || !strings.Contains(as, `"b2"`) {
+		t.Errorf("aor json = %v", aor)
 	}
 	if !strings.Contains(layers, `"airspace":true`) {
 		t.Errorf("layers json = %q", layers)
@@ -51,7 +60,8 @@ func TestIntegrationViewConfigRepo(t *testing.T) {
 	box := &BBox{MinLat: 49, MinLon: 8, MaxLat: 51, MaxLon: 9}
 	def, err := views.UpsertTenantDefault(ctx, ten.ID, ViewConfig{
 		CenterLat: 50.03, CenterLon: 8.57, Zoom: 8, AOI: box, FLMin: &flMin,
-		Layers: map[string]bool{"airspace": true},
+		Layers:         map[string]bool{"airspace": true},
+		AoRAirspaceIDs: []string{"aid-1", "aid-2"},
 	})
 	if err != nil {
 		t.Fatalf("upsert default: %v", err)
@@ -62,8 +72,11 @@ func TestIntegrationViewConfigRepo(t *testing.T) {
 	if !def.Layers["airspace"] {
 		t.Fatalf("layers did not round-trip: %+v", def.Layers)
 	}
+	if len(def.AoRAirspaceIDs) != 2 || def.AoRAirspaceIDs[0] != "aid-1" || def.AoRAirspaceIDs[1] != "aid-2" {
+		t.Fatalf("aor did not round-trip: %+v", def.AoRAirspaceIDs)
+	}
 
-	// Upsert again updates in place: same row, new zoom, AOI/FL cleared.
+	// Upsert again updates in place: same row, new zoom, AOI/FL/AoR cleared.
 	def2, err := views.UpsertTenantDefault(ctx, ten.ID, ViewConfig{CenterLat: 50, CenterLon: 8, Zoom: 9})
 	if err != nil {
 		t.Fatalf("upsert default 2: %v", err)
@@ -71,7 +84,7 @@ func TestIntegrationViewConfigRepo(t *testing.T) {
 	if def2.ID != def.ID {
 		t.Fatalf("upsert created a new row: %d != %d", def2.ID, def.ID)
 	}
-	if def2.Zoom != 9 || def2.AOI != nil || def2.FLMin != nil || len(def2.Layers) != 0 {
+	if def2.Zoom != 9 || def2.AOI != nil || def2.FLMin != nil || len(def2.Layers) != 0 || len(def2.AoRAirspaceIDs) != 0 {
 		t.Fatalf("update did not replace fields: %+v", def2)
 	}
 

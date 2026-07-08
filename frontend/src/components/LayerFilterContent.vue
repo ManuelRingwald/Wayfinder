@@ -35,6 +35,26 @@
             @update:model-value="onAirspaceGroup(group.id, $event)"
           />
         </div>
+        <!-- ASD-014: highlight the tenant's Area of Responsibility (CTR/TMA) with a
+             bright outline, distinct from context airspace. Only visible when an AoR
+             is configured (whoami.aor_airspace_ids); the toggle simply hides it. -->
+        <div class="filter-row">
+          <v-switch
+            :model-value="store.layerVisibility.aor"
+            color="primary"
+            density="compact"
+            hide-details
+            inset
+            @update:model-value="onLayerToggle('aor', $event)"
+          >
+            <template #label>
+              <span class="aor-legend">
+                <span class="aor-swatch" :style="{ background: AIRSPACE_AOR_COLOR }"></span>
+                Verantwortungsbereich (AoR)
+              </span>
+            </template>
+          </v-switch>
+        </div>
       </template>
 
       <div v-if="showLayer('vor_ndb')" class="filter-row">
@@ -339,7 +359,7 @@
 import { ref, computed } from 'vue'
 import { useAsdStore } from '@/stores/asd.js'
 import { useSessionStore } from '@/stores/session.js'
-import { AIRSPACE_GROUPS, RANGE_RING_SPACING_OPTIONS_NM, MAX_RANGE_RING_COUNT, HISTORY_DURATION_OPTIONS_S, WEATHER_RADAR_LEGEND, WEATHER_WARNINGS_LEGEND } from '@/map/constants.js'
+import { AIRSPACE_GROUPS, AIRSPACE_AOR_COLOR, RANGE_RING_SPACING_OPTIONS_NM, MAX_RANGE_RING_COUNT, HISTORY_DURATION_OPTIONS_S, WEATHER_RADAR_LEGEND, WEATHER_WARNINGS_LEGEND } from '@/map/constants.js'
 import { filterProvenanceLegend } from '@/map/provenance.js'
 
 // #116: the NavigationRail opens one section at a time on desktop; the mobile
@@ -595,6 +615,19 @@ async function onLogout() {
   height: 10px;
   border-radius: 2px;
   margin-right: 4px;
+  flex-shrink: 0;
+}
+
+/* ASD-014: AoR toggle swatch — a short line stroke echoing the map highlight. */
+.aor-legend {
+  display: inline-flex;
+  align-items: center;
+}
+.aor-swatch {
+  width: 14px;
+  height: 3px;
+  border-radius: 2px;
+  margin-right: 6px;
   flex-shrink: 0;
 }
 

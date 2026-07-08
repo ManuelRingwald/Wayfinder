@@ -10,6 +10,8 @@ import { PALETTES, TRACKS_LAYER_ID, AIRSPACE_GROUPS } from './constants.js'
 import {
   addAeronauticalIcons,
   addAirspaceLayers,
+  addAirspaceAoRLayer,
+  aorFilter,
   addNavaidLayers,
   addWaypointLayers,
   addAirportLayers,
@@ -41,6 +43,7 @@ import {
   AIRSPACE_FILL_LAYER_ID,
   AIRSPACE_LINE_LAYER_ID,
   AIRSPACE_LABEL_LAYER_ID,
+  AIRSPACE_AOR_LAYER_ID,
   NAVAIDS_LAYER_ID,
   WAYPOINTS_LAYER_ID,
   COVERAGE_RINGS_LAYER_ID,
@@ -85,6 +88,10 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
   // Last raw (unclipped) warnings FeatureCollection, kept so an AOI change can
   // re-clip without re-fetching.
   let lastWarningsRaw = null
+  // ASD-014: the tenant's Area-of-Responsibility airspace ids (whoami), held in a
+  // closure so updateAoR can re-apply the highlight filter and the load handler
+  // can initialise it on every mount.
+  let aorIds = []
   // Fetch map config from the backend.
   const res = await fetch('/api/map-config')
   const cfg = await res.json()
@@ -283,6 +290,9 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
     // Aeronautical overlays next, so they sit beneath the track layers.
     addAeronauticalIcons(map)
     addAirspaceLayers(map, palette)
+    // ASD-014: the AoR highlight sits directly above the airspace line so the
+    // tenant's controlled volumes stand out from the context airspace.
+    addAirspaceAoRLayer(map)
     addNavaidLayers(map, palette)
     addWaypointLayers(map, palette)
     // #192: airport reference-point markers (offline OurAirports, AOI-scoped by
@@ -333,6 +343,9 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
     // (UIR/FIR/ADIZ/TRA …) are filtered out immediately instead of only after
     // the first group toggle.
     updateAirspaceFilter()
+    // ASD-014: apply any AoR highlight already known at load (mirrors the
+    // updateAirspaceFilter call above — initialise on every mount).
+    updateAoR(aorIds)
 
     if (state.pendingTracks) {
       updateTracksLayer(state.pendingTracks, state, doRender, startFadeLoop, store.historyConfig.durationS * 1000)
@@ -400,6 +413,7 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
     if (!state.mapLoaded) return
     const groups = {
       airspace: [AIRSPACE_FILL_LAYER_ID, AIRSPACE_LINE_LAYER_ID, AIRSPACE_LABEL_LAYER_ID],
+      aor: [AIRSPACE_AOR_LAYER_ID], // ASD-014: AoR highlight toggle
       navaids: [NAVAIDS_LAYER_ID],
       waypoints: [WAYPOINTS_LAYER_ID],
       coverageRings: [COVERAGE_RINGS_LAYER_ID, COVERAGE_RINGS_LAYER_ID + '-inner', COVERAGE_CENTER_LAYER_ID],
@@ -476,6 +490,17 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
     if (map.getLayer(AIRSPACE_LABEL_LAYER_ID)) map.setFilter(AIRSPACE_LABEL_LAYER_ID, typeFilter)
   }
 
+  // ASD-014: highlight the tenant's Area-of-Responsibility airspaces
+  // (session.aorAirspaceIds, whoami) by filtering the dedicated AoR line layer to
+  // those feature ids. Mirrors applyWeatherAOI: it stores the ids in the closure
+  // and re-applies; a no-op before the style has loaded (the load handler
+  // re-applies on every mount). An empty/absent list highlights nothing.
+  function updateAoR(ids) {
+    aorIds = Array.isArray(ids) ? ids : []
+    if (!state.mapLoaded) return
+    if (map.getLayer(AIRSPACE_AOR_LAYER_ID)) map.setFilter(AIRSPACE_AOR_LAYER_ID, aorFilter(aorIds))
+  }
+
   // Destroy: close WS, clear intervals, remove map.
   function destroy() {
     if (reconnectTimer) clearTimeout(reconnectTimer)
@@ -528,5 +553,5 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
     src.setData(rangeRingsGeoJSON(effectiveCenter.lat, effectiveCenter.lon, spacingNM, count))
   }
 
-  return { map, destroy, reconnect, setLayerVisibility, updateFlFilter, updateAirspaceFilter, updateSelection, updateHistoryConfig, applyWeatherAOI, zoomIn, zoomOut, recenter, applyViewCenter, updateRangeRings }
+  return { map, destroy, reconnect, setLayerVisibility, updateFlFilter, updateAirspaceFilter, updateAoR, updateSelection, updateHistoryConfig, applyWeatherAOI, zoomIn, zoomOut, recenter, applyViewCenter, updateRangeRings }
 }

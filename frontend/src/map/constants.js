@@ -19,6 +19,13 @@ export const AIRSPACE_SOURCE_ID = 'airspace'
 export const AIRSPACE_FILL_LAYER_ID = 'airspace-fill'
 export const AIRSPACE_LINE_LAYER_ID = 'airspace-line'
 export const AIRSPACE_LABEL_LAYER_ID = 'airspace-label'
+// ASD-014 (ADR 0021): the tenant's Area of Responsibility. A dedicated line
+// layer over the airspace source, filtered to the stable OpenAIP ids in
+// whoami.aor_airspace_ids, drawn above the normal airspace line so the tenant's
+// controlled volumes (CTR/TMA) stand out from the surrounding context airspace.
+// The accent colour is deliberately distinct from every AIRSPACE_GROUPS colour.
+export const AIRSPACE_AOR_LAYER_ID = 'airspace-aor'
+export const AIRSPACE_AOR_COLOR = '#00e676' // bright green — "this is mine"
 export const NAVAIDS_SOURCE_ID = 'navaids'
 export const NAVAIDS_LAYER_ID = 'navaids-symbols'
 export const WAYPOINTS_SOURCE_ID = 'waypoints'
