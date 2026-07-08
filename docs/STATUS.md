@@ -10,6 +10,25 @@
 
 ---
 
+## 🎯 Stand 2026-07-08 (ASD-014 Slice 4 — AoR-Namens-Picker; Thema rund)
+
+- **ASD-014.4 — Namens-Picker für den AoR-Editor (FR-AERO-006):** Löst die
+  „ID-Eingabe"-Grenze aus Slice 3 auf. Der Admin wählt die Lufträume **nach
+  Namen**; gespeichert wird weiter die stabile `id`.
+  - **Backend:** neuer Endpunkt `GET /api/admin/tenants/{id}/airspaces` (hinter
+    `requireAdmin`) → Luftraum-Liste des Mandanten aus dem **vorhandenen**
+    Aeronautik-Cache (`Registry.Serve`), projiziert auf `{id,name,type?,icao_class?}`,
+    nach Name sortiert. Kein neuer Fetch; `pkg/adminapi` bleibt transport-agnostisch
+    (Projektion im `cmd/wayfinder`-Adapter, robust gegen int/float64).
+  - **Frontend:** `v-autocomplete` mit Items aus dem Endpunkt; gewählte, aber nicht
+    (mehr) gecachte IDs bleiben als synthetische Items erhalten (kein stiller
+    Verlust). Leerer Cache → Hinweis „erst OpenAIP konfigurieren".
+- **Tests:** adminapi (Optionen/404/403), `projectAirspaces`/`propInt`, Store
+  (`loadTenantAirspaces`), Editor-Wiring. **vitest 429**, `vite build` + `dist` neu;
+  Go grün (`go test ./...`/`vet`/`gofmt`/`golangci-lint`).
+- **ASD-014 (ADR 0021) damit vollständig rund:** .1 Transform, .2 AoR-Liste, .3
+  Karten-Highlight + Editor, .4 Namens-Picker.
+
 ## 🎯 Stand 2026-07-07 (ASD-014 Slice 3 — AoR-Kartendarstellung + Editor; Thema abgeschlossen)
 
 - **ASD-014.3 — AoR-Kartendarstellung + Editor (Frontend, FR-UI-025):** Schließt

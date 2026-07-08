@@ -211,6 +211,7 @@ type Handler struct {
 	aeroLife    TenantAeroLifecycle   // may be nil; disables live per-tenant OpenAIP apply (ONB-6)
 	aeroCache   AeroCacheStatusReader // may be nil; omits OpenAIP cache freshness from the status route (AERO-1)
 	aeroChanges AeroChangesReader     // may be nil; disables the OpenAIP changes route (AERO-3)
+	aeroList    AirspaceLister        // may be nil; disables the AoR airspace-picker route (404) (ASD-014)
 	globalAero  GlobalOpenAIPStore    // may be nil; disables the global OpenAIP key routes (AERO-2)
 	secrets     SecretService         // may be nil; disables the per-feed secret routes (503) when no key is configured (ORCH-2c 3a)
 	sessions    SessionRevoker        // may be nil; disables eager session revocation on pause (AP7)
@@ -367,6 +368,8 @@ func New(views ViewStore, subs SubscriptionStore, feeds FeedStore, tenants Tenan
 	// per-tenant change-impact of the last OpenAIP refresh (what changed, per layer).
 	mux.HandleFunc("GET /api/admin/airac", h.requireAdmin(h.getAirac))
 	mux.HandleFunc("GET /api/admin/tenants/{tenantID}/openaip/changes", h.requireAdmin(h.getTenantOpenAIPChanges))
+	// ASD-014: the AoR editor picks airspaces by name from the tenant's own cache.
+	mux.HandleFunc("GET /api/admin/tenants/{tenantID}/airspaces", h.requireAdmin(h.getTenantAirspaces))
 	// Platform-admin management (ONB-3, ADR 0011): admins are global (no tenant)
 	// and managed through a dedicated surface, strictly separated from the
 	// per-tenant user routes below. The "last active admin" guard (409) lives in

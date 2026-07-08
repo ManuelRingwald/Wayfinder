@@ -167,6 +167,14 @@ export const useAdminStore = defineStore('admin', () => {
     return apiFetch(`/api/admin/tenants/${tenantId}/view`)
   }
 
+  // loadTenantAirspaces lists a target tenant's cached airspaces (id + name +
+  // type) for the AoR editor picker (ASD-014). Read-only; the caller reads
+  // r.ok / r.data. Empty list when the tenant has no OpenAIP data yet; a 404
+  // means the picker route is unavailable (no airspace lister wired).
+  async function loadTenantAirspaces(tenantId) {
+    return apiFetch(`/api/admin/tenants/${tenantId}/airspaces`)
+  }
+
   // saveTenantView writes a target tenant's default view (cross-tenant editor).
   async function saveTenantView(tenantId, dto) {
     error.value = null
@@ -614,7 +622,7 @@ export const useAdminStore = defineStore('admin', () => {
     role, isAdmin, isAuthorized, mustChangePassword, features, hasFeature,
     loadIdentity, login, logout, loadView, saveView, loadFeeds, loadSubscriptions,
     loadTenants, loadTenantSubscriptions, grant, revoke,
-    loadOverview, loadFeedsHealth, loadTenantView, saveTenantView, loadTenantEntitlements, setTenantEntitlement,
+    loadOverview, loadFeedsHealth, loadTenantView, loadTenantAirspaces, saveTenantView, loadTenantEntitlements, setTenantEntitlement,
     searchAirports,
     loadTenantUsers, createUser, setUserStatus, deleteUser, setUserPassword, setUserSessionLimit, setTenantStatus,
     createTenant, deleteTenant,

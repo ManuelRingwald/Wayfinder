@@ -6,8 +6,10 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"sort"
 	"time"
 
+	"github.com/manuelringwald/wayfinder/pkg/adminapi"
 	"github.com/manuelringwald/wayfinder/pkg/aeronautical"
 	"github.com/manuelringwald/wayfinder/pkg/feature"
 	"github.com/manuelringwald/wayfinder/pkg/store"
@@ -288,4 +290,61 @@ func (g *globalOpenAIP) effectiveKey(ctx context.Context) string {
 		}
 	}
 	return g.envKey
+}
+
+// aeroAirspaceLister adapts the aeronautical Registry to adminapi.AirspaceLister
+// (ASD-014): it projects a tenant's cached airspace FeatureCollection to the
+// picker DTO (id + name + type + icao_class), sorted by name. It lives here so the
+// adminapi package stays free of the aeronautical/GeoJSON types.
+type aeroAirspaceLister struct {
+	reg *aeronautical.Registry
+}
+
+func (l aeroAirspaceLister) ListAirspaces(tenantID int64) []adminapi.AirspaceOption {
+	return projectAirspaces(l.reg.Serve(tenantID, aeronautical.KindAirspace))
+}
+
+// projectAirspaces maps an airspace FeatureCollection to the picker DTO: it keeps
+// only features with a stable id, reads the optional numeric type/icao_class, and
+// sorts by name (then id) for a stable, browsable list.
+func projectAirspaces(fc aeronautical.FeatureCollection) []adminapi.AirspaceOption {
+	out := make([]adminapi.AirspaceOption, 0, len(fc.Features))
+	for _, f := range fc.Features {
+		id, ok := f.Properties["id"].(string)
+		if !ok || id == "" {
+			continue // only airspaces with a stable id are usable AoR entries
+		}
+		name, _ := f.Properties["name"].(string)
+		opt := adminapi.AirspaceOption{ID: id, Name: name}
+		if t, ok := propInt(f.Properties["type"]); ok {
+			opt.Type = &t
+		}
+		if c, ok := propInt(f.Properties["icao_class"]); ok {
+			opt.ICAOClass = &c
+		}
+		out = append(out, opt)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Name != out[j].Name {
+			return out[i].Name < out[j].Name
+		}
+		return out[i].ID < out[j].ID
+	})
+	return out
+}
+
+// propInt reads a numeric GeoJSON property that may be an int (a freshly fetched
+// feature) or a float64 (one hydrated from the persisted JSON cache).
+func propInt(v any) (int, bool) {
+	switch n := v.(type) {
+	case int:
+		return n, true
+	case float64:
+		return int(n), true
+	case json.Number:
+		if i, err := n.Int64(); err == nil {
+			return int(i), true
+		}
+	}
+	return 0, false
 }
