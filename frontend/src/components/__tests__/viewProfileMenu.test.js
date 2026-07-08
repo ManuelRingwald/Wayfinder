@@ -38,6 +38,16 @@ describe('ViewProfileMenu wiring (VP-4)', () => {
     expect(menu).toContain('asd.mapLoaded')
     expect(menu).toContain('watch(')
   })
+
+  // Operator request 2026-07-08: keep the controller's scope tidy — the switcher
+  // is icon-only, with the active profile name surfaced on hover via a tooltip.
+  it('is icon-only with a hover tooltip (no printed label)', () => {
+    expect(menu).toContain('<v-btn icon')
+    expect(menu).toContain('<v-tooltip activator="parent"')
+    expect(menu).toContain('profileTooltip')
+    // The always-visible text label span is gone.
+    expect(menu).not.toContain('vp-btn__label')
+  })
 })
 
 describe('AsdView mounts the switcher (VP-4)', () => {

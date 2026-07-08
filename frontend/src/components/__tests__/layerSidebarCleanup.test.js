@@ -36,3 +36,20 @@ describe('sidebar cleanup (#176)', () => {
     expect(rail).toMatch(/\.nav-panel__divider\s*\{[\s\S]*?background:\s*var\(--wf-border-strong\)/)
   })
 })
+
+// Operator request 2026-07-08: opening/closing the sidebar must not reflow the
+// panel text ("Schrift baut sich auf / wird zusammengedrückt") nor flash a
+// scrollbar. Fix: the panel has a FIXED width (open drawer width − rail) so its
+// content is laid out at final width and the drawer just clips/reveals it.
+describe('sidebar open/close does not reflow the panel (2026-07-08)', () => {
+  it('gives the nav panel a fixed width instead of flex:1', () => {
+    // Fixed width = open drawer width (248 desktop) minus the rail token.
+    expect(rail).toMatch(/\.nav-panel\s*\{[\s\S]*?width:\s*calc\(248px - var\(--wf-nav-rail-width/)
+    expect(rail).toMatch(/\.nav-panel\s*\{[\s\S]*?flex-shrink:\s*0/)
+    // The tablet-landscape band uses the wider 304px open drawer.
+    expect(rail).toMatch(/width:\s*calc\(304px - var\(--wf-nav-rail-width, 76px\)\)/)
+  })
+  it('suppresses the transient horizontal scrollbar on the panel body', () => {
+    expect(rail).toMatch(/\.nav-panel__body\s*\{[\s\S]*?overflow-x:\s*hidden/)
+  })
+})

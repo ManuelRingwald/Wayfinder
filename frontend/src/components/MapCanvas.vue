@@ -162,6 +162,9 @@ defineExpose({
   // #121: MapLibre must be told when its container changes size (drawer/panel
   // collapse), otherwise a dead, unpainted strip is left where the panel was.
   resize: () => mapEngine?.map?.resize(),
+  // ASD-013: select a track by number from the Ereignis-Panel. Returns false if
+  // the track is no longer live so AsdView can leave the panel open.
+  selectTrackByNum: (trackNum) => mapEngine?.selectTrackByNum(trackNum) ?? false,
 })
 </script>
 

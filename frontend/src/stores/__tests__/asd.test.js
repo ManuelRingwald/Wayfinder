@@ -150,3 +150,24 @@ describe('asd store — weather warnings overlay (WX-C)', () => {
     expect(s.weatherWarningsAvailable).toBe(false)
   })
 })
+
+// ASD-013: the live-track set feeds the Ereignis-Panel's decision whether a
+// "Track N erschienen" event still points at a selectable track.
+describe('asd store — live-track set for the event panel (ASD-013)', () => {
+  it('starts empty and mirrors the numbers pushed from the engine', () => {
+    const s = useAsdStore()
+    expect(s.liveTrackNums.size).toBe(0)
+    s.setLiveTrackNums([12, 36, 7])
+    expect(s.liveTrackNums.has(36)).toBe(true)
+    expect(s.liveTrackNums.has(99)).toBe(false)
+    expect(s.liveTrackNums.size).toBe(3)
+  })
+
+  it('accepts a Set directly and replaces the previous set', () => {
+    const s = useAsdStore()
+    s.setLiveTrackNums([1, 2])
+    s.setLiveTrackNums(new Set([2, 3]))
+    expect(s.liveTrackNums.has(1)).toBe(false) // replaced, not merged
+    expect(s.liveTrackNums.has(3)).toBe(true)
+  })
+})

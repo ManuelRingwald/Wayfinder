@@ -1,7 +1,11 @@
 <template>
   <div class="vp-control">
-    <v-btn size="small" variant="tonal" prepend-icon="mdi-bookmark-multiple-outline" class="vp-btn">
-      <span class="vp-btn__label">{{ activeName }}</span>
+    <!-- Icon-only to keep the controller's scope uncluttered (operator request
+         2026-07-08): the active profile name is not printed but surfaced on hover
+         via a short tooltip. -->
+    <v-btn icon size="small" variant="tonal" class="vp-btn" :aria-label="profileTooltip">
+      <v-icon>mdi-bookmark-multiple-outline</v-icon>
+      <v-tooltip activator="parent" location="bottom" open-delay="300" :text="profileTooltip" />
       <v-menu activator="parent" :close-on-content-click="false" location="bottom end">
         <v-card min-width="264" class="vp-menu" elevation="8">
           <v-list density="compact" class="pa-0">
@@ -93,8 +97,10 @@ const makeDefault = ref(false)
 const renameId = ref(null) // null = save-new, else the id being renamed
 const busy = ref(false)
 
-// The button label shows the currently applied profile, or a neutral fallback.
+// The currently applied profile, or a neutral fallback. Shown in the hover
+// tooltip (the button itself is icon-only to keep the scope tidy).
 const activeName = computed(() => store.list.find((p) => p.id === store.activeId)?.name ?? 'Ansicht')
+const profileTooltip = computed(() => `Ansichts-Profil: ${activeName.value}`)
 const nameError = computed(() => (name.value.length > 60 ? 'Maximal 60 Zeichen' : ''))
 const canSubmit = computed(() => name.value.trim().length > 0 && name.value.length <= 60)
 
@@ -148,12 +154,6 @@ async function submit() {
 <style scoped>
 .vp-control {
   pointer-events: auto;
-}
-.vp-btn__label {
-  max-width: 12ch;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .vp-menu {
   background: rgba(14, 22, 34, 0.98);
