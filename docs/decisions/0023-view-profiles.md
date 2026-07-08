@@ -74,6 +74,9 @@ umbauen.
 4. **VP-4** — UI-Umschalter + „Ansicht speichern"-Dialog.
 5. **VP-5** — Apply-on-Login des Default-Profils.
 
+**Stand 2026-07-08:** VP-1…VP-5 **umgesetzt** — das Feature ist komplett
+(FR-PROFILE-001…005).
+
 ## Schnittstellen-Wirkung
 
 **Keine** am CAT062-Draht-Vertrag. Reiner interner Per-Nutzer-Präferenz-Pfad.

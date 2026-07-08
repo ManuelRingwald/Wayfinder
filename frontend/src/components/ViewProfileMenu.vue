@@ -81,10 +81,12 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useProfilesStore } from '@/stores/profiles.js'
+import { useAsdStore } from '@/stores/asd.js'
 
 const store = useProfilesStore()
+const asd = useAsdStore()
 const dialog = ref(false)
 const name = ref('')
 const makeDefault = ref(false)
@@ -96,9 +98,25 @@ const activeName = computed(() => store.list.find((p) => p.id === store.activeId
 const nameError = computed(() => (name.value.length > 60 ? 'Maximal 60 Zeichen' : ''))
 const canSubmit = computed(() => name.value.trim().length > 0 && name.value.length <= 60)
 
-onMounted(() => {
-  store.load()
+onMounted(async () => {
+  await store.load()
+  tryApplyDefault()
 })
+
+// VP-5: apply the login default once, but only after the map is ready so the
+// applied toggles propagate through the live MapCanvas watchers. Whichever of
+// "profiles loaded" / "map ready" completes last triggers it; the store guards
+// against a double apply and against overriding a later manual choice.
+watch(
+  () => asd.mapLoaded,
+  (ready) => {
+    if (ready) tryApplyDefault()
+  },
+)
+
+function tryApplyDefault() {
+  if (asd.mapLoaded) store.applyDefaultOnce()
+}
 
 function openSave() {
   renameId.value = null

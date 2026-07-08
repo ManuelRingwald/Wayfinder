@@ -33,6 +33,11 @@ describe('ViewProfileMenu wiring (VP-4)', () => {
     expect(menu).toContain('store.canCreate')
     expect(menu).toContain('Maximal 3')
   })
+  it('applies the login default once the map is ready (VP-5)', () => {
+    expect(menu).toContain('store.applyDefaultOnce()')
+    expect(menu).toContain('asd.mapLoaded')
+    expect(menu).toContain('watch(')
+  })
 })
 
 describe('AsdView mounts the switcher (VP-4)', () => {

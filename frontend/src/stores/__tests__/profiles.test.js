@@ -122,4 +122,34 @@ describe('profiles store', () => {
     await s.load()
     expect(s.canCreate).toBe(false)
   })
+
+  // VP-5: apply-on-login.
+  it('applyDefaultOnce applies the default profile exactly once', async () => {
+    installFetch({
+      'GET /api/view-profiles': {
+        status: 200,
+        body: [P({ id: 1 }), P({ id: 2, is_default: true, settings: { v: 1, layers: { rangeRings: true } } })],
+      },
+    })
+    const s = useProfilesStore()
+    const asd = useAsdStore()
+    await s.load()
+    expect(asd.layerVisibility.rangeRings).toBe(false)
+    expect(s.applyDefaultOnce()).toBe(true)
+    expect(asd.layerVisibility.rangeRings).toBe(true)
+    expect(s.activeId).toBe(2)
+    expect(s.defaultApplied).toBe(true)
+    // A second call is a no-op (does not re-apply / override a later manual choice).
+    asd.setLayerVisibility('rangeRings', false)
+    expect(s.applyDefaultOnce()).toBe(false)
+    expect(asd.layerVisibility.rangeRings).toBe(false)
+  })
+
+  it('applyDefaultOnce is a retryable no-op when there is no default yet', () => {
+    installFetch({})
+    const s = useProfilesStore()
+    // No profiles loaded → no default → false, and the guard does NOT latch.
+    expect(s.applyDefaultOnce()).toBe(false)
+    expect(s.defaultApplied).toBe(false)
+  })
 })
