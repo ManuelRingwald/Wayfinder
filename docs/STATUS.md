@@ -10,6 +10,19 @@
 
 ---
 
+## 🎯 Stand 2026-07-08 (View-Profile VP-4 — UI-Umschalter + Speichern-Dialog)
+
+- **VP-4 (FR-PROFILE-004):** `ViewProfileMenu.vue` im ASD-Header-Cluster — Button
+  (Label = aktives Profil) → `v-menu` mit Profilliste (Klick = **anwenden**,
+  Stern = **Default**, Stift = **umbenennen**, Papierkorb = **löschen**) +
+  „**Aktuelle Ansicht speichern…**"-`v-dialog` (Name + „Als Standard beim Login").
+  Cap-Gating (≤3, „Maximal 3 Profile"), lädt `onMounted`. Verdrahtet den
+  VP-3-Store; **kein** Backend-/CAT062-Bezug; `dist` neu.
+- **Tests:** `viewProfileMenu.test.js` (Source-Guard: Store-Verdrahtung, Aktionen,
+  Default-Stern, Cap, AsdView-Mount). **vitest 510 grün**, `vite build` + `dist` neu.
+- **Nächster (letzter) Schritt:** **VP-5** — Apply-on-Login des Default-Profils
+  (nach Karten-Init, orthogonal zur Tenant-Karten-Rahmung).
+
 ## 🎯 Stand 2026-07-08 (View-Profile VP-3 — Frontend-Store + Capture/Apply)
 
 - **VP-3 (FR-PROFILE-003):** Pinia-`profiles`-Store (`load`/`saveCurrent`/`update`/
