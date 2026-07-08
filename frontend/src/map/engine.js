@@ -22,6 +22,7 @@ import {
   addLeaderLinesLayer,
   addSelectionLayer,
   addLabelsLayer,
+  addSelectionLabelLayer,
   addTrailsLayer,
   addHistoryDotsLayer,
   addVectorsLayer,
@@ -380,6 +381,7 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
     addSelectionLayer(map, palette)   // ASD-007: selection halo, under symbols
     addTracksLayer(map)
     addLabelsLayer(map, palette)      // ASD-002: above track circles
+    addSelectionLabelLayer(map)       // ASD-011b: selected-label outline, above labels
     state.mapLoaded = true
     store.setMapLoaded(true)
     // ASD-011 (#179): apply the airspace type filter directly on load, so the

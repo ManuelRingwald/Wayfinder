@@ -7,6 +7,8 @@ import {
   LABEL_H_PX,
   SYMBOL_BBOX_R_PX,
   LEADER_THRESHOLD_PX,
+  SELECTION_LABEL_PAD_PX,
+  SELECTION_LABEL_RADIUS_PX,
 } from './constants.js'
 
 // bboxCollides returns true when bbox overlaps any rectangle in occupied.
@@ -17,6 +19,31 @@ export function bboxCollides(occupied, bbox) {
     }
   }
   return false
+}
+
+// roundedRectRing returns the screen-space points of a rounded-rectangle outline
+// centred on (cx, cy), half-extents (halfW, halfH), corner radius r. Each corner
+// is approximated by `segsPerCorner` arc segments; the ring is closed (last point
+// equals the first). Pure (no map), so it is unit-testable; the caller
+// inverse-projects the points to geo. Screen convention: x right, y down.
+export function roundedRectRing(cx, cy, halfW, halfH, r, segsPerCorner = 4) {
+  const rr = Math.max(0, Math.min(r, halfW, halfH))
+  // Corner arc centres and sweep, ordered TR → BR → BL → TL (clockwise, y-down).
+  const corners = [
+    { x: cx + halfW - rr, y: cy - halfH + rr, a0: -Math.PI / 2, a1: 0 },
+    { x: cx + halfW - rr, y: cy + halfH - rr, a0: 0, a1: Math.PI / 2 },
+    { x: cx - halfW + rr, y: cy + halfH - rr, a0: Math.PI / 2, a1: Math.PI },
+    { x: cx - halfW + rr, y: cy - halfH + rr, a0: Math.PI, a1: (3 * Math.PI) / 2 },
+  ]
+  const pts = []
+  for (const c of corners) {
+    for (let i = 0; i <= segsPerCorner; i++) {
+      const a = c.a0 + (c.a1 - c.a0) * (i / segsPerCorner)
+      pts.push({ x: c.x + rr * Math.cos(a), y: c.y + rr * Math.sin(a) })
+    }
+  }
+  pts.push({ ...pts[0] }) // close the ring
+  return pts
 }
 
 // deconflictLabels computes deconflicted screen-space positions for all track
@@ -33,14 +60,16 @@ export function bboxCollides(occupied, bbox) {
 //
 // Manual pins from labelPins (ASD-002 B2) override auto-placement.
 //
-// Label positioning: labels are kept at the track's geo-position and the
-// screen-space pixel offset is converted to em units stored in the
-// "text_offset" property. MapLibre's "text-offset" layout property picks this
-// up data-driven (["get","text_offset"]). This avoids a map.unproject() call
-// in the hot path, which was found to produce silent errors in certain
-// MapLibre GL JS v4 build/camera combinations. Leader line end-points use a
-// Mercator approximation for the same reason.
-export function deconflictLabels(allTrackFeatures, map, labelPins) {
+// Label positioning: each label's screen-space anchor (symbol + pixel offset) is
+// inverse-projected back to geo with map.unproject() and the label is placed
+// THERE with a centred anchor. Using the map's own inverse guarantees the
+// round-trip map.project(labelGeo) === (anchor px) for any tile size/zoom/
+// latitude, which is what keeps the drag handler (drag.js) pixel-exact.
+//
+// selectedTrackNum (ASD-011b): when set, the selected track's label additionally
+// gets a rounded-rectangle outline box (returned as selectionBoxFeatures), so the
+// selection reads on the data block as well as the symbol.
+export function deconflictLabels(allTrackFeatures, map, labelPins, selectedTrackNum = null) {
   const symbolOccupied = [] // circle footprints of already-processed tracks
   const labelOccupied = []  // bounding boxes of already-placed labels
 
@@ -50,6 +79,7 @@ export function deconflictLabels(allTrackFeatures, map, labelPins) {
 
   const labelFeatures = []
   const leaderLineFeatures = []
+  const selectionBoxFeatures = [] // ASD-011b: 0 or 1 (the selected label's outline)
 
   for (const feature of sorted) {
     const [lon, lat] = feature.geometry.coordinates
@@ -160,7 +190,27 @@ export function deconflictLabels(allTrackFeatures, map, labelPins) {
         },
       })
     }
+
+    // ASD-011b: outline the SELECTED track's label with a rounded-rectangle box.
+    // Built around the label's screen bbox (centre lx,ly) with padding, then each
+    // ring point is inverse-projected so the box sits exactly around the label.
+    if (selectedTrackNum != null && trackNum === selectedTrackNum) {
+      const halfW = LABEL_W_PX / 2 + SELECTION_LABEL_PAD_PX
+      const halfH = LABEL_H_PX / 2 + SELECTION_LABEL_PAD_PX
+      const ring = roundedRectRing(lx, ly, halfW, halfH, SELECTION_LABEL_RADIUS_PX)
+      selectionBoxFeatures.push({
+        type: 'Feature',
+        geometry: {
+          type: 'LineString',
+          coordinates: ring.map((p) => {
+            const ll = map.unproject([p.x, p.y])
+            return [ll.lng, ll.lat]
+          }),
+        },
+        properties: { track_num: trackNum, ...opProps },
+      })
+    }
   }
 
-  return { labelFeatures, leaderLineFeatures }
+  return { labelFeatures, leaderLineFeatures, selectionBoxFeatures }
 }

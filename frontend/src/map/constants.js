@@ -87,6 +87,19 @@ export const SELECTION_LAYER_ID = 'track-selection-ring'
 // ref EWG84F) rather than a ring; this is the pre-rendered box icon's id.
 export const SELECTION_ICON_ID = 'wf-selection-box'
 
+// ASD-011b (selected-label outline, design template): a bright neutral rounded
+// rectangle framing the SELECTED track's data-block label, so symbol AND block
+// read as "selected" together. A dedicated source holds at most one closed ring
+// (the box); the layer draws it above the labels so it frames the text. Neutral
+// bright (not cyan/state colours) per the design and the operator's choice.
+export const SELECTION_LABEL_SOURCE_ID = 'track-selection-label'
+export const SELECTION_LABEL_LAYER_ID = 'track-selection-label-box'
+export const SELECTION_LABEL_COLOR = '#f2f7fc'
+// Padding around the label bbox, corner radius and stroke width (screen px).
+export const SELECTION_LABEL_PAD_PX = 4
+export const SELECTION_LABEL_RADIUS_PX = 5
+export const SELECTION_LABEL_WIDTH_PX = 1.6
+
 // Paket 6: Sensor coverage ring overlay — radar range circles fetched from
 // /api/coverage/rings as a static GeoJSON FeatureCollection.
 export const COVERAGE_SOURCE_ID = 'coverage-rings'
