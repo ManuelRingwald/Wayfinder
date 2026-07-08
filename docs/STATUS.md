@@ -10,6 +10,23 @@
 
 ---
 
+## 🎯 Stand 2026-07-08 (View-Profile VP-3 — Frontend-Store + Capture/Apply)
+
+- **VP-3 (FR-PROFILE-003):** Pinia-`profiles`-Store (`load`/`saveCurrent`/`update`/
+  `rename`/`overwrite`/`remove`/`setDefault`/`apply`, `canCreate`≤3,
+  `defaultProfile`) gegen die VP-2-API. Reine, testbare Serialisierung in
+  `profileSettings.js`: `captureSettings`/`applySettings` fangen/spielen die
+  **Anzeige-Präferenzen** des asd-Stores (Layer/Airspace-Gruppen/Range-Rings/
+  History/FL-Filter; **kein** Zentrum/Zoom — Option A), tolerant (unbekannte Keys
+  übersprungen, `airspace` aus Gruppen abgeleitet). Karte folgt über bestehende
+  MapCanvas-Watcher.
+- **Noch keine UI** (VP-4) → keine Komponente importiert die Module → `dist`
+  unverändert. **Kein CAT062-Bezug.**
+- **Tests:** `profileSettings.test.js` (Capture/Apply/Toleranz/Round-Trip),
+  `profiles.test.js` (CRUD gegen gemocktes fetch). **vitest 504 grün.**
+- **Nächster Schritt:** **VP-4** — UI-Umschalter im ASD-Header + „Ansicht
+  speichern"-Dialog (verdrahtet den Store, baut `dist` neu).
+
 ## 🎯 Stand 2026-07-08 (View-Profile VP-2 — user-gescopte REST-API)
 
 - **VP-2 (FR-PROFILE-002):** Fünf Endpunkte hinter `tenantMW`+`pwGate` (kein
