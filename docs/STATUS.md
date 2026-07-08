@@ -10,6 +10,24 @@
 
 ---
 
+## 🎯 Stand 2026-07-08 (View-Profile VP-5 — Apply-on-Login; **Feature komplett**)
+
+- **VP-5 (FR-PROFILE-005):** Nach dem Login wird das **Default-Profil** automatisch
+  angewandt. `profiles`-Store: `applyDefaultOnce()` (Guard `defaultApplied`) wendet
+  das `is_default`-Profil **genau einmal pro App-Load** an (setzt `activeId`); ohne
+  Default latcht der Guard nicht (retrybar). `ViewProfileMenu.vue` triggert es
+  **erst wenn `asd.mapLoaded`** (Live-Watcher greifen) — nach `store.load()` und via
+  `watch(mapLoaded)`. **Orthogonal** zur Tenant-Karten-Rahmung; überschreibt keine
+  spätere manuelle Wahl. **Kein Backend-/CAT062-Bezug.**
+- **Tests:** `profiles.test.js` (`applyDefaultOnce`: einmalig/No-op/retrybar),
+  `viewProfileMenu.test.js` (mapLoaded-Gating). **vitest 513 grün**, `vite build` +
+  `dist` neu.
+- **✅ Feature View-Profile komplett (VP-1…VP-5):** bis zu 3 persönliche Anzeige-
+  Profile benennen/speichern/abrufen, eins als Default beim Login. Server-seitig
+  per-Nutzer gescopt + begrenzt.
+- **Nächster Schritt:** offen — auf Betreiber-Input warten (Backlog: 2.0-SaaS-Pfad,
+  DFS-AIXM #215, weitere ASD-Design-Angleichung).
+
 ## 🎯 Stand 2026-07-08 (View-Profile VP-4 — UI-Umschalter + Speichern-Dialog)
 
 - **VP-4 (FR-PROFILE-004):** `ViewProfileMenu.vue` im ASD-Header-Cluster — Button

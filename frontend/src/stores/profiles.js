@@ -16,6 +16,10 @@ export const useProfilesStore = defineStore('profiles', () => {
   const activeId = ref(null) // last applied profile (for UI highlight); not persisted
   const loading = ref(false)
   const error = ref('')
+  // VP-5: whether the login default has already been auto-applied this app load.
+  // Guards apply-on-login so it runs at most once and never overrides the operator's
+  // later manual choice within the session.
+  const defaultApplied = ref(false)
 
   const canCreate = computed(() => list.value.length < MAX_PROFILES)
   const defaultProfile = computed(() => list.value.find((p) => p.is_default) ?? null)
@@ -112,6 +116,20 @@ export const useProfilesStore = defineStore('profiles', () => {
     return true
   }
 
+  // applyDefaultOnce applies the login-default profile exactly once per app load
+  // (VP-5). Returns true when it applied a default. It does NOT mark itself done
+  // when there is no default yet, so it can be retried once the list has loaded;
+  // once it applies (or if there is genuinely a default), the guard latches.
+  function applyDefaultOnce() {
+    if (defaultApplied.value) return false
+    const d = list.value.find((p) => p.is_default)
+    if (!d) return false
+    defaultApplied.value = true
+    applySettings(useAsdStore(), d.settings)
+    activeId.value = d.id
+    return true
+  }
+
   function markDefaultLocally(id) {
     list.value = list.value.map((p) => ({ ...p, is_default: p.id === id }))
   }
@@ -121,6 +139,7 @@ export const useProfilesStore = defineStore('profiles', () => {
     activeId,
     loading,
     error,
+    defaultApplied,
     canCreate,
     defaultProfile,
     load,
@@ -131,5 +150,6 @@ export const useProfilesStore = defineStore('profiles', () => {
     remove,
     setDefault,
     apply,
+    applyDefaultOnce,
   }
 })
