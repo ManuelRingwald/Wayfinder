@@ -57,6 +57,8 @@
       <div class="top-right-cluster">
         <AsdHeader />
         <FeedStatusChip />
+        <!-- VP-4 (ADR 0023): per-user view-profile switcher + save dialog. -->
+        <ViewProfileMenu />
         <!-- ASD-013: event-log bell with an unseen badge; toggles the floating
              Alarm-/Ereignis-Panel and marks the log seen on open. -->
         <div class="events-control">
@@ -164,6 +166,7 @@ import ScopeLegend from '@/components/ScopeLegend.vue'
 import TrackDetailPanel from '@/components/TrackDetailPanel.vue'
 import FeedStatusChip from '@/components/FeedStatusChip.vue'
 import EventPanel from '@/components/EventPanel.vue'
+import ViewProfileMenu from '@/components/ViewProfileMenu.vue'
 import LoginCard from '@/components/LoginCard.vue'
 import { useEventsStore } from '@/stores/events.js'
 
