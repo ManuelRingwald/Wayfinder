@@ -28,7 +28,11 @@ describe('sidebar cleanup (#176)', () => {
     expect(lfc).toMatch(/\.filter-section-header\s*\{[\s\S]*?border-bottom/)
   })
 
-  it('makes the rail↔panel divider visible', () => {
+  it('makes the rail↔panel divider a reliably-rendered, visible hairline', () => {
     expect(rail).toContain('nav-panel__divider')
+    // A plain full-height strip (not the vertical v-divider that failed to
+    // stretch) using the border token → a subtle but clearly visible line.
+    expect(rail).toMatch(/\.nav-panel__divider\s*\{[\s\S]*?align-self:\s*stretch/)
+    expect(rail).toMatch(/\.nav-panel__divider\s*\{[\s\S]*?background:\s*var\(--wf-border-strong\)/)
   })
 })

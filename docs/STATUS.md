@@ -10,6 +10,22 @@
 
 ---
 
+## 🐞 Stand 2026-07-08 (UI-Fix — Fluginfo rechts + Sidebar-Trennlinie)
+
+- **Fluginfo-Karte (`TrackDetailPanel`, FR-UI-005):** lag oben **links** (Offset
+  = Rail-Breite) und wurde vom **ausgeklappten** Navigation-Panel (LAYER/FILTER)
+  überdeckt (Betreiber-Meldung + Screenshot). Jetzt **am rechten Rand** verankert,
+  **unter** dem Top-Right-Cluster + den Map-Controls (top ~180px), sodass sie diese
+  Chrome nicht überlappt und das linke Panel sie nie verdeckt.
+- **Rail↔Panel-Trennlinie (`NavigationRail`, #176/FR-UI-008):** die vertikale
+  `v-divider` streckte sich in der Flex-Zeile nicht zuverlässig auf volle Höhe →
+  kaum sichtbar. Ersetzt durch einen **immer voll-hohen 1px-Streifen**
+  (`--wf-border-strong`, dezent aber klar sichtbar) zwischen schmaler Sidebar und
+  ausgeklapptem Panel.
+- **Tests:** `responsive.test.js` (Karte rechts, kein Links-Offset),
+  `layerSidebarCleanup.test.js` (Trennlinie voll-hoch + Border-Token). **vitest
+  514 grün**, `vite build` + `dist` neu; Go unberührt.
+
 ## 🎯 Stand 2026-07-08 (View-Profile VP-5 — Apply-on-Login; **Feature komplett**)
 
 - **VP-5 (FR-PROFILE-005):** Nach dem Login wird das **Default-Profil** automatisch

@@ -118,7 +118,7 @@
         <!-- Divider + panel (appear only when a section is active) -->
         <Transition name="nav-panel">
           <div v-if="activePanel" class="nav-panel" key="panel">
-            <v-divider vertical class="nav-panel__divider" />
+            <div class="nav-panel__divider" role="separator" />
             <div class="nav-panel__body">
               <LayerFilterContent
                 :section="activePanel"
@@ -391,12 +391,16 @@ function onFlFilterChange(payload) { emit('fl-filter-change', payload) }
   overflow: hidden;
   min-width: 0;
 }
-/* #176: make the rail↔panel divider clearly visible (the default v-divider
-   opacity was too faint to read as a separation between the icon rail and the
-   open content panel). */
-.nav-panel__divider.v-divider {
-  opacity: 1;
-  border-color: rgba(var(--v-border-color), 0.32);
+/* #176 + operator request 2026-07-08: a reliably-rendered, subtle hairline
+   between the icon rail and the open content panel. The previous vertical
+   v-divider read as almost no separation (it did not stretch full-height in this
+   flex row); a plain full-height 1px strip using the slightly-stronger border
+   token keeps the line dezent but clearly visible. */
+.nav-panel__divider {
+  width: 1px;
+  align-self: stretch;
+  flex-shrink: 0;
+  background: var(--wf-border-strong);
 }
 .nav-panel__body {
   flex: 1;
