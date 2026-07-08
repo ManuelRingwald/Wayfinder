@@ -218,6 +218,30 @@
         <code>EDDH</code>), dessen aktuelles QNH die Kopfzeile zeigt (NOAA-METAR).
         Braucht zusätzlich das Feature <code>qnh</code>. Leer = keine QNH-Anzeige.
       </p>
+
+      <!-- ASD-014 (ADR 0021): Area of Responsibility — the airspaces (CTR/TMA)
+           this tenant controls, highlighted on the map. Held as stable OpenAIP
+           airspace ids (robust against AIRAC name drift). -->
+      <v-combobox
+        v-model="form.aorAirspaceIds"
+        label="Verantwortungsbereich — Luftraum-IDs (AoR)"
+        placeholder="OpenAIP-Luftraum-ID eintippen und Enter"
+        variant="outlined"
+        density="compact"
+        multiple
+        chips
+        closable-chips
+        clearable
+        hide-details
+        class="mt-3"
+      />
+      <p class="text-caption text-medium-emphasis mt-2">
+        <strong>Verantwortungsbereich (AoR)</strong> hebt die zugehörigen Lufträume
+        (CTR/TMA) auf der Karte hervor (ADR 0021). Eingetragen werden die
+        <strong>stabilen OpenAIP-Luftraum-IDs</strong> — nicht der Name, denn Namen
+        ändern sich pro AIRAC-Zyklus. Leer = kein hervorgehobener Bereich, max. 500
+        IDs. Reine Anzeige, nicht im CAT062-Strom.
+      </p>
     </v-card-text>
   </v-card>
 
@@ -291,6 +315,9 @@ const form = reactive({
   flMax: null,
   icao: '',
   qnhIcao: '',
+  // ASD-014 (ADR 0021): the tenant's Area of Responsibility as a list of stable
+  // OpenAIP airspace ids (CTR/TMA). Edited as chips; the map highlights them.
+  aorAirspaceIds: [],
 })
 
 // ICAO airport search (offline directory, /api/admin/airports). Selecting a hit
@@ -354,6 +381,7 @@ async function loadView() {
     form.flMax = r.data.fl_max ?? null
     form.icao = r.data.icao ?? ''
     form.qnhIcao = r.data.qnh_icao ?? ''
+    form.aorAirspaceIds = Array.isArray(r.data.aor_airspace_ids) ? r.data.aor_airspace_ids : []
     if (r.data.aoi) {
       const derived = bboxToRadius(r.data.aoi)
       form.radiusNm = derived ? round(derived.radiusNm) : 0
@@ -381,7 +409,26 @@ function buildViewDto() {
   if (form.flMax !== null && form.flMax !== '') dto.fl_max = form.flMax
   if (form.icao && form.icao.trim()) dto.icao = form.icao.trim()
   if (form.qnhIcao && form.qnhIcao.trim()) dto.qnh_icao = form.qnhIcao.trim().toUpperCase()
+  // ASD-014: trim + de-duplicate the AoR ids (mirrors server normalizeAoRIDs);
+  // sent only when non-empty so an empty list clears the AoR (SQL NULL).
+  const aor = normalizeAorIds(form.aorAirspaceIds)
+  if (aor.length) dto.aor_airspace_ids = aor
   return dto
+}
+
+// normalizeAorIds mirrors the server's normalizeAoRIDs: trim each id, drop empties,
+// de-duplicate while preserving order. Keeps the wire payload clean; the server
+// re-normalises and validates authoritatively.
+function normalizeAorIds(ids) {
+  const seen = new Set()
+  const out = []
+  for (const raw of ids ?? []) {
+    const t = String(raw).trim()
+    if (!t || seen.has(t)) continue
+    seen.add(t)
+    out.push(t)
+  }
+  return out
 }
 
 async function loadEntitlements() {

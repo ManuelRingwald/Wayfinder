@@ -15,6 +15,8 @@ import {
   AIRSPACE_FILL_LAYER_ID,
   AIRSPACE_LINE_LAYER_ID,
   AIRSPACE_LABEL_LAYER_ID,
+  AIRSPACE_AOR_LAYER_ID,
+  AIRSPACE_AOR_COLOR,
   NAVAIDS_SOURCE_ID,
   NAVAIDS_LAYER_ID,
   WAYPOINTS_SOURCE_ID,
@@ -428,6 +430,33 @@ export function addAirspaceLayers(map, palette) {
       'text-halo-width': 1,
     },
   })
+}
+
+// addAirspaceAoRLayer registers the Area-of-Responsibility highlight (ASD-014,
+// ADR 0021): a bright, emphasised outline over the airspace source that draws
+// only the tenant's controlled volumes (CTR/TMA). It shares the airspace source
+// (so it needs no separate fetch) and is filtered by feature id via updateAoR()
+// in engine.js. The initial filter matches nothing (empty id list) until whoami
+// supplies aor_airspace_ids. Added after the airspace line so it sits on top.
+export function addAirspaceAoRLayer(map) {
+  map.addLayer({
+    id: AIRSPACE_AOR_LAYER_ID,
+    type: 'line',
+    source: AIRSPACE_SOURCE_ID,
+    filter: aorFilter([]),
+    paint: {
+      'line-color': AIRSPACE_AOR_COLOR,
+      'line-width': 3,
+      'line-opacity': 0.95,
+    },
+  })
+}
+
+// aorFilter builds the MapLibre filter selecting airspace polygons whose stable
+// OpenAIP `id` is in the given list. An empty list yields a filter that matches
+// nothing (so no AoR configured → nothing highlighted).
+export function aorFilter(ids) {
+  return ['all', ['==', ['geometry-type'], 'Polygon'], ['in', ['get', 'id'], ['literal', ids ?? []]]]
 }
 
 // addNavaidLayers registers the navaids source and a symbol layer that picks an

@@ -10,6 +10,27 @@
 
 ---
 
+## 🎯 Stand 2026-07-07 (ASD-014 Slice 3 — AoR-Kartendarstellung + Editor; Thema abgeschlossen)
+
+- **ASD-014.3 — AoR-Kartendarstellung + Editor (Frontend, FR-UI-025):** Schließt
+  ADR 0021 end-to-end ab.
+  - **Karte:** eigene AoR-Linien-Ebene über der Airspace-Quelle, gefiltert auf die
+    `id`s aus `whoami.aor_airspace_ids` (Akzent `#00e676`); `session.aorAirspaceIds`
+    → `engine.updateAoR`; `MapCanvas` reconcilet nach `initMap` (#219-Race) +
+    watcht die Liste; Legenden-Toggle „Verantwortungsbereich (AoR)".
+  - **Editor:** `AdminTenantDetail.vue` Chips-Feld für die stabilen OpenAIP-IDs,
+    über die bestehende `saveTenantView` gespeichert; `validateView.js`-Parität
+    (≤ 500 / ≤ 64 / keine Steuerzeichen).
+  - **Ehrliche Grenze:** ID-Eingabe, noch kein Namens-Picker (bräuchte eine
+    mandantenübergreifende Luftraum-Liste — Folgearbeit).
+- **Tests:** session (`aorAirspaceIds`), validateView (AoR-Grenzen), Map-/Editor-
+  Source-Guards. **vitest 427 grün**, `vite build` + eingebettetes `dist` neu; Go
+  unberührt grün.
+- **Nebenbei behoben:** FR-AERO-ID-Kollision (ASD-014 → FR-AERO-004/005; die IDs
+  002/003 gehörten schon AERO-2/AERO-3).
+- **Zusammenfassung ASD-014 (ADR 0021) komplett:** .1 Transform (`id`/Höhenbänder),
+  .2 AoR-Liste am View-Config + whoami, .3 Karten-Highlight + Editor.
+
 ## 🎯 Stand 2026-07-07 (ASD-014 Slice 2 — AoR-Auswahl pro Mandant, Backend)
 
 - **ASD-014.2 — AoR-Auswahl pro Mandant (Backend, FR-AERO-005):** Der Mandant

@@ -65,3 +65,19 @@ describe('airspace filter is applied on every mount (#179)', () => {
     expect(engine).toMatch(/function destroy\(\)\s*\{[\s\S]*store\.setMapLoaded\(false\)[\s\S]*\}/)
   })
 })
+
+// ASD-014: the map highlights the tenant's Area of Responsibility (CTR/TMA) from
+// whoami.aor_airspace_ids. Same source-level wiring guard as the view centre —
+// no MapLibre unit harness exists for the paint/filter plumbing.
+describe('AoR highlight wiring (ASD-014)', () => {
+  it('the engine adds the AoR layer above the airspace layers and exposes updateAoR', () => {
+    expect(engine).toMatch(/addAirspaceLayers\(map, palette\)[\s\S]*?addAirspaceAoRLayer\(map\)/)
+    expect(engine).toMatch(/function updateAoR\(ids\)/)
+    expect(engine).toMatch(/return \{[\s\S]*updateAoR[\s\S]*\}/)
+  })
+
+  it('MapCanvas applies the AoR after initMap resolves and re-applies on change', () => {
+    expect(sfc).toContain('mapEngine.updateAoR(session.aorAirspaceIds)')
+    expect(sfc).toMatch(/watch\(\(\)\s*=>\s*session\.aorAirspaceIds/)
+  })
+})

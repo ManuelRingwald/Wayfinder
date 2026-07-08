@@ -81,6 +81,13 @@ export const useSessionStore = defineStore('session', () => {
     return { minLat: a.min_lat, minLon: a.min_lon, maxLat: a.max_lat, maxLon: a.max_lon }
   })
 
+  // aorAirspaceIds mirrors the effective view's Area of Responsibility (ASD-014,
+  // ADR 0021): the OpenAIP airspace ids the map highlights as the tenant's
+  // controlled volumes (CTR/TMA). Empty array when no AoR is configured (whoami
+  // omits the field) — the map then highlights nothing. Cosmetic display config;
+  // the airspace features themselves already arrive via /api/airspace.
+  const aorAirspaceIds = computed(() => identity.value?.aor_airspace_ids ?? [])
+
   // probe resolves the current session via the role-agnostic identity endpoint.
   // 200 → authed; anything else (401 etc.) → anon. A transition from authed → anon
   // marks the session as expired (for the visible "session expired" hint).
@@ -154,7 +161,7 @@ export const useSessionStore = defineStore('session', () => {
 
   return {
     identity, status, error, expired, subject, role, isAdmin, mustChangePassword,
-    features, hasFeature, sensorClasses, flMin, flMax, icao, viewCenter, aoi,
+    features, hasFeature, sensorClasses, flMin, flMax, icao, viewCenter, aoi, aorAirspaceIds,
     probe, login, renewNow, startRenew, stopRenew, logout,
   }
 })

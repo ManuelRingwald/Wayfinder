@@ -65,6 +65,7 @@ export const useAsdStore = defineStore('asd', () => {
   // Layer visibility
   const layerVisibility = reactive({
     airspace: true,
+    aor: true, // ASD-014: AoR highlight on by default (only shows when configured)
     navaids: true,
     waypoints: true,
     coverageRings: true,
