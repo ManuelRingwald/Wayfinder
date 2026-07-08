@@ -10,6 +10,25 @@
 
 ---
 
+## 🎯 Stand 2026-07-08 (ASD-011 — Erweitertes Track-Detail-Panel)
+
+- **ASD-011 — Erweitertes Track-Detail-Panel (FR-UI-026):** Das Detail-Panel
+  eines angeklickten Tracks zeigt zusätzlich zu Callsign/FL/Bodengeschwindigkeit/
+  Mode 3-A/Status nun **Vertikaltendenz**, **Kurs über Grund** (aus Vx/Vy),
+  **Position (WGS84)**, **Sensor-Aktualität** (Chips je Technologie mit
+  Update-Alter + Frische-Farbe), **ICAO-Adresse**, **Positionsgenauigkeit** und
+  **System (SAC/SIC)**.
+  - **Formatierer** als reine, testbare Funktionen in `map/trackDetail.js`;
+    Felder in `updateTracksLayer` auf die Feature-Properties gebacken, sodass das
+    Panel sie direkt aus `store.selectedTrack` liest. **Kein CAT062-Bezug** — alle
+    Felder bereits im WS-JSON.
+  - **Ehrliche Grenze:** PSR erscheint nicht in „Sensor-Aktualität" (kein sauberes
+    Per-Track-`psr_age`-Frische-Signal) → getragen über die „Herkunft"-Zeile.
+- **Tests:** `trackDetail.test.js` (Formatierer, 28 Fälle), `tracks.test.js`
+  (`extended detail fields (ASD-011)`). **vitest 456**, `vite build` + eingebettetes
+  `dist` neu; Go unberührt (`go build ./...`).
+- **Nächster Schritt:** **ASD-013** (Alarm-/Event-Panel, S3) als eigener PR.
+
 ## 🎯 Stand 2026-07-08 (ASD-014 Slice 4 — AoR-Namens-Picker; Thema rund)
 
 - **ASD-014.4 — Namens-Picker für den AoR-Editor (FR-AERO-006):** Löst die

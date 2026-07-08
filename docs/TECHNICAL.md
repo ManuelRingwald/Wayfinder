@@ -166,9 +166,16 @@ Schwelle (`ADSB_FRESH_THRESHOLD_S`) und die Klassifikation liegen in
 **jedem WS-Update neu berechnet** (kein Caching am Track), sodass ein Quellwechsel
 den Glyph sofort korrigiert. Die Symbole werden in `frontend/src/map/layers.js`
 (`addTrackIcons`) zur Laufzeit gezeichnet (A/F als Buchstaben-Glyph). Das
-**Track-Detail-Panel** zeigt die Herkunft im Klartext, die **Sidebar** (Sektion
-„Layer") eine Glyph-Legende. **Ehrliche Grenze:** track-abgeleitet, keine
-zertifizierte Per-Plot-Provenienz.
+**Track-Detail-Panel** (ASD-011, `TrackDetailCard.vue`) zeigt beim Anklicken
+eines Tracks neben Herkunft/FL/Bodengeschwindigkeit/Mode 3-A/Status auch
+**Vertikaltendenz**, **Kurs über Grund** (aus Vx/Vy), **Position (WGS84)**,
+**Sensor-Aktualität** (per-Technologie-Alter aus I062/290, frisch = grün),
+**ICAO-Adresse**, **Positionsgenauigkeit** (I062/500) und **System (SAC/SIC)** —
+Formatierer in `frontend/src/map/trackDetail.js`, Felder in `updateTracksLayer`
+auf die Feature-Properties gebacken. Die **Sidebar** (Sektion „Layer") zeigt eine
+Glyph-Legende. **Ehrliche Grenze:** track-abgeleitet, keine zertifizierte
+Per-Plot-Provenienz; PSR erscheint nicht in „Sensor-Aktualität" (kein sauberes
+Per-Track-`psr_age`-Frische-Signal), sondern über die Herkunft-Zeile.
 
 > **Hinweis (Regression behoben):** Bis WF2-40 war ein ADS-B-`◆`-Badge nur im
 > **Data-Block-Label** vorgesehen (frühere `internal/webui/static/app.js`); es
