@@ -114,15 +114,21 @@ describe('iPad / tablet-landscape rail (#194 Häppchen 2)', () => {
     expect(navigationRail).toContain('const rail = tabletLandscape.value ? 76 : 56')
     expect(navigationRail).toContain('const panel = tabletLandscape.value ? 304 : 248')
   })
-  it('the floating overlays derive their left offset from the rail-width token', () => {
-    // So a wider iPad rail shifts the legend + detail card in lockstep (no
-    // hardcoded 68px that would overlap the 76px rail).
+  it('the scope legend derives its left offset from the rail-width token', () => {
+    // So a wider iPad rail shifts the legend in lockstep (no hardcoded 68px that
+    // would overlap the 76px rail).
     const offset = 'calc(var(--wf-nav-rail-width, 56px) + var(--wf-overlay-gap, 12px))'
     expect(asdView).toContain(offset)
-    expect(trackDetail).toContain(offset)
     // The actual CSS declaration is the derived calc, not a hardcoded 68px
     // (explanatory comments may still mention 68px as the desktop value).
     expect(asdView).not.toMatch(/left:\s*68px;/)
+  })
+
+  it('the track-detail card hugs the RIGHT edge (operator request 2026-07-08)', () => {
+    // It must never sit on the left where the expanding nav-rail panel covers it;
+    // it hugs the right edge and clears the top-right cluster + map controls.
+    expect(trackDetail).toContain('right: calc(var(--wf-overlay-gap, 12px) + var(--wf-safe-right, 0px))')
+    expect(trackDetail).not.toContain('left: calc(var(--wf-nav-rail-width')
     expect(trackDetail).not.toMatch(/left:\s*68px;/)
   })
   it('MapControls buttons reach a 44px target on the md band', () => {
