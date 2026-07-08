@@ -383,13 +383,28 @@ function onFlFilterChange(payload) { emit('fl-filter-change', payload) }
   letter-spacing: var(--wf-nav-label-tracking);
 }
 
-/* Panel: fills remaining width beside rail */
+/* Panel beside the rail. FIXED width (not flex:1) so its content is laid out at
+   its final width the instant it mounts and does NOT reflow while the drawer
+   animates its width open/closed (bug: "Schrift baut sich auf / wird beim
+   Einklappen zusammengedrückt", operator 2026-07-08). The drawer is narrower
+   than rail+panel during the slide, but .nav-two-col (overflow:hidden) clips the
+   overhang, so the panel is revealed as a clean left-to-right wipe instead of a
+   re-layout. A stable width also removes the transient vertical scrollbar that
+   flashed as the text briefly wrapped taller in the momentarily-narrow panel.
+   Width = open drawer width (drawerWidth in JS: 248 desktop) minus the rail. */
 .nav-panel {
+  width: calc(248px - var(--wf-nav-rail-width, 56px));
+  flex-shrink: 0;
   display: flex;
   flex-direction: row;
-  flex: 1;
   overflow: hidden;
   min-width: 0;
+}
+/* iPad/tablet-landscape band: the open drawer is 304px (JS) and the rail 76px. */
+@media (min-width: 960px) and (max-width: 1279.98px) {
+  .nav-panel {
+    width: calc(304px - var(--wf-nav-rail-width, 76px));
+  }
 }
 /* #176 + operator request 2026-07-08: a reliably-rendered, subtle hairline
    between the icon rail and the open content panel. The previous vertical
@@ -405,6 +420,9 @@ function onFlFilterChange(payload) { emit('fl-filter-change', payload) }
 .nav-panel__body {
   flex: 1;
   overflow-y: auto;
+  /* Never a horizontal scrollbar — the content width is fixed to the panel, so
+     any transient overhang during the open/close slide is simply clipped. */
+  overflow-x: hidden;
 }
 
 /* Slide-in transition */

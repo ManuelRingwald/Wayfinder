@@ -202,6 +202,15 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
     state.prevTrackNums = new Set(liveNums)
   }
 
+  // ASD-013: mirror the currently-displayed track numbers into the store so the
+  // Ereignis-Panel can tell which "Track N erschienen" events still refer to a
+  // selectable track (operator request 2026-07-08). Sourced from
+  // liveTrackFeatures (live + coasting), which is the authoritative displayed
+  // set — not the raw batch, which may omit coasting tracks.
+  const syncLiveTrackNums = () => {
+    store.setLiveTrackNums(state.liveTrackFeatures.map((f) => f.properties.track_num))
+  }
+
   // Helper: build a bound renderSources call with the current store slices.
   const doRender = () => {
     if (!state.mapLoaded) return
@@ -285,6 +294,7 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
         recordTrackEvents(msg)
         if (state.mapLoaded) {
           updateTracksLayer(msg, state, doRender, startFadeLoop, store.historyConfig.durationS * 1000)
+          syncLiveTrackNums()
         } else {
           state.pendingTracks = msg
         }
@@ -402,6 +412,7 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
     if (state.pendingTracks) {
       updateTracksLayer(state.pendingTracks, state, doRender, startFadeLoop, store.historyConfig.durationS * 1000)
       state.pendingTracks = null
+      syncLiveTrackNums()
     }
 
     // Load aeronautical data and start periodic refresh.
@@ -497,6 +508,25 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
   // the selection halo appears/moves/clears without waiting for a WS update.
   function updateSelection() {
     doRender()
+  }
+
+  // ASD-013: select a track by its number, driven from the Ereignis-Panel
+  // (clicking "Track N erschienen" for a still-live track). Looks the track up in
+  // the current displayed set, opens the detail panel via the store (the
+  // selectedTrack watcher then paints the ASD-007 halo) and gently eases the
+  // camera onto it so the highlighted symbol is actually in view. Returns false
+  // when the track is no longer live, so the caller can leave the UI untouched.
+  function selectTrackByNum(trackNum) {
+    const feature = state.liveTrackFeatures.find(
+      (f) => f.properties.track_num === trackNum,
+    )
+    if (!feature) return false
+    store.selectTrack(feature.properties)
+    const c = feature.geometry?.coordinates
+    if (Array.isArray(c) && Number.isFinite(c[0]) && Number.isFinite(c[1])) {
+      map.easeTo({ center: c, duration: 400 })
+    }
+    return true
   }
 
   // #191: history retention/fade changed — re-render immediately so the new
@@ -605,5 +635,5 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
     src.setData(rangeRingsGeoJSON(effectiveCenter.lat, effectiveCenter.lon, spacingNM, count))
   }
 
-  return { map, destroy, reconnect, setLayerVisibility, updateFlFilter, updateAirspaceFilter, updateAoR, updateSelection, updateHistoryConfig, applyWeatherAOI, zoomIn, zoomOut, recenter, applyViewCenter, updateRangeRings }
+  return { map, destroy, reconnect, setLayerVisibility, updateFlFilter, updateAirspaceFilter, updateAoR, updateSelection, selectTrackByNum, updateHistoryConfig, applyWeatherAOI, zoomIn, zoomOut, recenter, applyViewCenter, updateRangeRings }
 }

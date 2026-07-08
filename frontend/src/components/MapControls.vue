@@ -85,12 +85,13 @@ function toggleFullscreen() {
 <style scoped>
 .map-controls {
   position: absolute;
-  /* The top-right cluster now stacks TWO rows (ICAO/UTC header + feed badge,
-     AsdView .top-right-cluster, top 12px, 8px gap). Start the control stack
-     clearly below that cluster so the icons never overlap the feed badge (#169).
-     ~100px clears both rows with margin; raised from 50px, which sat on the
-     badge row. */
-  top: calc(var(--v-layout-top, 0px) + 100px);
+  /* The top-right cluster stacks THREE rows (ICAO/UTC header, feed badge, and
+     the profile+bell action row — AsdView .top-right-cluster, top 12px, 8px
+     gap). Start the control stack clearly below that cluster so recenter/
+     fullscreen never overlap the action row (icons-overlap fix 2026-07-08;
+     was 100px, which sat on the profile/bell row once those moved into the
+     cluster). ~140px clears all three rows with margin, including the xl step. */
+  top: calc(var(--v-layout-top, 0px) + 140px);
   /* Edge inset from the overlay-gap token (12px, wider on a 24″ display —
      #194 Häppchen 3), plus the right safe-area on notched phones. */
   right: calc(var(--wf-overlay-gap, 12px) + var(--wf-safe-right, 0px));

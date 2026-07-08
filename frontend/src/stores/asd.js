@@ -125,6 +125,14 @@ export const useAsdStore = defineStore('asd', () => {
   // Selected track for detail panel (null = no selection)
   const selectedTrack = ref(null)
 
+  // ASD-013: the set of track numbers currently on the scope (live + coasting,
+  // i.e. everything in the engine's liveTrackFeatures). Kept here so the
+  // Ereignis-Panel can tell whether a "Track N erschienen" event still refers to
+  // a selectable track — only those rows are made clickable (operator request
+  // 2026-07-08). The engine pushes this from every track batch; an ended/faded
+  // track drops out and its event row goes inert.
+  const liveTrackNums = ref(new Set())
+
   // Label pins: Map<track_num, {dx, dy}>
   const labelPins = ref(new Map())
 
@@ -153,6 +161,12 @@ export const useAsdStore = defineStore('asd', () => {
   function setFlFilter(updates) { Object.assign(flFilter, updates) }
   function selectTrack(track) { selectedTrack.value = track }
   function clearTrackSelection() { selectedTrack.value = null }
+  // setLiveTrackNums replaces the live-track set (accepts an array or a Set). A
+  // fresh Set instance is stored so the reactive read in the Ereignis-Panel
+  // re-evaluates. Cheap: called once per track batch (every scan, ~4–12 s).
+  function setLiveTrackNums(nums) {
+    liveTrackNums.value = nums instanceof Set ? nums : new Set(nums)
+  }
 
   function setLabelPin(trackNum, pin) {
     const m = new Map(labelPins.value)
@@ -173,10 +187,10 @@ export const useAsdStore = defineStore('asd', () => {
     airspaceGroupVisibility,
     rangeRingConfig, setRangeRingConfig,
     historyConfig, setHistoryConfig,
-    selectedTrack, labelPins,
+    selectedTrack, labelPins, liveTrackNums,
     setFeedHealth, resetFeedHealth, setMapLoaded, setPalette, setLayerVisibility,
     setFlFilter,
     toggleAirspaceGroup, setAirspaceGroup,
-    selectTrack, clearTrackSelection, setLabelPin, deleteLabelPin,
+    selectTrack, clearTrackSelection, setLabelPin, deleteLabelPin, setLiveTrackNums,
   }
 })

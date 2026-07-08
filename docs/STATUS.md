@@ -10,6 +10,38 @@
 
 ---
 
+## 🐞 Stand 2026-07-08 (UI-Fix-Batch — Sidebar-Animation, Icon-Überlappung, Profil-Icon, Ereignis→Track; FR-UI-029)
+
+Vier Betreiber-Mängel (Video + Foto) behoben + eine Bedien-Erweiterung:
+
+- **Sidebar-Reflow (Bug 1) + Scrollbalken-Blitzen (Bug 2):** Das ausklappende
+  Nav-Panel baute die Schrift sichtbar auf / stauchte sie beim Einklappen, und
+  ein Scrollbalken tauchte kurz auf. Ursache: `.nav-panel` war `flex:1`, wuchs
+  also während der Drawer-**Breiten**-Animation mit und brach den Text neu um.
+  Fix: **feste Panelbreite** (offene Drawer-Breite − Rail; 248 px Desktop / 304 px
+  iPad-Band), Inhalt liegt sofort final, `.nav-two-col overflow:hidden` clippt →
+  sauberer Wisch-Reveal statt Neu-Layout; `.nav-panel__body overflow-x:hidden`.
+- **Icon-Überlappung (Bug 3):** Profil-Schalter + Ereignis-Glocke stapelten als
+  zwei Extra-Zeilen im Top-Right-Cluster → die Map-Controls (`top:100px`) saßen
+  darauf. Fix: Profil + Glocke in **eine** kompakte Aktionszeile
+  (`.cluster-actions`); `MapControls` → `top:140px`, `TrackDetailPanel` →
+  `top:220px` (gleiche Controls→Detail-Distanz wie zuvor).
+- **Profil nur als Icon (Bug 4):** `ViewProfileMenu` ist ein Icon-Button mit
+  **Hover-Tooltip** (aktiver Profilname) statt sichtbarem Label — hält den
+  Lotsen-Scope aufgeräumt.
+- **Ereignis→Track (Bug 5):** Klick auf eine **noch aktive** „Track N
+  erschienen"-Zeile selektiert den Track (Detail-Panel + Halo, Kamera-`easeTo`).
+  Store spiegelt das Live-Track-Set (`liveTrackNums` aus `liveTrackFeatures`);
+  nur Zeilen mit noch aktivem Track sind klickbar (Fadenkreuz-Affordanz);
+  Engine-`selectTrackByNum` (No-op, wenn Track weg → Panel bleibt offen).
+  Ring-Puffer bleibt `MAX_EVENTS=200` (≫50) mit vorhandenem Scroll.
+- **Kein CAT062-/Backend-Bezug** (reine Frontend-Chrome).
+- **Tests:** `asd.test.js` (`liveTrackNums`), `eventPanel.test.js`
+  (Selektierbarkeit/`select-track`/Engine), `viewProfileMenu.test.js`
+  (Icon-only + Tooltip), `layerSidebarCleanup.test.js` (feste Panelbreite).
+  **vitest 525 grün**, `vite build` + `dist` neu, `go build ./...` grün.
+- **Nächster Schritt:** offen — auf Betreiber-Input warten.
+
 ## 🐞 Stand 2026-07-08 (UI-Fix — Fluginfo rechts + Sidebar-Trennlinie)
 
 - **Fluginfo-Karte (`TrackDetailPanel`, FR-UI-005):** lag oben **links** (Offset

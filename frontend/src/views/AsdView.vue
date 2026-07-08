@@ -57,29 +57,39 @@
       <div class="top-right-cluster">
         <AsdHeader />
         <FeedStatusChip />
-        <!-- VP-4 (ADR 0023): per-user view-profile switcher + save dialog. -->
-        <ViewProfileMenu />
-        <!-- ASD-013: event-log bell with an unseen badge; toggles the floating
-             Alarm-/Ereignis-Panel and marks the log seen on open. -->
-        <div class="events-control">
-          <v-badge
-            :model-value="events.unseenCount > 0"
-            :content="badgeContent"
-            color="error"
-            offset-x="6"
-            offset-y="6"
-          >
-            <v-btn
-              :icon="eventsOpen ? 'mdi-bell' : 'mdi-bell-outline'"
-              size="small"
-              variant="tonal"
-              :color="eventsOpen ? 'primary' : undefined"
-              aria-label="Ereignisse"
-              @click="toggleEvents"
-            />
-          </v-badge>
+        <!-- The compact action chrome (view-profile switcher + event bell) shares
+             ONE row so the cluster stays short and never runs into the map
+             controls on its right edge (icons-overlap fix, operator 2026-07-08). -->
+        <div class="cluster-actions">
+          <!-- VP-4 (ADR 0023): per-user view-profile switcher (icon-only + tooltip). -->
+          <ViewProfileMenu />
+          <!-- ASD-013: event-log bell with an unseen badge; toggles the floating
+               Alarm-/Ereignis-Panel and marks the log seen on open. -->
+          <div class="events-control">
+            <v-badge
+              :model-value="events.unseenCount > 0"
+              :content="badgeContent"
+              color="error"
+              offset-x="6"
+              offset-y="6"
+            >
+              <v-btn
+                :icon="eventsOpen ? 'mdi-bell' : 'mdi-bell-outline'"
+                size="small"
+                variant="tonal"
+                :color="eventsOpen ? 'primary' : undefined"
+                aria-label="Ereignisse"
+                @click="toggleEvents"
+              />
+            </v-badge>
+          </div>
         </div>
-        <EventPanel v-if="eventsOpen" class="events-panel" @close="eventsOpen = false" />
+        <EventPanel
+          v-if="eventsOpen"
+          class="events-panel"
+          @close="eventsOpen = false"
+          @select-track="onEventSelectTrack"
+        />
       </div>
       <!-- Reskin 3b: floating scope legend (bottom-left). The bottom-right
            width/leader readout was removed (E2E): it read like a scale bar but
@@ -189,6 +199,14 @@ const badgeContent = computed(() => (events.unseenCount > 99 ? '99+' : String(ev
 function toggleEvents() {
   eventsOpen.value = !eventsOpen.value
   if (eventsOpen.value) events.markSeen()
+}
+
+// ASD-013: clicking a still-live "Track N erschienen" row selects that track
+// (opens the detail panel + halo, eases the camera onto it). The engine returns
+// false if the track has since gone; only on a real selection do we close the
+// panel, keeping the scope tidy (the detail card takes over).
+function onEventSelectTrack(trackNum) {
+  if (mapCanvas.value?.selectTrackByNum(trackNum)) eventsOpen.value = false
 }
 
 // #208 (ADR 0022): admins have no own air picture; the server rejects their /ws
@@ -358,6 +376,15 @@ function onTrackClick(track) {
   pointer-events: none;
   /* Never let the header run under the opposite chrome on a narrow phone. */
   max-width: calc(100vw - 24px - var(--wf-safe-right, 0px) - var(--wf-safe-left, 0px));
+}
+
+/* The profile switcher + event bell share one right-aligned row so the cluster
+   stays compact (icons-overlap fix). Its interactive children re-enable pointer
+   events individually; the row itself stays click-through over the map. */
+.cluster-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 /* ASD-013: the event bell + floating panel live inside the (pointer-events:none)
