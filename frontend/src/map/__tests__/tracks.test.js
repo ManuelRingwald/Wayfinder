@@ -116,6 +116,46 @@ describe('updateTracksLayer identity fields (bug #55)', () => {
   })
 })
 
+// ASD-011: the extended TrackDetailCard reads its fields straight off the baked
+// feature properties, so updateTracksLayer must expose them.
+describe('updateTracksLayer extended detail fields (ASD-011)', () => {
+  it('bakes position, identity, accuracy and per-tech ages onto features', () => {
+    const state = makeState()
+    const msg = {
+      tracks: [
+        {
+          latitude: 53.63, longitude: 9.99, vx: 100, vy: 0, confirmed: true, coasting: false,
+          track_num: 7, sac: 25, sic: 10, accuracy: 42, icao_addr: 0x3c6dd2,
+          adsb_age_s: 2, ssr_age_s: 40,
+        },
+      ],
+    }
+    updateTracksLayer(msg, state, () => {}, () => {})
+    const p = state.liveTrackFeatures[0].properties
+    expect(p.latitude).toBe(53.63)
+    expect(p.longitude).toBe(9.99)
+    expect(p.sac).toBe(25)
+    expect(p.sic).toBe(10)
+    expect(p.accuracy).toBe(42)
+    expect(p.icao_addr).toBe(0x3c6dd2)
+    expect(p.adsb_age_s).toBe(2)
+    expect(p.ssr_age_s).toBe(40)
+    expect(p.flarm_age_s).toBeNull()
+    expect(p.mds_age_s).toBeNull()
+  })
+
+  it('bakes the vertical-tendency glyph as a property once a prior FL is known', () => {
+    const state = makeState()
+    const base = { latitude: 50, longitude: 8, vx: 0, vy: 0, confirmed: true, coasting: false, track_num: 3 }
+    // First update establishes the FL baseline → no trend yet.
+    updateTracksLayer({ tracks: [{ ...base, flight_level_ft: 10000 }] }, state, () => {}, () => {})
+    expect(state.liveTrackFeatures[0].properties.vertical_trend).toBe('')
+    // Second update climbs > 50 ft → ▲.
+    updateTracksLayer({ tracks: [{ ...base, flight_level_ft: 12000 }] }, state, () => {}, () => {})
+    expect(state.liveTrackFeatures[0].properties.vertical_trend).toBe('▲')
+  })
+})
+
 describe('updateTracksLayer provenance (WF2-40)', () => {
   it('attaches the derived provenance to every live track feature', () => {
     const state = makeState()

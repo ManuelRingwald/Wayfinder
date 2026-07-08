@@ -156,6 +156,24 @@ export function updateTracksLayer(msg, state, renderSources, startFadeLoop, rete
         // TrackDetailCard can display them without re-parsing the raw WS frame.
         mode_3a: track.mode_3a != null ? track.mode_3a : null,
         callsign: track.callsign != null ? track.callsign : null,
+        // ASD-011: extended detail fields for the TrackDetailCard. Baked here so
+        // the panel reads them straight off store.selectedTrack (the selected
+        // feature's properties) without holding on to the raw WS message.
+        latitude: track.latitude,
+        longitude: track.longitude,
+        icao_addr: track.icao_addr != null ? track.icao_addr : null,
+        accuracy: typeof track.accuracy === 'number' ? track.accuracy : null,
+        sac: track.sac != null ? track.sac : null,
+        sic: track.sic != null ? track.sic : null,
+        // Per-technology update ages (I062/290, ICD 2.6.0) drive the
+        // "Sensor-Aktualität" section (see trackDetail.js / provenance.js).
+        adsb_age_s: track.adsb_age_s != null ? track.adsb_age_s : null,
+        flarm_age_s: track.flarm_age_s != null ? track.flarm_age_s : null,
+        ssr_age_s: track.ssr_age_s != null ? track.ssr_age_s : null,
+        mds_age_s: track.mds_age_s != null ? track.mds_age_s : null,
+        // Vertical tendency (ASD-001b), already computed above for the label —
+        // exposed as a property so the panel can word it (Steigend/Sinkend).
+        vertical_trend: vTrend,
       },
     }
   })
