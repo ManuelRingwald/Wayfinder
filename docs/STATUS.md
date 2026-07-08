@@ -10,6 +10,22 @@
 
 ---
 
+## 🎯 Stand 2026-07-08 (View-Profile VP-2 — user-gescopte REST-API)
+
+- **VP-2 (FR-PROFILE-002):** Fünf Endpunkte hinter `tenantMW`+`pwGate` (kein
+  Admin-Gate): `GET/POST /api/view-profiles`, `PUT/DELETE /api/view-profiles/{id}`,
+  `POST /api/view-profiles/{id}/default`.
+  - **Streng auf Session-`user_id` gescopt** (nie aus dem Body) → fremdes Profil =
+    404 (keine Leckage). Validierung (`validateViewProfile`, rein/testbar): Name
+    ≤60, `settings` **JSON-Objekt** ≤16 KiB, Toggle-Schlüssel opak. Cap→409,
+    ungültig→422, kaputt→400, nil-Store→404, kein-Identity→401.
+  - `ViewProfileStore`-Interface + `WithViewProfiles`-Builder (nil-safe),
+    `ViewProfilesHandler()` Sub-Mux in `main.go` gemountet.
+- **Tests:** `adminapi_view_profiles_test.go` (Validierung, CRUD, Scoping,
+  Fehler-Codes, nil/401). `go build`/`vet`/`gofmt`/`golangci-lint` (0 issues) grün.
+- **Nächster Schritt:** **VP-3** — Frontend-`profiles`-Store + reine
+  `captureSettings`/`applySettings` (serialisiert die asd-Store-Toggles).
+
 ## 🎯 Stand 2026-07-08 (View-Profile VP-1 — Per-Nutzer-Store, Backend)
 
 - **View-Profile (ADR 0023)** — neues Feature: persönliche, benannte Anzeige-

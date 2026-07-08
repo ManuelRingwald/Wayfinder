@@ -630,10 +630,11 @@ func main() {
 	feedRepo := store.NewFeedRepo(dbPool).WithMulticastPool(cfg.feedPool())
 	adminAPI := adminapi.New(viewRepo, subRepo, feedRepo, store.NewTenantRepo(dbPool),
 		store.NewUserRepo(dbPool), store.NewCredentialRepo(dbPool), featSvc, feedRegistry, feedLife, aeroLife, secretSvc, logger, rescope).
-		WithAeroCache(aeroCache).                                 // AERO-1: expose OpenAIP cache freshness on the status route
-		WithGlobalOpenAIP(globalAero).                            // AERO-2: platform-wide OpenAIP key + fetch-all
-		WithAeroChanges(aeroCache).                               // AERO-3: per-tenant change-impact of the last refresh
-		WithAirspaceLister(aeroAirspaceLister{reg: aeroRegistry}) // ASD-014: AoR editor airspace picker
+		WithAeroCache(aeroCache).                                  // AERO-1: expose OpenAIP cache freshness on the status route
+		WithGlobalOpenAIP(globalAero).                             // AERO-2: platform-wide OpenAIP key + fetch-all
+		WithAeroChanges(aeroCache).                                // AERO-3: per-tenant change-impact of the last refresh
+		WithAirspaceLister(aeroAirspaceLister{reg: aeroRegistry}). // ASD-014: AoR editor airspace picker
+		WithViewProfiles(store.NewViewProfileRepo(dbPool))         // VP-2 (ADR 0023): per-user view profiles
 	// AP7: pausing an access or tenant revokes its live sessions immediately. Only
 	// in builtin mode (registry present); the counting adapter feeds the metric.
 	if sessionRepo != nil {
@@ -650,6 +651,15 @@ func main() {
 	// map renders exactly what that tenant's users see (ADR 0008 Nachtrag). The
 	// identity fields (subject/role/tenant_id) stay the admin's own.
 	mux.Handle("GET /api/whoami", tenantMW(impReadMW(adminAPI.WhoamiHandler())))
+
+	// VP-2 (ADR 0023): per-user view profiles — the acting user's own named ASD
+	// display presets. Behind tenantMW (any authenticated user) + pwGate (locked
+	// while a password change is pending), NOT the admin gate: a profile is
+	// strictly the caller's own (the handler reads the user id from the session,
+	// never the request). Mounted at both the collection path and its subtree.
+	viewProfiles := tenantMW(pwGate(adminAPI.ViewProfilesHandler()))
+	mux.Handle("/api/view-profiles", viewProfiles)
+	mux.Handle("/api/view-profiles/", viewProfiles)
 
 	// Cross-tenant read-only impersonation (ADR 0008, WF2-34): mint and clear
 	// the grant cookie. The more-specific method+path patterns take precedence
