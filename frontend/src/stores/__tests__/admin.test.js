@@ -47,6 +47,20 @@ describe('admin store — airport centre search', () => {
     await s.searchAirports('a b/c')
     expect(calls[0].url).toBe('/api/admin/airports?q=a%20b%2Fc')
   })
+
+  it('loadTenantAirspaces GETs the tenant airspace picker list (ASD-014)', async () => {
+    const calls = installFetch({
+      'GET /api/admin/tenants/5/airspaces': {
+        status: 200,
+        body: [{ id: '62a1', name: 'HAMBURG CTR', type: 4 }],
+      },
+    })
+    const s = useAdminStore()
+    const r = await s.loadTenantAirspaces(5)
+    expect(r.ok).toBe(true)
+    expect(r.data[0].id).toBe('62a1')
+    expect(calls.some((c) => c.url === '/api/admin/tenants/5/airspaces' && c.method === 'GET')).toBe(true)
+  })
 })
 
 describe('admin store — identity & role gating', () => {

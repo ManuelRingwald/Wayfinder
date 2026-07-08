@@ -220,12 +220,16 @@
       </p>
 
       <!-- ASD-014 (ADR 0021): Area of Responsibility — the airspaces (CTR/TMA)
-           this tenant controls, highlighted on the map. Held as stable OpenAIP
-           airspace ids (robust against AIRAC name drift). -->
-      <v-combobox
+           this tenant controls, highlighted on the map. Picked by name from the
+           tenant's own airspaces; stored as stable OpenAIP ids (AIRAC-drift-safe). -->
+      <v-autocomplete
         v-model="form.aorAirspaceIds"
-        label="Verantwortungsbereich — Luftraum-IDs (AoR)"
-        placeholder="OpenAIP-Luftraum-ID eintippen und Enter"
+        :items="airspaceItems"
+        item-title="name"
+        item-value="id"
+        label="Verantwortungsbereich — Lufträume (AoR)"
+        placeholder="Luftraum nach Namen suchen"
+        :no-data-text="airspaceNoData"
         variant="outlined"
         density="compact"
         multiple
@@ -237,10 +241,11 @@
       />
       <p class="text-caption text-medium-emphasis mt-2">
         <strong>Verantwortungsbereich (AoR)</strong> hebt die zugehörigen Lufträume
-        (CTR/TMA) auf der Karte hervor (ADR 0021). Eingetragen werden die
-        <strong>stabilen OpenAIP-Luftraum-IDs</strong> — nicht der Name, denn Namen
-        ändern sich pro AIRAC-Zyklus. Leer = kein hervorgehobener Bereich, max. 500
-        IDs. Reine Anzeige, nicht im CAT062-Strom.
+        (CTR/TMA) auf der Karte hervor (ADR 0021). Auswahl <strong>nach Namen</strong>
+        aus den Lufträumen des Mandanten; gespeichert wird die stabile OpenAIP-ID
+        (namens-driftfest). Ist die Liste leer, ist für den Mandanten noch kein
+        OpenAIP konfiguriert/geholt. Leer = kein hervorgehobener Bereich, max. 500.
+        Reine Anzeige, nicht im CAT062-Strom.
       </p>
     </v-card-text>
   </v-card>
@@ -316,9 +321,35 @@ const form = reactive({
   icao: '',
   qnhIcao: '',
   // ASD-014 (ADR 0021): the tenant's Area of Responsibility as a list of stable
-  // OpenAIP airspace ids (CTR/TMA). Edited as chips; the map highlights them.
+  // OpenAIP airspace ids (CTR/TMA). Picked by name; the map highlights them.
   aorAirspaceIds: [],
 })
+
+// ASD-014: candidate airspaces for the AoR picker (the tenant's own cache).
+const airspaceOptions = ref([])
+const airspaceLoaded = ref(false)
+
+async function loadAirspaces() {
+  const r = await admin.loadTenantAirspaces(props.tenantId)
+  airspaceOptions.value = r.ok && Array.isArray(r.data) ? r.data : []
+  airspaceLoaded.value = true
+}
+
+// airspaceItems merges the fetched options with synthetic entries for any already
+// selected ids NOT in the fetched list (cache empty/changed), so a saved AoR id is
+// never silently dropped from the picker — and thus never lost on the next save.
+const airspaceItems = computed(() => {
+  const known = new Set(airspaceOptions.value.map((a) => a.id))
+  const extra = form.aorAirspaceIds
+    .filter((id) => !known.has(id))
+    .map((id) => ({ id, name: id }))
+  return [...airspaceOptions.value, ...extra]
+})
+
+const airspaceNoData = computed(() =>
+  airspaceLoaded.value
+    ? 'Keine Luftraumdaten — erst OpenAIP für den Mandanten konfigurieren'
+    : 'Lädt …')
 
 // ICAO airport search (offline directory, /api/admin/airports). Selecting a hit
 // is the confirmation: the map centre plus the ICAO fields (header + QNH) fill
@@ -490,6 +521,6 @@ function round(n) {
 }
 
 onMounted(async () => {
-  await Promise.all([loadView(), loadEntitlements()])
+  await Promise.all([loadView(), loadEntitlements(), loadAirspaces()])
 })
 </script>

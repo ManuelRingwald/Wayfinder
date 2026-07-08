@@ -45,4 +45,16 @@ describe('AdminTenantDetail AoR editor (ASD-014)', () => {
     expect(detail).toMatch(/normalizeAorIds\(form\.aorAirspaceIds\)/)
     expect(detail).toContain('dto.aor_airspace_ids = aor')
   })
+
+  // ASD-014.4: pick airspaces by NAME from the tenant's own cache; the model still
+  // stores ids (item-value), and selected-but-uncached ids are preserved as items.
+  it('picks airspaces by name via an autocomplete backed by the tenant cache', () => {
+    expect(detail).toContain('v-autocomplete')
+    expect(detail).toContain(':items="airspaceItems"')
+    expect(detail).toContain('item-title="name"')
+    expect(detail).toContain('item-value="id"')
+    expect(detail).toContain('admin.loadTenantAirspaces(props.tenantId)')
+    // The merge keeps a saved id that is no longer in the fetched list.
+    expect(detail).toMatch(/airspaceItems = computed\([\s\S]*!known\.has\(id\)/)
+  })
 })
