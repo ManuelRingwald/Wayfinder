@@ -10,6 +10,27 @@
 
 ---
 
+## 🎯 Stand 2026-07-08 (View-Profile VP-1 — Per-Nutzer-Store, Backend)
+
+- **View-Profile (ADR 0023)** — neues Feature: persönliche, benannte Anzeige-
+  Profile pro Nutzer (bis zu **3**, eins als **Login-Default**), Umfang **nur
+  Anzeige-Präferenzen** (Layer/Airspace-Gruppen/Range-Rings/History/FL-Filter/
+  Basiskarte; Betreiber-Wahl „Option A"). Getrennt von `view_configs`
+  (Karten-Rahmung).
+- **VP-1 (FR-PROFILE-001):** Persistenz-Grundlage. Migration `00022_user_view_profiles.sql`
+  (opakes `settings JSONB`, partieller Unique-Index für Single-Default) +
+  `ViewProfileRepo` (List/Create/Update/Delete/SetDefault/GetDefault). **Cap=3**
+  per Transaktion + `pg_advisory_xact_lock` (→ `ErrProfileLimit`), **Single-Default**
+  als Store-Invariante, **strikte Per-`user_id`-Ownership** (fremd → `ErrNotFound`).
+  `settings` verbatim (Backend interpretiert nie). **Kein CAT062-Bezug.**
+- **Tests:** `normalizeSettings` (unit) + `TestIntegrationViewProfilesCRUD` (CRUD,
+  Cap, Single-Default, Cross-User-Isolation) **grün gegen echte PostgreSQL-16**.
+  `go build`/`vet`/`gofmt` grün.
+- **Nächster Schritt:** **VP-2** — user-gescopte REST-API `/api/view-profiles`
+  (GET/POST/PUT/DELETE + `/default`) hinter `tenantMW`.
+- **Betriebshinweis:** GitHub-MCP war zeitweise abgemeldet → PR ggf. manuell/nach
+  Re-Autorisierung anlegen.
+
 ## 🎯 Stand 2026-07-08 (ASD-011b — Selektions-Umrandung des Labels)
 
 - **ASD-011b — Selektions-Umrandung des Datenblock-Labels (FR-UI-028):** Bei
