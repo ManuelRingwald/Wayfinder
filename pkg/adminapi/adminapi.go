@@ -461,6 +461,12 @@ type whoamiDTO struct {
 	// AOI configured → the overlays are shown unclipped. Cosmetic — the server
 	// enforces the track/AOI scope independently (WF2-21.2).
 	AOI *store.BBox `json:"aoi,omitempty"`
+	// AoRAirspaceIDs mirrors the effective view's Area of Responsibility — the
+	// OpenAIP airspace ids (ASD-014, ADR 0021) the ASD highlights as the tenant's
+	// controlled volumes (CTR/TMA). Omitted when no AoR is configured. Cosmetic
+	// display config: the airspace features themselves are already delivered via
+	// /api/airspace; this only tells the map which of them to emphasise.
+	AoRAirspaceIDs []string `json:"aor_airspace_ids,omitempty"`
 	// ImpersonatedTenantID discloses that the tenant-scoped fields above
 	// (Features/SensorClasses/FLMin/FLMax/ICAO) were resolved against this
 	// tenant instead of the caller's own — admin read-only impersonation
@@ -500,13 +506,15 @@ func (h *Handler) whoami(w http.ResponseWriter, r *http.Request) {
 	var icao *string
 	var centerLat, centerLon, zoom *float64
 	var aoi *store.BBox
+	var aorIDs []string
 	if h.views != nil {
 		if vc, err := h.views.GetEffective(r.Context(), readTenant, id.UserID); err == nil {
 			flMin, flMax = vc.FLMin, vc.FLMax
 			icao = vc.ICAO
 			lat, lon, z := vc.CenterLat, vc.CenterLon, vc.Zoom
 			centerLat, centerLon, zoom = &lat, &lon, &z
-			aoi = vc.AOI // #189/#190: clip the DWD weather overlays to the sector
+			aoi = vc.AOI               // #189/#190: clip the DWD weather overlays to the sector
+			aorIDs = vc.AoRAirspaceIDs // ASD-014: airspaces to highlight as the AoR
 		}
 	}
 	writeJSON(w, http.StatusOK, whoamiDTO{
@@ -524,6 +532,7 @@ func (h *Handler) whoami(w http.ResponseWriter, r *http.Request) {
 		CenterLon:            centerLon,
 		Zoom:                 zoom,
 		AOI:                  aoi,
+		AoRAirspaceIDs:       aorIDs,
 		ImpersonatedTenantID: impersonated,
 	})
 }
@@ -591,6 +600,11 @@ type viewDTO struct {
 	// the NOAA/AWC METAR poller — distinct from the free-form ICAO label above.
 	// Omitted/empty = unset (no QNH for this tenant).
 	QNHICAO *string `json:"qnh_icao,omitempty"`
+	// AoRAirspaceIDs is the tenant's Area of Responsibility (ASD-014, ADR 0021): the
+	// OpenAIP airspace ids (stable `_id`) whose polygons the ASD highlights as the
+	// controlled volumes (CTR/TMA). Empty/omitted = no AoR. Display config, not track
+	// data; entries are trimmed, de-duplicated and length/count-bounded on write.
+	AoRAirspaceIDs []string `json:"aor_airspace_ids,omitempty"`
 }
 
 // feedDTO is the catalogue-facing shape of a feed. The multicast group/port are
@@ -1120,7 +1134,56 @@ func validateView(d viewDTO) error {
 			return errors.New("qnh_icao must be a 4-letter ICAO code")
 		}
 	}
+	if len(d.AoRAirspaceIDs) > maxAoRAirspaceIDs {
+		return errors.New("aor_airspace_ids has too many entries")
+	}
+	for _, id := range d.AoRAirspaceIDs {
+		t := strings.TrimSpace(id)
+		if t == "" {
+			continue // empties are dropped on normalize, not an error
+		}
+		if len(t) > maxAoRIDLen {
+			return errors.New("aor_airspace_ids entry too long")
+		}
+		if strings.ContainsFunc(t, func(r rune) bool { return r < 0x20 }) {
+			return errors.New("aor_airspace_ids entry has control characters")
+		}
+	}
 	return nil
+}
+
+// maxAoRAirspaceIDs / maxAoRIDLen bound the tenant's Area-of-Responsibility list
+// (ASD-014): a generous ceiling that stops a hostile/accidental unbounded payload
+// without constraining any realistic AoR (a handful of CTR/TMA airspaces). An
+// OpenAIP `_id` is a 24-char hex string; 64 leaves room without inviting abuse.
+const (
+	maxAoRAirspaceIDs = 500
+	maxAoRIDLen       = 64
+)
+
+// normalizeAoRIDs trims each id, drops empties, and de-duplicates while preserving
+// order. An empty result collapses to nil so a cleared list stores as SQL NULL.
+func normalizeAoRIDs(ids []string) []string {
+	if len(ids) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(ids))
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		t := strings.TrimSpace(id)
+		if t == "" {
+			continue
+		}
+		if _, dup := seen[t]; dup {
+			continue
+		}
+		seen[t] = struct{}{}
+		out = append(out, t)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // maxICAOLabelLen bounds the ASD header location label. A bare ICAO indicator is
@@ -1166,6 +1229,7 @@ func toViewConfig(d viewDTO) store.ViewConfig {
 		CenterLat: d.CenterLat, CenterLon: d.CenterLon, Zoom: d.Zoom,
 		AOI: d.AOI, FLMin: d.FLMin, FLMax: d.FLMax, Layers: d.Layers,
 		ICAO: normalizeICAO(d.ICAO), QNHICAO: normalizeQNHICAO(d.QNHICAO),
+		AoRAirspaceIDs: normalizeAoRIDs(d.AoRAirspaceIDs),
 	}
 }
 
@@ -1174,6 +1238,7 @@ func toViewDTO(vc store.ViewConfig) viewDTO {
 		CenterLat: vc.CenterLat, CenterLon: vc.CenterLon, Zoom: vc.Zoom,
 		AOI: vc.AOI, FLMin: vc.FLMin, FLMax: vc.FLMax, Layers: vc.Layers,
 		ICAO: vc.ICAO, QNHICAO: vc.QNHICAO,
+		AoRAirspaceIDs: vc.AoRAirspaceIDs,
 	}
 }
 

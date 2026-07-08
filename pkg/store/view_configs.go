@@ -39,11 +39,17 @@ type ViewConfig struct {
 	// setting, hPa) is shown in the header infobox (CBD-3, ADR 0016). Unlike ICAO
 	// this is a REAL location indicator (e.g. "EDDH") fed to the NOAA/AWC METAR
 	// poller — not a free-form label. nil = unset (no QNH for this tenant).
-	QNHICAO   *string
-	UpdatedAt time.Time
+	QNHICAO *string
+	// AoRAirspaceIDs is the tenant's Area of Responsibility: the set of OpenAIP
+	// airspace ids (stable `_id`, surfaced since ASD-014.1) that make up the
+	// controlled volumes (CTR/TMA) the ASD highlights (ADR 0021, Ebene 2). The id
+	// is the robust key — airspace names drift per AIRAC. nil/empty = no AoR set.
+	// Display config, not track data (CAT062 carries no sector identity).
+	AoRAirspaceIDs []string
+	UpdatedAt      time.Time
 }
 
-const viewConfigColumns = `id, tenant_id, user_id, center_lat, center_lon, zoom, aoi, fl_min, fl_max, layers, icao, qnh_icao, updated_at`
+const viewConfigColumns = `id, tenant_id, user_id, center_lat, center_lon, zoom, aoi, fl_min, fl_max, layers, icao, qnh_icao, aor_airspace_ids, updated_at`
 
 // ViewConfigRepo provides access to the view_configs table.
 type ViewConfigRepo struct {
@@ -57,19 +63,19 @@ func NewViewConfigRepo(db *pgxpool.Pool) *ViewConfigRepo { return &ViewConfigRep
 // with no user override. Idempotent via the partial unique index on
 // (tenant_id) WHERE user_id IS NULL.
 func (r *ViewConfigRepo) UpsertTenantDefault(ctx context.Context, tenantID int64, vc ViewConfig) (ViewConfig, error) {
-	aoi, layers, err := viewJSONParams(vc)
+	aoi, aor, layers, err := viewJSONParams(vc)
 	if err != nil {
 		return ViewConfig{}, wrap("upsert tenant view: marshal", err)
 	}
-	const q = `INSERT INTO view_configs (tenant_id, user_id, center_lat, center_lon, zoom, aoi, fl_min, fl_max, layers, icao, qnh_icao)
-		VALUES ($1, NULL, $2, $3, $4, $5::jsonb, $6, $7, $8::jsonb, $9, $10)
+	const q = `INSERT INTO view_configs (tenant_id, user_id, center_lat, center_lon, zoom, aoi, fl_min, fl_max, layers, icao, qnh_icao, aor_airspace_ids)
+		VALUES ($1, NULL, $2, $3, $4, $5::jsonb, $6, $7, $8::jsonb, $9, $10, $11::jsonb)
 		ON CONFLICT (tenant_id) WHERE user_id IS NULL
 		DO UPDATE SET center_lat = EXCLUDED.center_lat, center_lon = EXCLUDED.center_lon,
 			zoom = EXCLUDED.zoom, aoi = EXCLUDED.aoi, fl_min = EXCLUDED.fl_min,
 			fl_max = EXCLUDED.fl_max, layers = EXCLUDED.layers, icao = EXCLUDED.icao,
-			qnh_icao = EXCLUDED.qnh_icao, updated_at = now()
+			qnh_icao = EXCLUDED.qnh_icao, aor_airspace_ids = EXCLUDED.aor_airspace_ids, updated_at = now()
 		RETURNING ` + viewConfigColumns
-	out, err := scanViewConfig(r.db.QueryRow(ctx, q, tenantID, vc.CenterLat, vc.CenterLon, vc.Zoom, aoi, vc.FLMin, vc.FLMax, layers, vc.ICAO, vc.QNHICAO))
+	out, err := scanViewConfig(r.db.QueryRow(ctx, q, tenantID, vc.CenterLat, vc.CenterLon, vc.Zoom, aoi, vc.FLMin, vc.FLMax, layers, vc.ICAO, vc.QNHICAO, aor))
 	if err != nil {
 		return ViewConfig{}, wrap("upsert tenant view", err)
 	}
@@ -79,19 +85,19 @@ func (r *ViewConfigRepo) UpsertTenantDefault(ctx context.Context, tenantID int64
 // UpsertUserOverride stores (or replaces) a user's view override. Idempotent via
 // the partial unique index on (user_id) WHERE user_id IS NOT NULL (migration 2).
 func (r *ViewConfigRepo) UpsertUserOverride(ctx context.Context, tenantID, userID int64, vc ViewConfig) (ViewConfig, error) {
-	aoi, layers, err := viewJSONParams(vc)
+	aoi, aor, layers, err := viewJSONParams(vc)
 	if err != nil {
 		return ViewConfig{}, wrap("upsert user view: marshal", err)
 	}
-	const q = `INSERT INTO view_configs (tenant_id, user_id, center_lat, center_lon, zoom, aoi, fl_min, fl_max, layers, icao, qnh_icao)
-		VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9::jsonb, $10, $11)
+	const q = `INSERT INTO view_configs (tenant_id, user_id, center_lat, center_lon, zoom, aoi, fl_min, fl_max, layers, icao, qnh_icao, aor_airspace_ids)
+		VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9::jsonb, $10, $11, $12::jsonb)
 		ON CONFLICT (user_id) WHERE user_id IS NOT NULL
 		DO UPDATE SET center_lat = EXCLUDED.center_lat, center_lon = EXCLUDED.center_lon,
 			zoom = EXCLUDED.zoom, aoi = EXCLUDED.aoi, fl_min = EXCLUDED.fl_min,
 			fl_max = EXCLUDED.fl_max, layers = EXCLUDED.layers, icao = EXCLUDED.icao,
-			qnh_icao = EXCLUDED.qnh_icao, updated_at = now()
+			qnh_icao = EXCLUDED.qnh_icao, aor_airspace_ids = EXCLUDED.aor_airspace_ids, updated_at = now()
 		RETURNING ` + viewConfigColumns
-	out, err := scanViewConfig(r.db.QueryRow(ctx, q, tenantID, userID, vc.CenterLat, vc.CenterLon, vc.Zoom, aoi, vc.FLMin, vc.FLMax, layers, vc.ICAO, vc.QNHICAO))
+	out, err := scanViewConfig(r.db.QueryRow(ctx, q, tenantID, userID, vc.CenterLat, vc.CenterLon, vc.Zoom, aoi, vc.FLMin, vc.FLMax, layers, vc.ICAO, vc.QNHICAO, aor))
 	if err != nil {
 		return ViewConfig{}, wrap("upsert user view", err)
 	}
@@ -157,23 +163,30 @@ func (r *ViewConfigRepo) DistinctQNHICAOs(ctx context.Context) ([]string, error)
 	return out, nil
 }
 
-// viewJSONParams prepares the jsonb parameters: aoi is nil (SQL NULL) when there
-// is no area of interest, else its JSON; layers is always a JSON object ("{}"
-// when empty/nil).
-func viewJSONParams(vc ViewConfig) (aoi any, layers string, err error) {
+// viewJSONParams prepares the jsonb parameters: aoi and aor are nil (SQL NULL)
+// when unset (no area of interest / no AoR airspaces), else their JSON; layers is
+// always a JSON object ("{}" when empty/nil).
+func viewJSONParams(vc ViewConfig) (aoi any, aor any, layers string, err error) {
 	if vc.AOI != nil {
 		s, e := toJSONB(vc.AOI)
 		if e != nil {
-			return nil, "", e
+			return nil, nil, "", e
 		}
 		aoi = s
+	}
+	if len(vc.AoRAirspaceIDs) > 0 {
+		s, e := toJSONB(vc.AoRAirspaceIDs)
+		if e != nil {
+			return nil, nil, "", e
+		}
+		aor = s
 	}
 	lay := vc.Layers
 	if lay == nil {
 		lay = map[string]bool{}
 	}
 	layers, err = toJSONB(lay)
-	return aoi, layers, err
+	return aoi, aor, layers, err
 }
 
 // scanViewConfig reads a view_configs row, decoding the jsonb aoi/layers columns.
@@ -182,9 +195,10 @@ func scanViewConfig(row rowScanner) (ViewConfig, error) {
 		vc     ViewConfig
 		aoi    []byte
 		layers []byte
+		aor    []byte
 	)
 	if err := row.Scan(&vc.ID, &vc.TenantID, &vc.UserID, &vc.CenterLat, &vc.CenterLon, &vc.Zoom,
-		&aoi, &vc.FLMin, &vc.FLMax, &layers, &vc.ICAO, &vc.QNHICAO, &vc.UpdatedAt); err != nil {
+		&aoi, &vc.FLMin, &vc.FLMax, &layers, &vc.ICAO, &vc.QNHICAO, &aor, &vc.UpdatedAt); err != nil {
 		return ViewConfig{}, err
 	}
 	if err := fromJSONB(aoi, &vc.AOI); err != nil {
@@ -192,6 +206,9 @@ func scanViewConfig(row rowScanner) (ViewConfig, error) {
 	}
 	vc.Layers = map[string]bool{}
 	if err := fromJSONB(layers, &vc.Layers); err != nil {
+		return ViewConfig{}, err
+	}
+	if err := fromJSONB(aor, &vc.AoRAirspaceIDs); err != nil {
 		return ViewConfig{}, err
 	}
 	return vc, nil

@@ -652,6 +652,79 @@ func TestNormalizeQNHICAO(t *testing.T) {
 	}
 }
 
+func TestValidateViewAoRAirspaceIDs(t *testing.T) {
+	base := viewDTO{CenterLat: 50, CenterLon: 8, Zoom: 6}
+
+	// Valid: a small list with a blank entry (blanks are dropped, not rejected).
+	base.AoRAirspaceIDs = []string{"62a1", "  ", "62b2"}
+	if err := validateView(base); err != nil {
+		t.Errorf("valid aor list rejected: %v", err)
+	}
+
+	// Too many entries.
+	many := make([]string, maxAoRAirspaceIDs+1)
+	for i := range many {
+		many[i] = "x"
+	}
+	base.AoRAirspaceIDs = many
+	if err := validateView(base); err == nil {
+		t.Error("over-long aor list accepted, want error")
+	}
+
+	// Over-long single entry.
+	base.AoRAirspaceIDs = []string{strings.Repeat("a", maxAoRIDLen+1)}
+	if err := validateView(base); err == nil {
+		t.Error("over-long aor entry accepted, want error")
+	}
+
+	// Control character.
+	base.AoRAirspaceIDs = []string{"a\x01b"}
+	if err := validateView(base); err == nil {
+		t.Error("aor entry with control char accepted, want error")
+	}
+}
+
+func TestNormalizeAoRIDs(t *testing.T) {
+	if normalizeAoRIDs(nil) != nil {
+		t.Error("nil should stay nil")
+	}
+	if normalizeAoRIDs([]string{"  ", ""}) != nil {
+		t.Error("all-blank should collapse to nil (unset)")
+	}
+	got := normalizeAoRIDs([]string{" a ", "b", "a", "", "b"})
+	if len(got) != 2 || got[0] != "a" || got[1] != "b" {
+		t.Errorf("normalizeAoRIDs = %v, want [a b] (trim, dedup, preserve order)", got)
+	}
+}
+
+func TestWhoamiIncludesAoRAirspaceIDs(t *testing.T) {
+	vs := &fakeVS{vc: store.ViewConfig{AoRAirspaceIDs: []string{"62a1", "62b2"}}}
+	rec := httptest.NewRecorder()
+	handlerWith(vs, fakeFeeds{}, fakeTenants{}).
+		ServeHTTP(rec, adminReq(http.MethodGet, "/api/admin/whoami", "", 7, store.RoleAdmin))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var got struct {
+		AoR []string `json:"aor_airspace_ids"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got.AoR) != 2 || got.AoR[0] != "62a1" || got.AoR[1] != "62b2" {
+		t.Errorf("whoami aor_airspace_ids = %v, want [62a1 62b2]", got.AoR)
+	}
+}
+
+func TestWhoamiOmitsAoRWhenUnset(t *testing.T) {
+	rec := httptest.NewRecorder()
+	handlerWith(&fakeVS{}, fakeFeeds{}, fakeTenants{}).
+		ServeHTTP(rec, adminReq(http.MethodGet, "/api/admin/whoami", "", 7, store.RoleAdmin))
+	if body := rec.Body.String(); strings.Contains(body, "aor_airspace_ids") {
+		t.Errorf("whoami should omit aor_airspace_ids when unset, got %s", body)
+	}
+}
+
 func TestWhoamiUnauthorizedWithoutIdentity(t *testing.T) {
 	rec := httptest.NewRecorder()
 	handlerWith(&fakeVS{}, fakeFeeds{}, fakeTenants{}).

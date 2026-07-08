@@ -79,4 +79,27 @@ describe('validateView (parity with server pkg/adminapi.validateView)', () => {
   it.each(['EDD', 'EDDHX', 'ED-H', 'ED H'])('rejects a malformed QNH aerodrome %s', (code) => {
     expect(validateView({ ...valid(), qnh_icao: code })).toContain('qnh_icao must be a 4-letter ICAO code')
   })
+
+  it('accepts a well-formed AoR airspace id list (ASD-014)', () => {
+    expect(validateView({ ...valid(), aor_airspace_ids: ['62a1f0c0abcdef0123456789', '62b2'] })).toEqual([])
+    expect(validateView({ ...valid(), aor_airspace_ids: [] })).toEqual([]) // empty = no AoR
+    expect(validateView({ ...valid(), aor_airspace_ids: ['ok', '   '] })).toEqual([]) // blanks dropped
+  })
+
+  it('rejects too many AoR ids (> 500)', () => {
+    const many = Array.from({ length: 501 }, () => 'x')
+    expect(validateView({ ...valid(), aor_airspace_ids: many })).toContain('aor_airspace_ids has too many entries')
+  })
+
+  it('rejects an over-long AoR id (> 64 chars)', () => {
+    expect(validateView({ ...valid(), aor_airspace_ids: ['a'.repeat(65)] })).toContain('aor_airspace_ids entry too long')
+  })
+
+  it('rejects an AoR id with control characters', () => {
+    expect(validateView({ ...valid(), aor_airspace_ids: ['a' + String.fromCharCode(1) + 'b'] })).toContain('aor_airspace_ids entry has control characters')
+  })
+
+  it('rejects a non-array AoR value', () => {
+    expect(validateView({ ...valid(), aor_airspace_ids: 'nope' })).toContain('aor_airspace_ids must be a list')
+  })
 })

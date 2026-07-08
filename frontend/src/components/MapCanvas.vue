@@ -60,6 +60,9 @@ onMounted(async () => {
   // centre + AOI always reflect the CURRENT effective view (no-op when unchanged).
   mapEngine.applyViewCenter(session.viewCenter)
   mapEngine.applyWeatherAOI(session.aoi)
+  // ASD-014: same #219 race — apply the AoR highlight once the engine exists, so
+  // a late-resolving (or impersonation-switched) whoami is reflected on mount.
+  mapEngine.updateAoR(session.aorAirspaceIds)
   // Häppchen 4: attach the measurement controller and let the tools store drive
   // it (reporting the live readout back to the store). createMeasure adds a
   // source + layers, so it MUST run after the style has loaded — initMap returns
@@ -141,6 +144,13 @@ watch(() => session.viewCenter, (vc) => {
 // (whoami resolves after mount, or an admin switches the impersonation target).
 watch(() => session.aoi, (a) => {
   mapEngine?.applyWeatherAOI(a)
+}, { deep: true })
+
+// ASD-014: re-apply the AoR highlight when the effective Area of Responsibility
+// changes (whoami resolves after mount, or an admin switches the impersonation
+// target to a tenant with a different AoR). Empty list highlights nothing.
+watch(() => session.aorAirspaceIds, (ids) => {
+  mapEngine?.updateAoR(ids)
 }, { deep: true })
 
 defineExpose({

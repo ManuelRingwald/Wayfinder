@@ -50,5 +50,23 @@ export function validateView(d) {
     }
   }
 
+  // aor_airspace_ids is the tenant's Area of Responsibility (ASD-014): a list of
+  // stable OpenAIP airspace ids. Mirror the server bounds (maxAoRAirspaceIDs 500,
+  // maxAoRIDLen 64, no control chars); empty entries are dropped, not rejected.
+  const aor = d.aor_airspace_ids
+  if (aor != null) {
+    if (!Array.isArray(aor)) {
+      errors.push('aor_airspace_ids must be a list')
+    } else {
+      if (aor.length > 500) errors.push('aor_airspace_ids has too many entries')
+      for (const id of aor) {
+        const t = String(id).trim()
+        if (t === '') continue
+        if (t.length > 64) { errors.push('aor_airspace_ids entry too long'); break }
+        if ([...t].some((c) => c.charCodeAt(0) < 0x20)) { errors.push('aor_airspace_ids entry has control characters'); break }
+      }
+    }
+  }
+
   return errors
 }

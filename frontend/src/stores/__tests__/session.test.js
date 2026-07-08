@@ -69,6 +69,27 @@ describe('session store — ASD map auth gate', () => {
     expect(s.sensorClasses).toEqual([])
   })
 
+  it('exposes the effective AoR airspace ids from whoami (ASD-014)', async () => {
+    installFetch({
+      'GET /api/whoami': {
+        status: 200,
+        body: { subject: 'lotse', tenant_id: 2, role: 'user', aor_airspace_ids: ['62a1', '62b2'] },
+      },
+    })
+    const s = useSessionStore()
+    await s.probe()
+    expect(s.aorAirspaceIds).toEqual(['62a1', '62b2'])
+  })
+
+  it('defaults aorAirspaceIds to [] when whoami omits it (no AoR ⇒ nothing highlighted)', async () => {
+    installFetch({
+      'GET /api/whoami': { status: 200, body: { subject: 'lotse', tenant_id: 2, role: 'user' } },
+    })
+    const s = useSessionStore()
+    await s.probe()
+    expect(s.aorAirspaceIds).toEqual([])
+  })
+
   it('exposes the tenant view centre from whoami so the map opens on its sector (FR-UI-013)', async () => {
     installFetch({
       'GET /api/whoami': {

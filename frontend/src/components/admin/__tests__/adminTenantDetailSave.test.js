@@ -31,3 +31,18 @@ describe('AdminTenantDetail global save/cancel (#211)', () => {
     expect(detail).toMatch(/function cancel\(\)\s*\{\s*emit\('back'\)/)
   })
 })
+
+// ASD-014: the tenant's Area of Responsibility (a list of stable OpenAIP airspace
+// ids) is edited here as chips and round-trips through load → buildViewDto → save.
+describe('AdminTenantDetail AoR editor (ASD-014)', () => {
+  it('binds an AoR chips input to the form', () => {
+    expect(detail).toContain('v-model="form.aorAirspaceIds"')
+    expect(detail).toContain('aorAirspaceIds: []')
+  })
+
+  it('loads the AoR from the view and sends it (normalised) in the DTO', () => {
+    expect(detail).toContain('form.aorAirspaceIds = Array.isArray(r.data.aor_airspace_ids)')
+    expect(detail).toMatch(/normalizeAorIds\(form\.aorAirspaceIds\)/)
+    expect(detail).toContain('dto.aor_airspace_ids = aor')
+  })
+})
