@@ -215,6 +215,7 @@ type Handler struct {
 	globalAero  GlobalOpenAIPStore    // may be nil; disables the global OpenAIP key routes (AERO-2)
 	secrets     SecretService         // may be nil; disables the per-feed secret routes (503) when no key is configured (ORCH-2c 3a)
 	sessions    SessionRevoker        // may be nil; disables eager session revocation on pause (AP7)
+	profiles    ViewProfileStore      // may be nil; disables the per-user view-profile routes (404) (VP-2, ADR 0023)
 	rescope     RescopeFunc
 	logger      *slog.Logger
 	mux         *http.ServeMux
