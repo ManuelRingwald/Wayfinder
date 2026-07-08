@@ -36,6 +36,8 @@ import {
 import { clipFeatureCollectionToBBox } from './clip.js'
 import { rangeRingsGeoJSON } from './rangerings.js'
 import { updateTracksLayer } from './tracks.js'
+import { feedStatusEvent, connectionEvent, trackLifecycleEvents } from './events.js'
+import { useEventsStore } from '@/stores/events.js'
 import { renderSources, tickFade } from './render.js'
 import { setupLabelDrag } from './drag.js'
 import { startAeronauticalRefresh } from './aeronautical.js'
@@ -168,6 +170,35 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
     liveVectorFeatures: [],
     // ASD-002 B2: per-track manual label-position overrides.
     labelPins: new Map(),
+    // ASD-013: previous live track-number set, for deriving appeared/disappeared
+    // events. `trackEventsPrimed` gates the very first frame after a (re)connect
+    // so the initial air picture does not flood the log with "appeared".
+    prevTrackNums: new Set(),
+    trackEventsPrimed: false,
+  }
+
+  // ASD-013: the operator event log (Alarm-/Ereignis-Panel). Fed from the WS
+  // stream below; the log is tenant-scoped because the stream already is.
+  const events = useEventsStore()
+  // Previous WebSocket connection status, for connection-lost/restored events.
+  let prevConnStatus = null
+
+  // recordTrackEvents derives track appeared/disappeared events (ASD-013) from a
+  // raw WS track batch and pushes them to the event log. The first frame after a
+  // (re)connect only primes the baseline (no "appeared" flood), but still logs
+  // any genuine TSE-ended tracks it carries.
+  function recordTrackEvents(msg) {
+    const batch = msg.tracks || []
+    const liveNums = batch.filter((t) => !t.ended).map((t) => t.track_num)
+    const endedNums = batch.filter((t) => t.ended).map((t) => t.track_num)
+    if (!state.trackEventsPrimed) {
+      state.prevTrackNums = new Set(liveNums)
+      state.trackEventsPrimed = true
+      events.addMany(trackLifecycleEvents(state.prevTrackNums, [], endedNums))
+      return
+    }
+    events.addMany(trackLifecycleEvents(state.prevTrackNums, liveNums, endedNums))
+    state.prevTrackNums = new Set(liveNums)
   }
 
   // Helper: build a bound renderSources call with the current store slices.
@@ -215,6 +246,13 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
       // ADR 0008) — drop stale per-feed health so the chip reflects only this
       // connection's feeds. Fresh statuses arrive with the next heartbeats.
       store.resetFeedHealth()
+      // ASD-013: a (re)connect re-scopes the stream and rebuilds the air picture
+      // server-side; re-prime the track baseline so the fresh picture does not
+      // flood the log with "appeared". Log the recovery if we were disconnected.
+      state.trackEventsPrimed = false
+      const connEvt = connectionEvent(prevConnStatus, 'open')
+      if (connEvt) events.add(connEvt)
+      prevConnStatus = 'open'
       if (reconnectTimer) {
         clearTimeout(reconnectTimer)
         reconnectTimer = null
@@ -233,9 +271,17 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
         if (msg.feed_status) {
           // degraded_reason (CAT063 I063/RE SRC-REASON, Firefly ADR 0033) is
           // present only on a degraded feed with a known cause; the chip shows it.
+          // ASD-013: log a change in the aggregate feed health as an event
+          // (compare the worst-across-feeds status before and after the update).
+          const prevFeed = store.feedStatus
           store.setFeedHealth(msg.feed_status.feed_id, msg.feed_status.color, msg.feed_status.degraded_reason)
+          const feedEvt = feedStatusEvent(prevFeed, store.feedStatus)
+          if (feedEvt) events.add(feedEvt)
           return
         }
+        // ASD-013: derive track lifecycle events from every batch at receive time
+        // (independent of map-load state, so none are lost while the style loads).
+        recordTrackEvents(msg)
         if (state.mapLoaded) {
           updateTracksLayer(msg, state, doRender, startFadeLoop, store.historyConfig.durationS * 1000)
         } else {
@@ -253,6 +299,10 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
       if (ws !== socket) return
       console.warn('WebSocket disconnected, reconnecting in', reconnectDelay, 'ms')
       ws = null
+      // ASD-013: log the drop (once per transition).
+      const connEvt = connectionEvent(prevConnStatus, 'closed')
+      if (connEvt) events.add(connEvt)
+      prevConnStatus = 'closed'
       onConnectionChange?.('closed')
       reconnectTimer = setTimeout(connectWebSocket, reconnectDelay)
     })
