@@ -33,6 +33,10 @@ import {
   SELECTION_SOURCE_ID,
   SELECTION_LAYER_ID,
   SELECTION_ICON_ID,
+  SELECTION_LABEL_SOURCE_ID,
+  SELECTION_LABEL_LAYER_ID,
+  SELECTION_LABEL_COLOR,
+  SELECTION_LABEL_WIDTH_PX,
   LABEL_TEXT_SIZE,
   TRACK_STATE_COLORS,
   AIRSPACE_GROUPS,
@@ -798,6 +802,33 @@ export function addLabelsLayer(map, palette) {
         ['get', 'coasting'], 0.35,
         1.0,
       ],
+    },
+  })
+}
+
+// addSelectionLabelLayer registers the source + line layer for the ASD-011b
+// selected-label outline: a bright neutral rounded rectangle framing the selected
+// track's data block. Registered AFTER addLabelsLayer so the box draws above (and
+// thus frames) the label text. The source carries at most one closed-ring feature
+// (see deconflictLabels); round joins/caps give the soft corners of the design.
+export function addSelectionLabelLayer(map) {
+  map.addSource(SELECTION_LABEL_SOURCE_ID, {
+    type: 'geojson',
+    data: { type: 'FeatureCollection', features: [] },
+  })
+  map.addLayer({
+    id: SELECTION_LABEL_LAYER_ID,
+    type: 'line',
+    source: SELECTION_LABEL_SOURCE_ID,
+    layout: {
+      'line-join': 'round',
+      'line-cap': 'round',
+    },
+    paint: {
+      'line-color': SELECTION_LABEL_COLOR,
+      'line-width': SELECTION_LABEL_WIDTH_PX,
+      // Fade with the track when it is a selected, TSE-fading track (edge case).
+      'line-opacity': ['case', ['has', 'fade_opacity'], ['get', 'fade_opacity'], 1.0],
     },
   })
 }

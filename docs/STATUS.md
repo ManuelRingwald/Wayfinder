@@ -10,6 +10,24 @@
 
 ---
 
+## 🎯 Stand 2026-07-08 (ASD-011b — Selektions-Umrandung des Labels)
+
+- **ASD-011b — Selektions-Umrandung des Datenblock-Labels (FR-UI-028):** Bei
+  Selektion bekommt das Datenblock-Label zusätzlich zum Symbol-Halo eine
+  **abgerundete Rahmen-Box** in **neutralem Hellton** (`#f2f7fc`) — angeglichen
+  ans Claude-Design-Template (Betreiber-Screenshot 2026-07-08), Farbe = Betreiber-
+  Wahl „weiß/neutral hell".
+  - **Technik:** `deconflictLabels` erzeugt für den selektierten Track aus der
+    Label-Screen-Bbox einen **abgerundeten Ring** (reine `roundedRectRing`), jeder
+    Punkt per **`map.unproject`** exakt zurückprojiziert → Box sitzt pixelgenau ums
+    Label (gleicher Round-Trip wie der Drag-Fix). Eigene Line-Ebene über den
+    Labels; nur 0/1 Feature. **Kein CAT062-Bezug.**
+  - **Zuschnitt:** nur die Selektions-Umrandung; „alle Labels boxen" + Alarmfarben
+    (STCA/EMG/DUP) bleiben separate Häppchen (STCA bräuchte Wire-Daten I062/340).
+- **Tests:** `deconflict.test.js` (`roundedRectRing` Bounds/Clamp; Selektions-Box
+  rahmt Label-Bbox exakt, nur selektierter Track). **vitest 489**, `vite build` +
+  `dist` neu; Go unberührt.
+
 ## 🐞 Stand 2026-07-08 (Bugfix — Label-Drag springt weg / versetzt zur Maus)
 
 - **Symptom:** Klick auf ein Track-Label (das per Leader-Linie mit dem Track

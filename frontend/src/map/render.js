@@ -8,6 +8,7 @@ import {
   LABELS_SOURCE_ID,
   LEADER_LINES_SOURCE_ID,
   SELECTION_SOURCE_ID,
+  SELECTION_LABEL_SOURCE_ID,
   FADE_DURATION_MS,
   VECTOR_LOOKAHEAD_S,
   EARTH_RADIUS_M,
@@ -207,15 +208,19 @@ export function renderSources(map, state, flFilter, labelPins, palette, selected
   // Wrapped in try/catch: a deconfliction failure must never abort the rest
   // of renderSources() (circles / vectors would disappear if it propagated).
   try {
-    const { labelFeatures, leaderLineFeatures } = deconflictLabels(
+    const { labelFeatures, leaderLineFeatures, selectionBoxFeatures } = deconflictLabels(
       [...liveTrackFeatures, ...fadingTrackFeatures],
       map,
       labelPins,
+      selectedTrackNum,
     )
     const labSrc = map.getSource(LABELS_SOURCE_ID)
     const llSrc  = map.getSource(LEADER_LINES_SOURCE_ID)
+    const selLabSrc = map.getSource(SELECTION_LABEL_SOURCE_ID)
     if (labSrc) labSrc.setData({ type: 'FeatureCollection', features: labelFeatures })
     if (llSrc)  llSrc.setData({ type: 'FeatureCollection', features: leaderLineFeatures })
+    // ASD-011b: the selected label's outline box (0 or 1 feature).
+    if (selLabSrc) selLabSrc.setData({ type: 'FeatureCollection', features: selectionBoxFeatures || [] })
   } catch (err) {
     console.error('[ASD-002] label deconfliction error:', err)
   }

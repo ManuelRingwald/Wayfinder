@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { bboxCollides, deconflictLabels } from '../deconflict.js'
+import { bboxCollides, deconflictLabels, roundedRectRing } from '../deconflict.js'
 
 // Helpers
 function bbox(x1, y1, x2, y2) {
@@ -136,5 +136,60 @@ describe('deconflictLabels', () => {
     const features = [makeTrackFeature(8, 8.0, 50.0, { fl_opacity: 0.15 })]
     const { labelFeatures } = deconflictLabels(features, map, new Map())
     expect(labelFeatures[0].properties.fl_opacity).toBeCloseTo(0.15)
+  })
+})
+
+describe('roundedRectRing', () => {
+  it('returns a closed ring whose extremes reach the padded rectangle bounds', () => {
+    const ring = roundedRectRing(100, 100, 20, 10, 4, 3)
+    // Closed: first point equals last.
+    expect(ring[0].x).toBeCloseTo(ring[ring.length - 1].x, 9)
+    expect(ring[0].y).toBeCloseTo(ring[ring.length - 1].y, 9)
+    const xs = ring.map((p) => p.x)
+    const ys = ring.map((p) => p.y)
+    expect(Math.min(...xs)).toBeCloseTo(80, 6)
+    expect(Math.max(...xs)).toBeCloseTo(120, 6)
+    expect(Math.min(...ys)).toBeCloseTo(90, 6)
+    expect(Math.max(...ys)).toBeCloseTo(110, 6)
+  })
+  it('clamps the corner radius to half the smaller side', () => {
+    // r=50 with halfH=10 must clamp so nothing exceeds the rect bounds.
+    const ring = roundedRectRing(0, 0, 20, 10, 50, 4)
+    for (const p of ring) {
+      expect(Math.abs(p.x)).toBeLessThanOrEqual(20 + 1e-9)
+      expect(Math.abs(p.y)).toBeLessThanOrEqual(10 + 1e-9)
+    }
+  })
+})
+
+describe('deconflictLabels selection outline (ASD-011b)', () => {
+  it('emits no selection box when nothing is selected', () => {
+    const map = makeMockMap()
+    const features = [makeTrackFeature(1, 8.0, 50.0)]
+    const { selectionBoxFeatures } = deconflictLabels(features, map, new Map())
+    expect(selectionBoxFeatures).toEqual([])
+  })
+
+  it('boxes ONLY the selected track and frames its label bbox exactly', () => {
+    const map = makeMockMap()
+    const features = [makeTrackFeature(1, 8.0, 50.0), makeTrackFeature(2, 8.5, 50.5)]
+    const pin = { dx: 99, dy: -55 }
+    const pins = new Map([[2, pin]])
+    const { selectionBoxFeatures } = deconflictLabels(features, map, pins, 2)
+    expect(selectionBoxFeatures).toHaveLength(1)
+    expect(selectionBoxFeatures[0].properties.track_num).toBe(2)
+
+    // Label centre for track 2 = sym+pin = (850+99, 5050-55) = (949, 4995).
+    // Box half-extents: LABEL_W_PX/2+PAD = 35, LABEL_H_PX/2+PAD = 27.
+    const back = selectionBoxFeatures[0].geometry.coordinates.map((c) => map.project(c))
+    const xs = back.map((p) => p.x)
+    const ys = back.map((p) => p.y)
+    expect(Math.min(...xs)).toBeCloseTo(949 - 35, 4)
+    expect(Math.max(...xs)).toBeCloseTo(949 + 35, 4)
+    expect(Math.min(...ys)).toBeCloseTo(4995 - 27, 4)
+    expect(Math.max(...ys)).toBeCloseTo(4995 + 27, 4)
+    // Ring is closed.
+    const c = selectionBoxFeatures[0].geometry.coordinates
+    expect(c[0]).toEqual(c[c.length - 1])
   })
 })
