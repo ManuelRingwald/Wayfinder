@@ -14,12 +14,17 @@ function makeTrackFeature(trackNum, lon, lat, extra = {}) {
   }
 }
 
-// Mock MapLibre map: project returns a deterministic screen point
+// Mock MapLibre map: project and its exact inverse unproject. deconflictLabels
+// now places labels via map.unproject([lx, ly]) so the round-trip
+// project(labelGeo) === (lx, ly) holds for any real projection — the mock keeps
+// that invariant with a matching bijection pair.
 function makeMockMap(zoom = 10) {
   return {
     getZoom: () => zoom,
-    // Simple bijection: lon*10, lat*10 (arbitrary, consistent)
+    // Simple bijection: lon*100, lat*100 (arbitrary, consistent)
     project: ([lon, lat]) => ({ x: lon * 100, y: lat * 100 }),
+    // Exact inverse of project — { lng, lat } like a real MapLibre LngLat.
+    unproject: ([x, y]) => ({ lng: x / 100, lat: y / 100 }),
   }
 }
 
@@ -86,15 +91,26 @@ describe('deconflictLabels', () => {
     expect(nums).toEqual([1, 3, 5])
   })
 
-  it('uses manual pin when labelPins has an entry', () => {
+  it('places a pinned label at EXACTLY sym+pin in screen space (drag round-trip)', () => {
+    // Regression guard for the label-drag jump: the label's geo position must
+    // project back to the symbol pixel plus the pin offset, so drag.js (which
+    // reasons in exact pixels) neither jumps on grab nor trails the cursor.
     const map = makeMockMap()
     const features = [makeTrackFeature(42, 8.0, 50.0)]
-    const pins = new Map([[42, { dx: 99, dy: -55 }]])
-    const { labelFeatures } = deconflictLabels(features, map, pins)
+    const pin = { dx: 99, dy: -55 }
+    const pins = new Map([[42, pin]])
+    const { labelFeatures, leaderLineFeatures } = deconflictLabels(features, map, pins)
     expect(labelFeatures).toHaveLength(1)
-    // The label geo position should reflect the pin offset (dx=99, dy=-55)
-    // relative to the projected symbol position — just check a label was placed.
     expect(labelFeatures[0].properties.track_num).toBe(42)
+
+    const sym = map.project([8.0, 50.0]) // { x: 800, y: 5000 }
+    const back = map.project(labelFeatures[0].geometry.coordinates)
+    expect(back.x).toBeCloseTo(sym.x + pin.dx, 9) // 899
+    expect(back.y).toBeCloseTo(sym.y + pin.dy, 9) // 4945
+    // The leader line must end at the same point (symbol↔block stay consistent).
+    const endBack = map.project(leaderLineFeatures[0].geometry.coordinates[1])
+    expect(endBack.x).toBeCloseTo(sym.x + pin.dx, 9)
+    expect(endBack.y).toBeCloseTo(sym.y + pin.dy, 9)
   })
 
   it('never suppresses a label (fallback slot 0 when all collide)', () => {

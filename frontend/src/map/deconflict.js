@@ -51,12 +51,6 @@ export function deconflictLabels(allTrackFeatures, map, labelPins) {
   const labelFeatures = []
   const leaderLineFeatures = []
 
-  // Mercator scale: pixels per geographic degree at this zoom level.
-  // Used to convert pixel offsets to lng/lat deltas for leader-line endpoints.
-  // Formula: pixelsPerDeg = (tileSize * 2^zoom) / 360 — valid for Web Mercator.
-  const zoom = map.getZoom()
-  const pixelsPerDeg = (256 * Math.pow(2, zoom)) / 360
-
   for (const feature of sorted) {
     const [lon, lat] = feature.geometry.coordinates
     const trackNum = feature.properties.track_num
@@ -115,18 +109,21 @@ export function deconflictLabels(allTrackFeatures, map, labelPins) {
       y2: ly + LABEL_H_PX / 2,
     })
 
-    // Convert the screen-space pixel offset (dx, dy) to a geo-position via a
-    // Web-Mercator approximation, then place the label point THERE. This keeps
-    // the label at a normal centred anchor (which renders reliably) instead of
-    // relying on a data-driven text-offset, which MapLibre GL JS v4 did not
-    // apply (labels stayed invisible while leader lines drew). The same
-    // labelLon/labelLat is reused as the leader-line endpoint, so symbol,
-    // line and block stay perfectly consistent. Error at <30 px offset is
-    // sub-metre — imperceptible at ASD zoom levels.
-    const latRad = lat * Math.PI / 180
-    const labelLon = lon + dx / pixelsPerDeg
-    // Mercator: dy_pixel → dlat uses cos(lat) scaling (north-up, y positive down).
-    const labelLat = lat - dy * Math.cos(latRad) / pixelsPerDeg
+    // Place the label at the EXACT screen pixel (lx, ly) by inverse-projecting
+    // it back to geo with map.unproject(). Using the map's own inverse (instead
+    // of a hand-rolled Web-Mercator formula) guarantees the round-trip
+    // map.project([labelLon, labelLat]) === (lx, ly) for any tile size, zoom and
+    // latitude. This is what keeps the label at a normal centred anchor (which
+    // renders reliably, unlike the data-driven text-offset MapLibre GL v4 did
+    // not apply) AND lets the drag handler (drag.js) reason in exact pixels — a
+    // hand-rolled 256-tile formula placed the label at ~2× the intended offset
+    // against MapLibre's 512-px world, which made a grabbed label jump on the
+    // first drag move and then track the cursor with a constant offset. The same
+    // labelLon/labelLat is reused as the leader-line endpoint, so symbol, line
+    // and block stay perfectly consistent.
+    const labelLngLat = map.unproject([lx, ly])
+    const labelLon = labelLngLat.lng
+    const labelLat = labelLngLat.lat
 
     // Carry opacity side-car properties so label paint expressions work.
     const opProps = {}
