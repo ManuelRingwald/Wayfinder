@@ -10,6 +10,25 @@
 
 ---
 
+## 🐞 Stand 2026-07-08 (Bugfix — Label-Drag springt weg / versetzt zur Maus)
+
+- **Symptom:** Klick auf ein Track-Label (das per Leader-Linie mit dem Track
+  verbundene Datenblock-Label) ließ das Label beim ersten Drag-Schritt
+  **wegspringen** und danach **versetzt zur Maus** ziehen.
+- **Ursache:** `deconflictLabels` rechnete die Label-Geo-Position aus dem
+  Pixel-Offset per **hand-gerollter Web-Mercator-Formel mit `256·2^zoom`** —
+  MapLibres Welt ist aber **`512·2^zoom`**. Das Label wurde dadurch am **doppelten**
+  Pixel-Offset gerendert, während `drag.js` in exakten Pixeln (`sym+pin`, 1×)
+  rechnete. Beim ersten Move las der Drag die 2×-Position zurück und verdoppelte
+  den Pin → Sprung + konstanter Cursor-Versatz.
+- **Fix:** `deconflictLabels` platziert das Label jetzt per **`map.unproject([lx,ly])`**
+  (exakte Umkehr von `map.project`, gültig für jede Tile-Größe/Zoom/Breite) →
+  `project(labelGeo) === sym+offset` exakt. Auto-Platzierung sitzt am gewollten
+  Offset, Drag ist pixelgenau (kein Sprung, kein Versatz).
+- **Tests:** neuer Round-Trip-Regressionstest in `deconflict.test.js` (Label-Geo
+  projiziert exakt auf `sym+pin`, inkl. Leader-Endpunkt); `drag.test.js`
+  unverändert grün. **vitest 485**, `vite build` + `dist` neu; Go unberührt.
+
 ## 🎯 Stand 2026-07-08 (ASD-013 — Alarm-/Ereignis-Panel)
 
 - **ASD-013 — Alarm-/Ereignis-Panel (FR-UI-027):** Zuschaltbares Ereignis-Panel
