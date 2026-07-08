@@ -204,6 +204,18 @@ Per-Feed-Zustand zurückgesetzt (`resetFeedHealth`), damit ein alter Scope nicht
 nachhängt. (Zuvor las das Frontend fälschlich ein nicht existentes `state`-Feld →
 dauerhaft „FEED ?", #117.)
 
+**Ereignis-Log (ASD-013, FR-UI-027).** Aus denselben beobachtbaren Übergängen
+leitet das Frontend einen **Alarm-/Ereignis-Log** ab (Glocke oben rechts mit
+Ungesehen-Badge, `EventPanel.vue`): **Feed** (`feedStatus`-Wechsel:
+stale/degraded/recovered), **Verbindung** (WebSocket lost/restored) und **Track**
+(erschienen aus dem Live-Set-Diff / beendet aus I062/080 TSE). Die Ableitung sind
+reine Funktionen in `frontend/src/map/events.js`; ein gedeckelter Pinia-Ring-Puffer
+(`stores/events.js`, `MAX_EVENTS=200`) hält die Historie. Rein client-seitig, **kein
+Wire-Change** und **automatisch mandanten-gescopt** (der WS-Strom ist es). Die erste
+Frame nach einem (Re)Connect primet nur die Baseline (kein „appeared"-Flut); ein
+Scan-Ausfall ohne TSE erzeugt kein „beendet". **Ehrliche Grenze:** keine
+Wire-Alarme (STCA/Militär/Hostile mangels Feld draußen, vgl. ASD-006).
+
 ### 2.4 Aeronautische Daten (best-effort)
 
 ```

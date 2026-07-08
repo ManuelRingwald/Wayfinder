@@ -57,6 +57,27 @@
       <div class="top-right-cluster">
         <AsdHeader />
         <FeedStatusChip />
+        <!-- ASD-013: event-log bell with an unseen badge; toggles the floating
+             Alarm-/Ereignis-Panel and marks the log seen on open. -->
+        <div class="events-control">
+          <v-badge
+            :model-value="events.unseenCount > 0"
+            :content="badgeContent"
+            color="error"
+            offset-x="6"
+            offset-y="6"
+          >
+            <v-btn
+              :icon="eventsOpen ? 'mdi-bell' : 'mdi-bell-outline'"
+              size="small"
+              variant="tonal"
+              :color="eventsOpen ? 'primary' : undefined"
+              aria-label="Ereignisse"
+              @click="toggleEvents"
+            />
+          </v-badge>
+        </div>
+        <EventPanel v-if="eventsOpen" class="events-panel" @close="eventsOpen = false" />
       </div>
       <!-- Reskin 3b: floating scope legend (bottom-left). The bottom-right
            width/leader readout was removed (E2E): it read like a scale bar but
@@ -142,7 +163,9 @@ import AsdHeader from '@/components/AsdHeader.vue'
 import ScopeLegend from '@/components/ScopeLegend.vue'
 import TrackDetailPanel from '@/components/TrackDetailPanel.vue'
 import FeedStatusChip from '@/components/FeedStatusChip.vue'
+import EventPanel from '@/components/EventPanel.vue'
 import LoginCard from '@/components/LoginCard.vue'
+import { useEventsStore } from '@/stores/events.js'
 
 const { mdAndUp } = useDisplay()
 const router = useRouter()
@@ -151,9 +174,19 @@ const session = useSessionStore()
 const tools = useToolsStore()
 const adminStore = useAdminStore()
 const imp = useImpersonationStore()
+const events = useEventsStore()
 const drawerOpen = ref(true)
 const mapCanvas = ref(null)
 const loginLoading = ref(false)
+
+// ASD-013: event-log panel visibility. Opening it marks the log seen (clears the
+// unseen badge) without dropping history.
+const eventsOpen = ref(false)
+const badgeContent = computed(() => (events.unseenCount > 99 ? '99+' : String(events.unseenCount)))
+function toggleEvents() {
+  eventsOpen.value = !eventsOpen.value
+  if (eventsOpen.value) events.markSeen()
+}
 
 // #208 (ADR 0022): admins have no own air picture; the server rejects their /ws
 // without an active guest-mode grant. This gate decides AFTER authentication
@@ -322,6 +355,13 @@ function onTrackClick(track) {
   pointer-events: none;
   /* Never let the header run under the opposite chrome on a narrow phone. */
   max-width: calc(100vw - 24px - var(--wf-safe-right, 0px) - var(--wf-safe-left, 0px));
+}
+
+/* ASD-013: the event bell + floating panel live inside the (pointer-events:none)
+   top-right cluster, so they must re-enable pointer events to stay clickable. */
+.events-control,
+.events-panel {
+  pointer-events: auto;
 }
 
 /* ASD-007: cyan radar-scope centre bloom (design template 'nacht' glow). Above

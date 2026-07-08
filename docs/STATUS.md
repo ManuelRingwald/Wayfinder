@@ -10,6 +10,26 @@
 
 ---
 
+## 🎯 Stand 2026-07-08 (ASD-013 — Alarm-/Ereignis-Panel)
+
+- **ASD-013 — Alarm-/Ereignis-Panel (FR-UI-027):** Zuschaltbares Ereignis-Panel
+  (Glocke oben rechts mit Ungesehen-Badge) protokolliert **Feed-Ausfall/-Degradation/
+  -Erholung**, **Verbindungsverlust/-wiederherstellung** und **Track erschienen/
+  beendet** — alles **client-seitig aus dem WS-Strom abgeleitet** (kein
+  Wire-Change), automatisch mandanten-skopiert.
+  - **Reine Ableitung** in `map/events.js` (`feedStatusEvent`/`connectionEvent`/
+    `trackLifecycleEvents` + `SEVERITY_META`), **Ring-Puffer-Store**
+    `stores/events.js` (`MAX_EVENTS=200`, neueste zuerst, Ungesehen-Zähler),
+    `EventPanel.vue`, Engine-WS-Handler-Verdrahtung, Glocke/Badge in `AsdView.vue`.
+  - **Rausch-Vermeidung:** erste Frame nach (Re)Connect **primet** nur die
+    Baseline (kein „erschienen"-Flut); „beendet" **nur** per TSE (I062/080).
+  - **Ehrliche Grenze:** keine Wire-Alarme (STCA/Militär/Hostile mangels Feld
+    draußen, vgl. ASD-006/#18) — nur beobachtbare Zustandsübergänge.
+- **Tests:** `events.test.js` (Ableitung), Store-Test (Ring-Puffer/Cap/unseen),
+  `eventPanel.test.js` (Verdrahtung). **vitest 485**, `vite build` + `dist` neu;
+  Go unberührt.
+- **Damit ist „für beides go" (ASD-011 + ASD-013) abgeschlossen.**
+
 ## 🎯 Stand 2026-07-08 (ASD-011 — Erweitertes Track-Detail-Panel)
 
 - **ASD-011 — Erweitertes Track-Detail-Panel (FR-UI-026):** Das Detail-Panel
