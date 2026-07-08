@@ -130,6 +130,36 @@ modernen Flugzeugen bevorzugt.
 
 ---
 
+## ASTERIX / CAT062 · CAT063 · CAT065
+
+ASTERIX (*All-Purpose Structured EUROCONTROL Surveillance Information Exchange*)
+ist das binäre Nachrichtenformat, in dem Firefly seine Ergebnisse über
+UDP-Multicast aussendet. Wayfinder empfängt **drei Kategorien** auf demselben
+Strom (Dispatch am führenden CAT-Oktett; unbekannte Kategorien werden
+übersprungen):
+- **CAT062** (`0x3E`) — System-Tracks (*was* fliegt).
+- **CAT065** (`0x41`) — SDPS-Heartbeat (*lebt* das Datenverarbeitungssystem?);
+  unterscheidet „leerer Himmel" von „totem Feed".
+- **CAT063** (`0x3F`) — Per-Sensor-Status (*welche* Sensoren speisen das SDPS?);
+  Grundlage des gelben „SENSOR AUSFALL"-Chips.
+
+Der maßgebliche, versionierte Vertrag ist `docs/ICD-CAT062.md` im Firefly-Repo.
+
+---
+
+## SDPS (Surveillance Data Processing System)
+
+Das datenverarbeitende Gesamtsystem — hier Fireflys Tracker-Kern —, das die
+Meldungen der Einzelsensoren (Radare, ADS-B) zu einem fusionierten Luftlagebild
+verarbeitet und aussendet. Sein Lebenszeichen ist der CAT065-Heartbeat. In CAT063
+trägt **I063/010** die **SDPS-Identität** (SAC/SIC, Default 25/2 — *wer* meldet),
+das separate **I063/050** die **Sensor-Identität** (SAC 0, SIC = `sensor_id` —
+*worüber*; seit Fireflys ADR 0032 / ICD 3.0.0). Diese Trennung erlaubt es, einen
+einzelnen ausgefallenen Sensor zu erkennen (gelbes Degradierungs-Banner), auch
+wenn das SDPS selbst ungestört weiterläuft.
+
+---
+
 ## Konflikte / Separation
 
 Wenn sich zwei Tracks zu nah kommen (horizontal oder vertikal), liegt eine
@@ -197,6 +227,18 @@ WF2-41): beim Anlegen eines Feeds werden gängige Schreibweisen kanonisiert
 verlässlich und auditierbar bleiben. **Wichtig:** Der Sensor-Mix ist ein
 **Feed-Metadatum**, kein Per-Track-Tag (ADR 0005 §6.4) — die *track-abgeleitete*
 Herkunft am Symbol (WF2-40) ist davon unabhängig.
+
+## Community-Aggregator (Quell-Typ `adsb_aggregator`)
+
+Ein zweiter ADS-B-Bezugsweg **neben** OpenSky (kein Ersatz): Ein Feed kann aus
+einem Community-getriebenen ADS-B-Aggregator gespeist werden — **adsb.lol**
+(Default) oder **adsb.fi**. Der Typ ist **auth-frei** (kein Credential-Block, kein
+`cred_env`) und daher besonders aus Umgebungen mit Datacenter-IP-Sperre nutzbar
+(z. B. Codespaces/Azure-IPs, die OpenSky abweist). Ein **gepollter** Quell-Typ:
+konfigurierbar über `poll_interval_secs` (5–3600 s, Default 10 s) und `provider`
+(Wire-Werte `adsb_lol`/`adsb_fi`, UI-Labels adsb.lol/adsb.fi). Der
+CAT062-Draht-Vertrag bleibt davon unberührt (Firefly-Kontrakt v1.5.0, ADR 0031).
+Im Admin-UI heißt der Typ **„ADS-B (Community-Aggregator)"**.
 
 ## Ausfallgrund einer Quelle (SRC-REASON)
 

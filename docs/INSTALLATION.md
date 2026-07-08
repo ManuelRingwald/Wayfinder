@@ -549,6 +549,15 @@ docker compose run --rm wayfinder feed list
 > gelöschten Feeds **sofort** — **ohne Neustart**. Die CLI (`feed add`/`feed
 > list`) bleibt für Skripting/CI erhalten; beide Wege schreiben denselben Katalog.
 
+> **Orchestrierter (Auto-Spawn-)Modus — Feed-Quellen:** Dort trägt ein Feed
+> zusätzlich eine **Quellen-Konfiguration**, die den gespawnten Firefly-Tracker
+> speist. Quell-Typen: `adsb_opensky` (Konto/OAuth2), **`adsb_aggregator`**
+> (auth-frei via adsb.lol/adsb.fi — Provider `adsb_lol`/`adsb_fi`, Firefly ADR 0031;
+> nutzbar auch dort, wo OpenSky Datacenter-IPs sperrt, z. B. Codespaces),
+> `flarm_aprs`, `radar_asterix`. Anlegen über die Admin-UI (Feed-Zeile → **„Quellen"**)
+> oder `PUT /api/admin/feeds/{id}/sources`. Schritt-für-Schritt in
+> `docs/E2E-ABNAHME.md`, API-Kontrakt in `docs/TECHNICAL.md`.
+
 ### Schritt 4.6 — Alles starten
 
 ```bash
@@ -772,6 +781,10 @@ Konfiguriert wird über **Umgebungsvariablen** (im `environment:`-Block der
 | `WAYFINDER_FEED_ID` | `0` | Legacy-Einzel-Feed-ID; im Multi-Feed-Betrieb liefert der DB-Katalog die IDs. |
 | `WAYFINDER_PROBE_PORT` | `8080` | Port für `/health`, `/ready`, `/metrics` |
 | `WAYFINDER_FEED_STALE_TIMEOUT` | `3` | Sekunden ohne Lebenszeichen, ab denen der Feed als „stale" gilt |
+| `WAYFINDER_FEED_GROUP_BASE` | `239.255.0` | /24-Basis für die **automatische** Multicast-Endpoint-Vergabe beim Feed-Anlegen (eine Gruppe pro Feed, orchestrierter Modus). |
+| `WAYFINDER_FEED_PORT` | `8600` | Port für auto-vergebene Feed-Endpunkte. |
+| `WAYFINDER_FEED_OCTET_MIN` | `1` | Kleinstes Host-Oktett des Auto-Vergabe-Pools. |
+| `WAYFINDER_FEED_OCTET_MAX` | `254` | Größtes Host-Oktett des Pools (~254 Feeds; auf /16 erweiterbar). |
 
 ### 7.2 Karte & Darstellung
 
@@ -914,6 +927,7 @@ Abschalten mit `WAYFINDER_DWD_WARN_ENABLED=false`.
 | `WAYFINDER_ALLOWED_ORIGINS` | *(leer)* | Kommaliste erlaubter Cross-Origin-Domains für `/ws`. Leer = nur Same-Origin |
 | `WAYFINDER_TLS_CERT` | *(leer)* | Pfad zum TLS-Zertifikat (PEM). Nur aktiv, wenn beide TLS-Werte gesetzt sind |
 | `WAYFINDER_TLS_KEY` | *(leer)* | Pfad zum TLS-Schlüssel (PEM) |
+| `WAYFINDER_SECRET_KEY` | *(leer)* | Base64-kodierter 32-Byte-AES-256-GCM-Schlüssel für **ruhende Geheimnisse**: verschlüsselt Pro-Feed-Quell-Credentials (`PUT …/feeds/{id}/sources`) und den UI-gesetzten globalen OpenAIP-Schlüssel. Leer/ungültig → die betroffenen Secret-Routen sind deaktiviert (`503`), nie Klartext at rest. Im **orchestrierten** Modus muss **derselbe** Wert auch am Orchestrator-Prozess gesetzt sein (`cmd/wayfinder-orchestrator`), sonst laufen credentialled Quellen anonym. Erzeugen: `openssl rand -base64 32`. |
 
 > Der eigentliche Login am Browser-Rand läuft über die Mandanten-Authentifizierung
 > (`WAYFINDER_AUTH_MODE`, siehe §7.6); `/ws` ist immer durch die

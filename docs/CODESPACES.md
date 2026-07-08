@@ -46,10 +46,13 @@ Weitere machst du per UI — genau der Ablauf, den du auch produktiv testest:
 2. **Mandant anlegen** (z. B. `hamburg`).
 3. **Feed anlegen** — Endpoint einfach **auto-allokieren** lassen (der
    Orchestrator übergibt Gruppe/Port an den gespawnten Firefly).
-4. Im „Feeds"-Tab den **Quellen-Dialog** öffnen: Quelle `adsb_opensky` mit
-   **BBox** (und optional Poll-Intervall) anlegen; die
-   **OpenSky-Zugangsdaten** (Client-ID/-Secret) direkt im Dialog hinterlegen
-   (sie werden AES-versiegelt gespeichert, nie zurückgegeben).
+4. Im „Feeds"-Tab den **Quellen-Dialog** öffnen und Quelle
+   **`adsb_aggregator` (ADS-B Community-Aggregator, adsb.lol/adsb.fi)** anlegen —
+   **auth-frei, für Codespaces empfohlen**, da OpenSky aus Datacenter-IPs
+   blockiert (s. Abschnitt 4/5). Nur **BBox** (Zentrum + Radius) setzen, kein
+   Credential nötig. *(Alternativ `adsb_opensky` mit Client-ID/-Secret — die
+   Zugangsdaten werden AES-versiegelt gespeichert, funktionieren aus dem
+   Codespace aber i. d. R. **nicht**, s. u.)*
 5. Auf der **Mandanten-Detailseite**: Feed **abonnieren**, Standard-Ansicht
    setzen (Zentrum/Radius zur BBox passend) und **„Ansicht speichern"**;
    Features nach Bedarf einschalten.
@@ -86,19 +89,31 @@ Weitere machst du per UI — genau der Ablauf, den du auch produktiv testest:
 
 ## 4. Grenzen
 
-- **OpenSky-Zugangsdaten nötig** für echte ADS-B-Tracks (kostenloses Konto,
-  OAuth2-Client-Credentials — Firefly ADR 0024). Ohne Quellen bewusst leerer
-  Himmel (Heartbeat läuft, s. o.).
+- **ADS-B-Quelle nötig** für echte Tracks. **Aus dem Codespace:**
+  `adsb_aggregator` (auth-frei, adsb.lol/adsb.fi) verwenden — OpenSky ist wegen
+  des Datacenter-IP-Blocks (s. u.) praktisch nicht nutzbar. Ohne Quellen bewusst
+  leerer Himmel (Heartbeat läuft, s. o.).
 - **Ressourcen:** 4-Core-Maschine empfohlen (ist als Minimum hinterlegt);
   viele parallele Feeds = mehrere Firefly-Container — für Lasttests weiterhin
   eine echte VM nutzen.
-- **Egress:** OpenSky/DWD/NOAA/Karten-CDN brauchen ausgehendes HTTPS aus dem
-  Codespace — dort normal gegeben.
+- **Egress:** DWD/NOAA/Karten-CDN brauchen ausgehendes HTTPS aus dem Codespace —
+  dort normal gegeben. **Ausnahme OpenSky:** OpenSky droppt Verbindungen aus
+  Datacenter-IP-Ranges (Codespaces laufen auf Azure) — DNS löst auf, der
+  TCP-Aufbau läuft in einen Timeout (Diagnose 2026-07-05). Der `adsb_opensky`-Pfad
+  ist aus einem Codespace daher strukturell tot; nutze stattdessen
+  `adsb_aggregator` (auth-frei, s. Abschnitt 2).
 - Die weitergeleitete URL wechselt mit dem Codespace-Namen; Lesezeichen nach
   einem Neuanlegen aktualisieren.
 
 ## 5. Fehlerbehebung
 
+- **OpenSky-Feed bleibt rot / keine ADS-B-Tracks — Chip zeigt „SENSOR AUSFALL ·
+  NICHT ERREICHBAR"** trotz korrekter Zugangsdaten: OpenSky sperrt
+  Datacenter-IPs; aus dem Codespace (Azure) läuft der Verbindungsaufbau in einen
+  TCP-Timeout (Diagnose 2026-07-05). Der `adsb_opensky`-Pfad ist von hier
+  strukturell tot. **Fix: Quelle auf `adsb_aggregator` (adsb.lol/adsb.fi,
+  auth-frei) umstellen** — braucht keine Zugangsdaten und funktioniert aus
+  Datacenter-IPs.
 - **404 auf der Codespace-URL nach dem Aufwachen** (obwohl `curl localhost:8081`
   im Terminal `200` liefert): Nicht die App ist kaputt, sondern der
   **Port-Forwarding-Tunnel** des Codespaces ist beim Einschlafen/Aufwachen

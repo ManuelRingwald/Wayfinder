@@ -237,6 +237,16 @@ Zentrum `50.04 / 8.56` und Radius `100` NM automatisch aus der Standard-Ansicht
 > (Issue #102) — von Hand pflegen ist überflüssig und kann veralten. Nach dem
 > **Speichern der Quellen** erscheint der abgeleitete Sensor-Mix **sofort** in
 > der Feed-Zeile (Issue #112), ohne Tab-Wechsel.
+
+> **Zuverlässigster ADS-B-Weg für die Abnahme: „ADS-B (Community-Aggregator)".**
+> Der Quell-Typ **„ADS-B (Community-Aggregator)"** (adsb.lol/adsb.fi, Firefly
+> ADR 0031) läuft **ohne Zugangsdaten** — Anbieter-Dropdown Default **adsb.lol**;
+> für die Abnahme der einfachste, verlässlichste Weg (funktioniert auch dort, wo
+> OpenSky Datacenter-IPs sperrt). Bei **„ADS-B (OpenSky)"** dagegen müssen im
+> Abschnitt „OpenSky-Zugang (OAuth2)" Client-ID/-Secret hinterlegt werden
+> (Secret-Store nötig, `WAYFINDER_SECRET_KEY`); sonst greift anonym das
+> **Rate-Limit (HTTP 429)** und der Chip zeigt „SENSOR AUSFALL · RATENLIMIT".
+> Wer 5.3.3/5.3.7 mit dem Aggregator statt OpenSky durchführt, umgeht das.
 >
 > **Warum „Multicast-Endpoint automatisch zuweisen" = AN richtig ist:** Der
 > Orchestrator startet die Firefly-Instanz **genau auf der vergebenen Adresse**,
@@ -260,6 +270,17 @@ Zentrum `50.04 / 8.56` und Radius `100` NM automatisch aus der Standard-Ansicht
 | 5.4.3 | `http://〈VM-IP〉:8081/` öffnen, anmelden als `lotse` + Passwort. | Karte lädt, zentriert auf **Frankfurt** (50.04/8.56, Zoom 8); oben rechts der **Feed-Status-Badge** (der frühere `lotse`-Konto-Chip ist entfallen — Konto liegt in der Sidebar unter **Konto**). | Kartenausschnitt = Raum Frankfurt. |
 | 5.4.4 | Etwas warten (echter Verkehr, keine feste Zeit). | Tracks erscheinen, sobald realer ADS-B-Verkehr im Gebiet ist; oben rechts der **grüne Feed-Chip „FEED OK"** (zeigt jetzt korrekt die Feed-Gesundheit statt dauerhaft „FEED ?", Issue #117). ADS-B um Frankfurt ist dicht beflogen → sollte zuverlässig kommen. | Mindestens ein bewegtes Track-Symbol sichtbar **und** Feed-Chip grün („FEED OK"). |
 | 5.4.5 | Zurück im Admin-Fenster: im Mandanten → **„Feed-Zuweisungen"** → bei `frankfurt-adsb` **„Entziehen"**. | Feed ist dem Mandanten nicht mehr zugewiesen. | Status-Chip zeigt wieder **„—"** statt „zugewiesen". |
+
+> **Feed-Chip — die vier Zustände (zur Einordnung während der Abnahme).** Oben
+> rechts zeigt der Chip die Feed-Gesundheit:
+> - **„FEED OK"** (grün) — Heartbeat frisch, alle Quellen liefern.
+> - **„SENSOR AUSFALL"** (gelb) — Heartbeat frisch, aber ≥ 1 Quelle liefert nichts;
+>   bei bekanntem Grund als Suffix: **· NICHT ERREICHBAR** (Netz/Firewall),
+>   **· AUTH-FEHLER** (Zugangsdaten prüfen), **· RATENLIMIT** (Abfrageintervall
+>   erhöhen/warten). Erscheint auch als gelbes ASD-Banner. *Beim OpenSky-Weg ohne
+>   Credentials plausibel: „SENSOR AUSFALL · RATENLIMIT".*
+> - **„FEED STALE"** (rot) — Heartbeat verloren.
+> - **„FEED ?"** (grau) — noch kein Heartbeat (z. B. Firefly nicht gestartet).
 
 ### 5.5 Feed 2 — nur FLARM prüfen
 
@@ -340,6 +361,8 @@ aktuell zugewiesenen Feed aus einem der Prüfschritte 5.4–5.6 aus.
 | **Skript (Teil 4, optional): `✗ FAIL: Firefly image 'firefly:latest' not found`** | Teil 3.2 nicht gemacht. | `cd ~/asd/firefly && docker build -t firefly:latest .`, dann Teil 4 erneut. |
 | **Skript (Teil 4, optional): checkpoint 5 schlägt fehl (kein Heartbeat)** | Multicast überquert den Host nicht. | Läuft die VM als **echter** Linux-Host (ja bei Multipass)? `docker logs wayfinder-firefly-feed-〈id〉` prüfen: erscheint `CAT062 multicast feed enabled`? |
 | **UI (Teil 5): Karte bleibt leer** | Feed nicht zugewiesen (5.4.1/5.5.1/5.6.1), Sicht-AOI zu klein (Tracks außerhalb), oder gerade kein echter Verkehr im Gebiet (bei FLARM normal, siehe 5.5.3). | Zuweisung prüfen (Status „zugewiesen"); Radius in 5.3.1 auf `100` NM setzen; bei ADS-B länger warten (dichter Verkehr, sollte kommen); bei FLARM ist eine leere Karte **kein Fehler**, solange der Feed-Banner grün ist. |
+| **Chip gelb „SENSOR AUSFALL · …"** | Firefly läuft (Heartbeat da), aber eine Quelle ist still; der Grund steht am Chip/Tooltip. | **· RATENLIMIT** → OpenSky anonym rate-limitiert (429): Zugangsdaten hinterlegen **oder** Quell-Typ auf „ADS-B (Community-Aggregator)" (auth-frei) umstellen. **· AUTH-FEHLER** → Zugangsdaten der Quelle prüfen. **· NICHT ERREICHBAR** → Netz/Firewall zur Quelle (z. B. OpenSky-Datacenter-IP-Block). |
+| **ADS-B liefert keine/kaum Tracks** | OpenSky anonym rate-limitiert (HTTP 429) oder aus Datacenter-IP geblockt. | Zugangsdaten hinterlegen **oder** Quell-Typ auf „ADS-B (Community-Aggregator)" (auth-frei) umstellen (5.3-Hinweis). |
 | **UI (Teil 5.7): Lufträume/VOR-NDB/Waypoints bleiben leer** | Kein OpenAIP-Schlüssel gesetzt (weder global noch pro Mandant). | Schritt 5.7.2 ausführen (`WAYFINDER_OPENAIP_API_KEY` global oder „OpenAIP-Konfiguration" pro Mandant); danach Karte neu laden. |
 | **`docker compose … up` bricht mit Build-Fehler ab** | Zu wenig RAM/Disk oder Netzwerkabbruch beim ersten Abhängigkeits-Download. | VM größer neu anlegen: `multipass delete asd --purge` und `multipass launch … --memory 8G --disk 40G` erneut. |
 | **`db` wird nicht `healthy`** | Datenbank braucht ein paar Sekunden. | 10 s warten, `docker compose -f docker-compose.orchestrated.yml ps` erneut; bleibt es `unhealthy`: `docker compose -f docker-compose.orchestrated.yml logs db`. |
