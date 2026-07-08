@@ -36,29 +36,32 @@ im Browser dar.
 ### Komponenten
 
 ```
-UDP Multicast (CAT062 + CAT065)
+UDP Multicast (CAT062 + CAT065 + CAT063)
         │
         ▼
 ┌────────────────────────────────────────┐
 │  pkg/receiver — Multicast-Empfänger   │
 │  CAT-Dispatch (0x3E → Track,           │
-│                0x41 → Status)          │
+│                0x41 → Status,          │
+│                0x3F → Sensor-Status)   │
 └──────────────┬─────────────────────────┘
                │
-       ┌───────┴────────┐
-       │                │
-       ▼                ▼
-pkg/cat062          pkg/cat065
-(Track-Decoder)     (Heartbeat-Decoder)
-       │                │
-       ▼                ▼
-pkg/broadcast       pkg/health
-(WebSocket-Hub)     (Feed-Liveness)
-       │
+       ┌───────┼─────────────┐
+       │       │             │
+       ▼       ▼             ▼
+pkg/cat062  pkg/cat065    pkg/cat063
+(Track-     (Heartbeat-   (Sensor-Status-
+ Decoder)    Decoder)      Decoder)
+       │       │             │
+       ▼       └──────┬──────┘
+pkg/broadcast         ▼
+(WebSocket-Hub)   pkg/health
+       │          (Feed-Liveness +
+       │           Sensor-Ausfall/Grund)
        ▼
 Browser (WebSocket JSON)
-  internal/webui/static/
-    app.js + Vue 3 + MapLibre GL JS
+  frontend/ (Vue 3 + Vuetify + MapLibre GL JS),
+  gebaut nach internal/webui/dist/
 ```
 
 ### Technologie-Stack
@@ -657,6 +660,7 @@ Mandanten-Nutzer). Identitäts-Modell siehe ADR 0006 §5.
 | `WAYFINDER_SESSION_MAX_LIFETIME` | *(leer = aus)* | duration | builtin: **absolutes** Sitzungs-Maximum ab **Erst-Login** (WF2-12.6), unabhängig von Aktivität. `0`/leer = **aus** (reines Sliding wie oben, Default). Ist es gesetzt, kann eine Sitzung — egal wie aktiv — **nie** länger als diese Spanne leben: der Sliding-Renew hört auf, das Cookie wird auf `Erst-Login + MAX` gekappt, danach `401` → Neu-Login. Das Cookie trägt dazu einen signierten `iat`-Claim; alte Cookies ohne `iat` bleiben gültig und werden beim ersten Renew **sanft** auf „jetzt" verankert. **Für einen Probelauf:** `WAYFINDER_SESSION_MAX_LIFETIME=30m` setzen → das Zwangs-Logout ist nach 30 min sichtbar, ohne die 12-h-TTL abwarten zu müssen. |
 | `WAYFINDER_SESSION_LIMIT_DEFAULT` | `0` (unbegrenzt) | int | **AP7 (ADR 0009 §5):** Default-Limit **gleichzeitiger** Sessions je Zugang, wenn der Zugang kein eigenes Limit (`users.session_limit`) trägt. `0`/leer/negativ = **unbegrenzt** (Enforcement aus, opt-in — Verhalten wie bisher). Ein positiver Wert (z. B. `3`) begrenzt parallele Logins pro Zugang; der Überschuss wird gemäß `…_POLICY` behandelt. |
 | `WAYFINDER_SESSION_LIMIT_POLICY` | `reject` | `reject` \| `evict_oldest` | **AP7:** Verhalten beim Erreichen des Session-Limits. `reject` (Default) lehnt den N+1-ten Login mit **429** ab (bestehende Sessions bleiben; der Nutzer muss aktiv eine alte Konsole beenden). `evict_oldest` verdrängt die **älteste** Session und lässt den neuen Login zu (die alte Konsole fliegt beim nächsten Request raus). Unbekannter Wert → `reject`. |
+| `WAYFINDER_IMPERSONATION_TTL` | `30m` | duration | Lebensdauer des signierten Read-Only-Impersonation-Grant-Cookies („Als Mandant ansehen", ADR 0008). Nur wirksam bei gesetztem `WAYFINDER_SESSION_KEY` (das Grant ist signiert); ungültiger Wert oder ≤ 0 → Default 30m. |
 | `WAYFINDER_BOOTSTRAP_PASSWORD` | *(leer)* | string | Nur vom `bootstrap`-Subcommand gelesen: builtin-Passwort des ersten Admins. |
 | `WAYFINDER_SECRET_KEY` | *(leer)* | string (base64-32-Byte) | **ORCH-2c (ADR 0012 §6):** AES-256-Schlüssel, der Pro-Feed-Quell-Credentials (`feed_secrets`) verschlüsselt. **Am Server (`cmd/wayfinder`):** leer/ungültig → die write-only Secret-Routen (`…/feeds/{id}/secrets`) sind **deaktiviert** (503), nie unverschlüsselt speichernd. **Am Orchestrator (`cmd/wayfinder-orchestrator`, ORCH-5b-1):** **derselbe** Schlüssel muss gesetzt sein, damit die Control-Plane die Werte beim Container-Start entschlüsselt und als `FIREFLY_SOURCE_<i>_SECRET` injiziert; leer/ungültig → credentialled Quellen laufen **anonym** (WARN, kein Abbruch). Erzeugen: `openssl rand -base64 32`. |
 | `WAYFINDER_FEED_GROUP_BASE` | `239.255.0` | string (3 Oktette) | **ORCH-4 (ADR 0012):** /24-Basis für die automatische Multicast-Endpoint-Vergabe beim Feed-Anlegen (eine Gruppe je Feed). Ungültige Kombi → Fallback auf den Default-Pool. |
@@ -1135,7 +1139,6 @@ sondern ein normaler Tageswechsel.
 | Thema | Einschränkung | Workaround / Geplant |
 |-------|---------------|----------------------|
 | **Multicast auf macOS/Windows** | `network_mode: host` nicht verfügbar in Docker Desktop (nur Host↔Container betroffen; Container↔Container funktioniert) | Empfohlen: **GitHub Codespace** (voller orchestrierter Stack im Browser, `docs/CODESPACES.md`) oder Linux-VM (`docs/E2E-ABNAHME.md` Teil 1–6); alternativ eigenes Bridge-Compose mit quellen-konfiguriertem Firefly (`docs/INSTALLATION.md` Schritt 4.A) |
-| **Konfigurierbarer System-Referenzpunkt (I062/100)** | I062/100-Koordinaten beziehen sich auf Fireflys Demo-Ursprung (Frankfurt); für andere Gebiete nur I062/105 (WGS84) nutzbar | Geplant in Fireflys Roadmap |
 | **Multicast-Authentifizierung** | UDP-Multicast hat keine eingebaute Absender-Authentifizierung; Schutz liegt auf Netzwerkebene (ADR 0003) | Netz-Isolation; optionaler App-Layer in Planung |
 | **Single-Node** | Wayfinder ist nicht für horizontale Skalierung (mehrere Instanzen hinter Load-Balancer) ausgelegt — jede Instanz hält ihren eigenen WebSocket-State | Für ASD typischerweise nicht nötig |
 | **Keine Track-History im Backend** | Vergangene Positionen werden nur im Browser-State gehalten; nach einem Browser-Reload ist die Track-History leer | By Design: Browser-State reicht für das ASD-Use-Case |

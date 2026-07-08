@@ -86,9 +86,21 @@ curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8080/ready
 ### 🟢 Prüfung 3 — Sieht der Nutzer etwas? (Browser)
 **<http://localhost:8081>** öffnen. Erwartung: dunkle Karte, Flugzeuge, oben
 rechts der **grüne Banner „FEED OK"**. Steht dort:
-- **„SENSOR AUSFALL"** (gelb) → Heartbeat kommt noch an, aber mind. ein Radar ist abgefallen;
-  Betrieb eingeschränkt (⏳ erst nach Firefly #32 / CAT063 aktivierbar).
-- **„FEED STALE"** (rot) → Datenquelle stumm → Firefly bzw. Multicast prüfen (Runbook).
+- **„SENSOR AUSFALL"** (gelb) → Heartbeat kommt noch an, aber mind. eine Quelle/ein
+  Radar liefert nicht (CAT063-Sensorstatus). Steht ein **Grund** dahinter, hängt der
+  Chip ihn an (mit Tooltip):
+  - **„· NICHT ERREICHBAR"** = Netz/Firewall zur Quelle; die Zugangsdaten sind
+    vermutlich in Ordnung → Netzweg prüfen.
+  - **„· AUTH-FEHLER"** = Authentifizierung der Quelle fehlgeschlagen → Zugangsdaten
+    der Quelle (in Firefly) prüfen/erneuern.
+  - **„· RATENLIMIT"** = Quelle drosselt (Rate Limit, HTTP 429) → Abfrageintervall
+    erhöhen oder warten.
+
+  Der Feed lebt, Betrieb eingeschränkt.
+- **„FEED ?"** (grau) → noch **kein** Lebenszeichen empfangen (z. B. Firefly läuft
+  nicht / nie gestartet) → wie „Karte bleibt leer / 503" vorgehen (Runbook).
+- **„FEED STALE"** (rot) → Datenquelle war da und ist stumm geworden → Firefly bzw.
+  Multicast prüfen (Runbook).
 
 > ✅ **Alle drei grün?** Das System ist gesund. Diese Kontrolle gehört in die
 > tägliche Routine (Abschnitt 12) und lässt sich leicht automatisieren
@@ -408,6 +420,11 @@ Wayfinder reagiert auf das Stopp-Signal und schließt alle Verbindungen sauber;
 | **Karte bleibt leer, keine Flugzeuge** | Firefly läuft nicht / Multicast kommt nicht an | `docker compose ps` (laufen alle?); `docker compose logs firefly`; Gruppe/Port bei **beiden** Diensten gleich? Gemeinsames Netz (kein Aufteilen auf zwei Compose-Dateien)? |
 | **`/ready` bleibt 503** | Kein Lebenszeichen vom Feed | Sekunden nach Start normal; sonst wie „Karte leer" |
 | **Banner „FEED STALE"** | Quelle gerade stumm | Firefly/Sensorlage prüfen; `wayfinder_feed_stale` im Monitoring |
+| **Banner „SENSOR AUSFALL"** (gelb) | Heartbeat frisch, aber mind. eine Quelle/ein Radar liefert nicht (CAT063) | Firefly-Sensor-/Quellenlage prüfen; den **Grund** am Chip/Tooltip beachten (Zeilen unten) |
+| **„· AUTH-FEHLER"** am Chip | Quelle lehnt Authentifizierung ab | Zugangsdaten/Credentials der betroffenen Quelle **in Firefly** prüfen/erneuern (kein Netzproblem) |
+| **„· NICHT ERREICHBAR"** am Chip | Quelle netzseitig nicht erreichbar (Firewall/Route/DNS/Timeout) | Netzweg zur Quelle prüfen; Zugangsdaten sind vermutlich in Ordnung |
+| **„· RATENLIMIT"** am Chip | Quelle drosselt Abfragen (HTTP 429) | Abfrageintervall der betroffenen Quelle **in Firefly** erhöhen (`poll_interval_secs`, 5–3600 s); ggf. warten |
+| **Banner „FEED ?"** (grau) | Noch kein Lebenszeichen empfangen (Firefly nicht gestartet) | Wie „Karte bleibt leer / 503" vorgehen |
 | **Nutzer sieht nichts (Multi-Tenant)** | Mandant hat **keinen Feed** zugewiesen (gewollt fail-closed) | Zuweisung nachholen (5.4) |
 | **Login schlägt fehl (401)** | Passwort falsch **oder** `WAYFINDER_SESSION_KEY` fehlt/zu kurz | Key setzen (6.2), Container neu starten, ggf. `bootstrap` erneut |
 | **„Als Mandant ansehen" fehlt** | Nutzer ist nicht `admin` **oder** kein Signing-Key gesetzt | Rolle prüfen; `WAYFINDER_SESSION_KEY` setzen |
