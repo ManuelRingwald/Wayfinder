@@ -10,6 +10,39 @@
 
 ---
 
+## 🛡️ Stand 2026-07-15 (Sicherheit: Empfangspfad gegen bösartige Datagramme gehärtet — #235, NFR-SAFE-001)
+
+**In normaler Sprache:** Wayfinder empfängt das Luftlagebild als ungeschützten
+Netzwerk-Strom. Ein einzelnes absichtlich kaputtes Datenpaket durfte den
+Empfänger bisher **einfrieren** — und weil an einem Empfänger alle Lotsen-Bildschirme
+hängen, wäre damit das Lagebild für alle ausgefallen. Diese Lücke ist geschlossen:
+kaputte Pakete werden jetzt sauber verworfen, der Empfänger läuft weiter. Für den
+Lotsen ändert sich **nichts Sichtbares** — es ist reine Absicherung, kein neues
+Feature.
+
+**Auslöser:** Firefly hat denselben Fehlerklassen-Bug in seinem eigenen Decoder
+gefunden (Fuzzing, QW.2) und uns per Cross-Project-Issue **#235** zum Nachziehen
+gebeten.
+
+**Konkreter Befund (Fachdetail):** Die drei ASTERIX-Decoder (`pkg/cat062`,
+`pkg/cat063`, `pkg/cat065`) parsen die FX-verkettete **FSPEC** ohne Obergrenze. In
+**cat063** und **cat065** lief die FRN-Iteration über einen `uint8`-Zähler — eine
+feindliche FSPEC von ≥ 37 Oktetten ließ ihn bei 255 überlaufen (Wrap → **Endlos­schleife**,
+DoS am unauthentifizierten Multicast-Rand). cat062 war durch seine feste FRN-Liste
+vor dem Wrap geschützt, las die überlange FSPEC aber ebenfalls unbegrenzt.
+
+**Fix:** harte Obergrenze `maxFSPECOctets = 36` in allen drei Decodern (deckt FRN
+1…252, ein Vielfaches jeder realen UAP) → Überlänge = Decode-Fehler; zusätzlich die
+FRN-Schleife in cat063/065 auf `int` umgestellt (Wrap unmöglich, unabhängig vom Cap).
+**Dauerhaft abgesichert** durch drei **Go-Fuzz-Targets** (`FuzzDecode*`, Seeds aus den
+Referenz-Vektoren; ~0,8–0,9 M Ausführungen je 8 s ohne Fund) + Endlosschleifen-Regressions­tests
+mit 2-s-Timeout-Wächter + neuen **CI-Fuzz-Job** (30 s je Target). Kein Wire-/ICD-Bezug,
+kein Lockstep. Register: **NFR-SAFE-001**. Gates grün (`go build`/`vet`/`gofmt`/`go test ./...`).
+
+**Nächster Schritt:** Cross-Project-Nachzug-Reihenfolge weiterarbeiten — als Nächstes
+**#236** (I062/080 MON/SPI-Flags) bzw. nach abgestimmter Reihenfolge. #244 (FPL.0) ist
+bestätigt und geschlossen.
+
 ## 🐞 Stand 2026-07-08 (UI-Fix-Batch — Sidebar-Animation, Icon-Überlappung, Profil-Icon, Ereignis→Track; FR-UI-029)
 
 Vier Betreiber-Mängel (Video + Foto) behoben + eine Bedien-Erweiterung:

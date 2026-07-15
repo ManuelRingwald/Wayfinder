@@ -104,7 +104,15 @@ Firefly
 
 **Robustheit:** Fehlerhafte Datagramme (zu kurz, ungültige Länge, FSPEC
 überschreitet Puffer) werden verworfen, ohne den Prozess zu beenden.
-Es gibt keinen Panic auf Netzwerkeingaben.
+Es gibt keinen Panic auf Netzwerkeingaben — **und keinen Hänger**: Die
+FX-verkettete FSPEC ist in allen drei Decodern hart auf `maxFSPECOctets = 36`
+begrenzt (deckt FRN 1…252, weit jenseits jeder realen UAP); eine feindliche
+Überlänge wird als Decode-Fehler verworfen statt unbegrenzt gelesen oder — wie
+vor dem Fix in CAT063/CAT065, wo die FRN-Schleife über einen `uint8`-Zähler
+lief — in einer Endlosschleife verarbeitet (NFR-SAFE-001, Firefly-#235). Die
+Decoder werden per **Go-Fuzzing** abgesichert (`FuzzDecode*` in
+`pkg/cat06x/fuzz_test.go`, Seed-Korpus aus den Referenz-Vektoren; zeitgeboxter
+CI-Job `fuzz` in `.github/workflows/ci.yml`).
 
 **Per-Feed-Isolation am Empfänger (sicherheitsrelevant).** Bei **mehreren Feeds**
 vergibt der Allocator **eine Multicast-Gruppe je Feed bei festem Port** (z. B.
