@@ -358,8 +358,8 @@ immer aktiv — ADR 0014); statische Frontend-Routen werden ausgeliefert.
 | `/api/admin/feeds/health` | GET | **AP4:** Gesundheitszustand aller Feeds — je Feed `{feed_id, color, stale, ever_seen, last_heartbeat_ago_s, track_count_recent, sensors_active, sensors_total, degraded_reason?, sensors?}` (`sensors[]` = Per-Sensor-Detail inkl. Registrierungs-Bias `range_bias_m`/`azimuth_bias_deg`, #237) aus der In-Memory-Health-Registry (`degraded_reason`: `unreachable`/`auth`/`rate_limited` bei degradiertem Feed, CAT063 I063/RE, ADR 0020; `omitempty`); `color` ist **grün** (Heartbeat frisch, unabhängig vom Verkehr — leerer Himmel ist kein Fehler) / **gelb** (Sensor-Teilausfall: `sensors_active < sensors_total > 0`; CAT063, ADR 0010) / **rot** (kein Heartbeat = toter Feed oder nie gesehen); **admin** |
 | `/api/admin/feeds` | POST | **ONB-5 (ADR 0011) + ORCH-4 (ADR 0012):** neuen Feed anlegen (`{name, multicast_group?, port?, region?, sensor_mix?}`) → 201. **Endpoint optional:** `multicast_group`/`port` **weglassen** ⇒ der Server allokiert kollisionsfrei den nächsten freien Endpoint aus dem Pool (eine Gruppe je Feed) und gibt ihn zurück; **beide setzen** ⇒ manueller Override (`multicast_group` IPv4-Multicast 224.0.0.0–239.255.255.255, `port` 1..65535); **nur eines** → 400. `sensor_mix` gegen das Vokabular validiert (unbekannt → 400); doppelter Name → 409; belegter Endpoint (manuell) → **409**; Pool erschöpft → **507**. **Der Live-Receiver tritt der (allokierten oder gesetzten) Gruppe sofort bei**; scheitert der Beitritt, wird die Katalogzeile zurückgerollt; **admin** |
 | `/api/admin/feeds/{id}` | DELETE | **ONB-5:** Feed löschen → 204; **der Live-Receiver verlässt die Multicast-Gruppe sofort**; kaskadiert (ON DELETE CASCADE) auf die Abos, die ihn referenzierten (Guard C: kein Blockieren bei bestehenden Abos — Grants kaskadieren); unbekannter Feed → 404; **admin** |
-| `/api/admin/feeds/{id}/sources` | GET | **ORCH-1b (ADR 0012):** Quell-Konfiguration des Feeds — `{sources:[{type, bbox?, sac?, sic?, cred_ref?, poll_interval_secs?}], coverage_bbox}`; `sources` serialisiert als `[]` (nie `null`); unbekannter Feed → 404; **admin** |
-| `/api/admin/feeds/{id}/sources` | PUT | **ORCH-1b:** Quell-Konfiguration setzen → 200 (kanonisch zurückgelesen). Server-validiert: geschlossenes Quell-Vokabular (`adsb_opensky`/`adsb_aggregator`/`flarm_aprs` erfordern `bbox`, keine `sac`/`sic`; `radar_asterix` erfordert `sac`/`sic` 0..255 **und** Radar-Standort `lat`/`lon`, optional `height_m`/`listen` — Firefly-Kontrakt v1.3.0, #91), WGS84-`bbox`, `cred_ref` als Verweis (non-blank, ≤200), `poll_interval_secs` nur bei den **gepollten** Typen `adsb_opensky`/`adsb_aggregator` (Bereich 5..3600 s; Firefly ADR 0029/0031, Kontrakt v1.4.0/v1.5.0; fehlt → Default 10 s), `provider` **nur** bei `adsb_aggregator` (`adsb_lol`/`adsb_fi`; fehlt → Firefly-Default `adsb_lol`; Firefly ADR 0031, #201) — Verstoß → **400 mit Quell-Index**, **kein** Teil-Write. Fehlt `coverage_bbox`, leitet der Server die **grobe äußere** BBox aus den Quell-BBoxen + Default-Marge (50 km) ab; eine explizit gesetzte `coverage_bbox` (WGS84-validiert) gewinnt (Operator-Override). Unbekannter Feed → 404; **admin** |
+| `/api/admin/feeds/{id}/sources` | GET | **ORCH-1b (ADR 0012):** Quell-Konfiguration des Feeds — `{sources:[{type, bbox?, sac?, sic?, cred_ref?, poll_interval_secs?, listen?, sensor_id?}], coverage_bbox}`; `sources` serialisiert als `[]` (nie `null`); unbekannter Feed → 404; **admin** |
+| `/api/admin/feeds/{id}/sources` | PUT | **ORCH-1b:** Quell-Konfiguration setzen → 200 (kanonisch zurückgelesen). Server-validiert: geschlossenes Quell-Vokabular (`adsb_opensky`/`adsb_aggregator`/`flarm_aprs` erfordern `bbox`, keine `sac`/`sic`; `radar_asterix` erfordert `sac`/`sic` 0..255 **und** Radar-Standort `lat`/`lon`, optional `height_m`/`listen` — Firefly-Kontrakt v1.3.0, #91; `adsb_asterix`/`mlat_asterix` sind **lokale ASTERIX-über-UDP-Push-Quellen** mit optionalem `listen`/`sac`/`sic` 0..255/`sensor_id` — **kein** `bbox`, **kein** `lat`/`lon`/`height_m`, **kein** `cred_ref`; Firefly-Kontrakt v1.6.0/v1.7.0, #239/#240), WGS84-`bbox`, `cred_ref` als Verweis (non-blank, ≤200), `poll_interval_secs` nur bei den **gepollten** Typen `adsb_opensky`/`adsb_aggregator` (Bereich 5..3600 s; Firefly ADR 0029/0031, Kontrakt v1.4.0/v1.5.0; fehlt → Default 10 s), `provider` **nur** bei `adsb_aggregator` (`adsb_lol`/`adsb_fi`; fehlt → Firefly-Default `adsb_lol`; Firefly ADR 0031, #201), `sensor_id` **nur** bei `adsb_asterix`/`mlat_asterix` (non-negativ; fehlt → Firefly-Default 230/240) — Verstoß → **400 mit Quell-Index**, **kein** Teil-Write. Fehlt `coverage_bbox`, leitet der Server die **grobe äußere** BBox aus den Quell-BBoxen + Default-Marge (50 km) ab; eine explizit gesetzte `coverage_bbox` (WGS84-validiert) gewinnt (Operator-Override). Unbekannter Feed → 404; **admin** |
 | `/api/admin/feeds/{id}/secrets` | GET | **ORCH-2c 3a-API (ADR 0012 §6):** meldet **welche** `cred_ref`s einen hinterlegten Wert haben — `{secrets:[{ref, configured:true}]}`. **Nie ein Wert.** Ohne konfigurierten Schlüssel (`WAYFINDER_SECRET_KEY`) → **503**; unbekannter Feed → 404; **admin** |
 | `/api/admin/feeds/{id}/secrets/{ref…}` | PUT | **ORCH-2c 3a-API:** Wert für `cred_ref` setzen/ersetzen (`{value}`) → 204; der Wert wird **vor** der Speicherung AES-256-GCM-versiegelt und **nie** zurückgegeben. Leerer Wert → 400 (Löschen via DELETE), zu lang (>4096) → 400. Das `{ref…}`-Trailing-Wildcard erlaubt Slashes im `cred_ref`. Ohne Schlüssel → **503**; unbekannter Feed → 404; **admin** |
 | `/api/admin/feeds/{id}/secrets/{ref…}` | DELETE | **ORCH-2c 3a-API:** Wert für `cred_ref` entfernen → 204; nicht gesetzt → 404. Ohne Schlüssel → **503**; unbekannter Feed → 404; **admin** |
@@ -872,8 +872,10 @@ und `wayfinder feed list` pflegen den Katalog, bis die Admin-API existiert
 Orchestrierung. Migration `00010_feed_source_config.sql` ergänzt `feeds` um
 `source_config` (JSONB-Array, Default `'[]'`) — die generische, Firefly-agnostische
 Liste der Live-Quellen, aus denen die dem Feed gewidmete Firefly-Instanz später
-ihre Tracks rechnen soll (`adsb_opensky`/`flarm_aprs` mit WGS84-`bbox`,
-`radar_asterix` mit `sac`/`sic`; optional `cred_ref` als **Verweis** auf ein
+ihre Tracks rechnen soll (`adsb_opensky`/`adsb_aggregator`/`flarm_aprs` mit
+WGS84-`bbox`, `radar_asterix` mit `sac`/`sic` + Radar-Standort,
+`adsb_asterix`/`mlat_asterix` als lokale ASTERIX-über-UDP-Push-Quellen mit
+`listen`/`sac`/`sic`/`sensor_id`; optional `cred_ref` als **Verweis** auf ein
 Pro-Feed-Secret, nie Klartext) — und `coverage_bbox` (JSONB, nullable), die daraus
 abgeleitete **grobe äußere** Geo-Grenze (Union der Quell-BBoxen + Marge), getrennt
 von der präzisen inneren Mandanten-AOI (WF2-21.2). `pkg/store/feed_sources.go`:
@@ -925,11 +927,23 @@ Platzhalter entfällt) (Fireflys Eingangs-Kontrakt ADR 0023, v1.5.0; `fireflySou
 rendert `spec.Sources` → JSON, je credentialled **aufgelöster** Quelle ein
 `cred_env`-**Name**, ORCH-5a; ein gepollter Eintrag (`adsb_opensky`/
 `adsb_aggregator`) trägt additiv sein `poll_interval_secs` durch — Firefly
-ADR 0029/0031 — und ein `adsb_aggregator`-Eintrag seinen `provider`
-(`adsb_lol`/`adsb_fi`, auth-frei: nie ein `cred_env`)). Die Credential-**Werte** löst die Control-Plane auf
+ADR 0029/0031 —, ein `adsb_aggregator`-Eintrag seinen `provider`
+(`adsb_lol`/`adsb_fi`, auth-frei: nie ein `cred_env`) und ein
+`adsb_asterix`/`mlat_asterix`-Eintrag seine `sensor_id` (auth-frei; Firefly-
+Kontrakt v1.6.0/v1.7.0, #239/#240)). Die Credential-**Werte** löst die Control-Plane auf
 (ORCH-5b-1, s. u.) und injiziert sie als separate `FIREFLY_SOURCE_<i>_SECRET`-Envs
 — nie ins `FIREFLY_SOURCES`-JSON. **🔒 Nur dieser Prozess** erhält Zugriff auf
 den **Docker-Socket** (`/var/run/docker.sock`) — der Browser-Rand nie (ADR 0012 §6).
+
+> **Betriebshinweis — System-Referenzpunkt bei reinen UDP-Push-Feeds
+> (#239/#240):** `adsb_asterix`/`mlat_asterix` tragen **keine** `bbox`, also auch
+> nichts zur Union-BBox bei, aus der Firefly seinen System-Referenzpunkt
+> ableitet (ADR 0021 dort). Trägt ein Feed **ausschließlich** solche UDP-Push-
+> Quellen, sollte der Betreiber `FIREFLY_SYSTEM_REF_LAT`/`_LON` an der
+> Firefly-Instanz setzen. Betroffen ist nur I062/100 (die optionale System-
+> kartesische Ebene) — Wayfinder rendert aus **WGS84 I062/105** und ist davon
+> unberührt. Wayfinder leitet **keinen** Auto-Wert ab (die Quelle trägt keinen
+> Standort); der Reconciler setzt `FIREFLY_SYSTEM_REF_*` bewusst nicht selbst.
 
 **Secret-Verwaltung (ORCH-2c 3a + 3a-API):** Quell-Credentials liegen
 AES-256-GCM-verschlüsselt in `feed_secrets`; der Server hält den Schlüssel

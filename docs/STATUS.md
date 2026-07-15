@@ -10,6 +10,42 @@
 
 ---
 
+## 📥 Stand 2026-07-15 (Lokale ASTERIX-über-UDP-Quelltypen `adsb_asterix` + `mlat_asterix` — #239/#240, FR-ORCH-012)
+
+**In normaler Sprache:** Bisher konnte ein Feed seine Flugdaten aus dem Internet
+(OpenSky, Community-Aggregatoren) oder von einem klassischen Radar beziehen. Jetzt
+kommen die **beiden Produktions-Bezugswege** dazu, die man im echten Betrieb nutzt:
+eine **eigene ADS-B-Bodenstation** (die Antenne, die die Flugzeug-Selbstmeldungen
+direkt empfängt) und ein **WAM/MLAT-System** (das die Position aus Laufzeit-
+differenzen mehrerer Bodenstationen rechnet). Beide liefern ihre Daten lokal per
+Netzwerk-Push (ASTERIX über UDP), nicht per Internet-Abfrage. **Neu nutzbar:** Der
+Betreiber wählt im Admin-„Quellen"-Dialog jetzt diese zwei Typen und trägt nur den
+**Netzwerk-Endpoint** (`group:port`), optional die Stations-Kennung (SAC/SIC) und
+eine Sensor-ID ein — **kein** Kartenausschnitt, **keine** Zugangsdaten (der rohe
+UDP-Strom ist durch die Netz-Isolation geschützt, nicht durch ein Passwort).
+
+**Fachlich/technisch:** Zwei neue Werte im geschlossenen Quell-Vokabular —
+`adsb_asterix` (ADS-B-Bodenstation, **CAT021/UDP**, Firefly FEP.3, Kontrakt v1.6.0)
+und `mlat_asterix` (WAM/MLAT, **CAT020 + CAT019 über UDP**, FEP.5, v1.7.0). Sie
+bilden eine **dritte Formkategorie** neben flächen-begrenzt und Radar: das
+Bodensystem rechnet die Position selbst, daher **kein `bbox`, kein Standort, kein
+`cred_ref`** — nur optional `listen`/`sac`/`sic`/`sensor_id`. `Source.validate`
+lehnt `sensor_id` auf Fremdtypen ab und verbietet für die UDP-Typen
+BBox/Standort/Credential (Bereichs-Check SAC/SIC 0..255, non-negative `sensor_id`).
+`dockerbackend.fireflySource` reicht `sensor_id` additiv nach `FIREFLY_SOURCES`
+durch. Sensor-Mix-Ableitung: `adsb_asterix→ADS-B`, `mlat_asterix→MLAT`. Admin-UI:
+zwei Typ-Einträge mit eigener Formular-/Payload-Kategorie (`ASTERIX_UDP_TYPES`).
+**Betriebshinweis:** ist eine solche UDP-Quelle die **einzige** eines Feeds, fehlt
+die Union-BBox für Fireflys System-Referenzpunkt (nur I062/100, das Wayfinder nicht
+rendert) — Betreiber setzt dann `FIREFLY_SYSTEM_REF_*` an der Firefly-Instanz; kein
+Auto-Wert ableitbar. **Rein orchestrierungs-seitig** — kein Decoder-Eingriff, keine
+CAT062-Ausgabe-Wirkung, Wire-Vertrag additiv. Register: **FR-ORCH-012**. Gates grün
+(`go test ./...`, vitest 554, `npm run build`, gofmt/vet/golangci-lint). dist neu.
+
+**Nächster Schritt:** Cross-Project-Nachzug weiter — **#241** (Vertikal-Kette
+I062/130/135/220) bzw. **#242** (I062/200 Mode of Movement + I062/210
+Beschleunigung), danach **#245** (Flugplan I062/390, durch #244 entsperrt).
+
 ## 🛬 Stand 2026-07-15 (I062/380 Mode-S-DAPs + Selected Altitude / Level-Bust — #238, FR-DATA-010)
 
 **In normaler Sprache:** Moderne Flugzeuge senden über Mode-S die Höhe, die der

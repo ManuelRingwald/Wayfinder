@@ -31,6 +31,17 @@ const (
 	// SourceRadarASTERIX ingests a real surveillance sensor (CAT048/CAT001,
 	// Firefly SDPS-001); the sensor is identified by its SAC/SIC, not a bbox.
 	SourceRadarASTERIX SourceType = "radar_asterix"
+	// SourceADSBASTERIX ingests an own ADS-B ground station as ASTERIX CAT021 over
+	// UDP (Firefly FEP.3, contract v1.6.0): the production ADS-B path (push, local)
+	// next to the internet REST sources. CAT021 positions are WGS84 self-reports,
+	// so it carries a listen endpoint + optional SAC/SIC — no bbox, no site.
+	SourceADSBASTERIX SourceType = "adsb_asterix"
+	// SourceMLATASTERIX ingests a WAM/MLAT system as ASTERIX CAT020 (target
+	// reports) + CAT019 (system status) over UDP (Firefly FEP.5, contract v1.7.0):
+	// independent cooperative surveillance next to radar/ADS-B. Like adsb_asterix
+	// the position comes from the ground system, so it carries only a listen
+	// endpoint + optional SAC/SIC.
+	SourceMLATASTERIX SourceType = "mlat_asterix"
 )
 
 // knownSourceTypes is the closed catalogue; isAreaBounded marks the kinds whose
@@ -40,10 +51,20 @@ var knownSourceTypes = map[SourceType]bool{
 	SourceADSBAggregator: true,
 	SourceFLARMAPRS:      true,
 	SourceRadarASTERIX:   true,
+	SourceADSBASTERIX:    true,
+	SourceMLATASTERIX:    true,
 }
 
 func (t SourceType) isAreaBounded() bool {
 	return t == SourceADSBOpenSky || t == SourceADSBAggregator || t == SourceFLARMAPRS
+}
+
+// isASTERIXUDP marks the local ASTERIX-over-UDP push sources (adsb_asterix,
+// mlat_asterix): the ground system computes the position, so they carry a listen
+// endpoint + optional SAC/SIC + optional sensor_id — no bbox, no site, no
+// credentials. A third category next to area-bounded and radar.
+func (t SourceType) isASTERIXUDP() bool {
+	return t == SourceADSBASTERIX || t == SourceMLATASTERIX
 }
 
 // isPolled marks the kinds whose input is a periodic REST poll (and may
@@ -87,6 +108,8 @@ var sensorClassBySourceType = map[SourceType]sensorclass.Class{
 	SourceADSBAggregator: sensorclass.ADSB,
 	SourceFLARMAPRS:      sensorclass.FLARM,
 	SourceRadarASTERIX:   sensorclass.SSR,
+	SourceADSBASTERIX:    sensorclass.ADSB,
+	SourceMLATASTERIX:    sensorclass.MLAT,
 }
 
 // DerivedSensorMix returns the feed's sensor mix implied by its configured source
@@ -142,6 +165,11 @@ type Source struct {
 	Lon     *float64 `json:"lon,omitempty"`
 	HeightM *float64 `json:"height_m,omitempty"`
 	Listen  string   `json:"listen,omitempty"`
+	// SensorID is the Firefly SensorId assigned to the plots of an ASTERIX-over-UDP
+	// source (adsb_asterix / mlat_asterix, contract v1.6.0/v1.7.0). Optional —
+	// absent means Firefly's per-type default (230 / 240). Only valid on those two
+	// types; the write boundary rejects it elsewhere.
+	SensorID *int `json:"sensor_id,omitempty"`
 }
 
 // SourceConfig is the ordered list of a feed's live inputs.
@@ -213,6 +241,12 @@ func (s Source) validate(idx int) error {
 		}
 	}
 
+	// sensor_id is a plot-tagging id for the ASTERIX-over-UDP sources
+	// (contract v1.6.0/v1.7.0) and meaningless elsewhere.
+	if s.SensorID != nil && !s.Type.isASTERIXUDP() {
+		return &InvalidSourceError{Index: idx, Reason: fmt.Sprintf("sensor_id only applies to %s and %s", SourceADSBASTERIX, SourceMLATASTERIX)}
+	}
+
 	if s.Type.isAreaBounded() {
 		if s.BBox == nil {
 			return &InvalidSourceError{Index: idx, Reason: fmt.Sprintf("%s requires a bbox", s.Type)}
@@ -222,6 +256,29 @@ func (s Source) validate(idx int) error {
 		}
 		if s.Lat != nil || s.Lon != nil || s.HeightM != nil || s.Listen != "" {
 			return &InvalidSourceError{Index: idx, Reason: fmt.Sprintf("%s has no radar location (lat/lon/height_m/listen not allowed)", s.Type)}
+		}
+		return nil
+	}
+
+	// adsb_asterix / mlat_asterix: a local ASTERIX-over-UDP push source. The
+	// ground system computes the position, so there is no bbox and no site, and
+	// the stream is auth-free. SAC/SIC and sensor_id are optional; the listen
+	// endpoint is optional (absent → Firefly's per-type default).
+	if s.Type.isASTERIXUDP() {
+		if s.BBox != nil {
+			return &InvalidSourceError{Index: idx, Reason: fmt.Sprintf("%s has no coverage bbox", s.Type)}
+		}
+		if s.Lat != nil || s.Lon != nil || s.HeightM != nil {
+			return &InvalidSourceError{Index: idx, Reason: fmt.Sprintf("%s carries no location (lat/lon/height_m not allowed)", s.Type)}
+		}
+		if s.CredRef != nil {
+			return &InvalidSourceError{Index: idx, Reason: fmt.Sprintf("%s is auth-free (cred_ref not allowed)", s.Type)}
+		}
+		if (s.SAC != nil && (*s.SAC < 0 || *s.SAC > 255)) || (s.SIC != nil && (*s.SIC < 0 || *s.SIC > 255)) {
+			return &InvalidSourceError{Index: idx, Reason: "sac/sic must be in 0..255"}
+		}
+		if s.SensorID != nil && *s.SensorID < 0 {
+			return &InvalidSourceError{Index: idx, Reason: "sensor_id must not be negative"}
 		}
 		return nil
 	}
