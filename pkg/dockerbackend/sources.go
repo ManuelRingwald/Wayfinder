@@ -30,7 +30,10 @@ type fireflySource struct {
 	Lon     *float64 `json:"lon,omitempty"`
 	HeightM *float64 `json:"height_m,omitempty"`
 	Listen  string   `json:"listen,omitempty"`
-	CredEnv string   `json:"cred_env,omitempty"`
+	// SensorID is passed through for an ASTERIX-over-UDP source (adsb_asterix
+	// contract v1.6.0 / mlat_asterix v1.7.0); absent → Firefly's per-type default.
+	SensorID *int   `json:"sensor_id,omitempty"`
+	CredEnv  string `json:"cred_env,omitempty"`
 	// PollIntervalSecs is passed through to Firefly for a polled source
 	// (adsb_opensky since contract v1.4.0 / ADR 0029, adsb_aggregator since
 	// v1.5.0 / ADR 0031); absent → Firefly's default (10 s).
@@ -75,6 +78,7 @@ func fireflySourcesEnv(sources store.SourceConfig, resolved map[string]string) (
 			Lon:              s.Lon,
 			HeightM:          s.HeightM,
 			Listen:           s.Listen,
+			SensorID:         s.SensorID,
 			PollIntervalSecs: s.PollIntervalSecs,
 			Provider:         s.Provider,
 		}

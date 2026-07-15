@@ -41,6 +41,46 @@ func TestSourceConfigValidate(t *testing.T) {
 				{Type: SourceRadarASTERIX, SAC: ptrInt(1), SIC: ptrInt(4), Lat: ptrFloat(50.03), Lon: ptrFloat(8.57)},
 			},
 		},
+		// #239/#240: adsb_asterix / mlat_asterix — a listen endpoint + optional
+		// SAC/SIC + optional sensor_id, no bbox/location/credentials.
+		{
+			name: "valid adsb_asterix with sac/sic + sensor_id",
+			cfg:  SourceConfig{{Type: SourceADSBASTERIX, SAC: ptrInt(0), SIC: ptrInt(1), SensorID: ptrInt(230), Listen: "239.255.0.21:8021"}},
+		},
+		{
+			name: "valid mlat_asterix minimal (all fields default at Firefly)",
+			cfg:  SourceConfig{{Type: SourceMLATASTERIX}},
+		},
+		{
+			name:    "adsb_asterix with bbox rejected",
+			cfg:     SourceConfig{{Type: SourceADSBASTERIX, BBox: bbox(48, 7, 50, 9)}},
+			wantErr: true, wantIdx: 0,
+		},
+		{
+			name:    "mlat_asterix with location rejected",
+			cfg:     SourceConfig{{Type: SourceMLATASTERIX, Lat: ptrFloat(50), Lon: ptrFloat(8)}},
+			wantErr: true, wantIdx: 0,
+		},
+		{
+			name:    "adsb_asterix with cred_ref rejected (auth-free)",
+			cfg:     SourceConfig{{Type: SourceADSBASTERIX, CredRef: ptrStr("secret/x")}},
+			wantErr: true, wantIdx: 0,
+		},
+		{
+			name:    "adsb_asterix sac out of range",
+			cfg:     SourceConfig{{Type: SourceADSBASTERIX, SAC: ptrInt(256)}},
+			wantErr: true, wantIdx: 0,
+		},
+		{
+			name:    "adsb_asterix negative sensor_id rejected",
+			cfg:     SourceConfig{{Type: SourceADSBASTERIX, SensorID: ptrInt(-1)}},
+			wantErr: true, wantIdx: 0,
+		},
+		{
+			name:    "sensor_id on a radar source rejected",
+			cfg:     SourceConfig{{Type: SourceRadarASTERIX, SAC: ptrInt(1), SIC: ptrInt(4), Lat: ptrFloat(50), Lon: ptrFloat(8), SensorID: ptrInt(5)}},
+			wantErr: true, wantIdx: 0,
+		},
 		{
 			name:    "unknown type",
 			cfg:     SourceConfig{{Type: "satellite_quantum"}},
@@ -276,6 +316,14 @@ func TestDerivedSensorMix(t *testing.T) {
 			name: "radar maps to SSR",
 			cfg:  SourceConfig{{Type: SourceRadarASTERIX, SAC: ptrInt(1), SIC: ptrInt(4)}},
 			want: []string{"SSR"},
+		},
+		{
+			name: "adsb_asterix maps to ADS-B, mlat_asterix to MLAT (#239/#240)",
+			cfg: SourceConfig{
+				{Type: SourceADSBASTERIX, Listen: "239.255.0.21:8021"},
+				{Type: SourceMLATASTERIX},
+			},
+			want: []string{"ADS-B", "MLAT"},
 		},
 	}
 	for _, tc := range tests {

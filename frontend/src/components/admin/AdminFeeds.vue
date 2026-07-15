@@ -257,6 +257,31 @@
             </div>
           </div>
 
+          <!-- #239/#240: local ASTERIX-over-UDP source (adsb_asterix / mlat_asterix).
+               The ground system computes the position, so no bbox/location — just a
+               listen endpoint + optional SAC/SIC + optional Sensor-ID, auth-free. -->
+          <div v-else-if="isAsterixUdpType(s.type)">
+            <div class="d-flex flex-wrap ga-2">
+              <v-text-field v-model.number="s.sac" type="number" label="SAC (0–255, optional)" density="compact" hide-details style="max-width: 170px" />
+              <v-text-field v-model.number="s.sic" type="number" label="SIC (0–255, optional)" density="compact" hide-details style="max-width: 170px" />
+              <v-text-field v-model.number="s.sensor_id" type="number" label="Sensor-ID (optional)" density="compact" hide-details style="max-width: 170px" />
+            </div>
+            <v-text-field
+              v-model="s.listen"
+              label="Listen-Endpoint (optional)"
+              :hint="`UDP group:port für den ASTERIX-Eingang, z. B. ${s.type === 'mlat_asterix' ? '239.255.0.20:8020' : '239.255.0.21:8021'}`"
+              persistent-hint
+              density="compact"
+              class="mt-2"
+              style="max-width: 340px"
+            />
+            <v-alert type="info" variant="tonal" density="compact" class="mt-2">
+              {{ s.type === 'mlat_asterix' ? 'WAM/MLAT-System (CAT020/019 über UDP)' : 'ADS-B-Bodenstation (CAT021 über UDP)' }} —
+              Push-Quelle ohne Zugangsdaten; die Position berechnet das Bodensystem (keine BBox/Standort nötig).
+              Ist dies die einzige Quelle des Feeds, sollte am Orchestrator der System-Referenzpunkt gesetzt sein.
+            </v-alert>
+          </div>
+
           <!-- Real radar (radar_asterix): SAC/SIC identity + site location. CAT048
                is polar relative to the radar and does not carry the site, so Firefly
                needs lat/lon (Pflicht, #91); Höhe/Listen-Endpoint sind optional. -->
@@ -499,10 +524,19 @@ const SOURCE_TYPES = [
   { value: 'adsb_aggregator', label: 'ADS-B (Community-Aggregator)' },
   { value: 'flarm_aprs', label: 'FLARM (OGN/APRS)' },
   { value: 'radar_asterix', label: 'Radar (ASTERIX CAT048/001)' },
+  { value: 'adsb_asterix', label: 'ADS-B (Bodenstation, CAT021/UDP)' },
+  { value: 'mlat_asterix', label: 'WAM/MLAT (CAT020/019/UDP)' },
 ]
 const AREA_TYPES = new Set(['adsb_opensky', 'adsb_aggregator', 'flarm_aprs'])
 function isAreaType(t) {
   return AREA_TYPES.has(t)
+}
+// #239/#240: the local ASTERIX-over-UDP sources — a listen endpoint + optional
+// SAC/SIC + optional sensor_id, no bbox/location/credentials. A third form
+// category next to area-bounded and radar.
+const ASTERIX_UDP_TYPES = new Set(['adsb_asterix', 'mlat_asterix'])
+function isAsterixUdpType(t) {
+  return ASTERIX_UDP_TYPES.has(t)
 }
 // Polled sources may carry a poll-interval override (Firefly ADR 0029/0031);
 // FLARM is a push stream, radar has its own scan period.
@@ -663,7 +697,7 @@ async function clearSecret(i) {
 function blankSource(type = 'adsb_opensky') {
   return {
     type, center_lat: null, center_lon: null, radius_nm: null, tenant_id: null,
-    sac: null, sic: null, lat: null, lon: null, height_m: null, listen: '',
+    sac: null, sic: null, lat: null, lon: null, height_m: null, listen: '', sensor_id: null,
     // #201: the provider backs the aggregator's select; harmless on other types
     // (only sent for adsb_aggregator, see buildSourcesPayload).
     provider: DEFAULT_AGG_PROVIDER,
@@ -693,6 +727,7 @@ function toFormSource(s) {
     lon: s.lon ?? null,
     height_m: s.height_m ?? null,
     listen: s.listen ?? '',
+    sensor_id: s.sensor_id ?? null,
     provider: s.provider ?? DEFAULT_AGG_PROVIDER,
     cred_ref: s.cred_ref ?? '',
     poll_interval_secs: s.poll_interval_secs ?? null,
@@ -776,6 +811,14 @@ function buildSourcesPayload() {
         if (s.type === 'adsb_aggregator' && s.provider) {
           out.provider = s.provider
         }
+      } else if (isAsterixUdpType(s.type)) {
+        // #239/#240: listen endpoint + optional SAC/SIC + optional sensor_id;
+        // no bbox, no location, no credentials (auth-free push source).
+        if (s.sac != null && s.sac !== '') out.sac = s.sac
+        if (s.sic != null && s.sic !== '') out.sic = s.sic
+        if (s.sensor_id != null && s.sensor_id !== '') out.sensor_id = Number(s.sensor_id)
+        const listen = (s.listen || '').trim()
+        if (listen) out.listen = listen
       } else {
         out.sac = s.sac
         out.sic = s.sic

@@ -554,7 +554,12 @@ docker compose run --rm wayfinder feed list
 > speist. Quell-Typen: `adsb_opensky` (Konto/OAuth2), **`adsb_aggregator`**
 > (auth-frei via adsb.lol/adsb.fi — Provider `adsb_lol`/`adsb_fi`, Firefly ADR 0031;
 > nutzbar auch dort, wo OpenSky Datacenter-IPs sperrt, z. B. Codespaces),
-> `flarm_aprs`, `radar_asterix`. Anlegen über die Admin-UI (Feed-Zeile → **„Quellen"**)
+> `flarm_aprs`, `radar_asterix` (CAT048), sowie die lokalen ASTERIX-über-UDP-
+> Push-Quellen **`adsb_asterix`** (eigene ADS-B-Bodenstation, CAT021/UDP,
+> Firefly-Kontrakt v1.6.0) und **`mlat_asterix`** (WAM/MLAT, CAT020/019/UDP,
+> v1.7.0) — beide auth-frei (Vertrauensgrenze = Netz-Isolation), konfiguriert mit
+> Listen-Endpoint + optional SAC/SIC + Sensor-ID (keine `bbox`, kein Standort,
+> keine Credentials). Anlegen über die Admin-UI (Feed-Zeile → **„Quellen"**)
 > oder `PUT /api/admin/feeds/{id}/sources`. Schritt-für-Schritt in
 > `docs/E2E-ABNAHME.md`, API-Kontrakt in `docs/TECHNICAL.md`.
 

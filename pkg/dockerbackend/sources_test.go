@@ -109,6 +109,47 @@ func TestFireflySourcesEnvRadarAndAnonymous(t *testing.T) {
 	}
 }
 
+// #239/#240: an ASTERIX-over-UDP source (adsb_asterix / mlat_asterix) serializes
+// its listen endpoint + optional sac/sic + optional sensor_id, and no
+// bbox/location/cred_env — it is auth-free and the ground system computes the
+// position. An all-default source puts only its type on the wire.
+func TestFireflySourcesEnvAsterixUDP(t *testing.T) {
+	sources := store.SourceConfig{
+		{Type: store.SourceADSBASTERIX, SAC: ptrInt(0), SIC: ptrInt(1), SensorID: ptrInt(230), Listen: "239.255.0.21:8021"},
+		{Type: store.SourceMLATASTERIX},
+	}
+	js, credEnvs, ok := fireflySourcesEnv(sources, nil)
+	if !ok {
+		t.Fatal("expected ok for a non-empty config")
+	}
+	var got []map[string]any
+	if err := json.Unmarshal([]byte(js), &got); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if got[0]["type"] != "adsb_asterix" || got[0]["listen"] != "239.255.0.21:8021" || got[0]["sensor_id"] != 230.0 {
+		t.Errorf("adsb_asterix entry = %v", got[0])
+	}
+	if got[0]["sac"] != 0.0 || got[0]["sic"] != 1.0 {
+		t.Errorf("adsb_asterix sac/sic = %v/%v", got[0]["sac"], got[0]["sic"])
+	}
+	for _, k := range []string{"bbox", "lat", "lon", "cred_env"} {
+		if _, has := got[0][k]; has {
+			t.Errorf("adsb_asterix must omit %q", k)
+		}
+	}
+	if got[1]["type"] != "mlat_asterix" {
+		t.Errorf("mlat entry type = %v", got[1]["type"])
+	}
+	for _, k := range []string{"listen", "sensor_id", "sac", "sic"} {
+		if _, has := got[1][k]; has {
+			t.Errorf("all-default mlat_asterix must omit %q", k)
+		}
+	}
+	if len(credEnvs) != 0 {
+		t.Errorf("no creds expected, got %v", credEnvs)
+	}
+}
+
 // poll_interval_secs is passed through into the FIREFLY_SOURCES JSON for an
 // adsb_opensky source (contract v1.4.0 / ADR 0029); a source without it omits the
 // field so Firefly keeps its default.
