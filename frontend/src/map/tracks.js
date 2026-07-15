@@ -208,6 +208,14 @@ export function updateTracksLayer(msg, state, renderSources, startFadeLoop, rete
         qnh_corrected: track.qnh_corrected === true,
         geometric_altitude_ft: typeof track.geometric_altitude_ft === 'number' ? track.geometric_altitude_ft : null,
         rocd_ft_min: typeof track.rocd_ft_min === 'number' ? track.rocd_ft_min : null,
+        // Kinematics chain (I062/200/210, ICD 3.6.0, #242): the qualitative motion
+        // axes drive the label turn indicator + detail panel; the acceleration
+        // components feed the detail panel. Null/undefined per undetermined axis.
+        course_trend: typeof track.course_trend === 'string' ? track.course_trend : null,
+        speed_trend: typeof track.speed_trend === 'string' ? track.speed_trend : null,
+        vertical_motion: typeof track.vertical_motion === 'string' ? track.vertical_motion : null,
+        accel_ax_ms2: typeof track.accel_ax_ms2 === 'number' ? track.accel_ax_ms2 : null,
+        accel_ay_ms2: typeof track.accel_ay_ms2 === 'number' ? track.accel_ay_ms2 : null,
       },
     }
   })

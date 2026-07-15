@@ -15,6 +15,10 @@ import {
   formatGeometricAltitude,
   formatBarometricAltitude,
   formatRateOfClimb,
+  formatCourseTrend,
+  formatSpeedTrend,
+  formatVerticalMotion,
+  formatAcceleration,
 } from '../trackDetail.js'
 
 describe('formatLatLon', () => {
@@ -206,5 +210,40 @@ describe('formatRateOfClimb', () => {
   it('returns "" for absent values', () => {
     expect(formatRateOfClimb(null)).toBe('')
     expect(formatRateOfClimb(undefined)).toBe('')
+  })
+})
+
+// Kinematics chain (I062/200/210, ICD 3.6.0, #242).
+describe('formatCourseTrend / formatSpeedTrend / formatVerticalMotion', () => {
+  it('words the course trend', () => {
+    expect(formatCourseTrend('right')).toBe('Rechtskurve')
+    expect(formatCourseTrend('left')).toBe('Linkskurve')
+    expect(formatCourseTrend('constant')).toBe('Konstanter Kurs')
+  })
+  it('words the speed trend', () => {
+    expect(formatSpeedTrend('increasing')).toBe('Zunehmend')
+    expect(formatSpeedTrend('decreasing')).toBe('Abnehmend')
+    expect(formatSpeedTrend('constant')).toBe('Konstant')
+  })
+  it('words the vertical motion', () => {
+    expect(formatVerticalMotion('climb')).toBe('Steigen')
+    expect(formatVerticalMotion('descent')).toBe('Sinken')
+    expect(formatVerticalMotion('level')).toBe('Level')
+  })
+  it('returns "" for an absent/undetermined axis', () => {
+    expect(formatCourseTrend(null)).toBe('')
+    expect(formatSpeedTrend(undefined)).toBe('')
+    expect(formatVerticalMotion(null)).toBe('')
+  })
+})
+
+describe('formatAcceleration', () => {
+  it('renders the magnitude of the Ax/Ay components to one decimal', () => {
+    expect(formatAcceleration(1.0, -0.5)).toBe('1.1 m/s²') // hypot(1, 0.5) ≈ 1.118
+    expect(formatAcceleration(3, 4)).toBe('5.0 m/s²')
+  })
+  it('returns "" when either component is missing', () => {
+    expect(formatAcceleration(1.0, null)).toBe('')
+    expect(formatAcceleration(undefined, 0.5)).toBe('')
   })
 })

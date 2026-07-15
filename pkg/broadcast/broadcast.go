@@ -252,6 +252,18 @@ type TrackMessage struct {
 	BarometricAltitudeFt *float64 `json:"barometric_altitude_ft,omitempty"`
 	QNHCorrected         *bool    `json:"qnh_corrected,omitempty"`
 	RocdFtMin            *float64 `json:"rocd_ft_min,omitempty"`
+	// Kinematics chain (I062/200/210, ICD 3.6.0), present only per determined axis.
+	// CourseTrend ("constant"/"right"/"left") drives the label turn indicator;
+	// SpeedTrend and VerticalMotion feed the detail panel (VerticalMotion is the
+	// qualitative I062/200 VERT axis — named distinctly from the rate-driven ▲/▼
+	// tendency glyph the frontend derives; the quantitative RocdFtMin stays the
+	// arrow's primary source). AccelAxMs2/AccelAyMs2 are the calculated horizontal
+	// acceleration (East/North).
+	CourseTrend    *string  `json:"course_trend,omitempty"`
+	SpeedTrend     *string  `json:"speed_trend,omitempty"`
+	VerticalMotion *string  `json:"vertical_motion,omitempty"`
+	AccelAxMs2     *float64 `json:"accel_ax_ms2,omitempty"`
+	AccelAyMs2     *float64 `json:"accel_ay_ms2,omitempty"`
 }
 
 // Sender can send messages to all connected clients.
@@ -515,6 +527,17 @@ func (b *Broadcaster) EvictedCount() int64 {
 	return b.evicted.Load()
 }
 
+// enumStr converts a typed-string enum pointer (e.g. cat062.CourseTrend, the
+// I062/200 axes) to a plain *string for the wire DTO, preserving nil so an
+// undetermined/absent axis ships no field.
+func enumStr[T ~string](p *T) *string {
+	if p == nil {
+		return nil
+	}
+	s := string(*p)
+	return &s
+}
+
 // tracksToMessage converts a feed's CAT062 decoded tracks to a broadcast
 // message, stamping the batch's FeedID onto every track (WF2-20).
 func (b *Broadcaster) tracksToMessage(batch TrackBatch) Message {
@@ -566,6 +589,11 @@ func (b *Broadcaster) tracksToMessage(batch TrackBatch) Message {
 			BarometricAltitudeFt: track.BarometricAltitudeFt,
 			QNHCorrected:         qnh,
 			RocdFtMin:            track.RateOfClimbDescentFtMin,
+			CourseTrend:          enumStr(track.MotionCourse),
+			SpeedTrend:           enumStr(track.MotionSpeed),
+			VerticalMotion:       enumStr(track.MotionVertical),
+			AccelAxMs2:           track.AccelAxMS2,
+			AccelAyMs2:           track.AccelAyMS2,
 		}
 	}
 

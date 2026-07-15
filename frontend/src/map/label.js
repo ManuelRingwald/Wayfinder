@@ -12,13 +12,19 @@
 // MON (I062/080, ICD 3.2.0): a single-sensor track carries no cross-check, so
 // the data block flags it discreetly with a trailing "*" on the identity line
 // (spelled out in the detail panel). An ordinary multi-sensor track is unmarked.
+//
+// Turn indicator (I062/200 TRANS, ICD 3.6.0): a right/left turn adds "→"/"←" to
+// the identity line so a manoeuvring aircraft stands out; a constant or
+// undetermined course adds nothing.
 export function buildLabel(track, vTrend) {
   const monoMark = track.mono === true ? '*' : ''
   const ident =
     typeof track.callsign === 'string' && track.callsign !== ''
       ? track.callsign
       : String(track.track_num)
-  const line1 = `${ident}${monoMark}`
+  const turn =
+    track.course_trend === 'right' ? ' →' : track.course_trend === 'left' ? ' ←' : ''
+  const line1 = `${ident}${monoMark}${turn}`
 
   // Ground speed: sqrt(Vx²+Vy²) m/s → kt (1 m/s ≈ 1.9438 kt).
   const gs = Math.round(Math.hypot(track.vx, track.vy) * 1.9438)

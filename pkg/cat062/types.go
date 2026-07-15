@@ -144,7 +144,55 @@ type DecodedTrack struct {
 	// RateOfClimbDescentFtMin (I062/220) is the calculated rate from the same
 	// vertical filter; positive means climbing.
 	RateOfClimbDescentFtMin *float64
+
+	// Kinematics chain (ICD 3.6.0): the qualitative motion state (I062/200) and
+	// the calculated acceleration (I062/210). Each is present only when Firefly
+	// can determine it — an undetermined axis (wire value 3) is a nil pointer, and
+	// I062/200 is omitted entirely when all three axes are undetermined; the
+	// acceleration is omitted without a fresh (≤ 30 s) estimate. Absence therefore
+	// means "no claim", never "constant"/"zero".
+	//
+	// MotionCourse (TRANS) / MotionSpeed (LONG) / MotionVertical (VERT) are the
+	// three independent 2-bit axes of I062/200. MotionVertical mirrors the sign of
+	// the quantitative RateOfClimbDescentFtMin (I062/220) but is qualitative; the
+	// rate stays the primary source for the ASD climb/descent arrow.
+	MotionCourse   *CourseTrend
+	MotionSpeed    *SpeedTrend
+	MotionVertical *VerticalTrend
+	// AccelAxMS2 / AccelAyMS2 (I062/210) are the calculated horizontal acceleration
+	// in the system Cartesian frame (Ax = East, Ay = North), m/s². The encoder
+	// clamps to the i8 field range (−32.0 .. +31.75 m/s²).
+	AccelAxMS2 *float64
+	AccelAyMS2 *float64
 }
+
+// CourseTrend, SpeedTrend and VerticalTrend are the three qualitative motion axes
+// of I062/200 (Mode of Movement, ICD 3.6.0). They are typed strings so they carry
+// their canonical wire meaning straight to the WebSocket JSON and the ASD; the
+// "undetermined" wire value (3) is represented by a nil pointer, not a member.
+type CourseTrend string
+
+const (
+	CourseConstant CourseTrend = "constant" // TRANS 0: constant course
+	CourseRight    CourseTrend = "right"    // TRANS 1: right turn
+	CourseLeft     CourseTrend = "left"     // TRANS 2: left turn
+)
+
+type SpeedTrend string
+
+const (
+	SpeedConstant   SpeedTrend = "constant"   // LONG 0: constant groundspeed
+	SpeedIncreasing SpeedTrend = "increasing" // LONG 1: increasing
+	SpeedDecreasing SpeedTrend = "decreasing" // LONG 2: decreasing
+)
+
+type VerticalTrend string
+
+const (
+	VerticalLevel   VerticalTrend = "level"   // VERT 0: level
+	VerticalClimb   VerticalTrend = "climb"   // VERT 1: climb
+	VerticalDescent VerticalTrend = "descent" // VERT 2: descent
+)
 
 func (t DecodedTrack) String() string {
 	return fmt.Sprintf(

@@ -33,6 +33,18 @@
         <v-list-item-title class="wf-mono">{{ headingLabel }}</v-list-item-title>
         <v-list-item-subtitle>Kurs über Grund</v-list-item-subtitle>
       </v-list-item>
+      <v-list-item v-if="courseTrendLabel" prepend-icon="mdi-arrow-u-right-top">
+        <v-list-item-title>{{ courseTrendLabel }}</v-list-item-title>
+        <v-list-item-subtitle>Kurventrend</v-list-item-subtitle>
+      </v-list-item>
+      <v-list-item v-if="speedTrendLabel" prepend-icon="mdi-speedometer-slow">
+        <v-list-item-title>{{ speedTrendLabel }}</v-list-item-title>
+        <v-list-item-subtitle>Geschwindigkeitstrend</v-list-item-subtitle>
+      </v-list-item>
+      <v-list-item v-if="accelerationLabel" prepend-icon="mdi-rocket-launch-outline">
+        <v-list-item-title class="wf-mono">{{ accelerationLabel }}</v-list-item-title>
+        <v-list-item-subtitle>Beschleunigung</v-list-item-subtitle>
+      </v-list-item>
       <v-list-item
         v-if="selectedAltitudeLabel"
         :prepend-icon="levelBust ? 'mdi-alert' : 'mdi-target'"
@@ -133,6 +145,9 @@ import {
   formatGeometricAltitude,
   formatBarometricAltitude,
   formatRateOfClimb,
+  formatCourseTrend,
+  formatSpeedTrend,
+  formatAcceleration,
 } from '@/map/trackDetail.js'
 
 const emit = defineEmits(['close'])
@@ -206,6 +221,16 @@ const baroAltitudeLabel = computed(() =>
 )
 const geometricAltitudeLabel = computed(() => formatGeometricAltitude(track.value?.geometric_altitude_ft))
 const rocdLabel = computed(() => formatRateOfClimb(track.value?.rocd_ft_min))
+
+// #242: Mode of Movement course/speed trend (I062/200), and calculated
+// acceleration magnitude (I062/210). Each hidden when its axis/estimate is
+// absent. Vertical movement is already conveyed by the Vertikaltendenz row
+// (rate-driven, #241), so it is not repeated here.
+const courseTrendLabel = computed(() => formatCourseTrend(track.value?.course_trend))
+const speedTrendLabel = computed(() => formatSpeedTrend(track.value?.speed_trend))
+const accelerationLabel = computed(() =>
+  formatAcceleration(track.value?.accel_ax_ms2, track.value?.accel_ay_ms2),
+)
 
 const statusLabel = computed(() => {
   if (track.value?.coasting) return 'Coasting'

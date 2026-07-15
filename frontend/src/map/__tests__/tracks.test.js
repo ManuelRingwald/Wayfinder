@@ -271,3 +271,42 @@ describe('updateTracksLayer vertical chain (#241)', () => {
     expect(state.liveTrackFeatures[0].properties.vertical_trend).toBe('▲')
   })
 })
+
+// Kinematics chain (I062/200/210, ICD 3.6.0, #242).
+describe('updateTracksLayer kinematics chain (#242)', () => {
+  it('bakes motion axes and acceleration, defaulting absent ones to null', () => {
+    const state = makeState()
+    const base = { latitude: 50, longitude: 8, vx: 0, vy: 0, confirmed: true, coasting: false }
+    const msg = {
+      tracks: [
+        { ...base, track_num: 1, course_trend: 'right', speed_trend: 'increasing', vertical_motion: 'climb', accel_ax_ms2: 1.0, accel_ay_ms2: -0.5 },
+        { ...base, track_num: 2 }, // no kinematics
+      ],
+    }
+    updateTracksLayer(msg, state, () => {}, () => {})
+    const [f1, f2] = state.liveTrackFeatures
+    expect(f1.properties.course_trend).toBe('right')
+    expect(f1.properties.speed_trend).toBe('increasing')
+    // The I062/200 VERT axis rides the wire as vertical_motion — named distinctly
+    // from the rate-driven ▲/▼ tendency glyph (the vertical_trend property).
+    expect(f1.properties.vertical_motion).toBe('climb')
+    expect(f1.properties.accel_ax_ms2).toBe(1.0)
+    expect(f1.properties.accel_ay_ms2).toBe(-0.5)
+    expect(f2.properties.course_trend).toBeNull()
+    expect(f2.properties.speed_trend).toBeNull()
+    expect(f2.properties.vertical_motion).toBeNull()
+    expect(f2.properties.accel_ax_ms2).toBeNull()
+    expect(f2.properties.accel_ay_ms2).toBeNull()
+  })
+
+  it('keeps the rate-driven ▲/▼ tendency glyph independent of the I062/200 axis', () => {
+    const state = makeState()
+    const base = { latitude: 50, longitude: 8, vx: 0, vy: 0, confirmed: true, coasting: false, track_num: 3 }
+    // A descent rate must still yield ▼ even though the I062/200 vertical axis
+    // says climb — the quantitative I062/220 rate stays the arrow's source (#241).
+    updateTracksLayer({ tracks: [{ ...base, rocd_ft_min: -800, vertical_motion: 'climb' }] }, state, () => {}, () => {})
+    const p = state.liveTrackFeatures[0].properties
+    expect(p.vertical_trend).toBe('▼')
+    expect(p.vertical_motion).toBe('climb')
+  })
+})

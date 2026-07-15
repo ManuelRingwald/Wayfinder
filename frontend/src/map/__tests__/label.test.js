@@ -140,4 +140,26 @@ describe('buildLabel', () => {
     const track = { callsign: 'DLH4', track_num: 1, vx: 0, vy: 0, barometric_altitude_ft: 5000, qnh_corrected: true, selected_altitude_ft: 6000 }
     expect(buildLabel(track, '▲').split('\n')[1]).toBe('A050 ▲ S060')
   })
+
+  // Turn indicator (I062/200 TRANS, ICD 3.6.0, #242): → right turn, ← left turn,
+  // nothing for a constant or undetermined course.
+  it('appends → to the identity line for a right turn', () => {
+    const track = { callsign: 'DLH5', track_num: 1, vx: 0, vy: 0, course_trend: 'right' }
+    expect(buildLabel(track, '').split('\n')[0]).toBe('DLH5 →')
+  })
+
+  it('appends ← to the identity line for a left turn', () => {
+    const track = { callsign: 'DLH6', track_num: 1, vx: 0, vy: 0, course_trend: 'left' }
+    expect(buildLabel(track, '').split('\n')[0]).toBe('DLH6 ←')
+  })
+
+  it('adds no turn indicator for a constant or undetermined course', () => {
+    expect(buildLabel({ callsign: 'A', track_num: 1, vx: 0, vy: 0, course_trend: 'constant' }, '').split('\n')[0]).toBe('A')
+    expect(buildLabel({ callsign: 'B', track_num: 1, vx: 0, vy: 0 }, '').split('\n')[0]).toBe('B')
+  })
+
+  it('places the turn indicator after the MON marker', () => {
+    const track = { callsign: 'DLH7', track_num: 1, vx: 0, vy: 0, mono: true, course_trend: 'right' }
+    expect(buildLabel(track, '').split('\n')[0]).toBe('DLH7* →')
+  })
 })
