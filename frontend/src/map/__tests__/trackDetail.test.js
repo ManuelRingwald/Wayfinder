@@ -12,6 +12,9 @@ import {
   formatIas,
   formatMach,
   isLevelBust,
+  formatGeometricAltitude,
+  formatBarometricAltitude,
+  formatRateOfClimb,
 } from '../trackDetail.js'
 
 describe('formatLatLon', () => {
@@ -161,5 +164,47 @@ describe('formatMagneticHeading / formatIas / formatMach', () => {
     expect(formatMagneticHeading(null)).toBe('')
     expect(formatIas(undefined)).toBe('')
     expect(formatMach(null)).toBe('')
+  })
+})
+
+// Vertical chain (I062/130/135/220, ICD 3.5.0, #241).
+describe('formatGeometricAltitude', () => {
+  it('renders whole feet', () => {
+    expect(formatGeometricAltitude(10000)).toBe('10000 ft')
+    expect(formatGeometricAltitude(-625)).toBe('-625 ft')
+  })
+  it('returns "" for absent/non-finite values', () => {
+    expect(formatGeometricAltitude(null)).toBe('')
+    expect(formatGeometricAltitude(undefined)).toBe('')
+    expect(formatGeometricAltitude(NaN)).toBe('')
+  })
+})
+
+describe('formatBarometricAltitude', () => {
+  it('renders a QNH-corrected value as feet with a QNH marker', () => {
+    expect(formatBarometricAltitude(3000, true)).toBe('3000 ft (QNH)')
+  })
+  it('renders an uncorrected value as a standard flight level', () => {
+    expect(formatBarometricAltitude(35000, false)).toBe('FL350 (Standard)')
+  })
+  it('returns "" for absent values', () => {
+    expect(formatBarometricAltitude(null, true)).toBe('')
+    expect(formatBarometricAltitude(undefined, false)).toBe('')
+  })
+})
+
+describe('formatRateOfClimb', () => {
+  it('renders a positive rate with a leading plus', () => {
+    expect(formatRateOfClimb(3000)).toBe('+3000 ft/min')
+  })
+  it('renders a negative rate with its sign', () => {
+    expect(formatRateOfClimb(-1200)).toBe('-1200 ft/min')
+  })
+  it('renders zero without a sign', () => {
+    expect(formatRateOfClimb(0)).toBe('0 ft/min')
+  })
+  it('returns "" for absent values', () => {
+    expect(formatRateOfClimb(null)).toBe('')
+    expect(formatRateOfClimb(undefined)).toBe('')
   })
 })

@@ -242,6 +242,16 @@ type TrackMessage struct {
 	MagneticHeadingDeg *float64 `json:"magnetic_heading_deg,omitempty"`
 	IasKt              *float64 `json:"ias_kt,omitempty"`
 	Mach               *float64 `json:"mach,omitempty"`
+	// Vertical chain (I062/130/135/220, ICD 3.5.0), present only when Firefly has
+	// a fresh vertical estimate. BarometricAltitudeFt is the filtered altitude the
+	// label prefers over the jumpier measured FlightLevelFt; QNHCorrected tells the
+	// frontend whether it is a QNH altitude ("A") or a pressure flight level ("FL").
+	// GeometricAltitudeFt (WGS-84) and RocdFtMin (rate, positive = climb) feed the
+	// climb/descent arrow and the detail panel.
+	GeometricAltitudeFt  *float64 `json:"geometric_altitude_ft,omitempty"`
+	BarometricAltitudeFt *float64 `json:"barometric_altitude_ft,omitempty"`
+	QNHCorrected         *bool    `json:"qnh_corrected,omitempty"`
+	RocdFtMin            *float64 `json:"rocd_ft_min,omitempty"`
 }
 
 // Sender can send messages to all connected clients.
@@ -514,36 +524,48 @@ func (b *Broadcaster) tracksToMessage(batch TrackBatch) Message {
 	}
 
 	for i, track := range batch.Tracks {
+		// The QNH-correction flag only carries meaning alongside a barometric
+		// altitude; emit it only when I062/135 is present, so an absent vertical
+		// solution never ships a stray "qnh_corrected": false.
+		var qnh *bool
+		if track.BarometricAltitudeFt != nil {
+			v := track.BaroQNHCorrected
+			qnh = &v
+		}
 		msg.Tracks[i] = TrackMessage{
-			FeedID:             batch.FeedID,
-			TrackNum:           track.TrackNum,
-			SAC:                track.Source.SAC,
-			SIC:                track.Source.SIC,
-			Latitude:           track.WGS84.Latitude,
-			Longitude:          track.WGS84.Longitude,
-			Vx:                 track.Velocity.Vx,
-			Vy:                 track.Velocity.Vy,
-			CartX:              track.Cartesian.X,
-			CartY:              track.Cartesian.Y,
-			Confirmed:          track.Status.Confirmed,
-			Coasting:           track.Status.Coasting,
-			Ended:              track.Status.Ended,
-			Monosensor:         track.Status.Monosensor,
-			SPI:                track.Status.SPI,
-			PSRAge:             track.UpdateAge.PSRAge,
-			AdsbAgeS:           track.UpdateAge.ESAge,
-			SSRAgeS:            track.UpdateAge.SSRAge,
-			MDSAgeS:            track.UpdateAge.MDSAge,
-			FlarmAgeS:          track.UpdateAge.FLARMAge,
-			Accuracy:           track.Accuracy.APC,
-			Mode3A:             track.Mode3A,
-			ICAOAddr:           track.ICAOAddr,
-			FlightLevelFt:      track.FlightLevelFt,
-			Callsign:           track.Callsign,
-			SelectedAltitudeFt: track.SelectedAltitudeFt,
-			MagneticHeadingDeg: track.MagneticHeadingDeg,
-			IasKt:              track.IndicatedAirspeedKt,
-			Mach:               track.MachNumber,
+			FeedID:               batch.FeedID,
+			TrackNum:             track.TrackNum,
+			SAC:                  track.Source.SAC,
+			SIC:                  track.Source.SIC,
+			Latitude:             track.WGS84.Latitude,
+			Longitude:            track.WGS84.Longitude,
+			Vx:                   track.Velocity.Vx,
+			Vy:                   track.Velocity.Vy,
+			CartX:                track.Cartesian.X,
+			CartY:                track.Cartesian.Y,
+			Confirmed:            track.Status.Confirmed,
+			Coasting:             track.Status.Coasting,
+			Ended:                track.Status.Ended,
+			Monosensor:           track.Status.Monosensor,
+			SPI:                  track.Status.SPI,
+			PSRAge:               track.UpdateAge.PSRAge,
+			AdsbAgeS:             track.UpdateAge.ESAge,
+			SSRAgeS:              track.UpdateAge.SSRAge,
+			MDSAgeS:              track.UpdateAge.MDSAge,
+			FlarmAgeS:            track.UpdateAge.FLARMAge,
+			Accuracy:             track.Accuracy.APC,
+			Mode3A:               track.Mode3A,
+			ICAOAddr:             track.ICAOAddr,
+			FlightLevelFt:        track.FlightLevelFt,
+			Callsign:             track.Callsign,
+			SelectedAltitudeFt:   track.SelectedAltitudeFt,
+			MagneticHeadingDeg:   track.MagneticHeadingDeg,
+			IasKt:                track.IndicatedAirspeedKt,
+			Mach:                 track.MachNumber,
+			GeometricAltitudeFt:  track.GeometricAltitudeFt,
+			BarometricAltitudeFt: track.BarometricAltitudeFt,
+			QNHCorrected:         qnh,
+			RocdFtMin:            track.RateOfClimbDescentFtMin,
 		}
 	}
 

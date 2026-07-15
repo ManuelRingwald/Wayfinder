@@ -123,6 +123,27 @@ type DecodedTrack struct {
 	MagneticHeadingDeg  *float64
 	IndicatedAirspeedKt *float64
 	MachNumber          *float64
+
+	// Vertical chain (ICD 3.5.0): the tracker's filtered vertical solution,
+	// distinct from the *measured* I062/136 flight level next to it. Each item is
+	// present only when Firefly has a fresh estimate (last accepted vertical
+	// measurement ≤ 30 s), so absence means "no current estimate", never a stale
+	// value asserted as current.
+	//
+	// GeometricAltitudeFt (I062/130) is the WGS-84 geometric altitude, smoothed
+	// over genuinely geometric source heights (ADS-B/MLAT) — never a barometric
+	// value under a geometric label.
+	GeometricAltitudeFt *float64
+	// BarometricAltitudeFt (I062/135) is the filtered barometric altitude. When
+	// BaroQNHCorrected is true it is corrected to an observed regional QNH (a true
+	// altitude, the ATC reference below the transition altitude); when false it is
+	// the pressure altitude at the 1013.25 hPa standard — a flight level. The two
+	// are different statements, so the flag travels with the value.
+	BarometricAltitudeFt *float64
+	BaroQNHCorrected     bool
+	// RateOfClimbDescentFtMin (I062/220) is the calculated rate from the same
+	// vertical filter; positive means climbing.
+	RateOfClimbDescentFtMin *float64
 }
 
 func (t DecodedTrack) String() string {

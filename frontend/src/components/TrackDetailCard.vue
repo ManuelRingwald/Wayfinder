@@ -9,9 +9,21 @@
         <v-list-item-title class="wf-mono">{{ flLabel }}</v-list-item-title>
         <v-list-item-subtitle>Flugfläche</v-list-item-subtitle>
       </v-list-item>
-      <v-list-item v-if="track.flight_level_ft != null" prepend-icon="mdi-swap-vertical">
+      <v-list-item v-if="track.flight_level_ft != null || track.rocd_ft_min != null" prepend-icon="mdi-swap-vertical">
         <v-list-item-title>{{ vTrendGlyph }}{{ vTrendLabel }}</v-list-item-title>
         <v-list-item-subtitle>Vertikaltendenz</v-list-item-subtitle>
+      </v-list-item>
+      <v-list-item v-if="baroAltitudeLabel" prepend-icon="mdi-altimeter">
+        <v-list-item-title class="wf-mono">{{ baroAltitudeLabel }}</v-list-item-title>
+        <v-list-item-subtitle>Barometrische Höhe (gefiltert)</v-list-item-subtitle>
+      </v-list-item>
+      <v-list-item v-if="rocdLabel" prepend-icon="mdi-trending-up">
+        <v-list-item-title class="wf-mono">{{ rocdLabel }}</v-list-item-title>
+        <v-list-item-subtitle>Steig-/Sinkrate</v-list-item-subtitle>
+      </v-list-item>
+      <v-list-item v-if="geometricAltitudeLabel" prepend-icon="mdi-earth">
+        <v-list-item-title class="wf-mono">{{ geometricAltitudeLabel }}</v-list-item-title>
+        <v-list-item-subtitle>Geometrische Höhe (WGS84)</v-list-item-subtitle>
       </v-list-item>
       <v-list-item v-if="groundSpeedKt" prepend-icon="mdi-speedometer">
         <v-list-item-title class="wf-mono">{{ groundSpeedKt }} kt</v-list-item-title>
@@ -118,6 +130,9 @@ import {
   formatIas,
   formatMach,
   isLevelBust,
+  formatGeometricAltitude,
+  formatBarometricAltitude,
+  formatRateOfClimb,
 } from '@/map/trackDetail.js'
 
 const emit = defineEmits(['close'])
@@ -182,6 +197,15 @@ const levelBust = computed(() => isLevelBust(track.value?.selected_altitude_ft, 
 const magneticHeadingLabel = computed(() => formatMagneticHeading(track.value?.magnetic_heading_deg))
 const iasLabel = computed(() => formatIas(track.value?.ias_kt))
 const machLabel = computed(() => formatMach(track.value?.mach))
+
+// #241: vertical chain (I062/130/135/220, ICD 3.5.0). Barometric altitude is the
+// filtered height (with QNH reference); geometric altitude is the WGS-84 value;
+// rate is signed feet per minute. Absent when Firefly has no fresh estimate.
+const baroAltitudeLabel = computed(() =>
+  formatBarometricAltitude(track.value?.barometric_altitude_ft, track.value?.qnh_corrected),
+)
+const geometricAltitudeLabel = computed(() => formatGeometricAltitude(track.value?.geometric_altitude_ft))
+const rocdLabel = computed(() => formatRateOfClimb(track.value?.rocd_ft_min))
 
 const statusLabel = computed(() => {
   if (track.value?.coasting) return 'Coasting'

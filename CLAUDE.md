@@ -84,7 +84,10 @@ Dies ist das Herzstück und der einzige Berührungspunkt mit Firefly. Wayfinder
   | 12 | I062/040 | Track-Nummer | — |
   | 13 | I062/080 | Track-Status (CNF Oktett 1, **TSE** Oktett 2 = Track-Ende, CST Oktett 4) | variabel mit FX |
   | 14 | I062/290 | Update-Alter | — |
-  | 17 | I062/136 | Flugfläche (nur wenn vorhanden) | signed i16, LSB 1/4 FL = 25 ft |
+  | 17 | I062/136 | Flugfläche (gemessen; nur wenn vorhanden) | signed i16, LSB 1/4 FL = 25 ft |
+  | 18 | I062/130 | Geometrische Höhe (WGS-84; nur wenn vorhanden) | signed i16, LSB 6,25 ft |
+  | 19 | I062/135 | Barometrische Höhe (gefiltert; nur wenn vorhanden) | Bit 16 = QNH-Bit, Bits 15–1 = 15-Bit-ZK, LSB 1/4 FL = 25 ft |
+  | 20 | I062/220 | Steig-/Sinkrate (nur wenn vorhanden) | signed i16, LSB 6,25 ft/min, positiv = steigen |
   | 27 | I062/500 | Genauigkeit | — |
 
   Die FRNs folgen der **echten EUROCONTROL-CAT062-UAP** (ICD ab v2.0.0,
@@ -95,7 +98,12 @@ Dies ist das Herzstück und der einzige Berührungspunkt mit Firefly. Wayfinder
   Wire-Format-Bruch. Seit ICD 2.2.0 (additiv, ADR 0016 in Firefly) trägt
   I062/080 das **TSE-Bit** (Oktett 2, Bit 7, `0x40`): die letzte Meldung für
   einen gelöschten Track. Wayfinder **entfernt** den Track beim Empfang sofort,
-  statt auf einen Timeout zu warten.
+  statt auf einen Timeout zu warten. Seit ICD 3.5.0 (additiv, Fireflys VERT.2)
+  trägt der Record die **Vertikal-Kette** I062/130/135/220 (FRN 18/19/20, drittes
+  FSPEC-Oktett): geometrische + gefilterte barometrische Höhe (mit QNH-Bit) und
+  Steig-/Sinkrate — nur bei frischem Schätzwert (≤ 30 s). Wayfinder bevorzugt die
+  gefilterte I062/135 als Anzeige-Höhe (A/FL je QNH-Bit) und den Steig-/Sinkpfeil
+  aus I062/220; I062/136 (**gemessen**) bleibt daneben.
 - **Koordinaten:** I062/105 liefert **WGS84 direkt** — Wayfinder rendert daraus,
   eine stereografische Rückprojektion ist **nicht** nötig. I062/100 ist die
   zusätzliche System-Ebene (optional verwertbar); ihr Referenzpunkt ist der
