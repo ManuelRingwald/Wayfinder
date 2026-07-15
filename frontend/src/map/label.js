@@ -20,10 +20,17 @@ export function buildLabel(track, vTrend) {
   const gs = Math.round(Math.hypot(track.vx, track.vy) * 1.9438)
   const gsLine = gs > 0 ? `\n${gs}` : ''
 
+  // I062/380 selected altitude (#238): shown next to the FL as "S<selFL>" so the
+  // controller reads the autopilot's target against the actual level at a glance
+  // (a mismatch is the level-bust signal). Only when a measured FL is also known.
+  const sel = typeof track.selected_altitude_ft === 'number'
+    ? ` S${String(Math.round(track.selected_altitude_ft / 100)).padStart(3, '0')}`
+    : ''
+
   if (typeof track.flight_level_ft === 'number') {
     const fl = Math.round(track.flight_level_ft / 100)
     const trend = vTrend ? ` ${vTrend}` : ''
-    return `${line1}\nFL${String(fl).padStart(3, '0')}${trend}${gsLine}`
+    return `${line1}\nFL${String(fl).padStart(3, '0')}${trend}${sel}${gsLine}`
   }
   return `${line1}${gsLine}`
 }

@@ -10,6 +10,36 @@
 
 ---
 
+## 🛬 Stand 2026-07-15 (I062/380 Mode-S-DAPs + Selected Altitude / Level-Bust — #238, FR-DATA-010)
+
+**In normaler Sprache:** Moderne Flugzeuge senden über Mode-S die Höhe, die der
+Pilot im **Autopiloten eingedreht** hat (Selected Altitude). Wayfinder zeigt sie
+jetzt — im Label als „S350" neben der Ist-Flugfläche und im Detail-Panel. Weicht
+die eingedrehte Höhe deutlich von der Ist-Höhe ab, wird das **hervorgehoben** —
+das **Level-Bust-Signal**: der Lotse sieht auf einen Blick, dass ein Flugzeug eine
+andere Höhe ansteuert. Dazu Steuerkurs, IAS und Mach im Detail-Panel.
+
+**Korrektheits-Teil (wichtig):** Diese Daten stecken **in I062/380** — dem Feld,
+das bisher nur die ICAO-Adresse trug. Der alte Decoder ignorierte die FX-Kette und
+hätte einen DAP-tragenden Track **fehl-geparst** (Desync im restlichen Datagramm).
+Der Nachzug ist damit **korrektheitskritisch**, nicht nur ein Feature.
+
+**Fachlich/technisch:** I062/380 auf **subfeld-getrieben** umgestellt (FX-Spec +
+Subfelder aufsteigend): ADR (#1), MHG (#3), SAL (#6, 13-Bit-Zweierkomplement × 25 ft),
+IAR (#26), MAC (#27) → `DecodedTrack`-Felder → WS-JSON → Label (`S<FL>`) +
+`TrackDetailCard` (Level-Bust-Hinweis ab 300 ft Abweichung, `isLevelBust`).
+Bekannte fixe Subfelder werden längen-übersprungen, variable/unbekannte (#8/#9/#25)
+**abgelehnt** (robuster Decoder). DAP-loser Track byte-identisch, kein Wire-/ICD-Bruch.
+Ehrliche Grenze: Wayfinder vergleicht SAL vs. Ist-FL — die *Freigabe* kennt es
+nicht, die Bust-Bewertung bleibt beim Lotsen. Grundwahrheit: Fireflys ICD §4.7
+(ADR 0x3C65AC, MHG 270°, SAL 35 000 ft, IAS 250 kt, Mach 0,784). Register:
+**FR-DATA-010**. Gates grün (`go test ./...`, vitest 548, `npm run build`,
+gofmt/vet/golangci-lint). dist neu.
+
+**Nächster Schritt:** Cross-Project-Nachzug weiter — **#239/#240** (Quell-Typen
+`adsb_asterix`/`mlat_asterix`, Orchestrator/Admin-UI) bzw. **#241/#242** (Vertikal,
+Mode of Movement) nach abgestimmter Reihenfolge.
+
 ## 📡 Stand 2026-07-15 (CAT063 Registrierungs-Bias je Sensor — #237, FR-DATA-009)
 
 **In normaler Sprache:** Jedes Radar misst systematisch ein bisschen falsch (z. B.

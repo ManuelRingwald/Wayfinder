@@ -234,6 +234,14 @@ type TrackMessage struct {
 	// Callsign is the target identification / flight ID (I062/245), present
 	// only for tracks carrying a Mode S identification reply.
 	Callsign *string `json:"callsign,omitempty"`
+	// Mode-S Downlink Aircraft Parameters (I062/380, ICD 3.4.0), present only when
+	// the aircraft reports them. SelectedAltitudeFt (SAL) is the autopilot's target
+	// altitude — the frontend compares it to the flight level for level-bust
+	// detection. MagneticHeadingDeg/IasKt/Mach feed the detail panel.
+	SelectedAltitudeFt *float64 `json:"selected_altitude_ft,omitempty"`
+	MagneticHeadingDeg *float64 `json:"magnetic_heading_deg,omitempty"`
+	IasKt              *float64 `json:"ias_kt,omitempty"`
+	Mach               *float64 `json:"mach,omitempty"`
 }
 
 // Sender can send messages to all connected clients.
@@ -507,31 +515,35 @@ func (b *Broadcaster) tracksToMessage(batch TrackBatch) Message {
 
 	for i, track := range batch.Tracks {
 		msg.Tracks[i] = TrackMessage{
-			FeedID:        batch.FeedID,
-			TrackNum:      track.TrackNum,
-			SAC:           track.Source.SAC,
-			SIC:           track.Source.SIC,
-			Latitude:      track.WGS84.Latitude,
-			Longitude:     track.WGS84.Longitude,
-			Vx:            track.Velocity.Vx,
-			Vy:            track.Velocity.Vy,
-			CartX:         track.Cartesian.X,
-			CartY:         track.Cartesian.Y,
-			Confirmed:     track.Status.Confirmed,
-			Coasting:      track.Status.Coasting,
-			Ended:         track.Status.Ended,
-			Monosensor:    track.Status.Monosensor,
-			SPI:           track.Status.SPI,
-			PSRAge:        track.UpdateAge.PSRAge,
-			AdsbAgeS:      track.UpdateAge.ESAge,
-			SSRAgeS:       track.UpdateAge.SSRAge,
-			MDSAgeS:       track.UpdateAge.MDSAge,
-			FlarmAgeS:     track.UpdateAge.FLARMAge,
-			Accuracy:      track.Accuracy.APC,
-			Mode3A:        track.Mode3A,
-			ICAOAddr:      track.ICAOAddr,
-			FlightLevelFt: track.FlightLevelFt,
-			Callsign:      track.Callsign,
+			FeedID:             batch.FeedID,
+			TrackNum:           track.TrackNum,
+			SAC:                track.Source.SAC,
+			SIC:                track.Source.SIC,
+			Latitude:           track.WGS84.Latitude,
+			Longitude:          track.WGS84.Longitude,
+			Vx:                 track.Velocity.Vx,
+			Vy:                 track.Velocity.Vy,
+			CartX:              track.Cartesian.X,
+			CartY:              track.Cartesian.Y,
+			Confirmed:          track.Status.Confirmed,
+			Coasting:           track.Status.Coasting,
+			Ended:              track.Status.Ended,
+			Monosensor:         track.Status.Monosensor,
+			SPI:                track.Status.SPI,
+			PSRAge:             track.UpdateAge.PSRAge,
+			AdsbAgeS:           track.UpdateAge.ESAge,
+			SSRAgeS:            track.UpdateAge.SSRAge,
+			MDSAgeS:            track.UpdateAge.MDSAge,
+			FlarmAgeS:          track.UpdateAge.FLARMAge,
+			Accuracy:           track.Accuracy.APC,
+			Mode3A:             track.Mode3A,
+			ICAOAddr:           track.ICAOAddr,
+			FlightLevelFt:      track.FlightLevelFt,
+			Callsign:           track.Callsign,
+			SelectedAltitudeFt: track.SelectedAltitudeFt,
+			MagneticHeadingDeg: track.MagneticHeadingDeg,
+			IasKt:              track.IndicatedAirspeedKt,
+			Mach:               track.MachNumber,
 		}
 	}
 

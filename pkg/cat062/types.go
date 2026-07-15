@@ -107,6 +107,22 @@ type DecodedTrack struct {
 	// when present (the track carries a Mode S identification reply). Trailing
 	// spaces are trimmed. Optional.
 	Callsign *string // optional, I062/245 Target Identification
+
+	// Mode-S Downlink Aircraft Parameters (DAPs) from I062/380 (ICD 3.4.0). Each
+	// is present only when the aircraft reports it, so a non-Mode-S track leaves
+	// them nil.
+	//
+	// SelectedAltitudeFt (I062/380 SAL, #6) is the altitude dialled into the
+	// autopilot (MCP/FCU). Comparing it to the actual flight level is the basis of
+	// level-bust detection: an aircraft climbing/descending towards a different
+	// altitude than cleared shows a SEL that differs from its FL.
+	SelectedAltitudeFt *float64
+	// MagneticHeadingDeg (MHG, #3), IndicatedAirspeedKt (IAR, #26) and MachNumber
+	// (MAC, #27) are further downlinked cockpit parameters, shown in the detail
+	// panel.
+	MagneticHeadingDeg  *float64
+	IndicatedAirspeedKt *float64
+	MachNumber          *float64
 }
 
 func (t DecodedTrack) String() string {

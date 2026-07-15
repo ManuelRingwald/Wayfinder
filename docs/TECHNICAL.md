@@ -137,7 +137,9 @@ pkg/broadcast.Broadcaster
     │                                flight_level_ft, callsign, mode_3a,
     │                                icao_addr, adsb_age_s, ssr_age_s,
     │                                mds_age_s, flarm_age_s,
-    │                                coasting, ended, mono, spi, ...}
+    │                                coasting, ended, mono, spi,
+    │                                selected_altitude_ft, magnetic_heading_deg,
+    │                                ias_kt, mach, ...}
     └─► (Eviction bei vollem Send-Channel, Warn-Log)
 ```
 
@@ -176,6 +178,21 @@ den **Ident-Puls** („squawk ident"): das ASD legt einen amberfarbenen
 auf der Track-Quelle) — kein Timer, der Ring folgt dem Draht-Flag, das die
 ~15–30 s des Transponder-Pulses trägt. Beide sind `omitempty` (Absenz = false);
 ein Decoder, der die Bits ignoriert, verhält sich unverändert.
+
+**Mode-S-DAPs `selected_altitude_ft`/`magnetic_heading_deg`/`ias_kt`/`mach` (I062/380, ICD 3.4.0, #238):**
+I062/380 (Aircraft Derived Data) wird **subfeld-getrieben** dekodiert (FX-verkettete
+Subfeld-Spec + Subfelder in aufsteigender Nummer) — statt wie zuvor nur die
+ICAO-Adresse zu lesen. **Wichtig:** der frühere Decoder ignorierte die FX-Kette;
+ein DAP-tragender Track hätte den restlichen Record **desynchronisiert** — dieser
+Nachzug ist also korrektheitskritisch, nicht nur ein Feature. Ein DAP-**loser**
+Track bleibt byte-identisch. Dekodiert werden **SAL** (Selected Altitude, die im
+Autopiloten eingedrehte Höhe), **MHG** (magnetischer Steuerkurs), **IAR** (IAS) und
+**MAC** (Mach); ein variables/unbekanntes Subfeld wird abgelehnt statt fehl-geparst.
+**Level-Bust-Signal:** das Label zeigt die Selected Altitude als „S&lt;FL&gt;" neben der
+Ist-Flugfläche; weicht sie ≥ 300 ft ab (`isLevelBust`), hebt das `TrackDetailCard`
+sie hervor („weicht von Ist-Höhe ab"). Ehrliche Grenze: Wayfinder vergleicht SAL vs.
+gemessene FL — die *Freigabe* (Clearance) kennt es nicht, die eigentliche
+Bust-Bewertung bleibt beim Lotsen.
 
 Seit ICD 2.6.0 ist **FLARM erstmals sauber unterscheidbar** (eigenes `flarm_age_s`),
 statt wie zuvor unter ADS-B/SSR zu verschwinden (#118). Die 30-Sekunden-Frische-

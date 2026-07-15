@@ -102,4 +102,19 @@ describe('buildLabel', () => {
     // mono: false must behave exactly like an absent flag.
     expect(buildLabel({ ...track, mono: false }, '').split('\n')[0]).toBe('DLH123')
   })
+
+  it('appends the selected altitude "S<FL>" to the FL line when present (#238)', () => {
+    const track = { callsign: 'DLH123', track_num: 1, vx: 0, vy: 0, flight_level_ft: 20000, selected_altitude_ft: 35000 }
+    expect(buildLabel(track, '').split('\n')[1]).toBe('FL200 S350')
+  })
+
+  it('keeps the trend arrow before the selected altitude', () => {
+    const track = { callsign: 'DLH123', track_num: 1, vx: 0, vy: 0, flight_level_ft: 20000, selected_altitude_ft: 35000 }
+    expect(buildLabel(track, '▲').split('\n')[1]).toBe('FL200 ▲ S350')
+  })
+
+  it('omits the selected altitude when the aircraft does not report it', () => {
+    const track = { callsign: 'DLH123', track_num: 1, vx: 0, vy: 0, flight_level_ft: 20000 }
+    expect(buildLabel(track, '').split('\n')[1]).toBe('FL200')
+  })
 })
