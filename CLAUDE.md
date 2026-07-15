@@ -172,6 +172,12 @@ Bei Sicherheits- oder Schnittstellen-Wirkung lieber das stärkere Modell.
 
 - **Chat und Dokumentation (`docs/`, `CLAUDE.md`):** Deutsch.
 - **Quellcode (Bezeichner, Kommentare im Code):** Englisch.
+- **Verständlichkeit (Betreiber-Vorgabe 2026-07-15):** Ankündigungen und
+  Ergebnis-Meldungen im Chat werden in **normaler Sprache** erklärt — zuerst
+  der Kern allgemein verständlich (Was wurde gebaut? Welches Problem löst es
+  für den Lotsen? Was ändert sich sichtbar?), die Fachdetails danach.
+  Fachbegriffe (ASTERIX-Items, Karten-/WebSocket-Technik) sind erlaubt,
+  dürfen aber nie die **einzige** Erklärung sein.
 - (Konsistent mit Firefly, ADR 0002 dort.)
 
 ---
