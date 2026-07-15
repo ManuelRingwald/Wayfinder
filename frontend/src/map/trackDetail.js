@@ -117,6 +117,34 @@ export function formatRateOfClimb(ftMin) {
   return `${r > 0 ? '+' : ''}${r} ft/min`
 }
 
+// Mode of Movement (I062/200, ICD 3.6.0, #242): the three qualitative motion
+// axes worded for the detail panel. Each returns '' for an absent/undetermined
+// axis so the caller hides the row (Firefly omits an axis it cannot determine).
+const COURSE_TREND_LABELS = { right: 'Rechtskurve', left: 'Linkskurve', constant: 'Konstanter Kurs' }
+const SPEED_TREND_LABELS = { increasing: 'Zunehmend', decreasing: 'Abnehmend', constant: 'Konstant' }
+const VERTICAL_MOTION_LABELS = { climb: 'Steigen', descent: 'Sinken', level: 'Level' }
+
+export function formatCourseTrend(trend) {
+  return COURSE_TREND_LABELS[trend] ?? ''
+}
+
+export function formatSpeedTrend(trend) {
+  return SPEED_TREND_LABELS[trend] ?? ''
+}
+
+export function formatVerticalMotion(trend) {
+  return VERTICAL_MOTION_LABELS[trend] ?? ''
+}
+
+// formatAcceleration renders the calculated horizontal acceleration magnitude
+// (I062/210, ICD 3.6.0) from its Cartesian components Ax/Ay (m/s²), e.g.
+// "1.1 m/s²". Returns '' when either component is missing.
+export function formatAcceleration(axMs2, ayMs2) {
+  if (typeof axMs2 !== 'number' || typeof ayMs2 !== 'number') return ''
+  if (!Number.isFinite(axMs2) || !Number.isFinite(ayMs2)) return ''
+  return `${Math.hypot(axMs2, ayMs2).toFixed(1)} m/s²`
+}
+
 // VERTICAL_TREND_LABELS maps the tendency glyph baked in tracks.js (ASD-001b:
 // ▲ climbing, ▼ descending) to a German word. Anything else (including '') is
 // treated as level flight.

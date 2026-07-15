@@ -78,12 +78,14 @@ Dies ist das Herzstück und der einzige Berührungspunkt mit Firefly. Wayfinder
   | 5 | I062/105 | Position **WGS84** lat/lon | signed i32, LSB 180/2²⁵° |
   | 6 | I062/100 | Position System-Stereografisch X/Y | signed i24, LSB 0,5 m |
   | 7 | I062/185 | Geschwindigkeit Vx/Vy | signed i16, LSB 0,25 m/s |
+  | 8 | I062/210 | Beschleunigung Ax/Ay (nur wenn vorhanden) | signed i8 je, LSB 0,25 m/s² |
   | 9 | I062/060 | Mode 3/A (nur wenn vorhanden) | — |
   | 10 | I062/245 | Target Identification / Callsign (nur wenn vorhanden) | STI/spare-Oktett + 8 × 6-Bit-IA-5-Zeichen |
   | 11 | I062/380 | ICAO-Adresse (nur wenn vorhanden) | — |
   | 12 | I062/040 | Track-Nummer | — |
   | 13 | I062/080 | Track-Status (CNF Oktett 1, **TSE** Oktett 2 = Track-Ende, CST Oktett 4) | variabel mit FX |
   | 14 | I062/290 | Update-Alter | — |
+  | 15 | I062/200 | Bewegungszustand TRANS/LONG/VERT (nur wenn bestimmbar) | 3 × 2-Bit-Achsen + ADF |
   | 17 | I062/136 | Flugfläche (gemessen; nur wenn vorhanden) | signed i16, LSB 1/4 FL = 25 ft |
   | 18 | I062/130 | Geometrische Höhe (WGS-84; nur wenn vorhanden) | signed i16, LSB 6,25 ft |
   | 19 | I062/135 | Barometrische Höhe (gefiltert; nur wenn vorhanden) | Bit 16 = QNH-Bit, Bits 15–1 = 15-Bit-ZK, LSB 1/4 FL = 25 ft |
@@ -103,7 +105,12 @@ Dies ist das Herzstück und der einzige Berührungspunkt mit Firefly. Wayfinder
   FSPEC-Oktett): geometrische + gefilterte barometrische Höhe (mit QNH-Bit) und
   Steig-/Sinkrate — nur bei frischem Schätzwert (≤ 30 s). Wayfinder bevorzugt die
   gefilterte I062/135 als Anzeige-Höhe (A/FL je QNH-Bit) und den Steig-/Sinkpfeil
-  aus I062/220; I062/136 (**gemessen**) bleibt daneben.
+  aus I062/220; I062/136 (**gemessen**) bleibt daneben. Seit ICD 3.6.0 (additiv,
+  Fireflys VERT.3) trägt der Record die **Kinematik-Kette** I062/210 (FRN 8,
+  Beschleunigung Ax/Ay) und I062/200 (FRN 15, Bewegungszustand TRANS/LONG/VERT,
+  je 2 Bit, Wert 3 = unbestimmt). Wayfinder zeigt einen **Kurven-Indikator** →/←
+  aus TRANS im Label und Kurven-/Geschwindigkeitstrend + Beschleunigung im
+  Detail-Panel; der Steig-/Sinkpfeil bleibt quantitativ aus I062/220.
 - **Koordinaten:** I062/105 liefert **WGS84 direkt** — Wayfinder rendert daraus,
   eine stereografische Rückprojektion ist **nicht** nötig. I062/100 ist die
   zusätzliche System-Ebene (optional verwertbar); ihr Referenzpunkt ist der

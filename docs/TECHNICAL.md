@@ -213,6 +213,22 @@ QNH-Flag wird nur mit vorhandener barometrischer Höhe gesendet (`omitempty`), n
 als Stray-`false`. Additiv, kein Wire-Bruch (Track ohne Vertikal-Daten
 byte-identisch); I062/136 bleibt **gemessen** daneben (gemessen ≠ gefiltert).
 
+**Kinematik-Kette `course_trend`/`speed_trend`/`vertical_motion`/`accel_ax_ms2`/`accel_ay_ms2` (I062/200/210, ICD 3.6.0, #242):**
+Der Decoder liest den **qualitativen Bewegungszustand** und die **berechnete
+Beschleunigung**: **I062/210** (FRN 8, 2 Oktette, `Ax`/`Ay` je i8 × 0,25 m/s²,
+Ost/Nord, Encoder-Clamp auf −32,0…+31,75) und **I062/200** (FRN 15, 1 Oktett, drei
+unabhängige 2-Bit-Achsen **TRANS** = Kurs / **LONG** = Groundspeed / **VERT**).
+Eine Achse mit Wert 3 ist **unbestimmt** und bleibt ein nil-Wert; I062/200 entfällt
+ganz, wenn alle drei unbestimmt sind (Absenz = „kein Trend-Anspruch", nie „alles
+konstant"). **ASD-Nutzung:** Ein **Kurven-Indikator** →/← an der Label-Identitäts­zeile
+aus TRANS macht ein manövrierendes Luftfahrzeug sichtbar; das `TrackDetailCard`
+zeigt Kurventrend, Geschwindigkeitstrend und den Beschleunigungs-Betrag
+(√(Ax²+Ay²)). Die qualitative VERT-Achse fährt als `vertical_motion` mit, wird im
+Panel aber **nicht** doppelt gezeigt — der Steig-/Sinkpfeil bleibt die
+quantitative I062/220-Rate (#241). Jede Achse/Komponente wird nur bei Bestimmung
+gesendet (`omitempty`). Additiv, kein Wire-Bruch (Track ohne Kinematik
+byte-identisch).
+
 Seit ICD 2.6.0 ist **FLARM erstmals sauber unterscheidbar** (eigenes `flarm_age_s`),
 statt wie zuvor unter ADS-B/SSR zu verschwinden (#118). Die 30-Sekunden-Frische-
 Schwelle (`ADSB_FRESH_THRESHOLD_S`) und die Klassifikation liegen in

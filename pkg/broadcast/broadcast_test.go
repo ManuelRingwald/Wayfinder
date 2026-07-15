@@ -222,6 +222,56 @@ func TestTracksToMessageMapsVerticalChain(t *testing.T) {
 	}
 }
 
+// TestTracksToMessageMapsKinematics verifies the kinematics chain (I062/200/210,
+// ICD 3.6.0, #242) is carried to the wire: the determined motion axes become their
+// canonical strings, an undetermined axis ships no field, and the acceleration
+// components pass through. A track without kinematics carries none of the fields.
+func TestTracksToMessageMapsKinematics(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(nil, nil))
+	b := New(logger)
+
+	course := cat062.CourseRight
+	vert := cat062.VerticalClimb // SpeedTrend deliberately left nil (undetermined)
+	ax := 1.0
+	ay := -0.5
+	withKin := cat062.DecodedTrack{
+		TrackNum:       1,
+		MotionCourse:   &course,
+		MotionVertical: &vert,
+		AccelAxMS2:     &ax,
+		AccelAyMS2:     &ay,
+	}
+	withoutKin := cat062.DecodedTrack{TrackNum: 2}
+
+	msg := b.tracksToMessage(TrackBatch{FeedID: 7, Tracks: []cat062.DecodedTrack{withKin, withoutKin}})
+	if len(msg.Tracks) != 2 {
+		t.Fatalf("expected 2 tracks, got %d", len(msg.Tracks))
+	}
+
+	tm := msg.Tracks[0]
+	if tm.CourseTrend == nil || *tm.CourseTrend != "right" {
+		t.Errorf("CourseTrend: got %v, want right", tm.CourseTrend)
+	}
+	if tm.SpeedTrend != nil {
+		t.Errorf("SpeedTrend: got %v, want nil (undetermined axis ships no field)", *tm.SpeedTrend)
+	}
+	if tm.VerticalMotion == nil || *tm.VerticalMotion != "climb" {
+		t.Errorf("VerticalMotion: got %v, want climb", tm.VerticalMotion)
+	}
+	if tm.AccelAxMs2 == nil || *tm.AccelAxMs2 != 1.0 {
+		t.Errorf("AccelAxMs2: got %v, want 1.0", tm.AccelAxMs2)
+	}
+	if tm.AccelAyMs2 == nil || *tm.AccelAyMs2 != -0.5 {
+		t.Errorf("AccelAyMs2: got %v, want -0.5", tm.AccelAyMs2)
+	}
+
+	bare := msg.Tracks[1]
+	if bare.CourseTrend != nil || bare.SpeedTrend != nil || bare.VerticalMotion != nil ||
+		bare.AccelAxMs2 != nil || bare.AccelAyMs2 != nil {
+		t.Errorf("bare track carried kinematics fields: %+v", bare)
+	}
+}
+
 // TestTracksToMessageMapsAdsbAge verifies the I062/290 ES age (ADS-B, ICD
 // 2.4.0) is carried through to the wire as adsb_age_s, and that a radar-only
 // track leaves it nil (so the frontend shows no ADS-B badge). AP9.9.

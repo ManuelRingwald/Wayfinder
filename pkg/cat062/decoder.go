@@ -57,7 +57,7 @@ func DecodeRecord(data []byte, offset int) (DecodedTrack, int, error) {
 	// CAT062 UAP (ICD v2.0.0): I062/136 (Measured Flight Level) at FRN 17,
 	// I062/500 (Estimated Accuracies) at FRN 27 (not the old non-standard 16).
 	// I062/245 (Target Identification / Callsign, ICD v2.1.0) sits at FRN 10.
-	uapOrder := []uint8{1, 4, 5, 6, 7, 9, 10, 11, 12, 13, 14, 17, 18, 19, 20, 27}
+	uapOrder := []uint8{1, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 17, 18, 19, 20, 27}
 
 	for _, frn := range uapOrder {
 		if !fspec.HasItem(frn) {
@@ -124,6 +124,17 @@ func DecodeRecord(data []byte, offset int) (DecodedTrack, int, error) {
 			track.Velocity.Vx = float64(vxTicks) * velLSB
 			track.Velocity.Vy = float64(vyTicks) * velLSB
 			offset += 4
+
+		case 8: // I062/210: Calculated Acceleration (2 bytes, Ax then Ay, each i8, LSB 0.25 m/s²)
+			if offset+2 > len(data) {
+				return track, offset, NewDecodeError("truncated I062/210")
+			}
+			const accLSB = 0.25 // m/s² per tick; Ax = East, Ay = North (ICD §4.9)
+			ax := float64(int8(data[offset])) * accLSB
+			ay := float64(int8(data[offset+1])) * accLSB
+			track.AccelAxMS2 = &ax
+			track.AccelAyMS2 = &ay
+			offset += 2
 
 		case 9: // I062/060: Mode 3/A Code (2 bytes, 12-bit code in low bits)
 			if offset+2 > len(data) {
@@ -210,6 +221,24 @@ func DecodeRecord(data []byte, offset int) (DecodedTrack, int, error) {
 				}
 			}
 
+		case 15: // I062/200: Mode of Movement (1 byte, three 2-bit axes + ADF/spare)
+			if offset+1 > len(data) {
+				return track, offset, NewDecodeError("truncated I062/200")
+			}
+			b := data[offset]
+			// Bits 8-7 = TRANS (course), 6-5 = LONG (speed), 4-3 = VERT; each
+			// 2-bit field's value 3 = "undetermined", left as a nil pointer.
+			if c := courseTrend((b >> 6) & 0x03); c != nil {
+				track.MotionCourse = c
+			}
+			if s := speedTrend((b >> 4) & 0x03); s != nil {
+				track.MotionSpeed = s
+			}
+			if v := verticalTrend((b >> 2) & 0x03); v != nil {
+				track.MotionVertical = v
+			}
+			offset++
+
 		case 17: // I062/136: Measured Flight Level (2 bytes, signed i16, LSB 1/4 FL = 25 ft)
 			if offset+2 > len(data) {
 				return track, offset, NewDecodeError("truncated I062/136")
@@ -277,6 +306,56 @@ func DecodeRecord(data []byte, offset int) (DecodedTrack, int, error) {
 	}
 
 	return track, offset, nil
+}
+
+// courseTrend / speedTrend / verticalTrend map a 2-bit I062/200 axis (Mode of
+// Movement, ICD 3.6.0) to its typed value, returning nil for the "undetermined"
+// wire value (3) so an undetermined axis stays absent rather than asserting a
+// state. Values 0..2 are the determined members; anything else (only 3 is
+// reachable from a 2-bit field) is treated as undetermined.
+func courseTrend(v uint8) *CourseTrend {
+	var c CourseTrend
+	switch v {
+	case 0:
+		c = CourseConstant
+	case 1:
+		c = CourseRight
+	case 2:
+		c = CourseLeft
+	default:
+		return nil
+	}
+	return &c
+}
+
+func speedTrend(v uint8) *SpeedTrend {
+	var s SpeedTrend
+	switch v {
+	case 0:
+		s = SpeedConstant
+	case 1:
+		s = SpeedIncreasing
+	case 2:
+		s = SpeedDecreasing
+	default:
+		return nil
+	}
+	return &s
+}
+
+func verticalTrend(v uint8) *VerticalTrend {
+	var vt VerticalTrend
+	switch v {
+	case 0:
+		vt = VerticalLevel
+	case 1:
+		vt = VerticalClimb
+	case 2:
+		vt = VerticalDescent
+	default:
+		return nil
+	}
+	return &vt
 }
 
 // decodeTrackStatus parses I062/080 (variable length, FX-chained). It reads the

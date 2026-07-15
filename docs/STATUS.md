@@ -10,6 +10,39 @@
 
 ---
 
+## 🧭 Stand 2026-07-15 (CAT062-Kinematik-Kette I062/200/210 — #242, FR-DATA-012)
+
+**In normaler Sprache:** Firefly rechnet nicht nur *wo* ein Flugzeug ist, sondern
+auch *wie es sich bewegt* — dreht es gerade nach links/rechts, wird es schneller
+oder langsamer, steigt oder sinkt es, und wie stark beschleunigt es. Diese
+Bewegungs-Info schickt Firefly jetzt mit (ICD 3.6.0). **Neu sichtbar für den
+Lotsen:** (1) ein **Kurven-Indikator** (→ Rechtskurve / ← Linkskurve) direkt am
+Track-Label — ein manövrierendes Flugzeug fällt sofort auf. (2) Im Detail-Fenster:
+**Kurventrend**, **Geschwindigkeitstrend** (zunehmend/abnehmend) und die
+**Beschleunigung**. Der Steig-/Sinkpfeil bleibt wie bisher aus der quantitativen
+Rate (#241) — die neue qualitative Vertikal-Achse wird nicht doppelt gezeigt.
+
+**Wichtige Klärung zur Reihenfolge:** Der ursprüngliche Eindruck „Firefly hat 3.6.0
+noch nicht geliefert" war ein **veralteter lokaler Firefly-Checkout** — auf Firefly
+`main` liegen 3.6.0 (I062/200/210) **und** 3.7.0 (I062/390) bereits. Nach `git pull`
+lagen die byte-genauen §4.9-Referenz-Vektoren vor, gegen die getestet wurde.
+
+**Fachlich/technisch:** Decoder liest FRN 8 (I062/210: Ax/Ay je i8 × 0,25 m/s²,
+Ost/Nord) und FRN 15 (I062/200: TRANS/LONG/VERT je 2 Bit; Wert 3 = unbestimmt →
+nil; Item entfällt bei komplett unbestimmter Lage) → getypte `DecodedTrack`-Enums
++ Beschleunigungs-Felder → WS-JSON (`course_trend`/`speed_trend`/`vertical_motion`/
+`accel_ax_ms2`/`accel_ay_ms2`, nur bestimmte Achsen). Frontend: `label.js`
+(Kurven-Indikator →/←), `trackDetail.js` + `TrackDetailCard` (Kurven-/
+Geschwindigkeitstrend + Beschleunigungs-Betrag). Der WS-Feldname `vertical_motion`
+ist bewusst vom rate-getriebenen ▲/▼-Glyph (`vertical_trend`) getrennt. Additiv,
+kein Wire-/ICD-Bruch (Track ohne Kinematik byte-identisch). Grundwahrheit: Fireflys
+ICD §4.9-Referenz-Vektoren (`04 FE`/`7F 80`/`54`/`B0`). Register: **FR-DATA-012**.
+Gates grün (`go test ./...`, vitest, `npm run build`, gofmt/vet/golangci-lint).
+dist neu.
+
+**Nächster Schritt:** Cross-Project-Nachzug weiter — **#245** (Flugplan I062/390,
+ICD 3.7.0, liegt ebenfalls auf Firefly `main`; durch #244 entsperrt).
+
 ## 🛗 Stand 2026-07-15 (CAT062-Vertikal-Kette I062/130/135/220 — #241, FR-DATA-011)
 
 **In normaler Sprache:** Das Label zeigte die Höhe bisher als **gemessene**
