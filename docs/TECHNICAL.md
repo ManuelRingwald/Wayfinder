@@ -222,6 +222,20 @@ Per-Feed-Zustand zurückgesetzt (`resetFeedHealth`), damit ein alter Scope nicht
 nachhängt. (Zuvor las das Frontend fälschlich ein nicht existentes `state`-Feld →
 dauerhaft „FEED ?", #117.)
 
+**Per-Sensor-Detail + Registrierungs-Bias (`feed_status.sensors[]`, CAT063 I063/080/081, ICD 3.3.0, #237):**
+Trägt der Feed CAT063-Sensor-Status, führt die Nachricht zusätzlich eine
+**Per-Sensor-Liste** (`sensors[]`: `sac`/`sic`/`operational`/`degraded_reason?`/
+`range_bias_m?`/`azimuth_bias_deg?`). Der **angewandte Registrierungs-Bias** je
+Radar — Firefly rechnet ihn vor der Fusion heraus (REG.3/ADR 0034) — wird so
+sichtbar: der `FeedStatusChip` wird zu einem **Menü** mit einer Zeile je
+auffälligem Sensor („SIC 2 · Δr +145 m · Δθ +0,30°"; nur degradierte oder
+bias-behaftete Sensoren, `sensorNeedsAttention`), dasselbe zeigt `AdminFeeds` je
+Feed. **Absenz eines Bias = keine Korrektur**, nie 0. Ein plötzlich wachsender
+Bias ist ein Frühwarnsignal für ein Kalibrier-/Hardware-Problem. Der Registry-Pfad
+(`health.SensorDetail` → `FeedSnapshot.Sensors`) speist sowohl den WS-Chip als
+auch `/api/admin/feeds/health`. Bewusst **kein** Prometheus-Metrik dafür
+(Metrik-Kardinalitäts-Regel, WF2-23).
+
 **Ereignis-Log (ASD-013, FR-UI-027).** Aus denselben beobachtbaren Übergängen
 leitet das Frontend einen **Alarm-/Ereignis-Log** ab (Glocke oben rechts mit
 Ungesehen-Badge, `EventPanel.vue`): **Feed** (`feedStatus`-Wechsel:
@@ -324,7 +338,7 @@ immer aktiv — ADR 0014); statische Frontend-Routen werden ausgeliefert.
 | `/api/admin/me/password` | PUT | **ONB-1:** eigenes Passwort ändern (`{current_password, new_password}`, neu min. 8); aktuelles Passwort falsch → 401; setzt `must_change_password=false`; **auch im Pflichtwechsel-Zustand erreichbar** |
 | `/api/admin/me` | DELETE | **ONB-1:** eigenes Konto löschen; **„letzter aktiver Admin"-Guard** (letzter Admin → 409, keine Selbst-Aussperrung) |
 | `/api/admin/overview` | GET | **AP3:** Mandanten-Dashboard als Aggregat — je Mandant `{id, slug, name, status, features[], feeds[], user_count}` in einem Call; **admin** |
-| `/api/admin/feeds/health` | GET | **AP4:** Gesundheitszustand aller Feeds — je Feed `{feed_id, color, stale, ever_seen, last_heartbeat_ago_s, track_count_recent, sensors_active, sensors_total, degraded_reason?}` aus der In-Memory-Health-Registry (`degraded_reason`: `unreachable`/`auth`/`rate_limited` bei degradiertem Feed, CAT063 I063/RE, ADR 0020; `omitempty`); `color` ist **grün** (Heartbeat frisch, unabhängig vom Verkehr — leerer Himmel ist kein Fehler) / **gelb** (Sensor-Teilausfall: `sensors_active < sensors_total > 0`; CAT063, ADR 0010) / **rot** (kein Heartbeat = toter Feed oder nie gesehen); **admin** |
+| `/api/admin/feeds/health` | GET | **AP4:** Gesundheitszustand aller Feeds — je Feed `{feed_id, color, stale, ever_seen, last_heartbeat_ago_s, track_count_recent, sensors_active, sensors_total, degraded_reason?, sensors?}` (`sensors[]` = Per-Sensor-Detail inkl. Registrierungs-Bias `range_bias_m`/`azimuth_bias_deg`, #237) aus der In-Memory-Health-Registry (`degraded_reason`: `unreachable`/`auth`/`rate_limited` bei degradiertem Feed, CAT063 I063/RE, ADR 0020; `omitempty`); `color` ist **grün** (Heartbeat frisch, unabhängig vom Verkehr — leerer Himmel ist kein Fehler) / **gelb** (Sensor-Teilausfall: `sensors_active < sensors_total > 0`; CAT063, ADR 0010) / **rot** (kein Heartbeat = toter Feed oder nie gesehen); **admin** |
 | `/api/admin/feeds` | POST | **ONB-5 (ADR 0011) + ORCH-4 (ADR 0012):** neuen Feed anlegen (`{name, multicast_group?, port?, region?, sensor_mix?}`) → 201. **Endpoint optional:** `multicast_group`/`port` **weglassen** ⇒ der Server allokiert kollisionsfrei den nächsten freien Endpoint aus dem Pool (eine Gruppe je Feed) und gibt ihn zurück; **beide setzen** ⇒ manueller Override (`multicast_group` IPv4-Multicast 224.0.0.0–239.255.255.255, `port` 1..65535); **nur eines** → 400. `sensor_mix` gegen das Vokabular validiert (unbekannt → 400); doppelter Name → 409; belegter Endpoint (manuell) → **409**; Pool erschöpft → **507**. **Der Live-Receiver tritt der (allokierten oder gesetzten) Gruppe sofort bei**; scheitert der Beitritt, wird die Katalogzeile zurückgerollt; **admin** |
 | `/api/admin/feeds/{id}` | DELETE | **ONB-5:** Feed löschen → 204; **der Live-Receiver verlässt die Multicast-Gruppe sofort**; kaskadiert (ON DELETE CASCADE) auf die Abos, die ihn referenzierten (Guard C: kein Blockieren bei bestehenden Abos — Grants kaskadieren); unbekannter Feed → 404; **admin** |
 | `/api/admin/feeds/{id}/sources` | GET | **ORCH-1b (ADR 0012):** Quell-Konfiguration des Feeds — `{sources:[{type, bbox?, sac?, sic?, cred_ref?, poll_interval_secs?}], coverage_bbox}`; `sources` serialisiert als `[]` (nie `null`); unbekannter Feed → 404; **admin** |

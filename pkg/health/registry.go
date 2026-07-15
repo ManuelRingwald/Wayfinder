@@ -13,6 +13,27 @@ import (
 	"time"
 )
 
+// SensorDetail is the per-sensor view within a feed (#237): the identity and
+// state of one radar/sensor from the most recent CAT063 block, plus the
+// registration bias currently applied to it. It lets the operator see WHICH
+// sensor is degraded and how far it is being range/azimuth-corrected — a growing
+// bias is an early warning of a miscalibrating sensor. The health package holds
+// it as a plain domain type; the transport layers (broadcast, adminapi) attach
+// their own JSON shape.
+type SensorDetail struct {
+	SAC         uint8
+	SIC         uint8
+	Operational bool
+	// Reason is the per-source failure reason for a degraded sensor (Firefly
+	// ADR 0033), "" when operational or unknown.
+	Reason string
+	// RangeBiasM / AzimuthBiasDeg are the applied registration correction
+	// (I063/080 SRB in metres, I063/081 SAB in degrees), nil when no correction
+	// is in force for this sensor (absence, never 0).
+	RangeBiasM     *float64
+	AzimuthBiasDeg *float64
+}
+
 // FeedSnapshot is a point-in-time health view for one feed (AP4).
 type FeedSnapshot struct {
 	EverSeen          bool
@@ -32,6 +53,12 @@ type FeedSnapshot struct {
 	// degradation carries no known reason. Purely informational — it does not
 	// affect Color().
 	DegradedReason string
+
+	// Sensors is the per-sensor breakdown from the most recent CAT063 block
+	// (#237): identity, operational state and applied registration bias per
+	// sensor. Empty ("nil") until CAT063 arrives. Drives the per-sensor detail on
+	// the feed-health chip and the admin dashboard.
+	Sensors []SensorDetail
 }
 
 // Color returns the display colour for this feed:
@@ -54,10 +81,11 @@ func (s FeedSnapshot) Color() string {
 type feedEntry struct {
 	fh             *FeedHealth
 	mu             sync.Mutex
-	block          int64  // size of last received CAT062 block
-	sensorsActive  int    // active sensors from last CAT063 block
-	sensorsTotal   int    // total sensors from last CAT063 block
-	degradedReason string // per-source failure reason from last CAT063 block (ADR 0033)
+	block          int64          // size of last received CAT062 block
+	sensorsActive  int            // active sensors from last CAT063 block
+	sensorsTotal   int            // total sensors from last CAT063 block
+	degradedReason string         // per-source failure reason from last CAT063 block (ADR 0033)
+	sensors        []SensorDetail // per-sensor breakdown from last CAT063 block (#237)
 }
 
 // Registry tracks health and recent track activity per feed ID. Feeds are
@@ -120,17 +148,20 @@ func (r *Registry) RecordTracks(feedID int64, count int) {
 	e.mu.Unlock()
 }
 
-// RecordSensors records the sensor counts and the degraded-source reason from
-// the most recent CAT063 block for feedID. active is the number of operational
-// sensors; total is the total number of sensors in the block (Firefly ADR 0022).
-// reason is the dominant per-source failure reason of the degraded sensors
-// ("" when none), decoded from I063/RE SRC-REASON (Firefly ADR 0033).
-func (r *Registry) RecordSensors(feedID int64, active, total int, reason string) {
+// RecordSensors records the per-sensor breakdown from the most recent CAT063
+// block for feedID (Firefly ADR 0022 / #237). active is the number of
+// operational sensors; total is the total number of sensors in the block; reason
+// is the dominant per-source failure reason ("" when none, I063/RE SRC-REASON,
+// Firefly ADR 0033); sensors is the full per-sensor detail (identity, state,
+// applied bias). The counts are passed in (computed by the caller) so the
+// aggregate colour stays consistent with the detail.
+func (r *Registry) RecordSensors(feedID int64, active, total int, reason string, sensors []SensorDetail) {
 	e := r.getOrCreate(feedID)
 	e.mu.Lock()
 	e.sensorsActive = active
 	e.sensorsTotal = total
 	e.degradedReason = reason
+	e.sensors = sensors
 	e.mu.Unlock()
 }
 
@@ -154,6 +185,7 @@ func (r *Registry) Snapshot(feedID int64, now time.Time) FeedSnapshot {
 	sensorsActive := e.sensorsActive
 	sensorsTotal := e.sensorsTotal
 	degradedReason := e.degradedReason
+	sensors := e.sensors
 	e.mu.Unlock()
 	return FeedSnapshot{
 		EverSeen:          st.EverSeen,
@@ -163,6 +195,7 @@ func (r *Registry) Snapshot(feedID int64, now time.Time) FeedSnapshot {
 		SensorsActive:     sensorsActive,
 		SensorsTotal:      sensorsTotal,
 		DegradedReason:    degradedReason,
+		Sensors:           sensors,
 	}
 }
 

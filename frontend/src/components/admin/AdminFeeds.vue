@@ -57,6 +57,15 @@
               <v-chip size="x-small" variant="flat" :color="feedColor(f.id)" :title="feedTitle(f.id)">
                 {{ feedLabel(f.id) }}
               </v-chip>
+              <!-- #237: per-sensor detail — degraded sensors and applied
+                   registration bias (Δr/Δθ), an early warning of miscalibration. -->
+              <div
+                v-for="s in feedSensorsDetail(f.id)"
+                :key="`${s.sac}-${s.sic}`"
+                class="text-caption text-medium-emphasis mt-1"
+              >
+                {{ describeSensor(s) }}
+              </div>
             </td>
             <td class="text-right">
               <v-btn size="small" variant="text" prepend-icon="mdi-tune-variant" @click="openSources(f)">
@@ -401,7 +410,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useAdminStore } from '@/stores/admin.js'
 import { validateCredential, combineCredential } from '@/admin/credential.js'
 import { radiusNmToBbox, bboxToRadius } from '@/admin/geo.js'
-import { describeFeedHealth } from '@/admin/feedHealth.js'
+import { describeFeedHealth, describeSensor, sensorNeedsAttention } from '@/admin/feedHealth.js'
 
 const admin = useAdminStore()
 const busy = ref(false)
@@ -866,6 +875,12 @@ function feedLabel(feedId) {
 
 function feedTitle(feedId) {
   return describeFeedHealth(admin.feedsHealth[feedId]).title
+}
+
+// #237: the per-sensor detail worth showing under the health chip — a degraded
+// sensor or one carrying an applied registration bias (Δr/Δθ).
+function feedSensorsDetail(feedId) {
+  return (admin.feedsHealth[feedId]?.sensors || []).filter(sensorNeedsAttention)
 }
 
 onMounted(refresh)

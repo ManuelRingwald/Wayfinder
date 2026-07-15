@@ -18,6 +18,36 @@ func TestRegistrySnapshotUnknownFeed(t *testing.T) {
 	}
 }
 
+// TestRegistryRecordSensorsStoresDetail verifies the per-sensor breakdown (#237)
+// — identity, state and applied bias — survives RecordSensors → Snapshot, and
+// that absence of a bias stays nil (never 0).
+func TestRegistryRecordSensorsStoresDetail(t *testing.T) {
+	r := NewRegistry(3 * time.Second)
+	rb, az := 144.6875, 0.302
+	details := []SensorDetail{
+		{SAC: 0, SIC: 1, Operational: true, RangeBiasM: &rb, AzimuthBiasDeg: &az},
+		{SAC: 0, SIC: 2, Operational: false, Reason: "unreachable"},
+	}
+	r.RecordSensors(7, 1, 2, "unreachable", details)
+
+	s := r.Snapshot(7, t0)
+	if s.SensorsActive != 1 || s.SensorsTotal != 2 {
+		t.Errorf("counts: got active=%d total=%d, want 1/2", s.SensorsActive, s.SensorsTotal)
+	}
+	if len(s.Sensors) != 2 {
+		t.Fatalf("expected 2 sensors, got %d", len(s.Sensors))
+	}
+	if s.Sensors[0].SIC != 1 || s.Sensors[0].RangeBiasM == nil || *s.Sensors[0].RangeBiasM != rb {
+		t.Errorf("sensor 0: got %+v, want SIC 1 with range bias %v", s.Sensors[0], rb)
+	}
+	if s.Sensors[1].SIC != 2 || s.Sensors[1].Operational || s.Sensors[1].Reason != "unreachable" {
+		t.Errorf("sensor 1: got %+v, want SIC 2 degraded/unreachable", s.Sensors[1])
+	}
+	if s.Sensors[1].RangeBiasM != nil {
+		t.Errorf("sensor 1: expected nil bias (no correction), got %v", *s.Sensors[1].RangeBiasM)
+	}
+}
+
 func TestRegistryHeartbeatMakesFeedGreen(t *testing.T) {
 	r := NewRegistry(3 * time.Second)
 	r.RecordHeartbeat(1, t0)

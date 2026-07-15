@@ -285,7 +285,7 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
           // ASD-013: log a change in the aggregate feed health as an event
           // (compare the worst-across-feeds status before and after the update).
           const prevFeed = store.feedStatus
-          store.setFeedHealth(msg.feed_status.feed_id, msg.feed_status.color, msg.feed_status.degraded_reason)
+          store.setFeedHealth(msg.feed_status.feed_id, msg.feed_status.color, msg.feed_status.degraded_reason, msg.feed_status.sensors)
           const feedEvt = feedStatusEvent(prevFeed, store.feedStatus)
           if (feedEvt) events.add(feedEvt)
           return

@@ -42,6 +42,27 @@ type FeedStatusMessage struct {
 	// SRC-REASON sub-field (Firefly ADR 0033). Omitted when empty (healthy feed
 	// or no known reason) so the healthy path stays byte-for-byte unchanged.
 	DegradedReason string `json:"degraded_reason,omitempty"`
+	// Sensors is the per-sensor breakdown from the last CAT063 block (#237):
+	// identity, state and applied registration bias per sensor. Omitted until
+	// CAT063 arrives, so a feed without sensor status stays byte-for-byte
+	// unchanged.
+	Sensors []FeedSensor `json:"sensors,omitempty"`
+}
+
+// FeedSensor is one sensor's status within a feed status message (#237). It
+// carries the applied registration bias so the ASD can show, per sensor, how far
+// the SDPS is range/azimuth-correcting it (a growing bias warns of a
+// miscalibrating radar). Bias fields are omitted when no correction is applied.
+type FeedSensor struct {
+	SAC         uint8 `json:"sac"`
+	SIC         uint8 `json:"sic"`
+	Operational bool  `json:"operational"`
+	// DegradedReason is this sensor's failure reason when degraded (ADR 0033).
+	DegradedReason string `json:"degraded_reason,omitempty"`
+	// RangeBiasM (I063/080 SRB, metres) and AzimuthBiasDeg (I063/081 SAB,
+	// degrees) are the applied correction; omitted when none is in force.
+	RangeBiasM     *float64 `json:"range_bias_m,omitempty"`
+	AzimuthBiasDeg *float64 `json:"azimuth_bias_deg,omitempty"`
 }
 
 // TrackBatch is a set of decoded tracks attributed to the feed they arrived on.

@@ -1298,6 +1298,22 @@ type feedHealthDTO struct {
 	// ("unreachable" / "auth" / "rate_limited"), from CAT063 I063/RE SRC-REASON
 	// (Firefly ADR 0033). Omitted when empty (healthy or reason unknown).
 	DegradedReason string `json:"degraded_reason,omitempty"`
+	// Sensors is the per-sensor breakdown from the last CAT063 block (#237):
+	// identity, state and applied registration bias per sensor. Omitted until
+	// CAT063 arrives.
+	Sensors []feedSensorDTO `json:"sensors,omitempty"`
+}
+
+// feedSensorDTO is one sensor's admin-visible status within a feed (#237),
+// including the applied registration bias (I063/080 SRB metres, I063/081 SAB
+// degrees) so an operator can spot a miscalibrating radar early.
+type feedSensorDTO struct {
+	SAC            uint8    `json:"sac"`
+	SIC            uint8    `json:"sic"`
+	Operational    bool     `json:"operational"`
+	DegradedReason string   `json:"degraded_reason,omitempty"`
+	RangeBiasM     *float64 `json:"range_bias_m,omitempty"`
+	AzimuthBiasDeg *float64 `json:"azimuth_bias_deg,omitempty"`
 }
 
 // getFeedsHealth returns the current health state for every known feed.
@@ -1318,6 +1334,17 @@ func (h *Handler) getFeedsHealth(w http.ResponseWriter, r *http.Request) {
 	out := make([]feedHealthDTO, len(feedList))
 	for i, f := range feedList {
 		s := h.feedHealth.Snapshot(f.ID, now)
+		var sensors []feedSensorDTO
+		for _, se := range s.Sensors {
+			sensors = append(sensors, feedSensorDTO{
+				SAC:            se.SAC,
+				SIC:            se.SIC,
+				Operational:    se.Operational,
+				DegradedReason: se.Reason,
+				RangeBiasM:     se.RangeBiasM,
+				AzimuthBiasDeg: se.AzimuthBiasDeg,
+			})
+		}
 		out[i] = feedHealthDTO{
 			FeedID:            f.ID,
 			Color:             s.Color(),
@@ -1328,6 +1355,7 @@ func (h *Handler) getFeedsHealth(w http.ResponseWriter, r *http.Request) {
 			SensorsActive:     s.SensorsActive,
 			SensorsTotal:      s.SensorsTotal,
 			DegradedReason:    s.DegradedReason,
+			Sensors:           sensors,
 		}
 	}
 	writeJSON(w, http.StatusOK, out)
