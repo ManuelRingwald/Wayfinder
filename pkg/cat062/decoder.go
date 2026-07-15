@@ -57,7 +57,7 @@ func DecodeRecord(data []byte, offset int) (DecodedTrack, int, error) {
 	// CAT062 UAP (ICD v2.0.0): I062/136 (Measured Flight Level) at FRN 17,
 	// I062/500 (Estimated Accuracies) at FRN 27 (not the old non-standard 16).
 	// I062/245 (Target Identification / Callsign, ICD v2.1.0) sits at FRN 10.
-	uapOrder := []uint8{1, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 17, 18, 19, 20, 27}
+	uapOrder := []uint8{1, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 17, 18, 19, 20, 21, 27}
 
 	for _, frn := range uapOrder {
 		if !fspec.HasItem(frn) {
@@ -284,6 +284,13 @@ func DecodeRecord(data []byte, offset int) (DecodedTrack, int, error) {
 			track.RateOfClimbDescentFtMin = &rocd
 			offset += 2
 
+		case 21: // I062/390: Flight Plan Related Data (compound, subfield-driven, ICD 3.7.0)
+			newOffset, err := decodeFlightPlanData(data, offset, &track)
+			if err != nil {
+				return track, offset, err
+			}
+			offset = newOffset
+
 		case 27: // I062/500: Estimated Accuracies (compound, currently just APC)
 			if offset+1 > len(data) {
 				return track, offset, NewDecodeError("truncated I062/500 primary")
@@ -447,7 +454,7 @@ func decodeAircraftDerivedData(data []byte, offset int, track *DecodedTrack) (in
 
 	maxSub := len(spec) * 7
 	for sf := 1; sf <= maxSub; sf++ {
-		if !i380Present(spec, sf) {
+		if !compoundSubfieldPresent(spec, sf) {
 			continue
 		}
 		switch sf {
@@ -505,9 +512,105 @@ func decodeAircraftDerivedData(data []byte, offset int, track *DecodedTrack) (in
 	return offset, nil
 }
 
-// i380Present reports whether the I062/380 subfield spec marks subfield sf
-// (1-based) present. Each spec octet carries 7 subfield bits (7..1) + an FX bit (0).
-func i380Present(spec []byte, sf int) bool {
+// i390SubfieldLen maps the fixed-length I062/390 subfields to their octet count,
+// so the decoder can length-skip a subfield Firefly does not send yet (its plan
+// field set grows additively, ICD §4.10). The subfields the decoder consumes —
+// #2 CSN, #7 DEP, #8 DST — are handled explicitly in decodeFlightPlanData. #12
+// (TOD) is deliberately ABSENT: it is a repetitive (REP-prefixed) subfield with no
+// fixed length, so a record carrying it is rejected rather than mis-parsed (robust
+// decoder, charter §7).
+var i390SubfieldLen = map[int]int{
+	1: 2, 2: 7, 3: 4, 4: 1, 5: 4, 6: 1, 7: 4, 8: 4, 9: 3,
+	10: 2, 11: 2, 13: 6, 14: 1,
+}
+
+// maxI390SpecOctets caps the FX-chained subfield spec of I062/390. The standard
+// UAP has 14 subfields → 2 octets; a longer chain is a hostile/garbled datagram.
+const maxI390SpecOctets = 2
+
+// decodeFlightPlanData parses I062/390 (Flight Plan Related Data, ICD 3.7.0) — the
+// SDPS's flight-plan correlation for a track. It is a compound item: an FX-chained
+// subfield spec followed by the present subfields in ascending number. The decoder
+// reads the operationally useful ones — CSN (#2, the filed callsign), DEP (#7,
+// departure ICAO) and DST (#8, destination ICAO) — length-skips any other known
+// fixed-length subfield, and rejects a variable/unknown subfield rather than
+// desynchronising the record. The item appears only for a correlated track, so an
+// uncorrelated track never carries it (no wire break for the common case).
+func decodeFlightPlanData(data []byte, offset int, track *DecodedTrack) (int, error) {
+	specStart := offset
+	for {
+		if offset >= len(data) {
+			return offset, NewDecodeError("truncated I062/390 subfield spec")
+		}
+		oct := data[offset]
+		offset++
+		if oct&0x01 == 0 { // FX clear: end of spec
+			break
+		}
+		if offset-specStart >= maxI390SpecOctets {
+			return offset, NewDecodeError("I062/390 subfield spec too long")
+		}
+	}
+	spec := data[specStart:offset]
+
+	take := func(n int) ([]byte, error) {
+		if offset+n > len(data) {
+			return nil, NewDecodeError("truncated I062/390 subfield")
+		}
+		b := data[offset : offset+n]
+		offset += n
+		return b, nil
+	}
+	// asciiField renders n ASCII octets, trimming trailing spaces (the wire pads
+	// callsign/locator fields with spaces to a fixed width).
+	asciiField := func(b []byte) string {
+		return strings.TrimRight(string(b), " ")
+	}
+
+	maxSub := len(spec) * 7
+	for sf := 1; sf <= maxSub; sf++ {
+		if !compoundSubfieldPresent(spec, sf) {
+			continue
+		}
+		switch sf {
+		case 2: // CSN — filed callsign, 7 octets ASCII
+			b, err := take(7)
+			if err != nil {
+				return offset, err
+			}
+			s := asciiField(b)
+			track.PlanCallsign = &s
+		case 7: // DEP — departure airport, 4 octets ICAO locator
+			b, err := take(4)
+			if err != nil {
+				return offset, err
+			}
+			s := asciiField(b)
+			track.PlanDeparture = &s
+		case 8: // DST — destination airport, 4 octets ICAO locator
+			b, err := take(4)
+			if err != nil {
+				return offset, err
+			}
+			s := asciiField(b)
+			track.PlanDestination = &s
+		default:
+			n, ok := i390SubfieldLen[sf]
+			if !ok {
+				return offset, NewDecodeError(fmt.Sprintf("unsupported I062/390 subfield #%d", sf))
+			}
+			if _, err := take(n); err != nil {
+				return offset, err
+			}
+		}
+	}
+	return offset, nil
+}
+
+// compoundSubfieldPresent reports whether an ASTERIX compound-item subfield spec
+// marks subfield sf (1-based) present. Each spec octet carries 7 subfield bits
+// (7..1) + an FX bit (0). Shared by the compound items I062/380 and I062/390.
+func compoundSubfieldPresent(spec []byte, sf int) bool {
 	oct := (sf - 1) / 7
 	if oct >= len(spec) {
 		return false

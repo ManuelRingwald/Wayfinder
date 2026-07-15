@@ -90,6 +90,7 @@ Dies ist das Herzstück und der einzige Berührungspunkt mit Firefly. Wayfinder
   | 18 | I062/130 | Geometrische Höhe (WGS-84; nur wenn vorhanden) | signed i16, LSB 6,25 ft |
   | 19 | I062/135 | Barometrische Höhe (gefiltert; nur wenn vorhanden) | Bit 16 = QNH-Bit, Bits 15–1 = 15-Bit-ZK, LSB 1/4 FL = 25 ft |
   | 20 | I062/220 | Steig-/Sinkrate (nur wenn vorhanden) | signed i16, LSB 6,25 ft/min, positiv = steigen |
+  | 21 | I062/390 | Flugplan-Daten (nur bei korreliertem Track) | Compound: CSN (7 Okt. ASCII), DEP/DST (je 4 Okt. ICAO) |
   | 27 | I062/500 | Genauigkeit | — |
 
   Die FRNs folgen der **echten EUROCONTROL-CAT062-UAP** (ICD ab v2.0.0,
@@ -110,7 +111,13 @@ Dies ist das Herzstück und der einzige Berührungspunkt mit Firefly. Wayfinder
   Beschleunigung Ax/Ay) und I062/200 (FRN 15, Bewegungszustand TRANS/LONG/VERT,
   je 2 Bit, Wert 3 = unbestimmt). Wayfinder zeigt einen **Kurven-Indikator** →/←
   aus TRANS im Label und Kurven-/Geschwindigkeitstrend + Beschleunigung im
-  Detail-Panel; der Steig-/Sinkpfeil bleibt quantitativ aus I062/220.
+  Detail-Panel; der Steig-/Sinkpfeil bleibt quantitativ aus I062/220. Seit ICD
+  3.7.0 (additiv, Fireflys FPL.2) trägt ein **korrelierter** Track I062/390
+  (FRN 21, Flugplan-Daten): Plan-Callsign (CSN) + Route (DEP/DST). Wayfinder zeigt
+  Plan-Callsign + ADEP→ADES im Detail-Panel und signalisiert einen
+  **Callsign-Mismatch** (CSN ≠ I062/245) am Label („≠") und im Panel. Die
+  **manuelle Korrelation** (Kommando-API, Rückkanal zu Firefly) ist ein separates,
+  noch nicht gebautes Häppchen (eigener ADR).
 - **Koordinaten:** I062/105 liefert **WGS84 direkt** — Wayfinder rendert daraus,
   eine stereografische Rückprojektion ist **nicht** nötig. I062/100 ist die
   zusätzliche System-Ebene (optional verwertbar); ihr Referenzpunkt ist der

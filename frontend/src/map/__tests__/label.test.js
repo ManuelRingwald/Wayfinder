@@ -162,4 +162,26 @@ describe('buildLabel', () => {
     const track = { callsign: 'DLH7', track_num: 1, vx: 0, vy: 0, mono: true, course_trend: 'right' }
     expect(buildLabel(track, '').split('\n')[0]).toBe('DLH7* →')
   })
+
+  // Callsign mismatch (I062/390 CSN vs I062/245, ICD 3.7.0, #245): a "≠" marker
+  // when the filed plan callsign differs from the downlinked identity.
+  it('flags a callsign mismatch with ≠', () => {
+    const track = { callsign: 'DLH8', track_num: 1, vx: 0, vy: 0, plan_callsign: 'BAW22' }
+    expect(buildLabel(track, '').split('\n')[0]).toBe('DLH8≠')
+  })
+
+  it('adds no ≠ when the filed plan callsign matches the downlinked one', () => {
+    const track = { callsign: 'DLH9', track_num: 1, vx: 0, vy: 0, plan_callsign: 'DLH9' }
+    expect(buildLabel(track, '').split('\n')[0]).toBe('DLH9')
+  })
+
+  it('adds no ≠ when there is no filed plan callsign', () => {
+    const track = { callsign: 'DLH10', track_num: 1, vx: 0, vy: 0 }
+    expect(buildLabel(track, '').split('\n')[0]).toBe('DLH10')
+  })
+
+  it('orders MON, mismatch and turn markers on the identity line', () => {
+    const track = { callsign: 'DLH11', track_num: 1, vx: 0, vy: 0, mono: true, plan_callsign: 'X', course_trend: 'left' }
+    expect(buildLabel(track, '').split('\n')[0]).toBe('DLH11*≠ ←')
+  })
 })

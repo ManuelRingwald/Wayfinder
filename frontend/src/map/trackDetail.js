@@ -145,6 +145,26 @@ export function formatAcceleration(axMs2, ayMs2) {
   return `${Math.hypot(axMs2, ayMs2).toFixed(1)} m/s²`
 }
 
+// formatPlanRoute renders the filed flight-plan route (I062/390 DEP/DST, ICD
+// 3.7.0) as "EDDF → EDDM". A missing endpoint is shown as "—" so a one-sided plan
+// still reads as a route; returns '' when neither endpoint is present.
+export function formatPlanRoute(departure, destination) {
+  const dep = typeof departure === 'string' && departure !== '' ? departure : null
+  const dst = typeof destination === 'string' && destination !== '' ? destination : null
+  if (dep === null && dst === null) return ''
+  return `${dep ?? '—'} → ${dst ?? '—'}`
+}
+
+// isPlanCallsignMismatch reports whether the filed plan callsign (I062/390 CSN)
+// differs from the downlinked identity (I062/245) — both must be present. This is
+// an operational signal (the aircraft squawks a callsign other than its filed
+// plan), surfaced as a highlight; a missing side is never flagged (fail-safe).
+export function isPlanCallsignMismatch(downlinkedCallsign, planCallsign) {
+  if (typeof downlinkedCallsign !== 'string' || downlinkedCallsign === '') return false
+  if (typeof planCallsign !== 'string' || planCallsign === '') return false
+  return downlinkedCallsign !== planCallsign
+}
+
 // VERTICAL_TREND_LABELS maps the tendency glyph baked in tracks.js (ASD-001b:
 // ▲ climbing, ▼ descending) to a German word. Anything else (including '') is
 // treated as level flight.

@@ -89,6 +89,20 @@
         </v-list-item-title>
         <v-list-item-subtitle>Sensor-Aktualität</v-list-item-subtitle>
       </v-list-item>
+      <v-list-item
+        v-if="planCallsign"
+        :prepend-icon="planCallsignMismatch ? 'mdi-alert' : 'mdi-clipboard-text-outline'"
+        :base-color="planCallsignMismatch ? 'warning' : undefined"
+      >
+        <v-list-item-title class="wf-mono">{{ planCallsign }}</v-list-item-title>
+        <v-list-item-subtitle>
+          {{ planCallsignMismatch ? 'Plan-Callsign — weicht von gesendeter Kennung ab' : 'Plan-Callsign (Flugplan)' }}
+        </v-list-item-subtitle>
+      </v-list-item>
+      <v-list-item v-if="planRouteLabel" prepend-icon="mdi-map-marker-path">
+        <v-list-item-title class="wf-mono">{{ planRouteLabel }}</v-list-item-title>
+        <v-list-item-subtitle>Route (ADEP → ADES)</v-list-item-subtitle>
+      </v-list-item>
       <v-list-item v-if="track.mode_3a != null" prepend-icon="mdi-identifier">
         <v-list-item-title class="wf-mono">{{ mode3aStr }}</v-list-item-title>
         <v-list-item-subtitle>Mode 3/A (Squawk)</v-list-item-subtitle>
@@ -148,6 +162,8 @@ import {
   formatCourseTrend,
   formatSpeedTrend,
   formatAcceleration,
+  formatPlanRoute,
+  isPlanCallsignMismatch,
 } from '@/map/trackDetail.js'
 
 const emit = defineEmits(['close'])
@@ -230,6 +246,15 @@ const courseTrendLabel = computed(() => formatCourseTrend(track.value?.course_tr
 const speedTrendLabel = computed(() => formatSpeedTrend(track.value?.speed_trend))
 const accelerationLabel = computed(() =>
   formatAcceleration(track.value?.accel_ax_ms2, track.value?.accel_ay_ms2),
+)
+
+// #245: flight-plan correlation (I062/390). The filed plan callsign and route
+// (ADEP → ADES); a mismatch between the filed callsign and the downlinked
+// identity (I062/245) is highlighted as an operational signal.
+const planCallsign = computed(() => track.value?.plan_callsign ?? '')
+const planRouteLabel = computed(() => formatPlanRoute(track.value?.plan_departure, track.value?.plan_destination))
+const planCallsignMismatch = computed(() =>
+  isPlanCallsignMismatch(track.value?.callsign, track.value?.plan_callsign),
 )
 
 const statusLabel = computed(() => {

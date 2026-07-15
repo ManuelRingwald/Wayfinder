@@ -16,6 +16,10 @@
 // Turn indicator (I062/200 TRANS, ICD 3.6.0): a right/left turn adds "→"/"←" to
 // the identity line so a manoeuvring aircraft stands out; a constant or
 // undetermined course adds nothing.
+//
+// Callsign mismatch (I062/390 CSN vs I062/245, ICD 3.7.0): when the filed plan
+// callsign differs from the downlinked identity, a trailing "≠" flags it — a real
+// operational signal (wrong squawk/plan); the detail panel spells it out.
 export function buildLabel(track, vTrend) {
   const monoMark = track.mono === true ? '*' : ''
   const ident =
@@ -24,7 +28,13 @@ export function buildLabel(track, vTrend) {
       : String(track.track_num)
   const turn =
     track.course_trend === 'right' ? ' →' : track.course_trend === 'left' ? ' ←' : ''
-  const line1 = `${ident}${monoMark}${turn}`
+  const mismatch =
+    typeof track.callsign === 'string' && track.callsign !== '' &&
+    typeof track.plan_callsign === 'string' && track.plan_callsign !== '' &&
+    track.callsign !== track.plan_callsign
+      ? '≠'
+      : ''
+  const line1 = `${ident}${monoMark}${mismatch}${turn}`
 
   // Ground speed: sqrt(Vx²+Vy²) m/s → kt (1 m/s ≈ 1.9438 kt).
   const gs = Math.round(Math.hypot(track.vx, track.vy) * 1.9438)

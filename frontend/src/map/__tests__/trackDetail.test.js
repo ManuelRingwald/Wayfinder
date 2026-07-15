@@ -19,6 +19,8 @@ import {
   formatSpeedTrend,
   formatVerticalMotion,
   formatAcceleration,
+  formatPlanRoute,
+  isPlanCallsignMismatch,
 } from '../trackDetail.js'
 
 describe('formatLatLon', () => {
@@ -245,5 +247,32 @@ describe('formatAcceleration', () => {
   it('returns "" when either component is missing', () => {
     expect(formatAcceleration(1.0, null)).toBe('')
     expect(formatAcceleration(undefined, 0.5)).toBe('')
+  })
+})
+
+// Flight-plan correlation (I062/390, ICD 3.7.0, #245).
+describe('formatPlanRoute', () => {
+  it('renders both endpoints as an arrow route', () => {
+    expect(formatPlanRoute('EDDF', 'EDDM')).toBe('EDDF → EDDM')
+  })
+  it('shows a dash for a missing endpoint', () => {
+    expect(formatPlanRoute('EDDF', null)).toBe('EDDF → —')
+    expect(formatPlanRoute('', 'EDDM')).toBe('— → EDDM')
+  })
+  it('returns "" when neither endpoint is present', () => {
+    expect(formatPlanRoute(null, undefined)).toBe('')
+    expect(formatPlanRoute('', '')).toBe('')
+  })
+})
+
+describe('isPlanCallsignMismatch', () => {
+  it('is true only when both callsigns are present and differ', () => {
+    expect(isPlanCallsignMismatch('DLH123', 'BAW22')).toBe(true)
+    expect(isPlanCallsignMismatch('DLH123', 'DLH123')).toBe(false)
+  })
+  it('is false (fail-safe) when either side is missing', () => {
+    expect(isPlanCallsignMismatch('DLH123', null)).toBe(false)
+    expect(isPlanCallsignMismatch(null, 'DLH123')).toBe(false)
+    expect(isPlanCallsignMismatch('', 'DLH123')).toBe(false)
   })
 })

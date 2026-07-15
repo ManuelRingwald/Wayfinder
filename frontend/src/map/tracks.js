@@ -216,6 +216,14 @@ export function updateTracksLayer(msg, state, renderSources, startFadeLoop, rete
         vertical_motion: typeof track.vertical_motion === 'string' ? track.vertical_motion : null,
         accel_ax_ms2: typeof track.accel_ax_ms2 === 'number' ? track.accel_ax_ms2 : null,
         accel_ay_ms2: typeof track.accel_ay_ms2 === 'number' ? track.accel_ay_ms2 : null,
+        // Flight-plan correlation (I062/390, ICD 3.7.0, #245): the filed plan the
+        // SDPS matched to this track — callsign + ADEP/ADES route, shown in the
+        // detail panel. plan_callsign may differ from the downlinked callsign
+        // (I062/245) — a mismatch surfaced in the label + panel. Null when the
+        // track is uncorrelated.
+        plan_callsign: typeof track.plan_callsign === 'string' ? track.plan_callsign : null,
+        plan_departure: typeof track.plan_departure === 'string' ? track.plan_departure : null,
+        plan_destination: typeof track.plan_destination === 'string' ? track.plan_destination : null,
       },
     }
   })
