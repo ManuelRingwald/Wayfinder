@@ -39,6 +39,13 @@ type ServiceStatus struct {
 // timeLSBSeconds: I065/030 counts 1/128-second ticks (as I062/070).
 const timeLSBSeconds = 1.0 / 128.0
 
+// maxFSPECOctets caps the FX-chained FSPEC length (the CAT065 UAP ends at
+// FRN 7 → 1 octet). Beyond this a datagram is hostile or garbled and is
+// rejected. The cap also bounds the FRN iteration in decodeRecord to a safe
+// range, so an overlong chain can never overflow the loop counter. Wayfinder
+// #235 (mirror of Firefly's QW.2 FSPEC-hardening fix).
+const maxFSPECOctets = 36
+
 // FRN widths (octets) for the CAT065 UAP items we read.
 const (
 	frnDataSource     = 1 // I065/010, 2 octets
@@ -95,6 +102,8 @@ func decodeRecord(data []byte, offset, end int) (ServiceStatus, int, error) {
 	var status ServiceStatus
 
 	// Parse the FSPEC: octets up to and including the first with FX (bit 0) clear.
+	// A crafted datagram could chain FX forever; cap the length so the parse can
+	// neither read nor (below) iterate an unbounded FSPEC (Wayfinder #235).
 	fspecStart := offset
 	for {
 		if offset >= end {
@@ -104,6 +113,9 @@ func decodeRecord(data []byte, offset, end int) (ServiceStatus, int, error) {
 		offset++
 		if !fx {
 			break
+		}
+		if offset-fspecStart >= maxFSPECOctets {
+			return status, offset, newErr("FSPEC exceeds maximum length (%d octets)", maxFSPECOctets)
 		}
 	}
 	fspec := data[fspecStart:offset]
@@ -118,8 +130,12 @@ func decodeRecord(data []byte, offset, end int) (ServiceStatus, int, error) {
 		return b, nil
 	}
 
+	// Iterate FRNs as an int, not a uint8, so the counter cannot wrap past 255
+	// and loop forever on a crafted (over-long) FSPEC (Wayfinder #235). The cap
+	// above already bounds maxFRN to maxFSPECOctets*7 = 252.
 	var haveSource, haveType, haveService, haveTime, haveStatus bool
-	for frn := uint8(1); int((frn-1)/7) < len(fspec); frn++ {
+	maxFRN := len(fspec) * 7
+	for frn := 1; frn <= maxFRN; frn++ {
 		if !fspecHas(fspec, frn) {
 			continue
 		}
@@ -175,8 +191,8 @@ func decodeRecord(data []byte, offset, end int) (ServiceStatus, int, error) {
 }
 
 // fspecHas reports whether the FSPEC marks the given FRN present.
-func fspecHas(fspec []byte, frn uint8) bool {
-	octet := int((frn - 1) / 7)
+func fspecHas(fspec []byte, frn int) bool {
+	octet := (frn - 1) / 7
 	if octet >= len(fspec) {
 		return false
 	}

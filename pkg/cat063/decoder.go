@@ -39,6 +39,13 @@ const Category = 0x3F // 63
 // I065/030).
 const timeLSBSeconds = 1.0 / 128.0
 
+// maxFSPECOctets caps the FX-chained FSPEC length (the CAT063 UAP ends at
+// FRN 14 → 2 octets). Beyond this a datagram is hostile or garbled and is
+// rejected. The cap also bounds the FRN iteration in decodeRecord to a safe
+// range, so an overlong chain can never overflow the loop counter. Wayfinder
+// #235 (mirror of Firefly's QW.2 FSPEC-hardening fix).
+const maxFSPECOctets = 36
+
 // FRN indices for the standard EUROCONTROL CAT063 UAP (ADR 0032). Firefly emits
 // only 1/3/4/5; the others are known so the decoder can length-skip them.
 const (
@@ -221,6 +228,8 @@ func decodeRecord(data []byte, offset, end int) (SensorStatus, int, error) {
 	var s SensorStatus
 
 	// Parse the FSPEC: octets up to and including the first with FX (bit 0) clear.
+	// A crafted datagram could chain FX forever; cap the length so the parse can
+	// neither read nor (below) iterate an unbounded FSPEC (Wayfinder #235).
 	fspecStart := offset
 	for {
 		if offset >= end {
@@ -230,6 +239,9 @@ func decodeRecord(data []byte, offset, end int) (SensorStatus, int, error) {
 		offset++
 		if !fx {
 			break
+		}
+		if offset-fspecStart >= maxFSPECOctets {
+			return s, offset, newErr("FSPEC exceeds maximum length (%d octets)", maxFSPECOctets)
 		}
 	}
 	fspec := data[fspecStart:offset]
@@ -244,8 +256,13 @@ func decodeRecord(data []byte, offset, end int) (SensorStatus, int, error) {
 		return b, nil
 	}
 
+	// Iterate FRNs as an int, not a uint8: the highest FRN a capped FSPEC can
+	// address is maxFSPECOctets*7 = 252, which fits a uint8 — but only just.
+	// Using int removes any chance of the counter wrapping past 255 and looping
+	// forever on a crafted (over-long) FSPEC (Wayfinder #235).
 	var haveSDPS, haveSensor, haveTime, haveStatus bool
-	for frn := uint8(1); int((frn-1)/7) < len(fspec); frn++ {
+	maxFRN := len(fspec) * 7
+	for frn := 1; frn <= maxFRN; frn++ {
 		if !fspecHas(fspec, frn) {
 			continue
 		}
@@ -328,7 +345,7 @@ func decodeRecord(data []byte, offset, end int) (SensorStatus, int, error) {
 			// A remaining standard item with a known fixed length is skipped;
 			// anything else cannot be length-skipped safely, so reject rather
 			// than mis-parse (robust decoder). Firefly emits only FRN {1,3,4,5}.
-			n, ok := fixedItemLen[frn]
+			n, ok := fixedItemLen[uint8(frn)]
 			if !ok {
 				return s, offset, newErr("unknown FRN %d present", frn)
 			}
@@ -345,8 +362,8 @@ func decodeRecord(data []byte, offset, end int) (SensorStatus, int, error) {
 }
 
 // fspecHas reports whether the FSPEC marks the given FRN present.
-func fspecHas(fspec []byte, frn uint8) bool {
-	octet := int((frn - 1) / 7)
+func fspecHas(fspec []byte, frn int) bool {
+	octet := (frn - 1) / 7
 	if octet >= len(fspec) {
 		return false
 	}

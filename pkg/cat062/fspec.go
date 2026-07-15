@@ -7,8 +7,15 @@ type FSPEC struct {
 	octets []uint8
 }
 
+// maxFSPECOctets caps the FX-chained FSPEC length. The real CAT062 UAP ends at
+// FRN 27 (4 octets); 36 octets covers FRN 1..252, far beyond any real record,
+// while stopping a hostile datagram from driving an unbounded FX chain. Mirrors
+// Firefly's MAX_FSPEC_OCTETS (its QW.2 fuzzing fix). Wayfinder #235.
+const maxFSPECOctets = 36
+
 // NewFSPEC parses FSPEC octets from a data stream.
-// It reads octets until one has FX=0 (no more octets).
+// It reads octets until one has FX=0 (no more octets), rejecting a chain longer
+// than maxFSPECOctets so a crafted datagram cannot force an unbounded read.
 func NewFSPEC(data []byte, offset int) (*FSPEC, int, error) {
 	var octets []uint8
 	i := offset
@@ -24,6 +31,11 @@ func NewFSPEC(data []byte, offset int) (*FSPEC, int, error) {
 		// Check FX bit (bit 0, LSB): 1 = another octet follows, 0 = end of FSPEC
 		if (oct & 0x01) == 0 {
 			break
+		}
+		// FX still set: guard the chain length before reading the next octet, so a
+		// hostile all-FX datagram cannot grow the FSPEC without bound.
+		if len(octets) >= maxFSPECOctets {
+			return nil, i, ErrFSPECTooLong
 		}
 	}
 
@@ -50,7 +62,8 @@ func (f *FSPEC) HasItem(frn uint8) bool {
 
 // Errors
 var (
-	ErrTruncated = NewDecodeError("truncated data")
+	ErrTruncated    = NewDecodeError("truncated data")
+	ErrFSPECTooLong = NewDecodeError("FSPEC exceeds maximum length")
 )
 
 // DecodeError is a parsing error.

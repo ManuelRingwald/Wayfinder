@@ -1,9 +1,10 @@
 # Continuous Integration — Wayfinder (Go backend + embedded Vue frontend).
 #
 # Runs the charter's quality gates (CLAUDE.md §6) on every push to main and every
-# pull request against main, split into three independently-reportable jobs so
-# branch protection can require each one:
+# pull request against main, split into independently-reportable jobs so branch
+# protection can require each one:
 #   * go       — build, vet, gofmt check, unit tests
+#   * fuzz     — time-boxed fuzzing of the trust-boundary decoders (CLAUDE.md §7)
 #   * lint     — golangci-lint (standard set; see .golangci.yml)
 #   * frontend — vitest + production build, and a check that the committed,
 #                embedded bundle (internal/webui/dist) is up to date.
@@ -54,6 +55,29 @@ jobs:
 
       - name: go test
         run: go test ./...
+
+  # Time-boxed fuzzing of the CAT062/063/065 decoders — the parsers at the
+  # unauthenticated multicast trust boundary (CLAUDE.md §7, "Fuzzing des Parsers
+  # vorsehen"). A regression net against panics and runaway loops on hostile
+  # input, not a replacement for long local runs. Mirrors Firefly's fuzz job.
+  # Go runs one fuzz target per package per invocation, so we call each in turn.
+  fuzz:
+    name: Fuzz (time-boxed)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Fuzz decoders (30s each target)
+        run: |
+          go test -run='^$' -fuzz='^FuzzDecodeDataBlock$'   -fuzztime=30s ./pkg/cat062
+          go test -run='^$' -fuzz='^FuzzDecodeSensorBlock$' -fuzztime=30s ./pkg/cat063
+          go test -run='^$' -fuzz='^FuzzDecodeStatusBlock$' -fuzztime=30s ./pkg/cat065
 
   lint:
     name: golangci-lint
