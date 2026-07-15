@@ -75,6 +75,23 @@ describe('asd store — per-feed health aggregation (#117)', () => {
     expect(s.feedStatus).toBe('unknown')
   })
 
+  it('carries per-sensor detail and flattens it into sensorDetails (#237)', () => {
+    const s = useAsdStore()
+    s.setFeedHealth(1, 'yellow', 'unreachable', [
+      { sac: 0, sic: 1, operational: true, range_bias_m: 145, azimuth_bias_deg: 0.3 },
+      { sac: 0, sic: 2, operational: false, degraded_reason: 'unreachable' },
+    ])
+    s.setFeedHealth(2, 'green', '', [{ sac: 0, sic: 5, operational: true }])
+    const byFeed = s.sensorDetails.reduce((m, x) => { (m[x.feedId] ??= []).push(x); return m }, {})
+    expect(byFeed[1]).toHaveLength(2)
+    expect(byFeed[1][0].range_bias_m).toBe(145)
+    expect(byFeed[1][0].feedId).toBe(1)
+    expect(byFeed[2]).toHaveLength(1)
+    // resetFeedHealth also clears the per-sensor detail.
+    s.resetFeedHealth()
+    expect(s.sensorDetails).toHaveLength(0)
+  })
+
   it('surfaces the degraded reason from the CAT063 RE field (#197)', () => {
     const s = useAsdStore()
     s.setFeedHealth(1, 'yellow', 'auth')

@@ -10,6 +10,36 @@
 
 ---
 
+## 📡 Stand 2026-07-15 (CAT063 Registrierungs-Bias je Sensor — #237, FR-DATA-009)
+
+**In normaler Sprache:** Jedes Radar misst systematisch ein bisschen falsch (z. B.
+„immer 150 m zu weit"). Firefly schätzt diesen Fehler laufend und rechnet ihn vor
+der Fusion heraus. Ab jetzt **zeigt Wayfinder den angewandten Wert je Sensor** —
+im Feed-Chip (aufklappbar: „SIC 2 · Δr +145 m · Δθ +0,30°") und im Admin-Feed-
+Panel. Nutzen: Ein Bias, der plötzlich **wächst**, ist ein **Frühwarnsignal** —
+das Radar läuft aus der Kalibrierung oder hat ein Hardware-Problem, bevor das
+Lagebild sichtbar leidet.
+
+**Umfang-Entscheidung:** Wayfinders Feed-Health war bisher **rein aggregiert**
+(grün/gelb/rot + „2/3 Radare") — es gab **keinen Per-Sensor-Eintrag**. Auf
+Betreiber-Wahl (voller Chip-Ausbau) wurde ein **Per-Sensor-Detailpfad neu gebaut**.
+
+**Fachlich/technisch:** Decoder liest I063/080 **SRB** (i16 × 1/128 NM → m) +
+I063/081 **SAB** (i16 × 360/2¹⁶°) nach `SensorStatus.RangeBiasM`/`.AzimuthBiasDeg`
+(**nil = keine Korrektur**, nie 0; FRN 7/8 wurden bisher nur übersprungen). Neuer
+Pfad: `health.SensorDetail` je Feed → `FeedSnapshot.Sensors` → WS
+`FeedStatusMessage.sensors[]` **und** Admin `/api/admin/feeds/health` `sensors[]`.
+Frontend: geteilte Helfer (`formatSensorBias`/`describeSensor`/`sensorNeedsAttention`
+in `admin/feedHealth.js`), Store (`feedSensors`/`sensorDetails`), operativer
+**FeedStatusChip** als Menü, `AdminFeeds`-Zeile. **Bewusst kein Prometheus-Metrik**
+(Kardinalitäts-Regel WF2-23). Additiv, kein Wire-/ICD-Bruch. Grundwahrheit:
+Fireflys `sensor_with_bias_matches_reference_dump` (Dump SIC 1, +150 m / +0,30°).
+Register: **FR-DATA-009**. Gates grün (`go test ./...`, vitest 537, `npm run build`,
+gofmt/vet/golangci-lint). dist neu.
+
+**Nächster Schritt:** Cross-Project-Nachzug weiter — **#238** (I062/380 Mode-S-DAPs,
+Selected Altitude fürs Level-Bust-Bild) bzw. nach abgestimmter Reihenfolge.
+
 ## ✈️ Stand 2026-07-15 (ASD-Features: Monosensor-Hinweis + Ident-Highlight — #236, FR-DATA-008)
 
 **In normaler Sprache:** Zwei kleine, aber operativ nützliche Signale, die schon

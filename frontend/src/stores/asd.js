@@ -24,6 +24,10 @@ export const useAsdStore = defineStore('asd', () => {
   // feedId → per-source failure reason string ('' when none). Parallel to
   // feedHealth so the existing state map keeps its simple shape (#117).
   const feedReasons = ref(new Map())
+  // feedId → per-sensor breakdown array from the last CAT063 block (#237): each
+  // { sac, sic, operational, degraded_reason?, range_bias_m?, azimuth_bias_deg? }.
+  // Drives the feed-health chip's expandable per-sensor bias view.
+  const feedSensors = ref(new Map())
   const feedStatus = computed(() => {
     let worst = null
     for (const state of feedHealth.value.values()) {
@@ -140,7 +144,7 @@ export const useAsdStore = defineStore('asd', () => {
   // unknown color is ignored (fail-safe: never corrupt the chip on a newer
   // server vocabulary). resetFeedHealth clears all entries — called on WS
   // (re)connect so statuses from a previous scope never linger.
-  function setFeedHealth(feedId, color, reason = '') {
+  function setFeedHealth(feedId, color, reason = '', sensors = []) {
     const state = FEED_COLOR_TO_STATE[color]
     if (!state) return
     const id = feedId ?? 0
@@ -150,11 +154,26 @@ export const useAsdStore = defineStore('asd', () => {
     const rm = new Map(feedReasons.value)
     rm.set(id, reason || '')
     feedReasons.value = rm
+    const sm = new Map(feedSensors.value)
+    sm.set(id, Array.isArray(sensors) ? sensors : [])
+    feedSensors.value = sm
   }
   function resetFeedHealth() {
     feedHealth.value = new Map()
     feedReasons.value = new Map()
+    feedSensors.value = new Map()
   }
+
+  // sensorDetails flattens the per-feed sensor breakdown (#237) into a single
+  // list for the feed-health chip's expandable detail; each entry keeps its
+  // feedId so a multi-feed operator can tell the sensors apart.
+  const sensorDetails = computed(() => {
+    const out = []
+    for (const [feedId, list] of feedSensors.value) {
+      for (const s of list) out.push({ feedId, ...s })
+    }
+    return out
+  })
   function setMapLoaded(val) { mapLoaded.value = val }
   function setPalette(p) { palette.value = p }
   function setLayerVisibility(layer, val) { layerVisibility[layer] = val }
@@ -180,7 +199,7 @@ export const useAsdStore = defineStore('asd', () => {
   }
 
   return {
-    mapLoaded, palette, feedStatus, feedHealth, feedDegradedReason, layerVisibility, flFilter,
+    mapLoaded, palette, feedStatus, feedHealth, feedDegradedReason, feedSensors, sensorDetails, layerVisibility, flFilter,
     coverageAvailable, setCoverageAvailable,
     weatherRadarAvailable, setWeatherRadarAvailable,
     weatherWarningsAvailable, setWeatherWarningsAvailable,

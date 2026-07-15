@@ -70,13 +70,13 @@ const (
 // record parse. I063/060 (FX-variable) and the RE/SP fields (explicit-length)
 // are handled separately.
 var fixedItemLen = map[uint8]int{
-	frnDataSource:   2,
-	frnServiceID:    1,
-	frnTimeOfDay:    3,
-	frnSensorID:     2,
-	frnTimeBias:     2,
-	frnSSRModeSBias: 4,
-	frnSSRAzBias:    2,
+	frnDataSource: 2,
+	frnServiceID:  1,
+	frnTimeOfDay:  3,
+	frnSensorID:   2,
+	frnTimeBias:   2,
+	// frnSSRModeSBias (I063/080) and frnSSRAzBias (I063/081) are decoded
+	// explicitly below (ICD 3.3.0), not length-skipped, so they are absent here.
 	frnPSRRangeBias: 4,
 	frnPSRAzBias:    2,
 	frnPSRElevBias:  2,
@@ -90,6 +90,15 @@ const conBits = 0xC0
 
 // i06360FX is the FX bit (bit 1) of the variable-length I063/060 item.
 const i06360FX = 0x01
+
+// Registration-bias LSBs (Firefly REG.3 / ADR 0034, ICD 3.3.0):
+//   - I063/080 SRB (slant range bias): LSB = 1/128 NM, expressed here in metres
+//     (1 NM = 1852 m) → ≈ 14.469 m per count.
+//   - I063/081 SAB (azimuth bias): LSB = 360/2^16 degrees → ≈ 0.00549° per count.
+const (
+	rangeBiasLSBMetres = 1852.0 / 128.0
+	azimuthBiasLSBDeg  = 360.0 / 65536.0
+)
 
 // reSrcReasonBit marks the SRC-REASON sub-field present in the I063/RE
 // sub-field-spec octet (Firefly ADR 0033).
@@ -190,6 +199,14 @@ type SensorStatus struct {
 	// field is present (operational, or reason unknown). One of the Reason*
 	// constants.
 	Reason string
+	// RangeBiasM is the applied slant-range registration correction in metres
+	// (I063/080 SRB, Firefly REG.3 / ADR 0034, ICD 3.3.0). AzimuthBiasDeg is the
+	// applied azimuth correction in degrees (I063/081 SAB). Both are nil when the
+	// sensor carries no active registration correction — absence means "no
+	// correction", never a bias of 0. A positive range bias means the sensor
+	// measures too far; a positive azimuth bias is clockwise.
+	RangeBiasM     *float64
+	AzimuthBiasDeg *float64
 }
 
 // DecodeSensorBlock parses a CAT063 data block: [CAT=0x3F][LEN: u16 BE][Record...].
@@ -341,6 +358,24 @@ func decodeRecord(data []byte, offset, end int) (SensorStatus, int, error) {
 			if _, err := take(fieldLen - 1); err != nil {
 				return s, offset, err
 			}
+		case frnSSRModeSBias:
+			// I063/080 (4 octets): SRG Range Gain (i16, ignored — Firefly always
+			// sends 0) + SRB slant Range Bias (i16, LSB 1/128 NM → metres). Present
+			// only when a registration correction is applied to this sensor.
+			b, err := take(4)
+			if err != nil {
+				return s, offset, err
+			}
+			srb := float64(int16(uint16(b[2])<<8|uint16(b[3]))) * rangeBiasLSBMetres
+			s.RangeBiasM = &srb
+		case frnSSRAzBias:
+			// I063/081 (2 octets): SAB Azimuth Bias (i16, LSB 360/2^16 degrees).
+			b, err := take(2)
+			if err != nil {
+				return s, offset, err
+			}
+			sab := float64(int16(uint16(b[0])<<8|uint16(b[1]))) * azimuthBiasLSBDeg
+			s.AzimuthBiasDeg = &sab
 		default:
 			// A remaining standard item with a known fixed length is skipped;
 			// anything else cannot be length-skipped safely, so reject rather

@@ -130,6 +130,17 @@ func main() {
 	// subscribed to that feed (Option B, WF-3). Color is derived from the
 	// FeedSnapshot and carries CAT065 liveness + CAT063 sensor counts.
 	broadcastFeedSnapshot := func(feedID int64, snap health.FeedSnapshot) {
+		var sensors []broadcast.FeedSensor
+		for _, s := range snap.Sensors {
+			sensors = append(sensors, broadcast.FeedSensor{
+				SAC:            s.SAC,
+				SIC:            s.SIC,
+				Operational:    s.Operational,
+				DegradedReason: s.Reason,
+				RangeBiasM:     s.RangeBiasM,
+				AzimuthBiasDeg: s.AzimuthBiasDeg,
+			})
+		}
 		_ = broadcaster.Send(broadcast.Message{
 			FeedStatus: &broadcast.FeedStatusMessage{
 				FeedID:         feedID,
@@ -137,6 +148,7 @@ func main() {
 				SensorsActive:  snap.SensorsActive,
 				SensorsTotal:   snap.SensorsTotal,
 				DegradedReason: snap.DegradedReason,
+				Sensors:        sensors,
 			},
 		})
 	}
@@ -169,14 +181,26 @@ func main() {
 	// with the current sensor active/total counts and broadcasts the snapshot.
 	sensorStatusHandler := func(feedID int64, statuses []cat063.SensorStatus) error {
 		active := 0
-		for _, s := range statuses {
+		details := make([]health.SensorDetail, len(statuses))
+		for i, s := range statuses {
 			if s.Operational {
 				active++
+			}
+			// Per-sensor detail (#237): identity, state and applied registration
+			// bias, so the ASD/admin can show WHICH sensor is degraded and how far
+			// it is being range/azimuth-corrected.
+			details[i] = health.SensorDetail{
+				SAC:            s.SAC,
+				SIC:            s.SIC,
+				Operational:    s.Operational,
+				Reason:         s.Reason,
+				RangeBiasM:     s.RangeBiasM,
+				AzimuthBiasDeg: s.AzimuthBiasDeg,
 			}
 		}
 		// The dominant per-source failure reason of the degraded sensors (ADR 0033)
 		// — surfaced on the feed-health chip so the operator sees WHY (#197).
-		feedRegistry.RecordSensors(feedID, active, len(statuses), cat063.DominantReason(statuses))
+		feedRegistry.RecordSensors(feedID, active, len(statuses), cat063.DominantReason(statuses), details)
 		broadcastFeedSnapshot(feedID, feedRegistry.Snapshot(feedID, time.Now()))
 		return nil
 	}
