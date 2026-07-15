@@ -87,6 +87,13 @@ export const SELECTION_LAYER_ID = 'track-selection-ring'
 // ref EWG84F) rather than a ring; this is the pre-rendered box icon's id.
 export const SELECTION_ICON_ID = 'wf-selection-box'
 
+// #236: SPI (ident) highlight — a bright ring around any track whose last report
+// carried the Special Position Identification pulse (I062/080 SPI, ICD 3.2.0).
+// Amber, deliberately distinct from the cyan selection halo so an ident pulse
+// never reads as a selection.
+export const SPI_HIGHLIGHT_LAYER_ID = 'track-spi-highlight'
+export const SPI_HIGHLIGHT_COLOR = '#ffd54f'
+
 // ASD-011b (selected-label outline, design template): a bright neutral rounded
 // rectangle framing the SELECTED track's data-block label, so symbol AND block
 // read as "selected" together. A dedicated source holds at most one closed ring

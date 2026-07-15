@@ -33,6 +33,8 @@ import {
   SELECTION_SOURCE_ID,
   SELECTION_LAYER_ID,
   SELECTION_ICON_ID,
+  SPI_HIGHLIGHT_LAYER_ID,
+  SPI_HIGHLIGHT_COLOR,
   SELECTION_LABEL_SOURCE_ID,
   SELECTION_LABEL_LAYER_ID,
   SELECTION_LABEL_COLOR,
@@ -669,6 +671,37 @@ export function addTracksLayer(map) {
         ['has', 'fade_opacity'], ['get', 'fade_opacity'],
         ['has', 'fl_opacity'],   ['get', 'fl_opacity'],
         1.0,
+      ],
+    },
+  })
+}
+
+// addSpiHighlightLayer registers the #236 SPI (ident) highlight: a bright amber
+// ring around any track whose last report carried the Special Position
+// Identification pulse (I062/080 SPI, ICD 3.2.0). When a controller asks a pilot
+// to "squawk ident", that one aircraft blossoms on the scope until the pulse
+// stops (~15–30 s the transponder emits it). The highlight is driven purely by
+// the `spi` feature flag — no timer — so it appears and clears with the wire
+// data. It shares the tracks source (populated by renderSources), filtered to
+// spi==true. Registered AFTER addTracksLayer so the source exists; the ring is
+// larger than the symbol, so it frames rather than hides it. The FL filter's
+// invisibility (fl_opacity 0) is honoured so a hidden track shows no ring.
+export function addSpiHighlightLayer(map) {
+  map.addLayer({
+    id: SPI_HIGHLIGHT_LAYER_ID,
+    type: 'circle',
+    source: TRACKS_SOURCE_ID,
+    filter: ['==', ['get', 'spi'], true],
+    paint: {
+      'circle-radius': 12,
+      'circle-color': 'rgba(0,0,0,0)', // hollow ring — never obscure the symbol
+      'circle-stroke-color': SPI_HIGHLIGHT_COLOR,
+      'circle-stroke-width': 2,
+      'circle-stroke-opacity': [
+        'case',
+        ['has', 'fade_opacity'], ['get', 'fade_opacity'],
+        ['has', 'fl_opacity'], ['get', 'fl_opacity'],
+        0.9,
       ],
     },
   })

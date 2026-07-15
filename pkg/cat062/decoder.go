@@ -274,7 +274,12 @@ func decodeTrackStatus(data []byte, offset int) (TrackStatus, int, error) {
 	}
 	octets := data[start:offset]
 
+	// Octet 1 is always present (the FX loop reads at least one octet). MON and
+	// SPI (ICD 3.2.0) share it with CNF; TSE (octet 2) and CST (octet 4) extend
+	// only as far as the highest set flag, so each higher-octet read is guarded.
 	status.Confirmed = (octets[0] & 0x02) == 0                  // octet 1, CNF (1=tentative)
+	status.Monosensor = (octets[0] & 0x80) != 0                 // octet 1, MON (single-sensor track)
+	status.SPI = (octets[0] & 0x40) != 0                        // octet 1, SPI (ident pulse on last report)
 	status.Ended = len(octets) >= 2 && (octets[1]&0x40) != 0    // octet 2, TSE
 	status.Coasting = len(octets) >= 4 && (octets[3]&0x80) != 0 // octet 4, CST
 

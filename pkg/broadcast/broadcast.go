@@ -179,7 +179,17 @@ type TrackMessage struct {
 	// Ended is the I062/080 TSE flag: this is the final report for the track,
 	// which is being deleted. The frontend removes the track on this. Only
 	// serialized when true (a live track omits it).
-	Ended  bool    `json:"ended,omitempty"`
+	Ended bool `json:"ended,omitempty"`
+	// Monosensor is the I062/080 MON flag: only one sensor contributed to the
+	// track within the freshness window, so no second source cross-checks the
+	// estimate (more prone to ghosts/bias). A quality hint the ASD shows
+	// discreetly. Only serialized when true. Firefly ICD 3.2.0.
+	Monosensor bool `json:"mono,omitempty"`
+	// SPI is the I062/080 SPI flag: the last associated report carried the ident
+	// (Special Position Identification) pulse — the pilot pressed "ident" on the
+	// controller's request. The frontend highlights the track while it is set.
+	// Transient; only serialized when true.
+	SPI    bool    `json:"spi,omitempty"`
 	PSRAge float64 `json:"psr_age"`
 	// AdsbAgeS is the time since the last ADS-B (Extended Squitter)
 	// contribution, in seconds, from I062/290's ES subfield (ICD 2.4.0).
@@ -489,6 +499,8 @@ func (b *Broadcaster) tracksToMessage(batch TrackBatch) Message {
 			Confirmed:     track.Status.Confirmed,
 			Coasting:      track.Status.Coasting,
 			Ended:         track.Status.Ended,
+			Monosensor:    track.Status.Monosensor,
+			SPI:           track.Status.SPI,
 			PSRAge:        track.UpdateAge.PSRAge,
 			AdsbAgeS:      track.UpdateAge.ESAge,
 			SSRAgeS:       track.UpdateAge.SSRAge,

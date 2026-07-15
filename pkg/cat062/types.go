@@ -47,6 +47,16 @@ type TrackStatus struct {
 	Confirmed bool // CNF bit (octet 1): set = confirmed, unset = tentative
 	Coasting  bool // CST bit (octet 4): set = coasting (no recent update)
 	Ended     bool // TSE bit (octet 2): set = last report, track is being deleted
+	// Monosensor is the MON bit (octet 1): only one sensor contributed to the
+	// track within the freshness window, so no second source cross-checks the
+	// estimate (more prone to ghosts/bias). A quality hint, not an operator
+	// action. Firefly ICD 3.2.0 (ADR QW.3).
+	Monosensor bool
+	// SPI is the SPI bit (octet 1): the last associated report carried the
+	// Special Position Identification pulse — the pilot pressed "ident" on the
+	// controller's request. Transient (describes only the last report), so it
+	// naturally follows the ~15–30 s the transponder emits the pulse.
+	SPI bool
 }
 
 // UpdateAge is I062/290: time since last update, in seconds.
