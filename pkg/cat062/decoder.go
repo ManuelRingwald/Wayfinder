@@ -142,22 +142,12 @@ func DecodeRecord(data []byte, offset int) (DecodedTrack, int, error) {
 			track.Callsign = &callsign
 			offset += 7
 
-		case 11: // I062/380: Aircraft Derived Data (variable, Target Address in ADR subfield)
-			if offset+1 > len(data) {
-				return track, offset, NewDecodeError("truncated I062/380 primary subfield")
+		case 11: // I062/380: Aircraft Derived Data (compound, subfield-driven, ICD 3.4.0)
+			newOffset, err := decodeAircraftDerivedData(data, offset, &track)
+			if err != nil {
+				return track, offset, err
 			}
-			primary := data[offset]
-			offset++
-
-			// Check ADR bit (bit 7, 0x80): Target Address present
-			if (primary & 0x80) != 0 {
-				if offset+3 > len(data) {
-					return track, offset, NewDecodeError("truncated I062/380 ADR")
-				}
-				addr := (uint32(data[offset]) << 16) | (uint32(data[offset+1]) << 8) | uint32(data[offset+2])
-				track.ICAOAddr = &addr
-				offset += 3
-			}
+			offset = newOffset
 
 		case 12: // I062/040: Track Number (2 bytes, u16 BE)
 			if offset+2 > len(data) {
@@ -284,6 +274,131 @@ func decodeTrackStatus(data []byte, offset int) (TrackStatus, int, error) {
 	status.Coasting = len(octets) >= 4 && (octets[3]&0x80) != 0 // octet 4, CST
 
 	return status, offset, nil
+}
+
+// i380SubfieldLen maps the fixed-length I062/380 subfields to their octet count,
+// so the decoder can length-skip a subfield Firefly does not send (forward
+// tolerance, charter §2/§7). The subfields the decoder actually consumes (#1 ADR,
+// #3 MHG, #6 SAL, #26 IAR, #27 MAC) are handled explicitly in
+// decodeAircraftDerivedData. The variable-length subfields — #8 TIS (FX-extended),
+// #9 TID and #25 MB (each a repetition factor) — are deliberately ABSENT: they
+// cannot be skipped by a fixed length, so a record carrying one is rejected rather
+// than mis-parsed (robust decoder, charter §7).
+var i380SubfieldLen = map[int]int{
+	1: 3, 2: 6, 3: 2, 4: 2, 5: 2, 6: 2, 7: 2,
+	10: 2, 11: 2, 12: 7, 13: 2, 14: 2, 15: 2, 16: 2, 17: 2, 18: 2,
+	19: 1, 20: 8, 21: 1, 22: 6, 23: 2, 24: 1,
+	26: 2, 27: 2, 28: 2,
+}
+
+// maxI380SpecOctets caps the FX-chained subfield spec of I062/380. The standard
+// UAP has 28 subfields → 4 octets; a longer chain is a hostile/garbled datagram.
+const maxI380SpecOctets = 4
+
+// decodeAircraftDerivedData parses I062/380 (Aircraft Derived Data / Mode-S DAPs,
+// ICD 3.4.0). It is a compound item: an FX-chained subfield spec (up to 4 octets)
+// followed by the present subfields in ascending number. The decoder reads the
+// operationally useful ones — ADR (#1, ICAO address), MHG (#3, magnetic heading),
+// SAL (#6, selected altitude — the level-bust signal), IAR (#26, IAS) and MAC
+// (#27, Mach) — length-skips any other known fixed-length subfield, and rejects a
+// variable/unknown subfield rather than desynchronising the record. A DAP-less
+// track (spec = 0x80 + ADR only) decodes exactly as before this item became
+// compound (no wire break for the common case).
+func decodeAircraftDerivedData(data []byte, offset int, track *DecodedTrack) (int, error) {
+	specStart := offset
+	for {
+		if offset >= len(data) {
+			return offset, NewDecodeError("truncated I062/380 subfield spec")
+		}
+		oct := data[offset]
+		offset++
+		if oct&0x01 == 0 { // FX clear: end of spec
+			break
+		}
+		if offset-specStart >= maxI380SpecOctets {
+			return offset, NewDecodeError("I062/380 subfield spec too long")
+		}
+	}
+	spec := data[specStart:offset]
+
+	take := func(n int) ([]byte, error) {
+		if offset+n > len(data) {
+			return nil, NewDecodeError("truncated I062/380 subfield")
+		}
+		b := data[offset : offset+n]
+		offset += n
+		return b, nil
+	}
+
+	maxSub := len(spec) * 7
+	for sf := 1; sf <= maxSub; sf++ {
+		if !i380Present(spec, sf) {
+			continue
+		}
+		switch sf {
+		case 1: // ADR — 24-bit ICAO target address
+			b, err := take(3)
+			if err != nil {
+				return offset, err
+			}
+			addr := (uint32(b[0]) << 16) | (uint32(b[1]) << 8) | uint32(b[2])
+			track.ICAOAddr = &addr
+		case 3: // MHG — Magnetic Heading, u16 × 360/2^16 degrees
+			b, err := take(2)
+			if err != nil {
+				return offset, err
+			}
+			deg := float64(uint16(b[0])<<8|uint16(b[1])) * (360.0 / 65536.0)
+			track.MagneticHeadingDeg = &deg
+		case 6: // SAL — Selected Altitude. Bits 13-1 = altitude (13-bit two's
+			// complement, LSB 25 ft); bit 16 = SAS, bits 15-14 = source (dropped —
+			// the value is what feeds level-bust detection).
+			b, err := take(2)
+			if err != nil {
+				return offset, err
+			}
+			v := int(uint16(b[0])<<8|uint16(b[1])) & 0x1FFF
+			if v&0x1000 != 0 { // sign bit of the 13-bit field → sign-extend
+				v -= 0x2000
+			}
+			ft := float64(v) * 25.0
+			track.SelectedAltitudeFt = &ft
+		case 26: // IAR — Indicated Airspeed, u16 × 1 kt
+			b, err := take(2)
+			if err != nil {
+				return offset, err
+			}
+			kt := float64(uint16(b[0])<<8 | uint16(b[1]))
+			track.IndicatedAirspeedKt = &kt
+		case 27: // MAC — Mach Number, u16 × 0.008
+			b, err := take(2)
+			if err != nil {
+				return offset, err
+			}
+			mach := float64(uint16(b[0])<<8|uint16(b[1])) * 0.008
+			track.MachNumber = &mach
+		default:
+			n, ok := i380SubfieldLen[sf]
+			if !ok {
+				return offset, NewDecodeError(fmt.Sprintf("unsupported I062/380 subfield #%d", sf))
+			}
+			if _, err := take(n); err != nil {
+				return offset, err
+			}
+		}
+	}
+	return offset, nil
+}
+
+// i380Present reports whether the I062/380 subfield spec marks subfield sf
+// (1-based) present. Each spec octet carries 7 subfield bits (7..1) + an FX bit (0).
+func i380Present(spec []byte, sf int) bool {
+	oct := (sf - 1) / 7
+	if oct >= len(spec) {
+		return false
+	}
+	bit := 7 - ((sf - 1) % 7)
+	return spec[oct]&(1<<bit) != 0
 }
 
 // decodeTargetIdentification decodes I062/245 (7 bytes): octet 1 is the

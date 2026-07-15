@@ -7,6 +7,11 @@ import {
   formatAge,
   verticalTrendLabel,
   sensorAgeList,
+  formatSelectedAltitude,
+  formatMagneticHeading,
+  formatIas,
+  formatMach,
+  isLevelBust,
 } from '../trackDetail.js'
 
 describe('formatLatLon', () => {
@@ -114,5 +119,47 @@ describe('sensorAgeList', () => {
   })
   it('handles a null track', () => {
     expect(sensorAgeList(null)).toEqual([])
+  })
+})
+
+// #238: Mode-S DAP formatters + level-bust logic.
+describe('formatSelectedAltitude', () => {
+  it('renders feet as a flight level', () => {
+    expect(formatSelectedAltitude(35000)).toBe('FL350')
+    expect(formatSelectedAltitude(500)).toBe('FL005')
+  })
+  it('returns "" for an absent value', () => {
+    expect(formatSelectedAltitude(null)).toBe('')
+    expect(formatSelectedAltitude(undefined)).toBe('')
+  })
+})
+
+describe('isLevelBust', () => {
+  it('flags a selected altitude that differs from the FL beyond the threshold', () => {
+    expect(isLevelBust(35000, 20000)).toBe(true)   // climbing to FL350 from FL200
+    expect(isLevelBust(35000, 35000)).toBe(false)  // level at the selected altitude
+    expect(isLevelBust(35000, 34800)).toBe(false)  // within 300 ft
+    expect(isLevelBust(35000, 34700)).toBe(true)   // exactly 300 ft
+  })
+  it('never flags when a value is missing (fail-safe: no invented alarm)', () => {
+    expect(isLevelBust(35000, null)).toBe(false)
+    expect(isLevelBust(undefined, 20000)).toBe(false)
+  })
+})
+
+describe('formatMagneticHeading / formatIas / formatMach', () => {
+  it('renders heading zero-padded and normalised', () => {
+    expect(formatMagneticHeading(270)).toBe('270°')
+    expect(formatMagneticHeading(5)).toBe('005°')
+    expect(formatMagneticHeading(360)).toBe('000°')
+  })
+  it('renders IAS in knots and Mach to three decimals', () => {
+    expect(formatIas(250)).toBe('250 kt')
+    expect(formatMach(0.784)).toBe('M0.784')
+  })
+  it('returns "" for absent values', () => {
+    expect(formatMagneticHeading(null)).toBe('')
+    expect(formatIas(undefined)).toBe('')
+    expect(formatMach(null)).toBe('')
   })
 })

@@ -197,3 +197,28 @@ describe('updateTracksLayer MON/SPI flags (#236)', () => {
     expect(f2.properties.spi).toBe(false)
   })
 })
+
+// #238: Mode-S DAPs (I062/380) baked onto the feature; an absent parameter
+// becomes null (not undefined) so the detail panel v-if reads cleanly.
+describe('updateTracksLayer Mode-S DAPs (#238)', () => {
+  it('bakes selected altitude, heading, IAS and Mach, defaulting absent ones to null', () => {
+    const state = makeState()
+    const base = { latitude: 50, longitude: 8, vx: 0, vy: 0, confirmed: true, coasting: false }
+    const msg = {
+      tracks: [
+        { ...base, track_num: 1, selected_altitude_ft: 35000, magnetic_heading_deg: 270, ias_kt: 250, mach: 0.784 },
+        { ...base, track_num: 2 }, // no DAPs
+      ],
+    }
+    updateTracksLayer(msg, state, () => {}, () => {})
+    const [f1, f2] = state.liveTrackFeatures
+    expect(f1.properties.selected_altitude_ft).toBe(35000)
+    expect(f1.properties.magnetic_heading_deg).toBe(270)
+    expect(f1.properties.ias_kt).toBe(250)
+    expect(f1.properties.mach).toBe(0.784)
+    expect(f2.properties.selected_altitude_ft).toBeNull()
+    expect(f2.properties.magnetic_heading_deg).toBeNull()
+    expect(f2.properties.ias_kt).toBeNull()
+    expect(f2.properties.mach).toBeNull()
+  })
+})

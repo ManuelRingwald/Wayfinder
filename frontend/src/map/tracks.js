@@ -180,6 +180,13 @@ export function updateTracksLayer(msg, state, renderSources, startFadeLoop, rete
         // real boolean — the wire field is omitted (undefined) when false.
         mono: track.mono === true,
         spi: track.spi === true,
+        // I062/380 Mode-S DAPs (ICD 3.4.0, #238): selected altitude drives the
+        // "S<FL>" label suffix + the level-bust highlight; heading/IAS/Mach feed
+        // the detail panel. Null when the aircraft does not report the parameter.
+        selected_altitude_ft: typeof track.selected_altitude_ft === 'number' ? track.selected_altitude_ft : null,
+        magnetic_heading_deg: typeof track.magnetic_heading_deg === 'number' ? track.magnetic_heading_deg : null,
+        ias_kt: typeof track.ias_kt === 'number' ? track.ias_kt : null,
+        mach: typeof track.mach === 'number' ? track.mach : null,
       },
     }
   })

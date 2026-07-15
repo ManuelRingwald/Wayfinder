@@ -48,6 +48,48 @@ export function formatAge(ageS) {
   return `${ageS < 10 ? ageS.toFixed(1) : String(Math.round(ageS))} s`
 }
 
+// formatSelectedAltitude renders the Mode-S selected altitude (I062/380 SAL,
+// #238) as a flight level "FLnnn", so it reads directly against the measured FL.
+// Returns '' when absent.
+export function formatSelectedAltitude(ft) {
+  if (typeof ft !== 'number' || !Number.isFinite(ft)) return ''
+  return `FL${String(Math.round(ft / 100)).padStart(3, '0')}`
+}
+
+// LEVEL_BUST_THRESHOLD_FT — how far the selected altitude may differ from the
+// measured flight level before the ASD flags a mismatch (the level-bust signal,
+// #238). 300 ft ≈ 3 FL: meaningfully different, not filter noise.
+export const LEVEL_BUST_THRESHOLD_FT = 300
+
+// isLevelBust reports whether the autopilot's selected altitude (I062/380 SAL)
+// differs from the measured flight level (I062/136) by more than the threshold —
+// the aircraft is heading to a different level than it is at. Both values must be
+// present; a missing one is never flagged (fail-safe: never invent an alarm).
+export function isLevelBust(selectedAltitudeFt, flightLevelFt, thresholdFt = LEVEL_BUST_THRESHOLD_FT) {
+  if (typeof selectedAltitudeFt !== 'number' || typeof flightLevelFt !== 'number') return false
+  return Math.abs(selectedAltitudeFt - flightLevelFt) >= thresholdFt
+}
+
+// formatMagneticHeading renders the Mode-S magnetic heading (I062/380 MHG) as a
+// zero-padded compass value "270°". Returns '' when absent.
+export function formatMagneticHeading(deg) {
+  if (typeof deg !== 'number' || !Number.isFinite(deg)) return ''
+  const norm = ((Math.round(deg) % 360) + 360) % 360
+  return `${String(norm).padStart(3, '0')}°`
+}
+
+// formatIas renders the Mode-S indicated airspeed (I062/380 IAR) as "250 kt".
+export function formatIas(kt) {
+  if (typeof kt !== 'number' || !Number.isFinite(kt)) return ''
+  return `${Math.round(kt)} kt`
+}
+
+// formatMach renders the Mode-S Mach number (I062/380 MAC) as "M0.784".
+export function formatMach(m) {
+  if (typeof m !== 'number' || !Number.isFinite(m)) return ''
+  return `M${m.toFixed(3)}`
+}
+
 // VERTICAL_TREND_LABELS maps the tendency glyph baked in tracks.js (ASD-001b:
 // ▲ climbing, ▼ descending) to a German word. Anything else (including '') is
 // treated as level flight.

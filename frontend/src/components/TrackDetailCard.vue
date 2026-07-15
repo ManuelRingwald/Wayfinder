@@ -21,6 +21,28 @@
         <v-list-item-title class="wf-mono">{{ headingLabel }}</v-list-item-title>
         <v-list-item-subtitle>Kurs über Grund</v-list-item-subtitle>
       </v-list-item>
+      <v-list-item
+        v-if="selectedAltitudeLabel"
+        :prepend-icon="levelBust ? 'mdi-alert' : 'mdi-target'"
+        :base-color="levelBust ? 'warning' : undefined"
+      >
+        <v-list-item-title class="wf-mono">{{ selectedAltitudeLabel }}</v-list-item-title>
+        <v-list-item-subtitle>
+          {{ levelBust ? 'Selected Altitude — weicht von Ist-Höhe ab' : 'Selected Altitude (Autopilot)' }}
+        </v-list-item-subtitle>
+      </v-list-item>
+      <v-list-item v-if="magneticHeadingLabel" prepend-icon="mdi-compass">
+        <v-list-item-title class="wf-mono">{{ magneticHeadingLabel }}</v-list-item-title>
+        <v-list-item-subtitle>Magnetischer Steuerkurs</v-list-item-subtitle>
+      </v-list-item>
+      <v-list-item v-if="iasLabel" prepend-icon="mdi-speedometer-medium">
+        <v-list-item-title class="wf-mono">{{ iasLabel }}</v-list-item-title>
+        <v-list-item-subtitle>Angezeigte Geschwindigkeit (IAS)</v-list-item-subtitle>
+      </v-list-item>
+      <v-list-item v-if="machLabel" prepend-icon="mdi-airplane">
+        <v-list-item-title class="wf-mono">{{ machLabel }}</v-list-item-title>
+        <v-list-item-subtitle>Mach-Zahl</v-list-item-subtitle>
+      </v-list-item>
       <v-list-item v-if="positionLabel" prepend-icon="mdi-crosshairs-gps">
         <v-list-item-title class="wf-mono">{{ positionLabel }}</v-list-item-title>
         <v-list-item-subtitle>Position (WGS84)</v-list-item-subtitle>
@@ -91,6 +113,11 @@ import {
   formatAge,
   verticalTrendLabel,
   sensorAgeList,
+  formatSelectedAltitude,
+  formatMagneticHeading,
+  formatIas,
+  formatMach,
+  isLevelBust,
 } from '@/map/trackDetail.js'
 
 const emit = defineEmits(['close'])
@@ -147,6 +174,14 @@ const systemLabel = computed(() => {
   if (t?.sac == null || t?.sic == null) return ''
   return `${t.sac}/${t.sic}`
 })
+
+// #238: Mode-S DAPs (I062/380). Selected Altitude is compared to the measured
+// flight level for the level-bust signal; heading/IAS/Mach are informational.
+const selectedAltitudeLabel = computed(() => formatSelectedAltitude(track.value?.selected_altitude_ft))
+const levelBust = computed(() => isLevelBust(track.value?.selected_altitude_ft, track.value?.flight_level_ft))
+const magneticHeadingLabel = computed(() => formatMagneticHeading(track.value?.magnetic_heading_deg))
+const iasLabel = computed(() => formatIas(track.value?.ias_kt))
+const machLabel = computed(() => formatMach(track.value?.mach))
 
 const statusLabel = computed(() => {
   if (track.value?.coasting) return 'Coasting'
