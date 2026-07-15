@@ -63,6 +63,14 @@
         <v-list-item-title class="wf-mono">{{ systemLabel }}</v-list-item-title>
         <v-list-item-subtitle>System (SAC/SIC)</v-list-item-subtitle>
       </v-list-item>
+      <v-list-item v-if="track.spi" prepend-icon="mdi-account-voice">
+        <v-list-item-title>Ident aktiv</v-list-item-title>
+        <v-list-item-subtitle>SPI-Puls — „squawk ident" (I062/080)</v-list-item-subtitle>
+      </v-list-item>
+      <v-list-item v-if="track.mono" prepend-icon="mdi-alert-circle-outline">
+        <v-list-item-title>Monosensor</v-list-item-title>
+        <v-list-item-subtitle>nur eine Quelle — keine Kreuzprüfung (I062/080)</v-list-item-subtitle>
+      </v-list-item>
       <v-list-item prepend-icon="mdi-information-outline">
         <v-list-item-title>{{ statusLabel }}</v-list-item-title>
         <v-list-item-subtitle>Status</v-list-item-subtitle>

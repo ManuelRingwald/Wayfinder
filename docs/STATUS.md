@@ -10,6 +10,37 @@
 
 ---
 
+## ✈️ Stand 2026-07-15 (ASD-Features: Monosensor-Hinweis + Ident-Highlight — #236, FR-DATA-008)
+
+**In normaler Sprache:** Zwei kleine, aber operativ nützliche Signale, die schon
+auf dem Draht lagen, aber bisher weggeworfen wurden, sind jetzt für den Lotsen
+sichtbar:
+
+- **Ident-Highlight:** Wenn ein Lotse „…, squawk ident" sagt und der Pilot den
+  **IDENT-Knopf** drückt, leuchtet **genau dieses eine Flugzeug** jetzt mit einem
+  amberfarbenen Ring auf — die klassische „welcher bist du?"-Bestätigung. Der
+  Ring erscheint und verschwindet von selbst mit dem Puls (~15–30 s), ohne
+  eigenen Timer.
+- **Monosensor-Hinweis:** Tracks, die gerade nur **eine** Quelle bestätigt
+  (keine Kreuz-Prüfung → anfälliger für Geister/Bias), tragen einen dezenten
+  „*"-Marker am Label und eine erklärende Zeile im Detail-Panel.
+
+**Fachlich/technisch:** Beide Bits sitzen in Oktett 1 von **I062/080** (MON `0x80`,
+SPI `0x40`) — dem immer vorhandenen Oktett; **additiv**, kein Wire-/ICD-Bruch.
+Decoder liest sie nach `TrackStatus.Monosensor`/`.SPI` (`pkg/cat062`), Broadcaster
+reicht sie als `mono`/`spi` (`omitempty`) an die SPA. Frontend: MON-Marker im
+Label (`label.js`) + Feature-Properties (`tracks.js`); **SPI-Ring** als
+gefilterter Circle-Layer auf der Track-Quelle (`addSpiHighlightLayer`,
+`spi==true`, `layers.js`/`engine.js`); Detail-Panel-Zeilen „Ident aktiv" /
+„Monosensor" (`TrackDetailCard.vue`). Grundwahrheit: Fireflys ICD §4.1 (3.2.0),
+Encoder-Test `track_status_carries_mon_and_spi_in_octet_one` (Status-Oktett
+`0xC0` = MON|SPI). Register: **FR-DATA-008**. Tests: `status_test.go` (byte-genau),
+`label.test.js`, `tracks.test.js`. Gates grün (`go test ./...`, vitest 535, `npm
+run build`, gofmt/vet). dist neu gebaut.
+
+**Nächster Schritt:** Cross-Project-Nachzug weiter — **#237** (CAT063
+Registrierungs-Bias I063/080/081) bzw. nach abgestimmter Reihenfolge.
+
 ## 🛡️ Stand 2026-07-15 (Sicherheit: Empfangspfad gegen bösartige Datagramme gehärtet — #235, NFR-SAFE-001)
 
 **In normaler Sprache:** Wayfinder empfängt das Luftlagebild als ungeschützten

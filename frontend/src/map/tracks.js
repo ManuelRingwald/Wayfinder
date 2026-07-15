@@ -174,6 +174,12 @@ export function updateTracksLayer(msg, state, renderSources, startFadeLoop, rete
         // Vertical tendency (ASD-001b), already computed above for the label —
         // exposed as a property so the panel can word it (Steigend/Sinkend).
         vertical_trend: vTrend,
+        // I062/080 trust flags (ICD 3.2.0): MON = single-sensor track (a quality
+        // hint shown discreetly in the label + detail panel); SPI = the ident
+        // pulse rode the last report (drives the highlight ring). Coerced to a
+        // real boolean — the wire field is omitted (undefined) when false.
+        mono: track.mono === true,
+        spi: track.spi === true,
       },
     }
   })

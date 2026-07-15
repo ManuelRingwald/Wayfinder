@@ -137,7 +137,7 @@ pkg/broadcast.Broadcaster
     │                                flight_level_ft, callsign, mode_3a,
     │                                icao_addr, adsb_age_s, ssr_age_s,
     │                                mds_age_s, flarm_age_s,
-    │                                coasting, ended, ...}
+    │                                coasting, ended, mono, spi, ...}
     └─► (Eviction bei vollem Send-Channel, Warn-Log)
 ```
 
@@ -166,6 +166,16 @@ Das Frontend leitet daraus — zusammen mit `icao_addr`/`mode_3a`/`callsign` —
 | **F** (Buchstabe) | FLARM              | kein frisches ADS-B, aber `flarm_age_s` frisch (≤ 30 s) |
 | ▢ Quadrat (gefüllt) | SSR / Mode S     | kein frisches ADS-B/FLARM, aber `ssr_age_s`/`mds_age_s` frisch oder `icao_addr`/`mode_3a`/Callsign |
 | ○ Ring (offen)      | Primär (PSR)     | keines der obigen — reine Skin-Paint ohne ID |
+
+**Vertrauens-Flags MON/SPI (`mono`/`spi`, I062/080, ICD 3.2.0, additiv, #236):**
+`mono` markiert einen **Monosensor-Track** (nur eine Quelle im Frische-Fenster,
+keine Kreuzprüfung — anfälliger für Ghosts/Bias); das ASD zeigt ihn dezent mit
+einem „*" an der Label-Identitätszeile und einer Detail-Panel-Zeile. `spi` trägt
+den **Ident-Puls** („squawk ident"): das ASD legt einen amberfarbenen
+**Highlight-Ring** um das Symbol (`addSpiHighlightLayer`, gefilterter Circle-Layer
+auf der Track-Quelle) — kein Timer, der Ring folgt dem Draht-Flag, das die
+~15–30 s des Transponder-Pulses trägt. Beide sind `omitempty` (Absenz = false);
+ein Decoder, der die Bits ignoriert, verhält sich unverändert.
 
 Seit ICD 2.6.0 ist **FLARM erstmals sauber unterscheidbar** (eigenes `flarm_age_s`),
 statt wie zuvor unter ADS-B/SSR zu verschwinden (#118). Die 30-Sekunden-Frische-

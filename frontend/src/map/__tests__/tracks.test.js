@@ -175,3 +175,25 @@ describe('updateTracksLayer provenance (WF2-40)', () => {
     expect(byNum).toEqual({ 1: 'adsb', 2: 'ssr', 3: 'psr' })
   })
 })
+
+// #236: I062/080 MON/SPI trust flags must be baked onto the feature as real
+// booleans (the SPI highlight layer filters on spi==true; the label/detail read
+// mono). An omitted wire field must coerce to false, never undefined.
+describe('updateTracksLayer MON/SPI flags (#236)', () => {
+  it('bakes mono and spi as booleans, defaulting an absent flag to false', () => {
+    const state = makeState()
+    const base = { latitude: 50, longitude: 8, vx: 0, vy: 0, confirmed: true, coasting: false }
+    const msg = {
+      tracks: [
+        { ...base, track_num: 1, mono: true, spi: true },  // both set
+        { ...base, track_num: 2 },                          // both absent on the wire
+      ],
+    }
+    updateTracksLayer(msg, state, () => {}, () => {})
+    const [f1, f2] = state.liveTrackFeatures
+    expect(f1.properties.mono).toBe(true)
+    expect(f1.properties.spi).toBe(true)
+    expect(f2.properties.mono).toBe(false)
+    expect(f2.properties.spi).toBe(false)
+  })
+})

@@ -19,6 +19,7 @@ import {
   addRunwayLayers,
   updateRunwaySource,
   addTracksLayer,
+  addSpiHighlightLayer,
   addLeaderLinesLayer,
   addSelectionLayer,
   addLabelsLayer,
@@ -390,6 +391,7 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
     addLeaderLinesLayer(map, palette) // ASD-002: under track circles
     addSelectionLayer(map, palette)   // ASD-007: selection halo, under symbols
     addTracksLayer(map)
+    addSpiHighlightLayer(map)         // #236: SPI ident ring, framing the symbol
     addLabelsLayer(map, palette)      // ASD-002: above track circles
     addSelectionLabelLayer(map)       // ASD-011b: selected-label outline, above labels
     state.mapLoaded = true

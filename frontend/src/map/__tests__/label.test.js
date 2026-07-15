@@ -85,4 +85,21 @@ describe('buildLabel', () => {
     expect(lines[1]).toMatch(/FL250 ▲/)
     expect(Number(lines[2])).toBeGreaterThan(0)
   })
+
+  it('appends the MON marker "*" to the identity line for a mono-sensor track (#236)', () => {
+    const track = { callsign: 'DLH123', track_num: 42, vx: 0, vy: 0, mono: true }
+    expect(buildLabel(track, '').split('\n')[0]).toBe('DLH123*')
+  })
+
+  it('marks a mono track that falls back to its track number', () => {
+    const track = { track_num: 42, vx: 0, vy: 0, mono: true }
+    expect(buildLabel(track, '').split('\n')[0]).toBe('42*')
+  })
+
+  it('does not mark an ordinary (multi-sensor) track', () => {
+    const track = { callsign: 'DLH123', track_num: 42, vx: 0, vy: 0 }
+    expect(buildLabel(track, '').split('\n')[0]).toBe('DLH123')
+    // mono: false must behave exactly like an absent flag.
+    expect(buildLabel({ ...track, mono: false }, '').split('\n')[0]).toBe('DLH123')
+  })
 })
