@@ -10,6 +10,41 @@
 
 ---
 
+## 🛗 Stand 2026-07-15 (CAT062-Vertikal-Kette I062/130/135/220 — #241, FR-DATA-011)
+
+**In normaler Sprache:** Das Label zeigte die Höhe bisher als **gemessene**
+Flugfläche — ein Rohwert, der von Meldung zu Meldung springen kann. Firefly
+rechnet jetzt eine **saubere Vertikal-Lösung** und schickt sie mit: eine
+geglättete Höhe, eine echte Steig-/Sinkrate und die geometrische (WGS-84-)Höhe.
+**Neu sichtbar für den Lotsen:** (1) eine **ruhigere Anzeige-Höhe** im Label
+(bevorzugt der geglättete Wert). (2) Eine ehrliche **„A" vs. „FL"-Kennzeichnung**:
+`A030` = 3000 ft auf das echte regionale QNH bezogene Altitude, `FL350` =
+Druckhöhe/Flugfläche — der Lotse sieht die Bezugsgröße direkt. (3) Ein **echter
+Steig-/Sinkpfeil** (▲/▼) aus der Rate des Trackers statt aus dem bisherigen,
+rausch-anfälligen Höhen-Differenz-Schätzer. (4) Geometrische Höhe + Steigrate im
+Detail-Fenster.
+
+**Korrektheits-Teil:** Die eine subtile Stelle ist I062/135 — Bit 16 ist ein
+**QNH-Bit**, die restlichen 15 Bits sind ein **15-Bit-Zweierkomplement** (nicht
+i16). Diese Vorzeichen-Erweiterung ist exakt gegen Fireflys byte-genaue
+Referenz-Vektoren getestet.
+
+**Fachlich/technisch:** Decoder liest FRN 18/19/20 (drittes FSPEC-Oktett):
+I062/130 (i16 × 6,25 ft), I062/135 (QNH-Bit + 15-Bit-ZK × 25 ft), I062/220
+(i16 × 6,25 ft/min) → `DecodedTrack`-Felder → WS-JSON (`geometric_altitude_ft`/
+`barometric_altitude_ft`/`qnh_corrected`/`rocd_ft_min`; QNH-Flag nur mit baro.
+Höhe). Frontend: `tracks.js` (Pfeil primär aus `rocd_ft_min`, ±300 ft/min-Totband,
+Fallback FL-Differenz), `label.js` (A/FL-Anzeige-Höhe), `trackDetail.js` +
+`TrackDetailCard` (baro/geo/ROCD-Zeilen). Additiv, kein Wire-/ICD-Bruch (Track
+ohne Vertikal-Daten byte-identisch; I062/136 bleibt **gemessen** daneben).
+Grundwahrheit: Fireflys ICD §4.8-Referenz-Vektoren. Register: **FR-DATA-011**.
+Gates grün (`go test ./...`, vitest, `npm run build`, gofmt/vet/golangci-lint).
+dist neu.
+
+**Nächster Schritt:** Cross-Project-Nachzug weiter — **#242** (I062/200 Mode of
+Movement + I062/210 Beschleunigung), danach **#245** (Flugplan I062/390, durch
+#244 entsperrt).
+
 ## 📥 Stand 2026-07-15 (Lokale ASTERIX-über-UDP-Quelltypen `adsb_asterix` + `mlat_asterix` — #239/#240, FR-ORCH-012)
 
 **In normaler Sprache:** Bisher konnte ein Feed seine Flugdaten aus dem Internet

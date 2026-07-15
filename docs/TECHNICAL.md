@@ -194,6 +194,25 @@ sie hervor („weicht von Ist-Höhe ab"). Ehrliche Grenze: Wayfinder vergleicht 
 gemessene FL — die *Freigabe* (Clearance) kennt es nicht, die eigentliche
 Bust-Bewertung bleibt beim Lotsen.
 
+**Vertikal-Kette `geometric_altitude_ft`/`barometric_altitude_ft`/`qnh_corrected`/`rocd_ft_min` (I062/130/135/220, ICD 3.5.0, #241):**
+Der Decoder liest die **gefilterte** Vertikal-Lösung des Trackers — drei feste
+2-Oktett-Items im dritten FSPEC-Oktett (FRN 18/19/20): **I062/130** (geometrische
+Höhe, WGS-84, i16 × 6,25 ft), **I062/135** (barometrische Höhe, gefiltert; **Bit 16
+= QNH-Bit**, Bits 15–1 = 15-Bit-Zweierkomplement × 25 ft) und **I062/220** (Steig-/
+Sinkrate, i16 × 6,25 ft/min, positiv = steigen). Jedes Item erscheint nur bei
+**frischem Schätzwert** (≤ 30 s) — Absenz statt Stale-Behauptung. **ASD-Nutzung:**
+Das Label bevorzugt die **geglättete** I062/135 als Anzeige-Höhe statt der
+springenden gemessenen I062/136 und kennzeichnet die Referenz — `A030` für eine
+QNH-korrigierte **Altitude**, `FL350` für eine unkorrigierte **Druckhöhe**; ohne
+I062/135 fällt es auf I062/136 zurück. Der **Steig-/Sinkpfeil** ▲/▼ kommt jetzt
+**primär aus I062/220** (±300 ft/min-Totband gegen Flattern; Firefly liefert die
+Rate bereits Kalman-geglättet), mit Fallback auf die bisherige FL-Differenz-
+Heuristik, wenn keine Rate anliegt. Das `TrackDetailCard` zeigt zusätzlich
+barometrische Höhe (mit QNH-Referenz), Steig-/Sinkrate und geometrische Höhe. Der
+QNH-Flag wird nur mit vorhandener barometrischer Höhe gesendet (`omitempty`), nie
+als Stray-`false`. Additiv, kein Wire-Bruch (Track ohne Vertikal-Daten
+byte-identisch); I062/136 bleibt **gemessen** daneben (gemessen ≠ gefiltert).
+
 Seit ICD 2.6.0 ist **FLARM erstmals sauber unterscheidbar** (eigenes `flarm_age_s`),
 statt wie zuvor unter ADS-B/SSR zu verschwinden (#118). Die 30-Sekunden-Frische-
 Schwelle (`ADSB_FRESH_THRESHOLD_S`) und die Klassifikation liegen in

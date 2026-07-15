@@ -125,14 +125,27 @@ export function updateTracksLayer(msg, state, renderSources, startFadeLoop, rete
   // the result is baked into the label string so renderSources() can reuse it
   // without recalculating on every fade-loop tick.
   state.liveTrackFeatures = tracks.map((track) => {
+    // Vertical tendency (ASD-001b). Prefer the tracker's own rate estimate
+    // (I062/220, ICD 3.5.0) — it is already Kalman-filtered, so a ±300 ft/min
+    // dead-band suffices against flutter without remembering prior state. Only
+    // when no fresh rate is present (older feed, or a coasted vertical state
+    // Firefly withholds) fall back to the FL-delta heuristic.
     let vTrend = ''
-    if (typeof track.flight_level_ft === 'number') {
+    if (typeof track.rocd_ft_min === 'number') {
+      if (track.rocd_ft_min > 300) vTrend = '▲'
+      else if (track.rocd_ft_min < -300) vTrend = '▼'
+    } else if (typeof track.flight_level_ft === 'number') {
       const prevFl = state.trackFlHistory.get(track.track_num)
       if (typeof prevFl === 'number') {
         const delta = track.flight_level_ft - prevFl
         if (delta > 50) vTrend = '▲'
         else if (delta < -50) vTrend = '▼'
       }
+    }
+    // Keep the FL history current regardless of which source drove the arrow, so
+    // the fallback stays usable if the rate later disappears — and so the
+    // cleanup pass above continues to track live/fading track numbers.
+    if (typeof track.flight_level_ft === 'number') {
       state.trackFlHistory.set(track.track_num, track.flight_level_ft)
     }
     state.trackCoasting.set(track.track_num, track.coasting)
@@ -187,6 +200,14 @@ export function updateTracksLayer(msg, state, renderSources, startFadeLoop, rete
         magnetic_heading_deg: typeof track.magnetic_heading_deg === 'number' ? track.magnetic_heading_deg : null,
         ias_kt: typeof track.ias_kt === 'number' ? track.ias_kt : null,
         mach: typeof track.mach === 'number' ? track.mach : null,
+        // Vertical chain (I062/130/135/220, ICD 3.5.0, #241): filtered barometric
+        // altitude (the label's preferred, smoother height) + its QNH-correction
+        // flag (A vs FL), geometric altitude, and rate of climb/descent. Null when
+        // Firefly has no fresh vertical estimate.
+        barometric_altitude_ft: typeof track.barometric_altitude_ft === 'number' ? track.barometric_altitude_ft : null,
+        qnh_corrected: track.qnh_corrected === true,
+        geometric_altitude_ft: typeof track.geometric_altitude_ft === 'number' ? track.geometric_altitude_ft : null,
+        rocd_ft_min: typeof track.rocd_ft_min === 'number' ? track.rocd_ft_min : null,
       },
     }
   })

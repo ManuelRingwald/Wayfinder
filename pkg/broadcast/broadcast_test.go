@@ -173,6 +173,55 @@ func TestTracksToMessage(t *testing.T) {
 	}
 }
 
+// TestTracksToMessageMapsVerticalChain verifies the vertical chain (I062/130/
+// 135/220, ICD 3.5.0, #241) is carried to the wire, and that the QNH-correction
+// flag is emitted only alongside a barometric altitude — a track without a
+// barometric solution must ship no "qnh_corrected" pointer (never a stray false).
+func TestTracksToMessageMapsVerticalChain(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(nil, nil))
+	b := New(logger)
+
+	geo := 10000.0
+	baro := 3000.0
+	rocd := -1200.0
+	withVertical := cat062.DecodedTrack{
+		TrackNum:                1,
+		GeometricAltitudeFt:     &geo,
+		BarometricAltitudeFt:    &baro,
+		BaroQNHCorrected:        true,
+		RateOfClimbDescentFtMin: &rocd,
+	}
+	withoutVertical := cat062.DecodedTrack{TrackNum: 2}
+
+	msg := b.tracksToMessage(TrackBatch{FeedID: 7, Tracks: []cat062.DecodedTrack{withVertical, withoutVertical}})
+	if len(msg.Tracks) != 2 {
+		t.Fatalf("expected 2 tracks, got %d", len(msg.Tracks))
+	}
+
+	tm := msg.Tracks[0]
+	if tm.GeometricAltitudeFt == nil || *tm.GeometricAltitudeFt != 10000.0 {
+		t.Errorf("GeometricAltitudeFt: got %v, want 10000", tm.GeometricAltitudeFt)
+	}
+	if tm.BarometricAltitudeFt == nil || *tm.BarometricAltitudeFt != 3000.0 {
+		t.Errorf("BarometricAltitudeFt: got %v, want 3000", tm.BarometricAltitudeFt)
+	}
+	if tm.QNHCorrected == nil || *tm.QNHCorrected != true {
+		t.Errorf("QNHCorrected: got %v, want true", tm.QNHCorrected)
+	}
+	if tm.RocdFtMin == nil || *tm.RocdFtMin != -1200.0 {
+		t.Errorf("RocdFtMin: got %v, want -1200", tm.RocdFtMin)
+	}
+
+	// No barometric altitude ⇒ no QNH pointer at all.
+	bare := msg.Tracks[1]
+	if bare.GeometricAltitudeFt != nil || bare.BarometricAltitudeFt != nil || bare.RocdFtMin != nil {
+		t.Errorf("bare track carried vertical items: %+v", bare)
+	}
+	if bare.QNHCorrected != nil {
+		t.Errorf("QNHCorrected: got %v, want nil for a track without barometric altitude", *bare.QNHCorrected)
+	}
+}
+
 // TestTracksToMessageMapsAdsbAge verifies the I062/290 ES age (ADS-B, ICD
 // 2.4.0) is carried through to the wire as adsb_age_s, and that a radar-only
 // track leaves it nil (so the frontend shows no ADS-B badge). AP9.9.

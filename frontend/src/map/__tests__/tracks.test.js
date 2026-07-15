@@ -222,3 +222,52 @@ describe('updateTracksLayer Mode-S DAPs (#238)', () => {
     expect(f2.properties.mach).toBeNull()
   })
 })
+
+// Vertical chain (I062/130/135/220, ICD 3.5.0, #241).
+describe('updateTracksLayer vertical chain (#241)', () => {
+  it('bakes geometric/barometric altitude, QNH flag and rate, defaulting absent ones', () => {
+    const state = makeState()
+    const base = { latitude: 50, longitude: 8, vx: 0, vy: 0, confirmed: true, coasting: false }
+    const msg = {
+      tracks: [
+        { ...base, track_num: 1, geometric_altitude_ft: 10000, barometric_altitude_ft: 3000, qnh_corrected: true, rocd_ft_min: 1500 },
+        { ...base, track_num: 2 }, // no vertical data
+      ],
+    }
+    updateTracksLayer(msg, state, () => {}, () => {})
+    const [f1, f2] = state.liveTrackFeatures
+    expect(f1.properties.geometric_altitude_ft).toBe(10000)
+    expect(f1.properties.barometric_altitude_ft).toBe(3000)
+    expect(f1.properties.qnh_corrected).toBe(true)
+    expect(f1.properties.rocd_ft_min).toBe(1500)
+    expect(f2.properties.geometric_altitude_ft).toBeNull()
+    expect(f2.properties.barometric_altitude_ft).toBeNull()
+    expect(f2.properties.qnh_corrected).toBe(false)
+    expect(f2.properties.rocd_ft_min).toBeNull()
+  })
+
+  it('drives the trend arrow from the rate (I062/220) with a ±300 ft/min dead-band', () => {
+    const state = makeState()
+    const base = { latitude: 50, longitude: 8, vx: 0, vy: 0, confirmed: true, coasting: false, track_num: 9 }
+    // A single update with a strong climb rate yields ▲ immediately — no prior
+    // FL needed, unlike the fallback heuristic.
+    updateTracksLayer({ tracks: [{ ...base, rocd_ft_min: 1200, flight_level_ft: 20000 }] }, state, () => {}, () => {})
+    expect(state.liveTrackFeatures[0].properties.vertical_trend).toBe('▲')
+    // A rate inside the dead-band shows no arrow, even against a changed FL.
+    updateTracksLayer({ tracks: [{ ...base, rocd_ft_min: 100, flight_level_ft: 22000 }] }, state, () => {}, () => {})
+    expect(state.liveTrackFeatures[0].properties.vertical_trend).toBe('')
+    // A strong descent rate yields ▼.
+    updateTracksLayer({ tracks: [{ ...base, rocd_ft_min: -800, flight_level_ft: 21000 }] }, state, () => {}, () => {})
+    expect(state.liveTrackFeatures[0].properties.vertical_trend).toBe('▼')
+  })
+
+  it('falls back to the FL-delta heuristic when no rate is present', () => {
+    const state = makeState()
+    const base = { latitude: 50, longitude: 8, vx: 0, vy: 0, confirmed: true, coasting: false, track_num: 11 }
+    // No rocd_ft_min → establish FL baseline, then climb > 50 ft → ▲.
+    updateTracksLayer({ tracks: [{ ...base, flight_level_ft: 10000 }] }, state, () => {}, () => {})
+    expect(state.liveTrackFeatures[0].properties.vertical_trend).toBe('')
+    updateTracksLayer({ tracks: [{ ...base, flight_level_ft: 12000 }] }, state, () => {}, () => {})
+    expect(state.liveTrackFeatures[0].properties.vertical_trend).toBe('▲')
+  })
+})

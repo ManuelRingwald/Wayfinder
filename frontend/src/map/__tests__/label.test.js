@@ -117,4 +117,27 @@ describe('buildLabel', () => {
     const track = { callsign: 'DLH123', track_num: 1, vx: 0, vy: 0, flight_level_ft: 20000 }
     expect(buildLabel(track, '').split('\n')[1]).toBe('FL200')
   })
+
+  // Vertical chain (I062/135, ICD 3.5.0, #241): the label prefers the filtered
+  // barometric altitude over the jumpier measured flight level, and marks its
+  // reference — "A" for a QNH altitude, "FL" for a pressure level.
+  it('prefers the filtered barometric altitude and marks a QNH altitude with "A"', () => {
+    const track = { callsign: 'DLH1', track_num: 1, vx: 0, vy: 0, flight_level_ft: 34000, barometric_altitude_ft: 3000, qnh_corrected: true }
+    expect(buildLabel(track, '').split('\n')[1]).toBe('A030')
+  })
+
+  it('marks an uncorrected barometric altitude as a flight level "FL"', () => {
+    const track = { callsign: 'DLH2', track_num: 1, vx: 0, vy: 0, barometric_altitude_ft: 35000, qnh_corrected: false }
+    expect(buildLabel(track, '').split('\n')[1]).toBe('FL350')
+  })
+
+  it('falls back to the measured flight level when no barometric altitude is present', () => {
+    const track = { callsign: 'DLH3', track_num: 1, vx: 0, vy: 0, flight_level_ft: 28000 }
+    expect(buildLabel(track, '').split('\n')[1]).toBe('FL280')
+  })
+
+  it('keeps the trend arrow and selected altitude on a QNH-altitude line', () => {
+    const track = { callsign: 'DLH4', track_num: 1, vx: 0, vy: 0, barometric_altitude_ft: 5000, qnh_corrected: true, selected_altitude_ft: 6000 }
+    expect(buildLabel(track, '▲').split('\n')[1]).toBe('A050 ▲ S060')
+  })
 })

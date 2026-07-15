@@ -90,6 +90,33 @@ export function formatMach(m) {
   return `M${m.toFixed(3)}`
 }
 
+// formatGeometricAltitude renders the calculated geometric altitude (I062/130,
+// WGS-84, ICD 3.5.0) as whole feet, e.g. "10000 ft". Returns '' when absent.
+export function formatGeometricAltitude(ft) {
+  if (typeof ft !== 'number' || !Number.isFinite(ft)) return ''
+  return `${Math.round(ft)} ft`
+}
+
+// formatBarometricAltitude renders the filtered barometric altitude (I062/135,
+// ICD 3.5.0) with its reference: a QNH-corrected value is a true altitude in
+// feet ("3000 ft (QNH)"); an uncorrected value is a pressure flight level
+// ("FL350 (Standard)"). The reference travels with the value so the two are
+// never confused. Returns '' when absent.
+export function formatBarometricAltitude(ft, qnhCorrected) {
+  if (typeof ft !== 'number' || !Number.isFinite(ft)) return ''
+  if (qnhCorrected === true) return `${Math.round(ft)} ft (QNH)`
+  return `FL${String(Math.abs(Math.round(ft / 100))).padStart(3, '0')} (Standard)`
+}
+
+// formatRateOfClimb renders the calculated rate of climb/descent (I062/220,
+// ICD 3.5.0) as signed feet per minute, e.g. "+3000 ft/min" / "-1200 ft/min".
+// Returns '' when absent.
+export function formatRateOfClimb(ftMin) {
+  if (typeof ftMin !== 'number' || !Number.isFinite(ftMin)) return ''
+  const r = Math.round(ftMin)
+  return `${r > 0 ? '+' : ''}${r} ft/min`
+}
+
 // VERTICAL_TREND_LABELS maps the tendency glyph baked in tracks.js (ASD-001b:
 // ▲ climbing, ▼ descending) to a German word. Anything else (including '') is
 // treated as level flight.

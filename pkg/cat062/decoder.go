@@ -57,7 +57,7 @@ func DecodeRecord(data []byte, offset int) (DecodedTrack, int, error) {
 	// CAT062 UAP (ICD v2.0.0): I062/136 (Measured Flight Level) at FRN 17,
 	// I062/500 (Estimated Accuracies) at FRN 27 (not the old non-standard 16).
 	// I062/245 (Target Identification / Callsign, ICD v2.1.0) sits at FRN 10.
-	uapOrder := []uint8{1, 4, 5, 6, 7, 9, 10, 11, 12, 13, 14, 17, 27}
+	uapOrder := []uint8{1, 4, 5, 6, 7, 9, 10, 11, 12, 13, 14, 17, 18, 19, 20, 27}
 
 	for _, frn := range uapOrder {
 		if !fspec.HasItem(frn) {
@@ -217,6 +217,42 @@ func DecodeRecord(data []byte, offset int) (DecodedTrack, int, error) {
 			flTicks := int16((uint16(data[offset]) << 8) | uint16(data[offset+1]))
 			fl := float64(flTicks) * 25.0 // LSB = 1/4 FL = 25 ft
 			track.FlightLevelFt = &fl
+			offset += 2
+
+		case 18: // I062/130: Calculated Track Geometric Altitude (2 bytes, i16, LSB 6.25 ft)
+			if offset+2 > len(data) {
+				return track, offset, NewDecodeError("truncated I062/130")
+			}
+			ticks := int16((uint16(data[offset]) << 8) | uint16(data[offset+1]))
+			alt := float64(ticks) * 6.25 // LSB = 6.25 ft, WGS-84 geometric
+			track.GeometricAltitudeFt = &alt
+			offset += 2
+
+		case 19: // I062/135: Calculated Track Barometric Altitude (2 bytes)
+			// Bit 16 (0x8000) is the QNH-correction flag; bits 15..1 are a 15-bit
+			// two's-complement altitude in 1/4-FL (25 ft) steps. This is NOT a plain
+			// i16: the sign bit is bit 15 (0x4000 within the masked value), so the
+			// value is sign-extended from 15 bits, not 16.
+			if offset+2 > len(data) {
+				return track, offset, NewDecodeError("truncated I062/135")
+			}
+			raw := (uint16(data[offset]) << 8) | uint16(data[offset+1])
+			track.BaroQNHCorrected = (raw & 0x8000) != 0
+			v := int(raw & 0x7FFF)
+			if v&0x4000 != 0 { // sign bit of the 15-bit field
+				v -= 0x8000
+			}
+			baro := float64(v) * 25.0 // LSB = 1/4 FL = 25 ft
+			track.BarometricAltitudeFt = &baro
+			offset += 2
+
+		case 20: // I062/220: Calculated Rate of Climb/Descent (2 bytes, i16, LSB 6.25 ft/min)
+			if offset+2 > len(data) {
+				return track, offset, NewDecodeError("truncated I062/220")
+			}
+			ticks := int16((uint16(data[offset]) << 8) | uint16(data[offset+1]))
+			rocd := float64(ticks) * 6.25 // LSB = 6.25 ft/min, positive = climb
+			track.RateOfClimbDescentFtMin = &rocd
 			offset += 2
 
 		case 27: // I062/500: Estimated Accuracies (compound, currently just APC)
