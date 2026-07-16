@@ -1616,6 +1616,11 @@ func mapConfigHandler(cfg Config) http.HandlerFunc {
 			// infobox additionally needs the tenant's qnh entitlement and a configured
 			// aerodrome (view_configs.qnh_icao); this flag only reports the source.
 			"qnh_available": cfg.QNHEnabled,
+			// #245 Teil B / ADR 0024: whether manual flight-plan correlation is enabled
+			// (a command token is configured). Gates the correlation controls in the
+			// detail panel; the server enforces the feature edge independently (503
+			// when the token is unset), so this is a UI convenience, not the guard.
+			"correlation_available": cfg.FireflyCommandToken != "",
 		})
 	}
 }

@@ -137,10 +137,57 @@
       </v-list-item>
     </v-list>
   </v-card-text>
+
+  <!-- #245 Teil B (ADR 0024): manual flight-plan correlation. Only rendered when
+       the feature is enabled server-side (correlation_available) and this track
+       rode a real catalogue feed (feed_id present — the ENV fallback feed has no
+       Firefly command channel). The controller pins the track to a filed plan,
+       marks it explicitly uncorrelated, or clears the override; the server
+       authorises the write (must be subscribed to the feed) and relays it. -->
+  <template v-if="correlationEnabled">
+    <v-divider />
+    <v-card-text class="pt-3 pb-3">
+      <div class="text-overline mb-1">Korrelation</div>
+      <v-text-field
+        v-model="correlationCallsign"
+        label="Plan-Callsign"
+        density="compact"
+        variant="outlined"
+        hide-details
+        autocapitalize="characters"
+        class="mb-2"
+        :disabled="correlationBusy"
+        @keyup.enter="doCorrelate"
+      />
+      <div class="d-flex flex-wrap ga-2">
+        <v-btn
+          size="small"
+          color="primary"
+          variant="flat"
+          :loading="correlationBusy"
+          :disabled="correlationBusy || !correlationCallsign.trim()"
+          @click="doCorrelate"
+        >Korrelieren</v-btn>
+        <v-btn size="small" variant="tonal" :disabled="correlationBusy" @click="doUncorrelate">
+          Unkorreliert
+        </v-btn>
+        <v-btn size="small" variant="text" :disabled="correlationBusy" @click="doClear">
+          Zurücksetzen
+        </v-btn>
+      </div>
+      <v-alert
+        v-if="correlationNotice"
+        :type="correlationNotice.ok ? 'success' : 'warning'"
+        variant="tonal"
+        density="compact"
+        class="mt-2"
+      >{{ correlationNotice.message }}</v-alert>
+    </v-card-text>
+  </template>
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useAsdStore } from '@/stores/asd.js'
 import { PROVENANCE_LABELS } from '@/map/provenance.js'
 import {
@@ -262,4 +309,53 @@ const statusLabel = computed(() => {
   if (track.value?.confirmed) return 'Bestätigt'
   return 'Tentativ'
 })
+
+// #245 Teil B (ADR 0024): manual flight-plan correlation controls. Enabled only
+// when the backend has a command token (correlation_available, cosmetic — the
+// server enforces it) AND this track carries a real feed_id (the ENV fallback
+// feed, feed_id null, has no command channel).
+const feedId = computed(() => track.value?.feed_id ?? null)
+const correlationEnabled = computed(() => store.correlationAvailable && feedId.value != null)
+
+const correlationCallsign = ref('')
+const correlationBusy = ref(false)
+const correlationNotice = ref(null)
+
+// Pre-fill the field with the track's best-known identity (filed plan callsign,
+// else the downlinked I062/245 callsign) and clear the last result whenever the
+// selected track changes — so a notice never bleeds across selections.
+watch(
+  track,
+  (t) => {
+    correlationCallsign.value = t?.plan_callsign || t?.callsign || ''
+    correlationNotice.value = null
+  },
+  { immediate: true },
+)
+
+// runCorrelation drives one command: it disables the controls, awaits the store
+// action (which returns { ok, message }), and shows the result. feedId is
+// re-checked defensively — the controls are hidden without it, but a command
+// must never post a null feed.
+async function runCorrelation(fn) {
+  if (feedId.value == null) return
+  correlationBusy.value = true
+  correlationNotice.value = null
+  try {
+    correlationNotice.value = await fn()
+  } finally {
+    correlationBusy.value = false
+  }
+}
+function doCorrelate() {
+  const cs = correlationCallsign.value.trim()
+  if (!cs) return
+  runCorrelation(() => store.correlate(feedId.value, track.value.track_num, cs))
+}
+function doUncorrelate() {
+  runCorrelation(() => store.setUncorrelated(feedId.value, track.value.track_num))
+}
+function doClear() {
+  runCorrelation(() => store.clearOverride(feedId.value, track.value.track_num))
+}
 </script>

@@ -1,10 +1,31 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useAsdStore } from '@/stores/asd.js'
 
 beforeEach(() => {
   setActivePinia(createPinia())
 })
+
+// installFetch stubs global fetch with a table keyed by "METHOD path". Each entry
+// is { status, body }. It records every call so tests can assert URL/method/body.
+// (Mirrors the helper in admin.test.js — both drive apiFetch.)
+function installFetch(table) {
+  const calls = []
+  globalThis.fetch = vi.fn(async (url, opts = {}) => {
+    const method = (opts.method || 'GET').toUpperCase()
+    calls.push({ url, method, body: opts.body })
+    const entry = table[`${method} ${url}`]
+    if (!entry) {
+      return { ok: false, status: 404, text: async () => JSON.stringify({ error: 'not found' }) }
+    }
+    return {
+      ok: entry.status >= 200 && entry.status < 300,
+      status: entry.status,
+      text: async () => (entry.body !== undefined ? JSON.stringify(entry.body) : ''),
+    }
+  })
+  return calls
+}
 
 // #176: the standalone "Lufträume" parent toggle was removed; the airspace layer
 // visibility is derived from the four group toggles (visible iff any is on).
@@ -186,5 +207,76 @@ describe('asd store — live-track set for the event panel (ASD-013)', () => {
     s.setLiveTrackNums(new Set([2, 3]))
     expect(s.liveTrackNums.has(1)).toBe(false) // replaced, not merged
     expect(s.liveTrackNums.has(3)).toBe(true)
+  })
+})
+
+// #245 Teil B (ADR 0024): manual flight-plan correlation. The availability flag
+// gates the UI (set from /api/map-config); the three actions post to the command
+// endpoint and normalise the HTTP result into a friendly { ok, message }.
+describe('asd store — manual correlation availability gate (#245 Teil B)', () => {
+  it('is unavailable by default and coerces the setter to a boolean', () => {
+    const s = useAsdStore()
+    expect(s.correlationAvailable).toBe(false)
+    s.setCorrelationAvailable(1)
+    expect(s.correlationAvailable).toBe(true)
+    s.setCorrelationAvailable('')
+    expect(s.correlationAvailable).toBe(false)
+  })
+})
+
+describe('asd store — manual correlation commands (#245 Teil B)', () => {
+  it('correlate POSTs feed_id/track_number/callsign and reports success on 204', async () => {
+    const calls = installFetch({ 'POST /api/correlation': { status: 204 } })
+    const s = useAsdStore()
+    const r = await s.correlate(42, 1234, 'DLH123')
+    expect(r.ok).toBe(true)
+    expect(r.message).toContain('DLH123')
+    expect(calls).toHaveLength(1)
+    expect(calls[0].method).toBe('POST')
+    expect(calls[0].url).toBe('/api/correlation')
+    expect(JSON.parse(calls[0].body)).toEqual({ feed_id: 42, track_number: 1234, callsign: 'DLH123' })
+  })
+
+  it('setUncorrelated POSTs a null callsign (the uncorrelate signal)', async () => {
+    const calls = installFetch({ 'POST /api/correlation': { status: 204 } })
+    const s = useAsdStore()
+    const r = await s.setUncorrelated(42, 7)
+    expect(r.ok).toBe(true)
+    expect(JSON.parse(calls[0].body)).toEqual({ feed_id: 42, track_number: 7, callsign: null })
+  })
+
+  it('clearOverride DELETEs the feed/track path', async () => {
+    const calls = installFetch({ 'DELETE /api/correlation/42/7': { status: 204 } })
+    const s = useAsdStore()
+    const r = await s.clearOverride(42, 7)
+    expect(r.ok).toBe(true)
+    expect(calls[0].method).toBe('DELETE')
+    expect(calls[0].url).toBe('/api/correlation/42/7')
+  })
+
+  it('maps a 422 (no such plan) to the German controller message', async () => {
+    installFetch({ 'POST /api/correlation': { status: 422, body: { error: 'no filed flight plan for that callsign' } } })
+    const s = useAsdStore()
+    const r = await s.correlate(42, 1, 'ZZZ999')
+    expect(r.ok).toBe(false)
+    expect(r.message).toBe('Kein Flugplan mit dieser Kennung gefunden.')
+  })
+
+  it('maps a 409 (no plans configured) and a 403 (not authorised) to their messages', async () => {
+    installFetch({ 'POST /api/correlation': { status: 409 } })
+    let r = await useAsdStore().correlate(42, 1, 'DLH1')
+    expect(r.message).toContain('keine Flugpläne')
+
+    installFetch({ 'POST /api/correlation': { status: 403 } })
+    r = await useAsdStore().correlate(42, 1, 'DLH1')
+    expect(r.message).toBe('Für diesen Feed nicht berechtigt.')
+  })
+
+  it('falls back to the raw error for an unmapped status', async () => {
+    installFetch({ 'POST /api/correlation': { status: 418, body: { error: 'teapot' } } })
+    const s = useAsdStore()
+    const r = await s.correlate(42, 1, 'DLH1')
+    expect(r.ok).toBe(false)
+    expect(r.message).toBe('teapot')
   })
 })

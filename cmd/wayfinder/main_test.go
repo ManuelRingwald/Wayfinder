@@ -79,6 +79,37 @@ func TestMapConfigHandlerCustomStyleURL(t *testing.T) {
 	}
 }
 
+// TestMapConfigHandlerCorrelationAvailable pins the #245 Teil B / ADR 0024 UI
+// gate: map-config reports correlation_available iff a Firefly command token is
+// configured, so the panel only shows correlation controls that can succeed.
+func TestMapConfigHandlerCorrelationAvailable(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		token string
+		want  bool
+	}{
+		{"token set → available", "s3cr3t-token", true},
+		{"token empty → unavailable", "", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := Config{FireflyCommandToken: tc.token}
+			req := httptest.NewRequest(http.MethodGet, "/api/map-config", nil)
+			rec := httptest.NewRecorder()
+			mapConfigHandler(cfg)(rec, req)
+
+			var body struct {
+				CorrelationAvailable bool `json:"correlation_available"`
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+				t.Fatalf("decode response: %v", err)
+			}
+			if body.CorrelationAvailable != tc.want {
+				t.Errorf("correlation_available = %v, want %v", body.CorrelationAvailable, tc.want)
+			}
+		})
+	}
+}
+
 func TestLoadConfigParsesSecurityEnvVars(t *testing.T) {
 	for _, env := range []struct{ key, value string }{
 		{"WAYFINDER_ALLOWED_ORIGINS", "https://a.example, https://b.example"},

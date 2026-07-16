@@ -332,3 +332,24 @@ describe('updateTracksLayer flight plan (#245)', () => {
     expect(f2.properties.plan_destination).toBeNull()
   })
 })
+
+// Manual correlation (#245 Teil B): the correlation controls address the command
+// endpoint by (feed_id, track_num), so feed_id must be baked onto the feature. An
+// absent feed_id (the ENV fallback feed, omitempty on the wire) becomes null so
+// the controls gate off cleanly.
+describe('updateTracksLayer feed_id (#245 Teil B)', () => {
+  it('bakes feed_id when present and defaults an absent one to null', () => {
+    const state = makeState()
+    const base = { latitude: 50, longitude: 8, vx: 0, vy: 0, confirmed: true, coasting: false }
+    const msg = {
+      tracks: [
+        { ...base, track_num: 1, feed_id: 42 }, // catalogue feed
+        { ...base, track_num: 2 },              // ENV fallback feed (omitted)
+      ],
+    }
+    updateTracksLayer(msg, state, () => {}, () => {})
+    const [f1, f2] = state.liveTrackFeatures
+    expect(f1.properties.feed_id).toBe(42)
+    expect(f2.properties.feed_id).toBeNull()
+  })
+})
