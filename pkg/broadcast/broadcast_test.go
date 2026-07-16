@@ -272,6 +272,51 @@ func TestTracksToMessageMapsKinematics(t *testing.T) {
 	}
 }
 
+// TestTracksToMessageMapsFlightPlan verifies the flight-plan correlation (I062/390,
+// ICD 3.7.0, #245) is carried to the wire, that a callsign-only plan ships no
+// route, and that an uncorrelated track carries none of the fields.
+func TestTracksToMessageMapsFlightPlan(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(nil, nil))
+	b := New(logger)
+
+	csn := "DLH123"
+	dep := "EDDF"
+	dst := "EDDM"
+	csnOnly := "BAW22"
+	full := cat062.DecodedTrack{TrackNum: 1, PlanCallsign: &csn, PlanDeparture: &dep, PlanDestination: &dst}
+	partial := cat062.DecodedTrack{TrackNum: 2, PlanCallsign: &csnOnly}
+	none := cat062.DecodedTrack{TrackNum: 3}
+
+	msg := b.tracksToMessage(TrackBatch{FeedID: 7, Tracks: []cat062.DecodedTrack{full, partial, none}})
+	if len(msg.Tracks) != 3 {
+		t.Fatalf("expected 3 tracks, got %d", len(msg.Tracks))
+	}
+
+	tm := msg.Tracks[0]
+	if tm.PlanCallsign == nil || *tm.PlanCallsign != "DLH123" {
+		t.Errorf("PlanCallsign: got %v, want DLH123", tm.PlanCallsign)
+	}
+	if tm.PlanDeparture == nil || *tm.PlanDeparture != "EDDF" {
+		t.Errorf("PlanDeparture: got %v, want EDDF", tm.PlanDeparture)
+	}
+	if tm.PlanDestination == nil || *tm.PlanDestination != "EDDM" {
+		t.Errorf("PlanDestination: got %v, want EDDM", tm.PlanDestination)
+	}
+
+	partialTM := msg.Tracks[1]
+	if partialTM.PlanCallsign == nil || *partialTM.PlanCallsign != "BAW22" {
+		t.Errorf("partial PlanCallsign: got %v, want BAW22", partialTM.PlanCallsign)
+	}
+	if partialTM.PlanDeparture != nil || partialTM.PlanDestination != nil {
+		t.Errorf("callsign-only plan carried a route: dep=%v dst=%v", partialTM.PlanDeparture, partialTM.PlanDestination)
+	}
+
+	bare := msg.Tracks[2]
+	if bare.PlanCallsign != nil || bare.PlanDeparture != nil || bare.PlanDestination != nil {
+		t.Errorf("uncorrelated track carried plan fields: %+v", bare)
+	}
+}
+
 // TestTracksToMessageMapsAdsbAge verifies the I062/290 ES age (ADS-B, ICD
 // 2.4.0) is carried through to the wire as adsb_age_s, and that a radar-only
 // track leaves it nil (so the frontend shows no ADS-B badge). AP9.9.

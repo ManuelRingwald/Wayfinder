@@ -310,3 +310,25 @@ describe('updateTracksLayer kinematics chain (#242)', () => {
     expect(p.vertical_motion).toBe('climb')
   })
 })
+
+// Flight-plan correlation (I062/390, ICD 3.7.0, #245).
+describe('updateTracksLayer flight plan (#245)', () => {
+  it('bakes plan callsign and route, defaulting absent ones to null', () => {
+    const state = makeState()
+    const base = { latitude: 50, longitude: 8, vx: 0, vy: 0, confirmed: true, coasting: false }
+    const msg = {
+      tracks: [
+        { ...base, track_num: 1, plan_callsign: 'DLH123', plan_departure: 'EDDF', plan_destination: 'EDDM' },
+        { ...base, track_num: 2 }, // uncorrelated
+      ],
+    }
+    updateTracksLayer(msg, state, () => {}, () => {})
+    const [f1, f2] = state.liveTrackFeatures
+    expect(f1.properties.plan_callsign).toBe('DLH123')
+    expect(f1.properties.plan_departure).toBe('EDDF')
+    expect(f1.properties.plan_destination).toBe('EDDM')
+    expect(f2.properties.plan_callsign).toBeNull()
+    expect(f2.properties.plan_departure).toBeNull()
+    expect(f2.properties.plan_destination).toBeNull()
+  })
+})

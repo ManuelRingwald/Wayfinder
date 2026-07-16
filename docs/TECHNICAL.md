@@ -229,6 +229,23 @@ quantitative I062/220-Rate (#241). Jede Achse/Komponente wird nur bei Bestimmung
 gesendet (`omitempty`). Additiv, kein Wire-Bruch (Track ohne Kinematik
 byte-identisch).
 
+**Flugplan-Korrelation `plan_callsign`/`plan_departure`/`plan_destination` (I062/390, ICD 3.7.0, #245):**
+Der Decoder liest das **Compound-Item I062/390** (FRN 21) — das Ergebnis der
+zentralen Flugplan-Korrelation (Fireflys ADR 0038/0039): **subfeld-getrieben** wie
+I062/380, dekodiert **CSN** (#2, 7 Okt. ASCII → Plan-Callsign), **DEP**/**DST**
+(#7/#8, je 4 Okt. ICAO-Locator). Bekannte fixe Subfelder werden längen-übersprungen
+(Vorwärts-Kompatibilität für Fireflys additives Feldsatz-Wachstum), das variable
+#12 (TOD) wird abgelehnt statt fehl-geparst. Das Item erscheint **nur bei
+korreliertem Track**. **ASD-Nutzung:** Das `TrackDetailCard` zeigt „Plan-Callsign"
+und „Route (ADEP → ADES)"; ein **Callsign-Mismatch** — der gefilte Plan-Callsign
+(CSN) weicht von der gesendeten Kennung (I062/245) ab — wird im Panel farblich
+hervorgehoben **und** am Label mit einem dezenten „≠"-Marker signalisiert (echtes
+Betriebssignal: falscher Squawk/Plan). Additiv, kein Wire-Bruch (unkorrelierter
+Track byte-identisch). **Nicht enthalten** (separate Häppchen): die **manuelle
+Korrelation** (Kommando-API `POST/DELETE /correlation`, ein Rückkanal
+Wayfinder→Firefly, den es heute nicht gibt — eigener ADR) und `identity_conflict`
+(nur in Fireflys WS-Pfad, nicht über CAT062 verfügbar).
+
 Seit ICD 2.6.0 ist **FLARM erstmals sauber unterscheidbar** (eigenes `flarm_age_s`),
 statt wie zuvor unter ADS-B/SSR zu verschwinden (#118). Die 30-Sekunden-Frische-
 Schwelle (`ADSB_FRESH_THRESHOLD_S`) und die Klassifikation liegen in

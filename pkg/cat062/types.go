@@ -164,6 +164,17 @@ type DecodedTrack struct {
 	// clamps to the i8 field range (−32.0 .. +31.75 m/s²).
 	AccelAxMS2 *float64
 	AccelAyMS2 *float64
+
+	// Flight-plan correlation (I062/390, ICD 3.7.0): the filed plan the SDPS
+	// correlated to this track. Present only for a correlated track; an
+	// uncorrelated track leaves all three nil. PlanCallsign (CSN) is always present
+	// when the item is; PlanDeparture (DEP) / PlanDestination (DST) only when the
+	// plan carries them. Trailing spaces are trimmed. Note the filed PlanCallsign
+	// may differ from the downlinked Callsign (I062/245) — that difference is a
+	// callsign mismatch worth surfacing.
+	PlanCallsign    *string
+	PlanDeparture   *string
+	PlanDestination *string
 }
 
 // CourseTrend, SpeedTrend and VerticalTrend are the three qualitative motion axes

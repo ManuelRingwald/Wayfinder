@@ -264,6 +264,13 @@ type TrackMessage struct {
 	VerticalMotion *string  `json:"vertical_motion,omitempty"`
 	AccelAxMs2     *float64 `json:"accel_ax_ms2,omitempty"`
 	AccelAyMs2     *float64 `json:"accel_ay_ms2,omitempty"`
+	// Flight-plan correlation (I062/390, ICD 3.7.0), present only for a correlated
+	// track. PlanCallsign is the filed callsign (may differ from the downlinked
+	// Callsign — a mismatch the frontend surfaces); PlanDeparture/PlanDestination
+	// are the ICAO route endpoints, present only when the plan carries them.
+	PlanCallsign    *string `json:"plan_callsign,omitempty"`
+	PlanDeparture   *string `json:"plan_departure,omitempty"`
+	PlanDestination *string `json:"plan_destination,omitempty"`
 }
 
 // Sender can send messages to all connected clients.
@@ -594,6 +601,9 @@ func (b *Broadcaster) tracksToMessage(batch TrackBatch) Message {
 			VerticalMotion:       enumStr(track.MotionVertical),
 			AccelAxMs2:           track.AccelAxMS2,
 			AccelAyMs2:           track.AccelAyMS2,
+			PlanCallsign:         track.PlanCallsign,
+			PlanDeparture:        track.PlanDeparture,
+			PlanDestination:      track.PlanDestination,
 		}
 	}
 

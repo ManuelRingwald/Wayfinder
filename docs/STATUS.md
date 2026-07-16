@@ -10,6 +10,38 @@
 
 ---
 
+## 🗺️ Stand 2026-07-15 (CAT062-Flugplan-Korrelation I062/390 — #245 Teil A, FR-DATA-013)
+
+**In normaler Sprache:** Firefly weiß jetzt zentral, **welcher gefilte Flugplan**
+zu einem Track gehört, und schreibt das auf den Draht (ICD 3.7.0). **Neu sichtbar
+für den Lotsen:** Im Detail-Fenster stehen jetzt der **Plan-Callsign** und die
+**Route** (z. B. „EDDF → EDDM"). Und ein wichtiges Betriebssignal: Weicht die vom
+Flugzeug **gesendete** Kennung (I062/245) vom **gefileten** Plan-Callsign ab, wird
+das hervorgehoben — am Label mit einem dezenten „≠" und im Panel farblich. Das
+deutet auf einen falschen Squawk oder eine falsche Plan-Zuordnung hin.
+
+**Fachlich/technisch:** Decoder liest FRN 21 (I062/390) **subfeld-getrieben** (wie
+schon I062/380, #238): CSN (#2, 7 Okt. ASCII → Plan-Callsign), DEP/DST (#7/#8, je
+4 Okt. ICAO). Bekannte fixe Subfelder werden längen-übersprungen (Vorwärts-
+Kompatibilität für Fireflys additives Wachstum), das variable #12 (TOD) wird
+abgelehnt. → `DecodedTrack`-Felder → WS-JSON (`plan_callsign`/`plan_departure`/
+`plan_destination`) → Label-Mismatch-Marker + Detail-Panel (Plan-Callsign, Route,
+Mismatch-Highlight). Additiv, kein Wire-/ICD-Bruch (unkorrelierter Track byte-
+identisch). Grundwahrheit: Fireflys ICD §4.10-Referenz-Vektoren (`43 80 …`,
+`40 …`). Register: **FR-DATA-013**. Gates grün (`go test ./...`, vitest,
+`npm run build`, gofmt/vet/golangci-lint). dist neu.
+
+**Scope-Abgrenzung (wichtig):** #245 ist damit **Teil A** (Anzeige) erledigt.
+**Teil B — manuelle Korrelation** (`POST/DELETE /correlation`, ein Rückkanal
+Wayfinder→Firefly) ist ein **architektonischer Neubau** (Wayfinder ist bisher
+reiner Multicast-Konsument ohne Steuerverbindung) und bekommt einen **eigenen ADR
++ eigene Freigabe** — bewusst nicht in diesem PR. Auch `identity_conflict` (nur in
+Fireflys WS-Pfad) ist über CAT062 nicht verfügbar.
+
+**Stand Cross-Project-Nachzug:** Die decoder-/anzeige-seitige `from-firefly`-Reihe
+(#235–#242, #245 Teil A) ist damit **abgeschlossen**. Offen bleibt nur der
+Bedien-Rückkanal (#245 Teil B) als eigenes Vorhaben.
+
 ## 🧭 Stand 2026-07-15 (CAT062-Kinematik-Kette I062/200/210 — #242, FR-DATA-012)
 
 **In normaler Sprache:** Firefly rechnet nicht nur *wo* ein Flugzeug ist, sondern
