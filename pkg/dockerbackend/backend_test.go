@@ -5,6 +5,7 @@ import (
 	"io"
 	"log/slog"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/manuelringwald/wayfinder/pkg/instance"
@@ -77,7 +78,7 @@ func spec(id int64, port int) instance.Spec {
 }
 
 func newBackend(c ContainerClient) *Backend {
-	return New(c, "firefly:test", "host", discardLogger())
+	return New(c, "firefly:test", "host", "", discardLogger())
 }
 
 func TestStartCreatesAndRunsContainer(t *testing.T) {
@@ -229,7 +230,7 @@ func TestStartRejectsInvalidSpec(t *testing.T) {
 }
 
 func TestFireflyEnvMapsSpec(t *testing.T) {
-	b := New(newFakeClient(), "firefly:test", "host", discardLogger())
+	b := New(newFakeClient(), "firefly:test", "host", "", discardLogger())
 	s := instance.Spec{
 		FeedID: 1, FeedName: "f", Group: "239.0.0.5", Port: 8600,
 		Coverage: &store.BBox{MinLat: 48, MinLon: 7, MaxLat: 50, MaxLon: 9},
@@ -263,11 +264,41 @@ func TestFireflyEnvMapsSpec(t *testing.T) {
 
 	// No coverage → group/port + the always-on ENABLED, the per-feed
 	// FIREFLY_PORT and the explicit empty FIREFLY_SOURCES, deterministic.
-	b2 := New(newFakeClient(), "firefly:test", "host", discardLogger())
+	b2 := New(newFakeClient(), "firefly:test", "host", "", discardLogger())
 	env2 := b2.fireflyEnv(instance.Spec{FeedID: 1, Group: "239.0.0.5", Port: 8600})
 	if len(env2) != 5 {
 		t.Fatalf("env without coverage = %v, want 5 entries", env2)
 	}
+}
+
+// TestFireflyEnvInjectsCommandToken pins the ADR 0024 §E2/H4 wiring: a configured
+// deployment command token becomes FIREFLY_WS_TOKEN on the spawned Firefly (so its
+// command API accepts the browser-facing server's Bearer), and an empty token adds
+// no such env (feature off, un-gated command channel).
+func TestFireflyEnvInjectsCommandToken(t *testing.T) {
+	spec := instance.Spec{FeedID: 1, Group: "239.0.0.5", Port: 8600}
+
+	withToken := New(newFakeClient(), "firefly:test", "host", "s3cr3t-token", discardLogger())
+	if !hasEnv(withToken.fireflyEnv(spec), "FIREFLY_WS_TOKEN=s3cr3t-token") {
+		t.Errorf("expected FIREFLY_WS_TOKEN injected, got %v", withToken.fireflyEnv(spec))
+	}
+
+	noToken := New(newFakeClient(), "firefly:test", "host", "", discardLogger())
+	for _, e := range noToken.fireflyEnv(spec) {
+		if strings.HasPrefix(e, "FIREFLY_WS_TOKEN=") {
+			t.Errorf("empty command token must not inject FIREFLY_WS_TOKEN, got %q", e)
+		}
+	}
+}
+
+// hasEnv reports whether want is present verbatim in env.
+func hasEnv(env []string, want string) bool {
+	for _, e := range env {
+		if e == want {
+			return true
+		}
+	}
+	return false
 }
 
 // TestFireflyHTTPPortIsCollisionFree pins the Issue #104 invariants: the spawned

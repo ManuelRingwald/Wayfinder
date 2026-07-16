@@ -65,6 +65,30 @@ func TestLoadConfigRequiresDSN(t *testing.T) {
 	}
 }
 
+// TestLoadConfigCommandToken pins the ADR 0024 §E2/H4 wiring: the deployment-wide
+// manual-correlation token is read from WAYFINDER_FIREFLY_COMMAND_TOKEN (empty when
+// unset) and later injected into each Firefly as FIREFLY_WS_TOKEN by the backend.
+func TestLoadConfigCommandToken(t *testing.T) {
+	cfg, err := loadConfig(envFunc(map[string]string{
+		"WAYFINDER_DB_URL":                "x",
+		"WAYFINDER_FIREFLY_COMMAND_TOKEN": "s3cr3t-token",
+	}), nil)
+	if err != nil {
+		t.Fatalf("loadConfig: %v", err)
+	}
+	if cfg.commandToken != "s3cr3t-token" {
+		t.Errorf("commandToken = %q, want s3cr3t-token", cfg.commandToken)
+	}
+
+	cfg2, err := loadConfig(envFunc(map[string]string{"WAYFINDER_DB_URL": "x"}), nil)
+	if err != nil {
+		t.Fatalf("loadConfig: %v", err)
+	}
+	if cfg2.commandToken != "" {
+		t.Errorf("commandToken unset = %q, want empty", cfg2.commandToken)
+	}
+}
+
 func TestLoadConfigOnceFlag(t *testing.T) {
 	cfg, err := loadConfig(envFunc(map[string]string{"WAYFINDER_DB_URL": "x"}), []string{"--once"})
 	if err != nil {

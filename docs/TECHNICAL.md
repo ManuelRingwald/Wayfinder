@@ -1092,8 +1092,16 @@ Unkorreliert/Zurücksetzen und synchroner Ergebniszeile; die Store-Aktionen
 `POST/DELETE /api/correlation` und übersetzen die HTTP-Statuslage in deutsche
 Controller-Meldungen. Sichtbar nur, wenn `map-config.correlation_available`
 (= Token gesetzt) **und** der Track ein `feed_id` trägt (der ENV-Fallback-Feed
-hat keinen Command-Kanal). Offen bleibt die **Token-Injektion** in die
-Firefly-Container (`fireflyEnv` → `FIREFLY_WS_TOKEN`) in Häppchen 4.
+hat keinen Command-Kanal). Mit **Häppchen 4** ist der Kreis geschlossen: der
+Orchestrator liest `WAYFINDER_FIREFLY_COMMAND_TOKEN` (dasselbe deployment-weite
+Token) und `dockerbackend.fireflyEnv` injiziert es als `FIREFLY_WS_TOKEN` in jede
+gespawnte Firefly-Instanz — deren Kommando-API (`authorize_command`) und `/ws`
+verlangen dann genau das Bearer, das der `fireflycmd.Client` sendet. Ohne die
+Injektion würde Firefly die Korrelations-Kommandos im echten Multi-Feed-Betrieb
+mit `401` ablehnen. Leeres Token ⇒ keine Injektion (Feature aus, Kommando-Kanal
+un-gegated — konsistent mit dem `503` des Server-Endpoints). Das Hinzufügen/
+Entfernen der Env ändert den Spec-Hash, sodass eine laufende Instanz beim nächsten
+Reconcile ersetzt wird und das Token übernimmt.
 
 **Stand:** Reconciler-Kern + Store-Soll + getrenntes Binary + Docker-Adapter +
 verschlüsselter Secret-Speicher/-Resolver + write-only Secret-API + änderungs-
