@@ -224,6 +224,13 @@ export function updateTracksLayer(msg, state, renderSources, startFadeLoop, rete
         plan_callsign: typeof track.plan_callsign === 'string' ? track.plan_callsign : null,
         plan_departure: typeof track.plan_departure === 'string' ? track.plan_departure : null,
         plan_destination: typeof track.plan_destination === 'string' ? track.plan_destination : null,
+        // Manual correlation (#245 Teil B): the feed this track arrived on
+        // (feed_id, omitempty on the wire — absent for the unassigned ENV
+        // fallback feed). The detail panel's correlation controls address the
+        // command endpoint by (feed_id, track_num); coerced to a number or null,
+        // so a null cleanly gates the controls off (the ENV feed is not
+        // addressable, its Firefly has no command channel).
+        feed_id: typeof track.feed_id === 'number' ? track.feed_id : null,
       },
     }
   })

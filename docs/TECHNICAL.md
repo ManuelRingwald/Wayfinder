@@ -745,6 +745,15 @@ Wird einmal beim Frontend-Load abgerufen. Leere Collection wenn kein Sensor konf
 Schalter „Radarabdeckung" mit erklärendem Hinweis, statt einen wirkungslosen
 Toggle anzubieten (#114; `store.coverageAvailable`, gesetzt in `map/engine.js`).
 
+`/api/map-config` meldet ferner `correlation_available` (ADR 0024, #245 Teil B):
+`true` genau dann, wenn `WAYFINDER_FIREFLY_COMMAND_TOKEN` gesetzt ist. Das
+Frontend blendet den Korrelations-Abschnitt im Track-Detail-Panel nur dann ein
+(`store.correlationAvailable`, gesetzt in `map/engine.js`) — zusammen mit der
+Bedingung, dass der Track ein `feed_id` trägt —, damit nie Bedienelemente
+erscheinen, die serverseitig ohnehin `503` liefern würden. Das Flag ist reine
+UI-Bequemlichkeit; die eigentliche Absicherung erzwingt `pkg/correlationapi`
+unabhängig (Gating + `503` bei leerem Token).
+
 ### 6.6 Range-Ring-Overlay & Karten-Controls (ASD-012)
 
 Rein **client-seitige** Anzeigehilfen (keine Env-Variablen, keine Backend-Wirkung):
@@ -1076,7 +1085,14 @@ host-vernetzten Einzelhost-Harness; die K8s-Adresse bleibt hinter dem
 `/api/correlation` aktiv (Häppchen 2, s. API-Tabelle), leer → Endpoint deaktiviert
 (503). Das gegatete Aufrufen des Clients übernimmt `pkg/correlationapi` (die erste
 Feed-Schreib-Aktion; Gating: authentifiziert + nicht impersoniert + `IsSubscribed`).
-Das **Bedien-UI** (Kontextmenü) folgt in Häppchen 3, die **Token-Injektion** in die
+Das **Bedien-UI** ist mit Häppchen 3 gebaut: ein Korrelations-Abschnitt im
+Track-Detail-Panel (`TrackDetailCard.vue`) mit Callsign-Feld + Korrelieren/
+Unkorreliert/Zurücksetzen und synchroner Ergebniszeile; die Store-Aktionen
+(`stores/asd.js` `correlate`/`setUncorrelated`/`clearOverride`) sprechen
+`POST/DELETE /api/correlation` und übersetzen die HTTP-Statuslage in deutsche
+Controller-Meldungen. Sichtbar nur, wenn `map-config.correlation_available`
+(= Token gesetzt) **und** der Track ein `feed_id` trägt (der ENV-Fallback-Feed
+hat keinen Command-Kanal). Offen bleibt die **Token-Injektion** in die
 Firefly-Container (`fireflyEnv` → `FIREFLY_WS_TOKEN`) in Häppchen 4.
 
 **Stand:** Reconciler-Kern + Store-Soll + getrenntes Binary + Docker-Adapter +

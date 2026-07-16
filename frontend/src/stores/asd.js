@@ -1,6 +1,22 @@
 import { defineStore } from 'pinia'
 import { ref, reactive, computed } from 'vue'
+import { apiFetch } from '@/api.js'
 import { DEFAULT_RANGE_RING_SPACING_NM, DEFAULT_RANGE_RING_COUNT, DEFAULT_HISTORY_DURATION_S } from '@/map/constants.js'
+
+// #245 Teil B: the correlation endpoint (pkg/correlationapi) answers with HTTP
+// statuses; this table turns them into short German controller-facing lines. The
+// server also returns an {"error":...} body, but it is English and generic — a
+// status-keyed table gives a clear, localized message without leaking backend
+// phrasing. Any unlisted status falls back to the raw error.
+const CORRELATION_ERROR_MESSAGES = {
+  400: 'Ungültige Eingabe für die Korrelation.',
+  401: 'Nicht angemeldet.',
+  403: 'Für diesen Feed nicht berechtigt.',
+  409: 'Der Tracker dieses Feeds hat keine Flugpläne konfiguriert.',
+  422: 'Kein Flugplan mit dieser Kennung gefunden.',
+  502: 'Tracker nicht erreichbar.',
+  503: 'Manuelle Korrelation ist nicht aktiviert.',
+}
 
 // The broadcast FeedStatusMessage carries a per-feed traffic-light *color*
 // (green/yellow/red, pkg/broadcast); the chip speaks in states. Mapping the
@@ -65,6 +81,14 @@ export const useAsdStore = defineStore('asd', () => {
   // WX-C: whether the DWD weather-warnings overlay is configured on the backend.
   const weatherWarningsAvailable = ref(false)
   function setWeatherWarningsAvailable(v) { weatherWarningsAvailable.value = !!v }
+
+  // #245 Teil B: whether manual flight-plan correlation is enabled on the backend
+  // (a command token is configured, WAYFINDER_FIREFLY_COMMAND_TOKEN). Set by the
+  // engine from /api/map-config (correlation_available). Gates the correlation
+  // controls in the detail panel so controls that could only ever answer 503 are
+  // never shown — the server still enforces the feature edge independently.
+  const correlationAvailable = ref(false)
+  function setCorrelationAvailable(v) { correlationAvailable.value = !!v }
 
   // Layer visibility
   const layerVisibility = reactive({
@@ -180,6 +204,42 @@ export const useAsdStore = defineStore('asd', () => {
   function setFlFilter(updates) { Object.assign(flFilter, updates) }
   function selectTrack(track) { selectedTrack.value = track }
   function clearTrackSelection() { selectedTrack.value = null }
+
+  // #245 Teil B: manual flight-plan correlation commands (ADR 0024). Each is the
+  // browser half of the first Wayfinder→Firefly WRITE path: it posts to the
+  // backend correlation endpoint (pkg/correlationapi), which authorises the
+  // caller (must be subscribed to feedId) and relays the command to the feed's
+  // Firefly instance. Every action returns a uniform { ok, message } so the
+  // detail panel can show one synchronous result line without status branching.
+  // feedId must be a real catalogue feed (> 0); the caller guards on the track's
+  // feed_id being present (the ENV fallback feed has no command channel).
+  function correlationResult(r, successMsg) {
+    if (r.ok) return { ok: true, message: successMsg }
+    return { ok: false, message: CORRELATION_ERROR_MESSAGES[r.status] || r.error || 'Korrelation fehlgeschlagen.' }
+  }
+  // correlate pins trackNum to the filed flight plan identified by callsign.
+  async function correlate(feedId, trackNum, callsign) {
+    const r = await apiFetch('/api/correlation', {
+      method: 'POST',
+      body: JSON.stringify({ feed_id: feedId, track_number: trackNum, callsign }),
+    })
+    return correlationResult(r, `Track ${trackNum} mit ${callsign} korreliert.`)
+  }
+  // setUncorrelated pins trackNum explicitly uncorrelated (suppress the automatic
+  // match). A null callsign on the wire is the "uncorrelate" signal.
+  async function setUncorrelated(feedId, trackNum) {
+    const r = await apiFetch('/api/correlation', {
+      method: 'POST',
+      body: JSON.stringify({ feed_id: feedId, track_number: trackNum, callsign: null }),
+    })
+    return correlationResult(r, `Track ${trackNum} als unkorreliert markiert.`)
+  }
+  // clearOverride removes any manual override for trackNum so Firefly's automatic
+  // correlation resumes. Idempotent on the server.
+  async function clearOverride(feedId, trackNum) {
+    const r = await apiFetch(`/api/correlation/${feedId}/${trackNum}`, { method: 'DELETE' })
+    return correlationResult(r, `Manuelle Korrelation für Track ${trackNum} aufgehoben.`)
+  }
   // setLiveTrackNums replaces the live-track set (accepts an array or a Set). A
   // fresh Set instance is stored so the reactive read in the Ereignis-Panel
   // re-evaluates. Cheap: called once per track batch (every scan, ~4–12 s).
@@ -203,6 +263,7 @@ export const useAsdStore = defineStore('asd', () => {
     coverageAvailable, setCoverageAvailable,
     weatherRadarAvailable, setWeatherRadarAvailable,
     weatherWarningsAvailable, setWeatherWarningsAvailable,
+    correlationAvailable, setCorrelationAvailable,
     airspaceGroupVisibility,
     rangeRingConfig, setRangeRingConfig,
     historyConfig, setHistoryConfig,
@@ -211,5 +272,6 @@ export const useAsdStore = defineStore('asd', () => {
     setFlFilter,
     toggleAirspaceGroup, setAirspaceGroup,
     selectTrack, clearTrackSelection, setLabelPin, deleteLabelPin, setLiveTrackNums,
+    correlate, setUncorrelated, clearOverride,
   }
 })

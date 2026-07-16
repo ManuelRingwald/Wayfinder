@@ -116,6 +116,10 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
   // WX-C: same for the DWD warnings overlay.
   store.setWeatherWarningsAvailable(cfg.weather_warnings_available === true)
 
+  // #245 Teil B: only offer the manual-correlation controls when the backend has
+  // a Firefly command token configured — otherwise every command would 503.
+  store.setCorrelationAvailable(cfg.correlation_available === true)
+
   // Effective viewport: the tenant's view centre (whoami) when supplied, else the
   // global map-config env. recenter() and the range rings follow this, so the
   // "recentre" button and the ring geometry track the tenant's sector too — not

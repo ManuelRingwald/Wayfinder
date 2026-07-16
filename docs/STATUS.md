@@ -10,6 +10,57 @@
 
 ---
 
+## 🧭 Stand 2026-07-16 (Manuelle Korrelation Häppchen 3: Frontend-Bedienung im Detail-Panel — #245 Teil B, FR-ORCH-013)
+
+**In normaler Sprache:** Ab jetzt **sieht und bedient** der Lotse die manuelle
+Korrelation. Im Track-Detail-Panel gibt es einen neuen Abschnitt **„Korrelation"**
+mit einem Callsign-Feld (vorbelegt mit der besten bekannten Kennung des Tracks)
+und drei Knöpfen: **Korrelieren** (Track an den gefileten Plan binden),
+**Unkorreliert** (die Automatik-Zuordnung unterdrücken) und **Zurücksetzen** (den
+manuellen Eingriff lösen, Automatik übernimmt wieder). Jeder Klick zeigt sofort
+eine **ehrliche Rückmeldung** direkt darunter — grün bei Erfolg, gelb mit
+Klartext-Grund bei Ablehnung („Kein Flugplan mit dieser Kennung gefunden",
+„Für diesen Feed nicht berechtigt" …). Das ist die **erste Bedienhandlung im
+ASD, die etwas bei Firefly verändert** — bisher konnte der Lotse nur zuschauen.
+
+**Neu nutzbar:** Der Korrelations-Abschnitt erscheint **nur**, wenn (a) der
+Betrieb die Funktion aktiviert hat (Command-Token gesetzt, neues
+`map-config.correlation_available`) **und** (b) der Track über einen echten
+Katalog-Feed kam (`feed_id` vorhanden — der ENV-Fallback-Feed hat keinen
+Command-Kanal). So sieht der Lotse nie Knöpfe, die ohnehin nur 503 liefern würden.
+
+**Fachlich/technisch:** (1) `feed_id` wird jetzt auf jedes Track-Feature gebacken
+(`frontend/src/map/tracks.js`) — der Endpoint adressiert per `(feed_id,
+track_num)`. (2) Store-Aktionen in `stores/asd.js` (`correlate` /
+`setUncorrelated` / `clearOverride`) posten über `apiFetch` an
+`POST/DELETE /api/correlation` und übersetzen die HTTP-Statuslage in eine
+einheitliche `{ ok, message }`-Form (deutsche Controller-Meldungen je Status,
+Fallback auf den rohen Fehler). (3) `TrackDetailCard.vue` bekommt den
+Korrelations-Abschnitt (Callsign-Feld + drei Knöpfe + synchrone `v-alert`-Zeile;
+`correlationBusy` sperrt während des Kommandos). (4) Neuer map-config-Schalter
+`correlation_available` (= Token gesetzt), vom Engine in
+`store.correlationAvailable` gespiegelt. **Reine UI-/Frontend-Arbeit plus ein
+Read-only-Backend-Flag** — kein neuer Env-Eintrag (Token seit H2 dokumentiert),
+keine CAT062-Wirkung, das Sicherheits-Gating bleibt komplett serverseitig (H2).
+Register: **FR-ORCH-013** (Stand H3 ✅). Gates grün (`go test ./...`, vet, gofmt,
+golangci-lint; `vitest` 600 grün, `npm run build`, `dist` neu eingebettet).
+
+**Test-Kern:** `asd.test.js` — Verfügbarkeits-Gate (Default aus, Boolean-Coercion)
++ die drei Kommandos gegen ein gestubbtes `fetch` (korrekte URL/Methode/Body:
+`correlate` POSTet `{feed_id, track_number, callsign}`, `setUncorrelated` einen
+`null`-Callsign, `clearOverride` DELETEt den Pfad; Status→Meldung-Mapping 204/422/
+409/403 + Fallback). `tracks.test.js` — `feed_id`-Bake (Wert bzw. `null` beim
+ENV-Feed). `main_test.go::TestMapConfigHandlerCorrelationAvailable` — Flag spiegelt
+Token gesetzt/leer.
+
+**Nächster Schritt:** **Häppchen 4** — `fireflyEnv`-Injektion des
+`FIREFLY_WS_TOKEN` in die je-Feed gespawnten Firefly-Container
+(`pkg/dockerbackend`), damit der Command-Rückkanal im echten Multi-Feed-Betrieb
+authentifiziert durchkommt; danach ist **#245 Teil B** komplett und das Issue
+kann geschlossen werden. Wird wie üblich angekündigt (Freigabe abwarten).
+
+---
+
 ## 🛂 Stand 2026-07-16 (Manuelle Korrelation Häppchen 2: Server-Endpoint + Gating — #245 Teil B, FR-ORCH-013)
 
 **In normaler Sprache:** Häppchen 2 baut die **Bedien-Schnittstelle** für die
