@@ -108,6 +108,16 @@ func TestLoadConfigParsesSecurityEnvVars(t *testing.T) {
 	}
 }
 
+// TestLoadConfigParsesFireflyCommandToken pins the ADR 0024 §E2 command token env:
+// present ⇒ carried into cfg (enables /api/correlation); unset ⇒ empty (endpoint
+// disabled, 503).
+func TestLoadConfigParsesFireflyCommandToken(t *testing.T) {
+	t.Setenv("WAYFINDER_FIREFLY_COMMAND_TOKEN", "s3cr3t-token")
+	if got := loadConfig().FireflyCommandToken; got != "s3cr3t-token" {
+		t.Errorf("FireflyCommandToken = %q, want s3cr3t-token", got)
+	}
+}
+
 func TestLoadConfigParsesLogLevel(t *testing.T) {
 	for _, tc := range []struct {
 		env  string

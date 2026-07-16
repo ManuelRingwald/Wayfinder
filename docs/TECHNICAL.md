@@ -401,6 +401,8 @@ immer aktiv — ADR 0014); statische Frontend-Routen werden ausgeliefert.
 | `/api/view-profiles` | GET, POST | **VP-2 (ADR 0023):** persönliche Anzeige-Profile des **eingeloggten Nutzers** (bis zu 3). `GET` listet die eigenen Profile (`[{id,name,settings,is_default,updated_at}]`, leer → `[]`); `POST {name,settings,make_default?}` legt ein Profil an (`201`). Hinter Tenant-Middleware + `pwGate`, **kein** `requireAdmin` — streng auf die **Session-`user_id`** gescopt (nie aus dem Body). `settings` ist ein **opakes** JSON-Objekt (Anzeige-Toggles; Backend interpretiert es nie), ≤ 16 KiB; Name ≤ 60 Zeichen. **Fehler:** kaputtes JSON → `400`, ungültig (leerer Name / Nicht-Objekt-`settings` / zu groß) → `422`, Cap erreicht (>3) → `409`, kein Store gewired → `404`, keine Sitzung → `401`. Getrennt von `view_configs` (Karten-Rahmung) |
 | `/api/view-profiles/{id}` | PUT, DELETE | **VP-2:** `PUT {name,settings}` benennt um / ersetzt die `settings` des **eigenen** Profils; `DELETE` entfernt es (`204`). Ownership-gescopt (`WHERE id AND user_id`) → fremdes/unbekanntes Profil = **404** (keine Leckage) |
 | `/api/view-profiles/{id}/default` | POST | **VP-2:** markiert das **eigene** Profil als **Login-Default** (räumt den vorigen atomar ab; höchstens ein Default/Nutzer). Ownership-gescopt → fremd/unbekannt = `404` |
+| `/api/correlation` | POST | **Manuelle Flugplan-Korrelation (ADR 0024, #245 Teil B):** `{feed_id, track_number, callsign?}` — mit `callsign` wird der Plan auf den Track gepinnt, ohne `callsign` der Track auf **unkorreliert** gezwungen. Hinter Tenant-Middleware + `pwGate`, **kein** `requireAdmin`. **Die erste Feed-Schreib-Aktion eines Mandanten-Nutzers** — dreifaches Gating (`pkg/correlationapi.authorize`): keine Sitzung → **401**, **unter Read-only-Impersonation** (ADR 0008) → **403**, **nicht abonniert** auf den Feed (deckt scope-losen Admin ab, ADR 0022) → **403**. Danach Kommando über den `fireflycmd`-Rückkanal an die feed-eigene Firefly-Instanz; Fehler-Durchreichung: unbekannter Callsign → **422**, keine Flugpläne → **409**, Instanz unerreichbar/Token-Fehlkonfig → **502**. Body-Fehler → **400**; ohne `WAYFINDER_FIREFLY_COMMAND_TOKEN` deaktiviert → **503**. Erfolg → **204**. Jedes Kommando wird auditiert (Tenant/Feed/Track/Callsign/Ergebnis). Keine CAT062-Wirkung |
+| `/api/correlation/{feed_id}/{track_number}` | DELETE | **ADR 0024:** löst einen manuellen Korrelations-Pin (Automatik übernimmt wieder); idempotent (`204`). Gleiches Gating + Fehler-Mapping wie `POST /api/correlation` |
 | `/api/session/renew` | POST | **WF2-12.5:** Sliding-Session — mintet das Session-Cookie mit frischer TTL neu (builtin); hinter der Tenant-Middleware, `401` ohne Sitzung. Die Karte ruft es periodisch (alle 10 min) + bei WS-Reconnect + Tab-Fokus auf, damit eine aktive Konsole nie ausgeloggt wird. **WF2-12.6:** bewahrt den Erst-Login-Zeitpunkt und antwortet `401` (kein neues Cookie), sobald das absolute Maximum `WAYFINDER_SESSION_MAX_LIFETIME` überschritten ist |
 | `/api/admin/whoami` | GET | Rollen-Probe + **effektive Feature-Flags** (`features`) als JSON; enthält seit ONB-1 `must_change_password`; rollen-gegated (WF2-32/50) |
 | `/api/admin/me` | GET | **ONB-1 (ADR 0011):** eigenes Konto (`{user_id, tenant_id, subject, role, must_change_password}`); **rollen-unabhängig** (kein `requireAdmin`) |
@@ -1070,9 +1072,12 @@ auf typisierte Fehler (`ErrUnknownCallsign` 422 / `ErrNoFlightPlans` 409 /
 `HostLoopbackAddresser` (`127.0.0.1:<FireflyHTTPPort(feed_id)>` — gültig im
 host-vernetzten Einzelhost-Harness; die K8s-Adresse bleibt hinter dem
 `Addresser`-Interface offen). Das Command-Token `WAYFINDER_FIREFLY_COMMAND_TOKEN`
-(deployment-weit, ADR 0024 §E2) ist als Konstante definiert; **Verdrahtung in den
-Server + Endpoint + Gating folgen in Häppchen 2** — bis dahin wird der Client im
-Betrieb noch **nicht** aufgerufen.
+(deployment-weit, ADR 0024 §E2) ist in `cmd/wayfinder` verdrahtet: gesetzt →
+`/api/correlation` aktiv (Häppchen 2, s. API-Tabelle), leer → Endpoint deaktiviert
+(503). Das gegatete Aufrufen des Clients übernimmt `pkg/correlationapi` (die erste
+Feed-Schreib-Aktion; Gating: authentifiziert + nicht impersoniert + `IsSubscribed`).
+Das **Bedien-UI** (Kontextmenü) folgt in Häppchen 3, die **Token-Injektion** in die
+Firefly-Container (`fireflyEnv` → `FIREFLY_WS_TOKEN`) in Häppchen 4.
 
 **Stand:** Reconciler-Kern + Store-Soll + getrenntes Binary + Docker-Adapter +
 verschlüsselter Secret-Speicher/-Resolver + write-only Secret-API + änderungs-
