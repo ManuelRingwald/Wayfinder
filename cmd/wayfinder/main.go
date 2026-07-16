@@ -28,9 +28,11 @@ import (
 	"github.com/manuelringwald/wayfinder/pkg/cat062"
 	"github.com/manuelringwald/wayfinder/pkg/cat063"
 	"github.com/manuelringwald/wayfinder/pkg/cat065"
+	"github.com/manuelringwald/wayfinder/pkg/correlationapi"
 	"github.com/manuelringwald/wayfinder/pkg/coverage"
 	"github.com/manuelringwald/wayfinder/pkg/feature"
 	"github.com/manuelringwald/wayfinder/pkg/feedmanager"
+	"github.com/manuelringwald/wayfinder/pkg/fireflycmd"
 	"github.com/manuelringwald/wayfinder/pkg/health"
 	"github.com/manuelringwald/wayfinder/pkg/impersonation"
 	"github.com/manuelringwald/wayfinder/pkg/metrics"
@@ -685,6 +687,21 @@ func main() {
 	mux.Handle("/api/view-profiles", viewProfiles)
 	mux.Handle("/api/view-profiles/", viewProfiles)
 
+	// Manual flight-plan correlation (ADR 0024, #245 Teil B): the FIRST tenant-user
+	// feed-WRITE action. Behind tenantMW (authenticated) + pwGate; the handler's own
+	// gate enforces "subscribed to this feed, not under read-only impersonation"
+	// (ADR 0024 §E3). The command reaches the feed's Firefly over the host-loopback
+	// back-channel; an empty WAYFINDER_FIREFLY_COMMAND_TOKEN disables the endpoint
+	// (503), so the feature is opt-in per deployment (ADR 0024 §E2).
+	corrClient := fireflycmd.New(&http.Client{Timeout: 15 * time.Second}, fireflycmd.HostLoopbackAddresser{}, cfg.FireflyCommandToken)
+	corrSvc := correlationapi.New(corrClient, subRepo, cfg.FireflyCommandToken != "", logger)
+	mux.Handle("POST /api/correlation", tenantMW(pwGate(corrSvc.SetHandler())))
+	mux.Handle("DELETE /api/correlation/{feedID}/{trackNumber}", tenantMW(pwGate(corrSvc.ClearHandler())))
+	if cfg.FireflyCommandToken != "" {
+		logger.Info("manual correlation command channel enabled (ADR 0024)",
+			slog.String("path", "/api/correlation"))
+	}
+
 	// Cross-tenant read-only impersonation (ADR 0008, WF2-34): mint and clear
 	// the grant cookie. The more-specific method+path patterns take precedence
 	// over the /api/admin/ subtree. Only wired when a signing key is configured;
@@ -813,6 +830,13 @@ type Config struct {
 	// write-only secret admin routes (they return 503); the same key is configured
 	// on the orchestrator to decrypt at launch. WAYFINDER_SECRET_KEY.
 	SecretKey []byte
+
+	// FireflyCommandToken is the deployment-wide bearer token for the manual
+	// flight-plan correlation command back-channel (ADR 0024 §E2, #245 Teil B):
+	// the server sends it, and the orchestrator injects the same value into every
+	// Firefly as FIREFLY_WS_TOKEN. Unset disables the /api/correlation endpoint (it
+	// returns 503). WAYFINDER_FIREFLY_COMMAND_TOKEN.
+	FireflyCommandToken string
 
 	// Multicast endpoint pool for auto-allocation (ORCH-4, ADR 0012). When an admin
 	// creates a feed without a group/port, the server assigns the next free group
@@ -1089,6 +1113,7 @@ func loadConfig() Config {
 	// rather than storing credentials unencrypted. Parse errors are surfaced at
 	// wiring time (run) so a typo is loud, not silently insecure.
 	cfg.SecretKey = parseSecretKey(os.Getenv("WAYFINDER_SECRET_KEY"))
+	cfg.FireflyCommandToken = os.Getenv("WAYFINDER_FIREFLY_COMMAND_TOKEN")
 
 	// Multicast endpoint pool (ORCH-4). Invalid/unset values fall back to the
 	// store's DefaultMulticastPool via feedPool().

@@ -10,6 +10,44 @@
 
 ---
 
+## 🛂 Stand 2026-07-16 (Manuelle Korrelation Häppchen 2: Server-Endpoint + Gating — #245 Teil B, FR-ORCH-013)
+
+**In normaler Sprache:** Häppchen 2 baut die **Bedien-Schnittstelle** für die
+manuelle Flugplan-Korrelation: den Server-Endpoint `POST/DELETE /api/correlation`.
+Wenn der Lotse (ab Häppchen 3) im Kontextmenü „mit DLH123 korrelieren" klickt, geht
+die Anfrage hierher — der Server **prüft streng, ob der Nutzer das darf**, ruft dann
+über den H1-Client das richtige Firefly und gibt sofort eine ehrliche Antwort
+zurück. **Noch kein sichtbares UI** (das ist Häppchen 3), aber der Endpoint ist
+funktionsfähig und per `curl` testbar.
+
+**Das Sicherheits-Herzstück:** Dies ist Wayfinders **erste Schreib-Aktion eines
+Mandanten-Nutzers auf einen Feed**. Deshalb steht das Gating im Zentrum — drei
+Schleusen in `pkg/correlationapi.authorize`: (1) nicht eingeloggt → **401**; (2)
+**unter „Als Mandant X ansehen"** (Read-only-Impersonation, ADR 0008) → **403**
+(eine lesende Sitzung darf nichts schreiben); (3) **nicht auf den Feed abonniert**
+→ **403** (das fängt auch den scope-losen Admin, ADR 0022, ohne Sonderfall). Der
+Firefly-Fehler wird ehrlich durchgereicht: unbekannter Callsign → 422, keine Pläne
+→ 409, Instanz unerreichbar/Token-Fehlkonfig → 502. Jedes Kommando wird auditiert.
+
+**Fachlich/technisch:** Neues Paket `pkg/correlationapi` (`Service` mit
+`SetHandler`/`ClearHandler`, Interfaces `Commander`/`SubscriptionChecker` für volle
+Unit-Testbarkeit ohne Netz). Verdrahtet in `cmd/wayfinder` hinter `tenantMW`+`pwGate`
+(**nicht** admin-gegated), Config `WAYFINDER_FIREFLY_COMMAND_TOKEN` (leer ⇒ 503).
+Body-Limit + `DisallowUnknownFields`. **Neue Env-Variable** in `INSTALLATION.md`/
+`TECHNICAL.md` eingetragen. Rein backend, kein Frontend, keine CAT062-Wirkung.
+Register: **FR-ORCH-013** (Stand H2 ✅). Gates grün (`go test ./...`, vet, gofmt,
+golangci-lint).
+
+**Test-Kern (AuthZ-Tabelle):** unauth→401, Nicht-Abonnent→403, Impersonation-
+trotz-Abo→403, scope-loser-Admin→403, Subs-Fehler→500, Feature-aus→503, Body-
+Validierung→400, Firefly-Fehler→422/409/502 — und in **jedem** Ablehnungsfall wird
+der Commander **nie** aufgerufen (kein Kommando ohne bestandenes Gating).
+
+**Nächster Schritt:** **Häppchen 3** — Frontend-Kontextmenü am Track (korrelieren /
+entkorrelieren / Pin lösen) gegen `/api/correlation`, mit synchroner Fehleranzeige.
+Danach **Häppchen 4** — `fireflyEnv`-Injektion des `FIREFLY_WS_TOKEN` in die
+Firefly-Container. Wird wie üblich angekündigt (Freigabe abwarten).
+
 ## 🔌 Stand 2026-07-16 (Manuelle Korrelation Häppchen 1: Firefly-Command-Client — #245 Teil B, FR-ORCH-013)
 
 **In normaler Sprache:** Der Lotse soll Fireflys automatische Flugplan-Zuordnung
