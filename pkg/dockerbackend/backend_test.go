@@ -276,7 +276,7 @@ func TestFireflyEnvMapsSpec(t *testing.T) {
 func TestFireflyHTTPPortIsCollisionFree(t *testing.T) {
 	seen := map[int]int64{}
 	for _, id := range []int64{1, 2, 3, 42, 254, 18000, 39999, 40000} {
-		p := fireflyHTTPPort(id)
+		p := instance.FireflyHTTPPort(id)
 		if p < 1024 || p > 65535 {
 			t.Errorf("feed %d → port %d out of range", id, p)
 		}

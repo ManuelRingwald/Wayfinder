@@ -193,3 +193,30 @@ func TestMemoryBackendConcurrent(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+// TestFireflyHTTPPort pins the single-source-of-truth port formula (ADR 0024 §E4):
+// stable + distinct per feed, always in a valid, Wayfinder-clear range. The
+// orchestrator binds this port and the command back-channel dials it.
+func TestFireflyHTTPPort(t *testing.T) {
+	if FireflyHTTPPort(0) != FireflyHTTPPortBase {
+		t.Errorf("feed 0 → %d, want base %d", FireflyHTTPPort(0), FireflyHTTPPortBase)
+	}
+	seen := map[int]int64{}
+	for _, id := range []int64{1, 2, 3, 42, 254, 18000, 39999, 40000} {
+		p := FireflyHTTPPort(id)
+		if p < 1024 || p > 65535 {
+			t.Errorf("feed %d → port %d out of range", id, p)
+		}
+		if p == 8080 || p == 8081 {
+			t.Errorf("feed %d → port %d collides with a Wayfinder port", id, p)
+		}
+		if prev, dup := seen[p]; dup {
+			t.Errorf("feed %d and feed %d map to the same port %d", prev, id, p)
+		}
+		seen[p] = id
+	}
+	// The window wraps large ids back into range rather than overflowing.
+	if FireflyHTTPPort(40000) != FireflyHTTPPortBase {
+		t.Errorf("feed 40000 should wrap to the base port")
+	}
+}

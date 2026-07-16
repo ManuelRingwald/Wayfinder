@@ -10,6 +10,38 @@
 
 ---
 
+## 🔌 Stand 2026-07-16 (Manuelle Korrelation Häppchen 1: Firefly-Command-Client — #245 Teil B, FR-ORCH-013)
+
+**In normaler Sprache:** Der Lotse soll Fireflys automatische Flugplan-Zuordnung
+per Hand korrigieren können (ADR 0024). Das braucht erstmals einen **Rückkanal**
+von Wayfinder zu Firefly — bisher hört Wayfinder nur zu. Häppchen 1 baut die
+**Rohrleitung** dafür: einen kleinen, voll getesteten Baustein, der ein
+Korrelations-Kommando an das richtige Firefly schicken *könnte*. **Noch nichts
+sichtbar** für den Lotsen und **noch nicht im Betrieb aktiv** — der Baustein wird
+erst in Häppchen 2 an einen Server-Endpoint angeschlossen.
+
+**Fachlich/technisch:** Neues Paket `pkg/fireflycmd` — `Client` mit `Correlate` /
+`SetUncorrelated` / `ClearOverride` / `ListOverrides` gegen Fireflys echte
+Kommando-API (`POST/DELETE/GET /correlation`, verifiziert gegen
+`firefly-server/src/app.rs`). Best-effort nach `pkg/weather`-Muster (getakteter
+`*http.Client`, `context`, `io.LimitReader`, `Authorization: Bearer`); typisierte
+Fehler `ErrUnknownCallsign` (422) / `ErrNoFlightPlans` (409) / `ErrUnauthorized`
+(401) / `ErrUnreachable` (Netz) fürs spätere synchrone Menü-Feedback. Adressierung
+über `HostLoopbackAddresser` → `instance.FireflyHTTPPort` — die Port-Formel ist
+dabei aus `pkg/dockerbackend` (orchestrator-privat) in `pkg/instance` als
+**geteilte Single-Source-of-Truth** verschoben, damit der Server sie ohne den
+schweren Docker-Import nutzen kann; `dockerbackend` delegiert nun dorthin. Token-
+Konstante `WAYFINDER_FIREFLY_COMMAND_TOKEN` definiert; **Server-Verdrahtung +
+Endpoint + Gating = Häppchen 2** (daher noch kein `INSTALLATION.md`-Env-Eintrag —
+die Variable wird erst dort wirksam). Rein backend-intern, keine CAT062-Wirkung,
+kein Frontend. Register: **FR-ORCH-013** (Stand H1 ✅). Gates grün (`go test
+./...`, vet, gofmt, golangci-lint).
+
+**Nächster Schritt:** **Häppchen 2** — Server-Endpoint (`POST/DELETE /api/correlation`)
++ Gating (`IsSubscribed`, kein scope-loser Admin, nicht unter Impersonation) +
+422/409-Mapping, inkl. Config-Verdrahtung von `WAYFINDER_FIREFLY_COMMAND_TOKEN`.
+Wird wie üblich angekündigt (Freigabe abwarten).
+
 ## 🗺️ Stand 2026-07-15 (CAT062-Flugplan-Korrelation I062/390 — #245 Teil A, FR-DATA-013)
 
 **In normaler Sprache:** Firefly weiß jetzt zentral, **welcher gefilte Flugplan**

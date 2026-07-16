@@ -247,7 +247,7 @@ func (b *Backend) fireflyEnv(spec instance.Spec) []string {
 		// clear of Wayfinder (8081 UI / 8080 probe) and Postgres (5432). Firefly's
 		// HTTP/WS is unused in this topology (Wayfinder consumes the multicast); the
 		// port only has to bind successfully.
-		"FIREFLY_PORT=" + strconv.Itoa(fireflyHTTPPort(spec.FeedID)),
+		"FIREFLY_PORT=" + strconv.Itoa(instance.FireflyHTTPPort(spec.FeedID)),
 	}
 	if spec.Coverage != nil {
 		c := spec.Coverage
@@ -272,25 +272,10 @@ func containerName(feedID int64) string {
 	return "wayfinder-firefly-feed-" + strconv.FormatInt(feedID, 10)
 }
 
-// fireflyHTTPPortBase is the start of the port window for the spawned Firefly
-// instances' (otherwise unused) HTTP servers. It sits well clear of Wayfinder's
-// own ports (8081 UI / 8080 probe) and Postgres (5432), so a host-networked
-// tracker can always bind — see fireflyEnv.
-const fireflyHTTPPortBase = 18080
-
-// fireflyHTTPPort maps a feed id to a stable, collision-free HTTP port for that
-// feed's spawned Firefly instance. Host networking makes the port process-global,
-// so every feed needs a distinct one; the (unique) feed id provides that. The id
-// is wrapped into a bounded window so a large id can never exceed the valid port
-// range; the window (~40k ports) far exceeds any realistic feed count on a host.
-func fireflyHTTPPort(feedID int64) int {
-	const window = 40000
-	off := feedID % window
-	if off < 0 {
-		off += window
-	}
-	return fireflyHTTPPortBase + int(off)
-}
+// The per-feed Firefly HTTP port is derived by instance.FireflyHTTPPort — the
+// single source of truth shared with the browser-facing server's command
+// back-channel (ADR 0024 §E4). fireflyEnv binds it into the container as
+// FIREFLY_PORT; the server dials the same port to reach the correlation API.
 
 // specHash is a stable fingerprint of the container-defining inputs (image,
 // network, env). Start compares it against a running container's stored hash to
