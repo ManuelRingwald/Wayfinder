@@ -10,6 +10,34 @@
 
 ---
 
+## 🧩 Stand 2026-07-16 (Verbund-Rolle dokumentiert: Serving-Hälfte der SDPS-Server-Funktion — #257, ADR 0025)
+
+**In normaler Sprache:** Rein dokumentarisches Häppchen — kein Code. Ein
+vollständiges Luftlage-System nach ARTAS-Vorbild hat zwei Hälften: das *Rechenwerk*
+(macht aus Radarmeldungen Tracks) und den *Server* (liefert jedem Nutzer genau
+seinen Ausschnitt über eine gesicherte Leitung). Firefly ist das Rechenwerk und hat
+bewusst keinen Nutzer-Server; diese zweite Hälfte macht **Wayfinder** (Mandanten/
+Abos verwalten, serverseitig aufs erlaubte Gebiet filtern, pro Nutzer über einen
+angemeldeten WebSocket ausliefern). Das war immer so gebaut — jetzt ist es als
+**Entscheidung mit Begründung und Grenzen** festgehalten, damit die Verbund-Rolle
+auch im Wayfinder-ADR-Verzeichnis auffindbar ist (Spiegel zu Fireflys ADR 0042).
+
+**Fachlich/technisch:** Neuer **ADR 0025** („Wayfinder erbringt die Serving-Hälfte
+der SDPS-Server-Funktion") mit der Leistungstabelle (welche ARTAS-Server-Leistung
+durch welchen Wayfinder-Baustein erbracht wird: ADR 0005/0007/0012, WF2-21.2,
+ADR 0003/0021) und der Konsumenten-Matrix **K1–K5** inkl. der bewussten Absage an
+einen CAT252-Server. Verweis-Absatz in `CLAUDE.md` §1. Cross-Project-Todo
+aktualisiert (#245 **und** #257 als erledigt). Kein Wire-/ICD-Bezug, keine
+Env-Variablen, keine Code-Änderung — Go-/Frontend-Gates unberührt (nur Doku).
+
+**Nächster Schritt:** Die `from-firefly`-Kette dieser Sitzung ist damit vollständig
+abgearbeitet (#239/#240, #241, #242, #245 Teil A + Teil B H1–H4, #257). Offene
+`from-firefly`-Issues: **keine** mehr. Nächster Punkt wäre die **Betriebs-Härtung**
+(Observability/Last/Deployment) oder ein neuer Cross-Project-Impuls — wird wie
+üblich angekündigt (Freigabe abwarten).
+
+---
+
 ## 🔑 Stand 2026-07-16 (Manuelle Korrelation Häppchen 4: Token-Injektion — #245 Teil B **abgeschlossen**, FR-ORCH-013)
 
 **In normaler Sprache:** Häppchen 4 schließt die letzte Lücke, damit die manuelle

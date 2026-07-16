@@ -41,6 +41,24 @@ Replay-Problem), ist selbstbeschreibend (CAT/LEN/FSPEC, kein Typ-Diskriminator
 nötig) und liefert WGS84-Positionen direkt (I062/105) — eine
 JSON/WebSocket-Implementierung wird **nicht** gebaut.
 
+**Wayfinders Rolle im Verbund: die Serving-Hälfte der SDPS-Server-Funktion
+(ADR 0025, Spiegel zu Fireflys ADR 0042).** Das funktionale Vorbild (EUROCONTROL
+**ARTAS**) besteht aus zwei Hälften: einem *Tracker* (rechnet das Luftlagebild)
+und einem *Server* (verwaltet Konsumenten und liefert jedem einen
+**zugeschnittenen** Track-Dienst, klassisch über **CAT252**). Firefly baut
+bewusst **keinen** solchen Konsumenten-Server — es sendet Fire-and-Forget-
+Multicast und kennt keinen einzigen Empfänger. Die **Server-Leistungen erbringt
+arbeitsteilig Wayfinder**: Konsumenten-Verwaltung (Mandanten/Feeds/Abos,
+ADR 0005/0012), server-seitiger **fail-closed** Zuschnitt je Konsument (AOI-BBox
++ FL-Band am WS-Rand, WF2-21.2, ADR 0021), adressierte Zustellung
+(authentifizierter WebSocket je Client, ADR 0003) und Cloud-Fan-out
+(Ingest-Gateway/Bus, ADR 0007); der Sensor-Mix je Konsument entsteht **an der
+Quelle** über eine eigene Firefly-Instanz je Feed (ADR 0012). Ein CAT252-Server
+ist damit **bewusst verworfen** (Konsumenten-Zustand gehört nicht in den
+Track-Rechenpfad); ein reiner CAT252-Legacy-Konsument bliebe nur über einen
+künftigen Rand-Adapter anbindbar (Konzept, kein Code). Details + Konsumenten-
+Matrix K1–K5 in **ADR 0025**.
+
 ---
 
 ## 2. Der Schnittstellen-Vertrag (CAT062 over UDP-Multicast)
