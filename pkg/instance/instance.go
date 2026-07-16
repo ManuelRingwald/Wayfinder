@@ -177,3 +177,31 @@ type Backend interface {
 	// remembered state is what makes the operator loop crash-safe.
 	RunningFeeds(ctx context.Context) ([]int64, error)
 }
+
+// FireflyHTTPPortBase is the start of the port window for spawned Firefly
+// instances' HTTP servers. That server hosts Firefly's manual-correlation command
+// API (the Wayfinder→Firefly command back-channel, ADR 0024) and is otherwise
+// unused in this topology. The base sits well clear of Wayfinder's own ports
+// (8081 UI / 8080 probe) and Postgres (5432), so a host-networked tracker can
+// always bind.
+const FireflyHTTPPortBase = 18080
+
+// FireflyHTTPPort maps a feed id to a stable, collision-free HTTP port for that
+// feed's spawned Firefly instance. Host networking makes the port process-global,
+// so every feed needs a distinct one; the (unique) feed id provides that, wrapped
+// into a bounded window (~40k ports, far beyond any realistic per-host feed count)
+// so a large id can never exceed the valid port range.
+//
+// This is the SINGLE SOURCE OF TRUTH shared by both processes (ADR 0024 §E4): the
+// orchestrator's Docker backend binds it into the container as FIREFLY_PORT, and
+// the browser-facing server's command back-channel dials it. Keeping the formula
+// here (SDK-free) lets the server address a feed's Firefly without importing the
+// orchestrator-private dockerbackend package.
+func FireflyHTTPPort(feedID int64) int {
+	const window = 40000
+	off := feedID % window
+	if off < 0 {
+		off += window
+	}
+	return FireflyHTTPPortBase + int(off)
+}

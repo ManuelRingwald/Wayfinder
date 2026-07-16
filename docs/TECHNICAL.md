@@ -1055,8 +1055,24 @@ setzt der je Feed gespawnten Firefly-Instanz **immer** `FIREFLY_CAT062_ENABLED=t
 8080/8081/5432). Grund: Die Instanz teilt sich per `network_mode: host` den
 Port-Raum; Fireflys HTTP-Server bindet sonst auf `8080` — dem Port des
 Wayfinder-Probe-Servers — und stürzt mit *address already in use* in eine
-Crash-Loop. Fireflys HTTP/WS wird in dieser Topologie nicht konsumiert (Wayfinder
-liest den Multicast); der Port muss nur binden.
+Crash-Loop. Die Port-Formel liegt seit ADR 0024 als **geteilte Quelle**
+`instance.FireflyHTTPPort` vor (SDK-frei); `fireflyEnv` bindet sie, der
+Command-Rückkanal (s. u.) wählt sie an — kein zweiter, driftender Wert.
+
+**Command-Rückkanal `pkg/fireflycmd` (ADR 0024, #245 Teil B, Häppchen 1).** Seit
+der manuellen Flugplan-Korrelation ist Fireflys HTTP-Port **nicht** mehr totes
+Gewicht: er hostet Fireflys Kommando-API (`POST/DELETE/GET /correlation`). Der
+`fireflycmd.Client` ist der **einzige** Schreib-Pfad Wayfinder → Firefly — best-
+effort nach `pkg/weather`-Muster (injizierter, getakteter `*http.Client`,
+`context`, `io.LimitReader`, `Authorization: Bearer`). Er mappt Fireflys Antworten
+auf typisierte Fehler (`ErrUnknownCallsign` 422 / `ErrNoFlightPlans` 409 /
+`ErrUnauthorized` 401 / `ErrUnreachable` Netz) und adressiert je Feed über
+`HostLoopbackAddresser` (`127.0.0.1:<FireflyHTTPPort(feed_id)>` — gültig im
+host-vernetzten Einzelhost-Harness; die K8s-Adresse bleibt hinter dem
+`Addresser`-Interface offen). Das Command-Token `WAYFINDER_FIREFLY_COMMAND_TOKEN`
+(deployment-weit, ADR 0024 §E2) ist als Konstante definiert; **Verdrahtung in den
+Server + Endpoint + Gating folgen in Häppchen 2** — bis dahin wird der Client im
+Betrieb noch **nicht** aufgerufen.
 
 **Stand:** Reconciler-Kern + Store-Soll + getrenntes Binary + Docker-Adapter +
 verschlüsselter Secret-Speicher/-Resolver + write-only Secret-API + änderungs-
