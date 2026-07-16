@@ -1,10 +1,11 @@
 # ADR 0024 — Manuelle Flugplan-Korrelation: Command-Rückkanal Wayfinder → Firefly
 
-- **Status:** **VORGESCHLAGEN** 🟡 (2026-07-16) — wartet auf Ratifizierung. Bis
-  zur Annahme wird **kein** Implementierungs-Code gebaut (Design-/Review-Tor,
-  CLAUDE.md §3). Die beiden Kern-Weichenstellungen (Kommando-Weg, Token-Modell)
-  sind unten mit Empfehlung **und** Gegenoption ausformuliert; die finale
-  Entscheidung trifft der Betreiber beim Review.
+- **Status:** **AKZEPTIERT** ✅ (2026-07-16). Der Betreiber hat beide Kern-Weichen
+  mit den **empfohlenen** Optionen ratifiziert: **E1 Server-direkt**, **E2
+  deployment-weit** (Per-Feed-Token als dokumentierte spätere Härtung). Die
+  Umsetzung folgt in **vier eigenständigen Häppchen** (je eigene Ankündigung +
+  Freigabe, Design-/Review-Tor, CLAUDE.md §3). Die Gegenoptionen bleiben unten
+  ausformuliert stehen (Entscheidungs-Nachvollziehbarkeit).
 - **Datum:** 2026-07-16
 - **Schnittstellen-relevant:** **ja, aber nicht am CAT062-Ausgabe-Vertrag.** Der
   Strom Firefly → Wayfinder (CAT062/063/065) bleibt **unverändert**. Neu ist ein
@@ -81,7 +82,7 @@ dieser ADR auflösen muss:
 
 ## Entscheidung
 
-### E1 — Kommando-Weg: **Server-direkt** (empfohlen)
+### E1 — Kommando-Weg: **Server-direkt** (entschieden ✅)
 
 Der **browser-zugewandte Server** ruft Fireflys `/correlation`-API **direkt**
 (synchroner HTTP-Call, Bearer-Token). Begründung:
@@ -107,7 +108,7 @@ Timeouts), passt **nicht** zum Soll-Zustand-Reconciler und liefert eine spürbar
 schlechtere Bedien-Erfahrung. Der Isolations-Gewinn ist gering, weil das
 wirklich gefährliche Privileg so oder so beim Orchestrator bleibt.
 
-### E2 — Token-Modell: **Deployment-weit** (empfohlen, mit Härtungspfad)
+### E2 — Token-Modell: **Deployment-weit** (entschieden ✅, mit Härtungspfad)
 
 Ein deployment-weites `WAYFINDER_FIREFLY_COMMAND_TOKEN` — **gleicher Wert** auf
 dem Server (zum Senden) und via `fireflyEnv` in **jeder** Firefly-Instanz (zum
