@@ -63,6 +63,13 @@ type config struct {
 	fireflyImg string // WAYFINDER_FIREFLY_IMAGE (required for the docker backend)
 	fireflyNet string // WAYFINDER_FIREFLY_NETWORK (default "host"; multicast)
 
+	// commandToken is the deployment-wide manual-correlation command token
+	// (WAYFINDER_FIREFLY_COMMAND_TOKEN, ADR 0024 §E2/H4). The docker backend injects
+	// it into every spawned Firefly as FIREFLY_WS_TOKEN so the tracker's command API
+	// requires the same Bearer the browser-facing server sends. Empty ⇒ feature off.
+	// A secret: never logged (the config is never emitted wholesale).
+	commandToken string
+
 	// secretKey is the deployment key (WAYFINDER_SECRET_KEY, base64 32 bytes) used
 	// to decrypt per-feed source credentials at launch (ORCH-5b, ADR 0012 §6). nil
 	// when unset/invalid — credentialled sources then run anonymously. This process
@@ -133,7 +140,8 @@ func loadConfig(getenv func(string) string, args []string) (config, error) {
 	return config{
 		dsn: dsn, interval: interval, logLevel: level, once: *once,
 		backend: backend, fireflyImg: fireflyImg, fireflyNet: fireflyNet,
-		secretKey: parseSecretKey(getenv("WAYFINDER_SECRET_KEY")),
+		commandToken: getenv("WAYFINDER_FIREFLY_COMMAND_TOKEN"),
+		secretKey:    parseSecretKey(getenv("WAYFINDER_SECRET_KEY")),
 	}, nil
 }
 
@@ -163,7 +171,7 @@ func newBackend(cfg config, logger *slog.Logger) (instance.Backend, error) {
 		if err != nil {
 			return nil, fmt.Errorf("connect to docker: %w", err)
 		}
-		return dockerbackend.New(client, cfg.fireflyImg, cfg.fireflyNet, logger), nil
+		return dockerbackend.New(client, cfg.fireflyImg, cfg.fireflyNet, cfg.commandToken, logger), nil
 	default:
 		return instance.NewMemoryBackend(), nil
 	}

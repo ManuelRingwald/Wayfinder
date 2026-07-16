@@ -10,6 +10,52 @@
 
 ---
 
+## 🔑 Stand 2026-07-16 (Manuelle Korrelation Häppchen 4: Token-Injektion — #245 Teil B **abgeschlossen**, FR-ORCH-013)
+
+**In normaler Sprache:** Häppchen 4 schließt die letzte Lücke, damit die manuelle
+Korrelation im **echten Mehr-Feed-Betrieb** funktioniert. Fireflys Kommando-API
+ist tokengeschützt: Ohne das richtige Passwort (Bearer-Token) lehnt Firefly jeden
+Korrelations-Befehl ab. Bisher **sendete** Wayfinder zwar das Token (seit H1/H2),
+aber die je Feed automatisch gestarteten Firefly-Instanzen kannten es gar nicht —
+im Docker-orchestrierten Betrieb wären die Befehle also an `401` gescheitert.
+Häppchen 4 sorgt dafür, dass der Orchestrator dasselbe Deployment-Token beim
+Starten **in jede Firefly-Instanz hineinreicht** (`FIREFLY_WS_TOKEN`). Damit passt
+das Passwort auf beiden Seiten, und **#245 Teil B ist komplett**.
+
+**Neu nutzbar:** Im vollen orchestrierten Aufbau (Postgres + Server + Orchestrator,
+der pro Feed eine Firefly-Instanz spawnt) greift die manuelle Korrelation jetzt
+Ende-zu-Ende: Setzt der Betreiber `WAYFINDER_FIREFLY_COMMAND_TOKEN` auf **beiden**
+Prozessen (Server **und** Orchestrator), verlangen die Firefly-Instanzen genau das
+Token, das der Server sendet — die Korrelations-Knöpfe aus H3 wirken real bis in
+den Tracker durch.
+
+**Fachlich/technisch:** `pkg/dockerbackend` bekommt ein `commandToken`-Feld
+(`Backend`) + `New`-Parameter; `fireflyEnv` hängt `FIREFLY_WS_TOKEN=<token>` an die
+Container-Env, sobald das Token gesetzt ist (leer ⇒ keine Injektion, Feature aus).
+`cmd/wayfinder-orchestrator` liest `WAYFINDER_FIREFLY_COMMAND_TOKEN` (dasselbe
+deployment-weite Token wie der Server) in seine Config und reicht es an
+`dockerbackend.New` durch. **Kontrakt verifiziert** gegen Fireflys Quelle
+(`crates/firefly-server/src/main.rs`: `FIREFLY_WS_TOKEN` gated `authorize_command`
+und `/ws`; Server-zu-Server passiert die Origin-Prüfung, es zählt nur das Bearer).
+Das Hinzufügen der Env ändert den Spec-Hash → laufende Instanz wird beim nächsten
+Reconcile ersetzt (übernimmt das Token). Token wird **nie geloggt** (Config nie
+als Ganzes ausgegeben). Rein Backend/Orchestrator, keine CAT062-Wirkung, kein
+Frontend. Register: **FR-ORCH-013** (Stand H4 ✅, Teil B vollständig). Gates grün
+(`go test ./...`, vet, gofmt, golangci-lint).
+
+**Test-Kern:** `backend_test.go::TestFireflyEnvInjectsCommandToken` (Token gesetzt →
+`FIREFLY_WS_TOKEN` in der Env, leer → nicht injiziert),
+`main_test.go::TestLoadConfigCommandToken` (Orchestrator parst die Env, leer wenn
+unset). Doku: INSTALLATION (Token nun auch am Orchestrator nötig), TECHNICAL
+(H4-Absatz), requirements/README (FR-ORCH-013 H4 ✅).
+
+**Nächster Schritt:** #245 Teil B ist damit erledigt — Issue **#245** kann
+geschlossen werden (der PR trägt das Closing-Keyword). Danach den Cross-Project-
+Nachzug (`from-firefly`) fortsetzen bzw. den nächsten Punkt aus der Roadmap
+abstimmen. Wird wie üblich angekündigt (Freigabe abwarten).
+
+---
+
 ## 🧭 Stand 2026-07-16 (Manuelle Korrelation Häppchen 3: Frontend-Bedienung im Detail-Panel — #245 Teil B, FR-ORCH-013)
 
 **In normaler Sprache:** Ab jetzt **sieht und bedient** der Lotse die manuelle

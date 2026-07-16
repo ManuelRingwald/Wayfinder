@@ -75,13 +75,21 @@ type Backend struct {
 	client      ContainerClient
 	image       string // Firefly image to run
 	networkMode string // applied to every container (default "host")
-	logger      *slog.Logger
+	// commandToken is the deployment-wide manual-correlation command token (ADR
+	// 0024 §E2, H4). When non-empty it is injected into every spawned Firefly as
+	// FIREFLY_WS_TOKEN, so the tracker's command API (and /ws) require the same
+	// Bearer the browser-facing server sends. Empty ⇒ not injected (feature off).
+	// A secret: it is never logged (only bound into the container env).
+	commandToken string
+	logger       *slog.Logger
 }
 
 // New builds a Backend. image is the Firefly container image; networkMode is the
 // Docker network mode for spawned containers (multicast needs "host" or an
-// equivalent).
-func New(client ContainerClient, image, networkMode string, logger *slog.Logger) *Backend {
+// equivalent). commandToken (ADR 0024 §E2/H4) is the deployment-wide manual-
+// correlation token injected into each Firefly as FIREFLY_WS_TOKEN; pass "" to
+// leave the tracker's command channel un-gated (feature off).
+func New(client ContainerClient, image, networkMode, commandToken string, logger *slog.Logger) *Backend {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -89,10 +97,11 @@ func New(client ContainerClient, image, networkMode string, logger *slog.Logger)
 		networkMode = "host"
 	}
 	return &Backend{
-		client:      client,
-		image:       image,
-		networkMode: networkMode,
-		logger:      logger,
+		client:       client,
+		image:        image,
+		networkMode:  networkMode,
+		commandToken: commandToken,
+		logger:       logger,
 	}
 }
 
@@ -248,6 +257,16 @@ func (b *Backend) fireflyEnv(spec instance.Spec) []string {
 		// HTTP/WS is unused in this topology (Wayfinder consumes the multicast); the
 		// port only has to bind successfully.
 		"FIREFLY_PORT=" + strconv.Itoa(instance.FireflyHTTPPort(spec.FeedID)),
+	}
+	// Manual-correlation command channel (ADR 0024 §E2, H4): gate this Firefly's
+	// command API (and /ws) on the deployment-wide token so the browser-facing
+	// server's correlation commands (Bearer WAYFINDER_FIREFLY_COMMAND_TOKEN) are
+	// accepted; without it Firefly would reject them (401) in real multi-feed
+	// operation. Empty token ⇒ feature off, no injection. Adding/removing this env
+	// changes the spec hash, so an already-running Firefly is replaced to pick the
+	// token up — intended.
+	if b.commandToken != "" {
+		env = append(env, "FIREFLY_WS_TOKEN="+b.commandToken)
 	}
 	if spec.Coverage != nil {
 		c := spec.Coverage

@@ -116,8 +116,10 @@ Dies ist das Herzstück und der einzige Berührungspunkt mit Firefly. Wayfinder
   (FRN 21, Flugplan-Daten): Plan-Callsign (CSN) + Route (DEP/DST). Wayfinder zeigt
   Plan-Callsign + ADEP→ADES im Detail-Panel und signalisiert einen
   **Callsign-Mismatch** (CSN ≠ I062/245) am Label („≠") und im Panel. Die
-  **manuelle Korrelation** (Kommando-API, Rückkanal zu Firefly) ist ein separates,
-  noch nicht gebautes Häppchen (eigener ADR).
+  **manuelle Korrelation** (Kommando-API, Rückkanal zu Firefly) ist mit ADR 0024
+  gebaut (#245 Teil B): der Lotse korrigiert Fireflys Automatik-Zuordnung aus dem
+  Detail-Panel (`POST/DELETE /api/correlation`) — der **erste** Wayfinder→Firefly-
+  Schreib-Pfad, außerhalb des reinen CAT062-Lesekontrakts.
 - **Koordinaten:** I062/105 liefert **WGS84 direkt** — Wayfinder rendert daraus,
   eine stereografische Rückprojektion ist **nicht** nötig. I062/100 ist die
   zusätzliche System-Ebene (optional verwertbar); ihr Referenzpunkt ist der
