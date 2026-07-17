@@ -254,3 +254,30 @@ kein Code-Import. Quell-Vokabular bleibt Wayfinder-seitig (`adsb_opensky`/
 `source_config` → die von Firefly gewählten Envs; `SecretResolver` injiziert die
 aufgelösten Werte in die vereinbarten Secret-Envs; End-to-End-Abnahme
 (Quelle → Firefly-Instanz → CAT062 → Wayfinder-Lagebild).
+
+---
+
+## Docker-Healthcheck schlägt immer fehl: `curl` fehlt im Runtime-Image ⏳
+
+**GitHub Issue:** [Firefly #99](https://github.com/ManuelRingwald/Firefly/issues/99)
+`from-wayfinder` (angelegt 2026-07-17) — **offen**.
+
+**Beobachtung (Codespace-E2E 2026-07-17):** Alle vom Orchestrator gespawnten
+`firefly:latest`-Container melden dauerhaft **`unhealthy`**, obwohl der Server
+nachweislich arbeitet (regelmäßige `aggregator plots received`-Logs). Ursache im
+Firefly-`Dockerfile`: der `HEALTHCHECK` ruft `curl -f …/health` auf, die
+Runtime-Stage (`debian:bookworm-slim`) installiert aber nur `ca-certificates` —
+kein `curl`. Der Check scheitert damit **immer** am fehlenden Werkzeug
+(`/bin/sh: 1: curl: not found`, ExitCode 1, alle 10 s), nie am Server.
+
+**Wirkung:** Der Health-Status ist als Signal wertlos (Dauer-rot kann echte
+Ausfälle nicht mehr anzeigen); jede Automatik, die ihn ernst nimmt
+(`depends_on: condition: service_healthy`, unhealthy-Neustart-Watchdogs), verhält
+sich gegenüber einem gesunden Dienst falsch. Der gleichlautende Check in Fireflys
+`docker-compose.yml` ist identisch betroffen.
+
+**Vorschlag (im Issue ausgeführt):** eingebauter Selbsttest im Binary
+(`firefly-server --healthcheck` fragt intern `/health` an) statt externem
+Werkzeug — Image bleibt slim, Thermometer kann nicht mehr vom Image-Inhalt
+abweichen; `curl` nachinstallieren (wie Wayfinders Dockerfile es macht) nur als
+Sofort-Workaround. Wayfinder selbst ist **nicht** betroffen.
