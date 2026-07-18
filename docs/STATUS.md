@@ -46,6 +46,15 @@ httptest-Upstream verifiziert. **Betreiber-Smoke-Test (H0/H1):**
 `WAYFINDER_MAP_THEME=bkg` setzen → Karte lädt, Track-Labels intakt,
 Attribution sichtbar.
 
+**Nachtrag (2026-07-18, H1-Lücke):** Die Compose-Dateien
+(`docker-compose.orchestrated.yml`/`.onboarding.yml`) reichten
+`WAYFINDER_MAP_THEME`/`WAYFINDER_BKG_STYLE_URL` nicht in den
+Wayfinder-Container durch — der Betreiber konnte das `bkg`-Theme im
+Compose-Betrieb gar nicht aktivieren (beim Smoke-Test aufgefallen). Beide
+Dateien tragen jetzt die Passthrough-Zeilen (`${WAYFINDER_MAP_THEME:-dark}`,
+`${WAYFINDER_BKG_STYLE_URL:-}`); Aktivierung damit z. B.
+`WAYFINDER_MAP_THEME=bkg docker compose -f docker-compose.orchestrated.yml up -d wayfinder`.
+
 **Nächster Schritt:** Betreiber-Smoke-Test am echten Netz; danach Ankündigung
 **H2** (eigener dunkler Radar-Style aus den BKG-Vektorkacheln, ersetzt den
 CARTO-Dimm-Trick als `dark`-Default) bzw. **H3** (Selbst-Hosting/Air-Gap via
