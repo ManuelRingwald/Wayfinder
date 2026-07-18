@@ -122,7 +122,7 @@ func TestStyleRewriteInjectsAttributionWhenMissing(t *testing.T) {
 
 func TestStyleRewriteKeepsExistingAttribution(t *testing.T) {
 	raw := []byte(`{"version":8,"sources":{"a":{"type":"vector","attribution":"© custom"}}}`)
-	out, _, err := rewriteStyle(raw, "https://example.com/styles/s.json")
+	out, _, err := rewriteStyle(raw, "https://example.com/styles/s.json", false)
 	if err != nil {
 		t.Fatalf("rewriteStyle: %v", err)
 	}

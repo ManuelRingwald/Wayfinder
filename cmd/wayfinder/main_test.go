@@ -380,28 +380,31 @@ func TestMapConfigHandlerCustomStyleURLReportsTheme(t *testing.T) {
 	}
 }
 
-// TestMapConfigHandlerBKGTheme: the "bkg" theme (ADR 0026) must hand the
-// browser Wayfinder's own style endpoint (string URL, not an inline style) so
-// the server-side rewrite (glyphs → /glyphs) is always in the path.
+// TestMapConfigHandlerBKGTheme: the "bkg"/"bkg-dark" themes (ADR 0026) must
+// hand the browser Wayfinder's own style endpoint (string URL, not an inline
+// style) so the server-side rewrite (glyphs → /glyphs, dark transform) is
+// always in the path.
 func TestMapConfigHandlerBKGTheme(t *testing.T) {
-	cfg := Config{MapTheme: mapThemeBKG}
+	for _, theme := range []string{mapThemeBKG, mapThemeBKGDark} {
+		cfg := Config{MapTheme: theme}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/map-config", nil)
-	rec := httptest.NewRecorder()
-	mapConfigHandler(cfg)(rec, req)
+		req := httptest.NewRequest(http.MethodGet, "/api/map-config", nil)
+		rec := httptest.NewRecorder()
+		mapConfigHandler(cfg)(rec, req)
 
-	var body struct {
-		Theme string `json:"theme"`
-		Style string `json:"style"`
-	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-	if body.Style != "/basemap/style.json" {
-		t.Errorf("expected style \"/basemap/style.json\", got %q", body.Style)
-	}
-	if body.Theme != mapThemeBKG {
-		t.Errorf("expected reported theme %q, got %q", mapThemeBKG, body.Theme)
+		var body struct {
+			Theme string `json:"theme"`
+			Style string `json:"style"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+		if body.Style != "/basemap/style.json" {
+			t.Errorf("theme %q: expected style \"/basemap/style.json\", got %q", theme, body.Style)
+		}
+		if body.Theme != theme {
+			t.Errorf("expected reported theme %q, got %q", theme, body.Theme)
+		}
 	}
 }
 
@@ -423,13 +426,14 @@ func TestLoadConfigMapTheme(t *testing.T) {
 		env  string
 		want string
 	}{
-		{"", mapThemeDark},         // default
-		{"dark", mapThemeDark},     //
-		{"osm", mapThemeOSM},       //
-		{"OSM", mapThemeOSM},       // case-insensitive
-		{"bkg", mapThemeBKG},       // ADR 0026
-		{"BKG", mapThemeBKG},       // case-insensitive
-		{"nonsense", mapThemeDark}, // invalid → default
+		{"", mapThemeDark},            // default
+		{"dark", mapThemeDark},        //
+		{"osm", mapThemeOSM},          //
+		{"OSM", mapThemeOSM},          // case-insensitive
+		{"bkg", mapThemeBKG},          // ADR 0026
+		{"BKG", mapThemeBKG},          // case-insensitive
+		{"bkg-dark", mapThemeBKGDark}, // ADR 0026 Nachtrag / H2
+		{"nonsense", mapThemeDark},    // invalid → default
 	} {
 		if tc.env == "" {
 			_ = os.Unsetenv("WAYFINDER_MAP_THEME")

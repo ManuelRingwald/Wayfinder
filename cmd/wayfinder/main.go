@@ -121,10 +121,10 @@ func main() {
 	// custom style URL); nil otherwise — the /glyphs mount then stays
 	// embedded-only and /basemap/style.json is not mounted.
 	var basemapSvc *basemap.Service
-	if cfg.MapStyleURL == "" && cfg.MapTheme == mapThemeBKG {
+	if cfg.MapStyleURL == "" && (cfg.MapTheme == mapThemeBKG || cfg.MapTheme == mapThemeBKGDark) {
 		basemapSvc = basemap.NewService(
 			&http.Client{Timeout: 15 * time.Second},
-			basemap.Config{StyleURL: cfg.BKGStyleURL},
+			basemap.Config{StyleURL: cfg.BKGStyleURL, Dark: cfg.MapTheme == mapThemeBKGDark},
 			logger,
 		)
 	}
@@ -806,10 +806,10 @@ type Config struct {
 	MapStyleURL  string
 	// MapTheme selects the built-in base map theme when no explicit
 	// MapStyleURL is configured: "dark" (Radar Dark Mode, the controller
-	// default), "bkg" (official basemap.de Web Vektor bright map, ADR 0026) or
-	// "osm" (the legacy bright OpenStreetMap raster, deprecated).
-	// `WAYFINDER_MAP_THEME`, default "dark". An explicit MapStyleURL always
-	// overrides the theme.
+	// default), "bkg" (official basemap.de Web Vektor bright map, ADR 0026),
+	// "bkg-dark" (its radar-scope dark transform, H2) or "osm" (the legacy
+	// bright OpenStreetMap raster, deprecated). `WAYFINDER_MAP_THEME`, default
+	// "dark". An explicit MapStyleURL always overrides the theme.
 	MapTheme string
 	// BKGStyleURL is the upstream basemap.de style JSON used by the "bkg" theme
 	// (WAYFINDER_BKG_STYLE_URL). Defaults to the public BKG "Farbe" style; a
@@ -984,6 +984,12 @@ const (
 	mapThemeDark = "dark"
 	mapThemeOSM  = "osm"
 	mapThemeBKG  = "bkg"
+	// mapThemeBKGDark (ADR 0026 Nachtrag / H2): the radar-scope dark variant of
+	// the official base map — the same basemap.de tiles, recoloured server-side
+	// (pkg/basemap scope transform). Deliberately NOT yet the "dark" default:
+	// basemap.de ends at the national border, so cross-border sectors keep the
+	// CARTO-based "dark" until basemap.world provides surrounding context.
+	mapThemeBKGDark = "bkg-dark"
 )
 
 // yamlFileConfig mirrors the structure of wayfinder.yaml. All fields are
@@ -1123,7 +1129,7 @@ func loadConfig() Config {
 	// Map theme: only the documented built-in names are accepted; anything else
 	// falls back to the default (FR-CFG-002: invalid config falls back rather
 	// than crashing).
-	if v := strings.ToLower(strings.TrimSpace(os.Getenv("WAYFINDER_MAP_THEME"))); v == mapThemeDark || v == mapThemeOSM || v == mapThemeBKG {
+	if v := strings.ToLower(strings.TrimSpace(os.Getenv("WAYFINDER_MAP_THEME"))); v == mapThemeDark || v == mapThemeOSM || v == mapThemeBKG || v == mapThemeBKGDark {
 		cfg.MapTheme = v
 	}
 
@@ -1642,9 +1648,10 @@ func mapConfigHandler(cfg Config) http.HandlerFunc {
 		// A custom style is opaque to us; report the configured theme so the
 		// operator can still steer the palette via WAYFINDER_MAP_THEME.
 		styleValue = cfg.MapStyleURL
-	case cfg.MapTheme == mapThemeBKG:
+	case cfg.MapTheme == mapThemeBKG, cfg.MapTheme == mapThemeBKGDark:
 		// ADR 0026: the official basemap.de style is served (fetched, rewritten,
-		// cached) by Wayfinder itself so its glyphs URL points back at /glyphs.
+		// cached — dark-transformed for bkg-dark) by Wayfinder itself so its
+		// glyphs URL points back at /glyphs.
 		styleValue = "/basemap/style.json"
 	case cfg.MapTheme == mapThemeOSM:
 		styleValue = json.RawMessage(defaultMapStyle)

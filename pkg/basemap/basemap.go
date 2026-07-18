@@ -83,6 +83,10 @@ type Config struct {
 	StyleURL string
 	// TTL is the style cache lifetime. 0 applies defaultStyleTTL.
 	TTL time.Duration
+	// Dark applies the radar-scope dark transform (scope.go, ADR 0026
+	// Nachtrag / H2): the same official tiles, recoloured rule-based into the
+	// near-black scope look. Used by the "bkg-dark" theme.
+	Dark bool
 }
 
 // Service fetches, rewrites and caches the upstream style and proxies unknown
@@ -91,6 +95,7 @@ type Service struct {
 	httpClient *http.Client
 	styleURL   string
 	ttl        time.Duration
+	dark       bool
 	logger     *slog.Logger
 	now        func() time.Time // injectable clock for deterministic tests
 
@@ -128,6 +133,7 @@ func NewService(httpClient *http.Client, cfg Config, logger *slog.Logger) *Servi
 		httpClient: httpClient,
 		styleURL:   styleURL,
 		ttl:        ttl,
+		dark:       cfg.Dark,
 		logger:     logger,
 		now:        time.Now,
 		glyphCache: make(map[string][]byte),
@@ -184,7 +190,7 @@ func (s *Service) ensureStyle(ctx context.Context) ([]byte, error) {
 	if err == nil {
 		var rewritten []byte
 		var upstreamGlyphs string
-		rewritten, upstreamGlyphs, err = rewriteStyle(raw, s.styleURL)
+		rewritten, upstreamGlyphs, err = rewriteStyle(raw, s.styleURL, s.dark)
 		if err == nil {
 			s.style = rewritten
 			s.styleFetchedAt = s.now()
@@ -307,8 +313,9 @@ func (s *Service) fetch(ctx context.Context, rawURL string, maxBytes int64) ([]b
 // "glyphs" is pointed at the local endpoint (returning the absolutised upstream
 // template for the proxy), relative sprite/tile/source URLs are absolutised
 // against the upstream style URL, and an attribution is injected when the
-// upstream carries none (basemap.de terms of use).
-func rewriteStyle(raw []byte, styleURL string) (out []byte, upstreamGlyphs string, err error) {
+// upstream carries none (basemap.de terms of use). With dark set, the
+// radar-scope colour transform (scope.go, H2) is applied on top.
+func rewriteStyle(raw []byte, styleURL string, dark bool) (out []byte, upstreamGlyphs string, err error) {
 	base, err := url.Parse(styleURL)
 	if err != nil {
 		return nil, "", fmt.Errorf("basemap: bad style URL: %w", err)
@@ -364,6 +371,10 @@ func rewriteStyle(raw []byte, styleURL string) (out []byte, upstreamGlyphs strin
 		if m, ok := sources[names[0]].(map[string]any); ok {
 			m["attribution"] = defaultAttribution
 		}
+	}
+
+	if dark {
+		darkenStyle(style)
 	}
 
 	out, err = json.Marshal(style)
