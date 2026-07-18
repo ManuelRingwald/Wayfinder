@@ -28,10 +28,21 @@ world-Style ohne Code-Änderung. `GermanyOnlyStyleURL` bleibt als dokumentierte
 Pin-Option für strikt-amtliche Deployments (`WAYFINDER_BKG_STYLE_URL`).
 Register: **FR-UI-032**. Ehrliche Grenze: amtlich ist nur der DE-Anteil.
 
-**Nächster Schritt:** Betreiber-Smoke-Test (grenznaher Ausschnitt, z. B.
-Hamburg mit Ostsee/Dänemark im Bild); danach der **Theme-Default-Wechsel
-`dark` → `bkg-dark`** als Mini-Schritt (S1) — damit wären OSM/CARTO als
-direkte Kartenlieferanten endgültig abgelöst.
+**Nachtrag (2026-07-18, Smoke-Test ✅):** Betreiber-Screenshot Sektor
+Niederrhein/NL (`bkg-dark`): Umland vorhanden — Nordsee-Küste, NL/BE-Landmasse
+mit Staatsgrenze, Auslandsbeschriftung gedämpft; unter den
+EHAA-/CTA-EHAM-/EHV-Overlays liegt jetzt Kontext statt Leere. Der ehrliche
+Detail-Unterschied (amtlich-fein in D, Welt-Kartografie gröber außerhalb) ist
+sichtbar und erwartungsgemäß; die Dunkel-Transformation greift auch auf den
+Welt-Kacheln. **basemap.world-Nachtrag abgenommen.**
+
+**Nächster Schritt:** **Theme-Default-Wechsel `dark` → `bkg-dark`** als
+Mini-Schritt (S1) — damit wären OSM/CARTO als direkte Kartenlieferanten
+endgültig abgelöst. Dabei Betreiber-Wunsch **#274** (BKG als
+mandanten-freigebbare Layer-Option mit Nutzer-Toggle, S4) berücksichtigen:
+der server-weite Default-Wechsel ist ggf. nur die Zwischenstufe zum
+Entitlement-Modell. Außerdem offen: ASD-Bedienbarkeits-Trio #271–#273,
+H3 Selbst-Hosting, #267 DB-Volume.
 
 ---
 
