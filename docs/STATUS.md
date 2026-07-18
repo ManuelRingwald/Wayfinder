@@ -37,13 +37,20 @@ Welt-Kacheln — der Test-Build stammte von `main` **vor** dem Merge dieses
 Nachtrags und konnte die world-Default-URL gar nicht enthalten (vom Betreiber
 erkannt, 2026-07-18).
 
-**Nächster Schritt:** PR mergen → Betreiber-Smoke-Test **danach** wiederholen
-(`git pull` + `up -d --build wayfinder`, grenznaher Ausschnitt: links der
-Grenze muss NL/BE-Landmasse mit Kartografie erscheinen, nicht Schwarz).
-Erst nach bestandenem Test: **Theme-Default-Wechsel `dark` → `bkg-dark`**
-(S1) — dabei Betreiber-Wunsch **#274** (BKG als mandanten-freigebbare
-Layer-Option, S4) berücksichtigen: der server-weite Default-Wechsel ist ggf.
-nur die Zwischenstufe zum Entitlement-Modell. Außerdem offen:
+**Nachtrag (2026-07-18, Smoke-Test jetzt wirklich ✅):** Nach Merge von
+PR #270 + Rebuild bestätigt der Betreiber am laufenden System: links der
+deutschen Grenze erscheint NL/BE-Kartografie statt Schwarz — der
+world-Kontext greift, Dunkel-Transformation inklusive. (Zwischenzeitliche
+Verwirrung war reiner **Browser-Cache** auf dem localhost-Origin des
+`gh`-Tunnels; Hard-Reload löste es. Lehre aus der Fehl-Abnahme davor bleibt:
+**vor jedem Abnahme-Vermerk Versions-Verifikation am laufenden System**.)
+**basemap.world ist abgenommen.**
+
+**Nächster Schritt:** Richtungs-Entscheid des Betreibers: **(a)**
+Theme-Default-Wechsel `dark` → `bkg-dark` (S1, server-weit — schneller
+Schlussstein, OSM/CARTO ab Werk abgelöst) und #274 später obendrauf, oder
+**(b)** direkt das **#274-Entitlement-Modell** (BKG als mandanten-freigebbare
+Layer-Option mit Nutzer-Toggle, S4) ohne die Zwischenstufe. Außerdem offen:
 ASD-Bedienbarkeits-Trio #271–#273, H3 Selbst-Hosting, #267 DB-Volume.
 
 ---
