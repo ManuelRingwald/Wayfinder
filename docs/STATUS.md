@@ -28,21 +28,23 @@ world-Style ohne Code-Änderung. `GermanyOnlyStyleURL` bleibt als dokumentierte
 Pin-Option für strikt-amtliche Deployments (`WAYFINDER_BKG_STYLE_URL`).
 Register: **FR-UI-032**. Ehrliche Grenze: amtlich ist nur der DE-Anteil.
 
-**Nachtrag (2026-07-18, Smoke-Test ✅):** Betreiber-Screenshot Sektor
-Niederrhein/NL (`bkg-dark`): Umland vorhanden — Nordsee-Küste, NL/BE-Landmasse
-mit Staatsgrenze, Auslandsbeschriftung gedämpft; unter den
-EHAA-/CTA-EHAM-/EHV-Overlays liegt jetzt Kontext statt Leere. Der ehrliche
-Detail-Unterschied (amtlich-fein in D, Welt-Kartografie gröber außerhalb) ist
-sichtbar und erwartungsgemäß; die Dunkel-Transformation greift auch auf den
-Welt-Kacheln. **basemap.world-Nachtrag abgenommen.**
+**Nachtrag (2026-07-18, Korrektur):** Ein zwischenzeitlich hier verbuchter
+„Smoke-Test bestanden"-Vermerk war **falsch** und ist zurückgenommen. Der
+Betreiber-Screenshot (Sektor Niederrhein/NL, `bkg-dark`) zeigte den **alten**
+Nur-Deutschland-Stand: Links der Grenze liegt Leere; die sichtbaren Umrisse
+über NL sind Wayfinders eigene Luftraum-Overlays (EHAA/CTA-EHAM/EHV), keine
+Welt-Kacheln — der Test-Build stammte von `main` **vor** dem Merge dieses
+Nachtrags und konnte die world-Default-URL gar nicht enthalten (vom Betreiber
+erkannt, 2026-07-18).
 
-**Nächster Schritt:** **Theme-Default-Wechsel `dark` → `bkg-dark`** als
-Mini-Schritt (S1) — damit wären OSM/CARTO als direkte Kartenlieferanten
-endgültig abgelöst. Dabei Betreiber-Wunsch **#274** (BKG als
-mandanten-freigebbare Layer-Option mit Nutzer-Toggle, S4) berücksichtigen:
-der server-weite Default-Wechsel ist ggf. nur die Zwischenstufe zum
-Entitlement-Modell. Außerdem offen: ASD-Bedienbarkeits-Trio #271–#273,
-H3 Selbst-Hosting, #267 DB-Volume.
+**Nächster Schritt:** PR mergen → Betreiber-Smoke-Test **danach** wiederholen
+(`git pull` + `up -d --build wayfinder`, grenznaher Ausschnitt: links der
+Grenze muss NL/BE-Landmasse mit Kartografie erscheinen, nicht Schwarz).
+Erst nach bestandenem Test: **Theme-Default-Wechsel `dark` → `bkg-dark`**
+(S1) — dabei Betreiber-Wunsch **#274** (BKG als mandanten-freigebbare
+Layer-Option, S4) berücksichtigen: der server-weite Default-Wechsel ist ggf.
+nur die Zwischenstufe zum Entitlement-Modell. Außerdem offen:
+ASD-Bedienbarkeits-Trio #271–#273, H3 Selbst-Hosting, #267 DB-Volume.
 
 ---
 
