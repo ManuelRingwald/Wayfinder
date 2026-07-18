@@ -41,10 +41,18 @@ import (
 	"time"
 )
 
-// DefaultStyleURL is the public basemap.de Web Vektor "Farbe" style (colour,
-// bm_web_col). Operator choice per 2026-07-18; the grey variant (bm_web_gry) or
-// a self-hosted mirror can be configured via WAYFINDER_BKG_STYLE_URL.
-const DefaultStyleURL = "https://sgx.geodatenzentrum.de/gdz_basemapde_vektor/styles/bm_web_col.json"
+// DefaultStyleURL is the public basemap.world Web Vektor "Farbe" style
+// (ADR 0026 Nachtrag basemap.world): it draws from TWO tile archives — the
+// official basemap.de archive inside Germany plus a BKG-curated world archive
+// (OSM/NaturalEarth) outside — so cross-border sectors get surrounding context
+// instead of an empty void at the national border. Operators can pin the
+// Germany-only style (GermanyOnlyStyleURL), the grey variant (bm_web_gry) or a
+// self-hosted mirror via WAYFINDER_BKG_STYLE_URL.
+const DefaultStyleURL = "https://sgx.geodatenzentrum.de/gdz_basemapworld_vektor/styles/bm_web_wld_col.json"
+
+// GermanyOnlyStyleURL is the basemap.de-only "Farbe" style (H1 default until
+// the basemap.world Nachtrag): strictly official data, ending at the border.
+const GermanyOnlyStyleURL = "https://sgx.geodatenzentrum.de/gdz_basemapde_vektor/styles/bm_web_col.json"
 
 // defaultAttribution is injected when the upstream style carries no attribution
 // on any source — the basemap.de terms of use require a visible credit.

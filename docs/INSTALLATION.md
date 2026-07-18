@@ -799,7 +799,7 @@ Konfiguriert wird über **Umgebungsvariablen** (im `environment:`-Block der
 | `WAYFINDER_MAP_CENTER_LON` | `8.5622` | Längengrad des Kartenstartzentrums |
 | `WAYFINDER_MAP_ZOOM` | `8` | Anfangs-Zoom (1–22) |
 | `WAYFINDER_MAP_THEME` | `dark` | `dark` (CARTO Dark, schlüsselfrei), `bkg` (**amtliche basemap.de-Vektorkarte** des BKG, hell, ADR 0026), `bkg-dark` (**dunkler Radar-Scope** aus denselben amtlichen Daten, H2) oder `osm` (OpenStreetMap-Raster, deprecated) |
-| `WAYFINDER_BKG_STYLE_URL` | BKG-„Farbe"-Style | Upstream-Style fürs `bkg`-Theme (Default: öffentliches `bm_web_col.json` des BKG); hier die Grau-Variante (`bm_web_gry.json`) oder einen self-hosted Mirror eintragen |
+| `WAYFINDER_BKG_STYLE_URL` | basemap.world-„Farbe"-Style | Upstream-Style für `bkg`/`bkg-dark` (Default: `bm_web_wld_col.json` — innerhalb Deutschlands amtlich, außerhalb BKG-kuratierter Weltkontext); Alternativen: Nur-Deutschland `bm_web_col.json`, Grau `bm_web_gry.json` oder self-hosted Mirror |
 | `WAYFINDER_MAP_STYLE_URL` | *(leer)* | Vollständige MapLibre-Style-URL — überschreibt `WAYFINDER_MAP_THEME`. Für basemap.de **nicht** hier eintragen, sondern `WAYFINDER_MAP_THEME=bkg` nutzen (sonst fehlen die Track-Label-Schriften, ADR 0026) |
 
 > Dieselben drei `map`-Werte lassen sich auch in `wayfinder.yaml` setzen (siehe
