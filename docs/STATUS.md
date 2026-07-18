@@ -10,6 +10,35 @@
 
 ---
 
+## 🌒 Stand 2026-07-18 (BKG-Basiskarte H2: Radar-Scope-Dunkelvariante `bkg-dark`; ADR 0026 Nachtrag, FR-UI-031)
+
+**In normaler Sprache:** Der dunkle Radar-Modus konnte bisher nur ein fremdes
+Kartenbild (CARTO) auf 40 % dimmen. Jetzt gibt es mit
+`WAYFINDER_MAP_THEME=bkg-dark` erstmals einen **echten dunklen Scope aus den
+amtlichen BKG-Daten**: fast schwarzer Grund, zarte Küsten/Grenzen/Straßen,
+gedämpft helle Ortsnamen, gedimmte Straßenschilder — dieselben
+qualitätsgesicherten Vektordaten wie beim hellen `bkg`, nur dunkel gezeichnet.
+Der bisherige `dark`-Default bleibt vorerst (basemap.de endet an der
+Staatsgrenze — für grenzüberschreitende Sektoren wäre ein Umland-loser Default
+ein Rückschritt; Wechsel kommt mit basemap.world).
+
+**Fachlich/technisch:** Kein zweites hand-gepflegtes Style-JSON (BKG-Schema
+driftet mit Updates), sondern eine **regelbasierte HSL-Transformation** in der
+H1-Pipeline (`pkg/basemap/scope.go`, `Config.Dark`): Farben je Rolle in
+Scope-Bänder gemappt — Flächen/Linien helligkeits-invertiert nach Near-Black
+(Kontrast-Ordnung erhalten, Sättigung ×0,35), Kartentext gedämpft hell, Halos
+backdrop-dunkel, `icon-opacity` gedimmt; rekursiv durch Expressions/Stops,
+Alpha erhalten, Unparsebares unverändert. Theme-Vokabular
+`dark|osm|bkg|bkg-dark`; `bkg-dark` teilt `/basemap/style.json` und die dunkle
+Frontend-Palette. Register: **FR-UI-031**. Gates grün (go test/vet/gofmt/
+golangci-lint, vitest, `npm run build`, dist neu).
+
+**Nächster Schritt:** Betreiber-Sichttest `bkg-dark` (Screenshot); danach H3
+(Selbst-Hosting), #267 (DB-Volume) oder basemap.world — wie üblich mit
+Ankündigung + Freigabe.
+
+---
+
 ## 🗺️ Stand 2026-07-18 (Amtliche Basiskarte BKG basemap.de — H1, Theme `bkg`; ADR 0026, FR-UI-030, ASD-016)
 
 **In normaler Sprache:** Die Basiskarte unter dem Luftlagebild kann jetzt aus
@@ -45,6 +74,20 @@ Entwicklungs-Sandbox hatte keinen Netzzugriff auf `sgx.geodatenzentrum.de`
 httptest-Upstream verifiziert. **Betreiber-Smoke-Test (H0/H1):**
 `WAYFINDER_MAP_THEME=bkg` setzen → Karte lädt, Track-Labels intakt,
 Attribution sichtbar.
+
+**Nachtrag (2026-07-18, Smoke-Test ✅):** Betreiber-Smoke-Test am **echten
+BKG-Dienst** erfolgreich (Codespace, `WAYFINDER_MAP_THEME=bkg`, Screenshot
+Raum Hamburg): amtliche „Farbe"-Karte lädt vollständig (Kacheln + Sprite),
+die **Basemap-Ortsnamen rendern** — d. h. die BKG-Kartenfonts kommen
+nachweislich durch die `/glyphs`-Proxy-Weiche —, und die ASD-Overlays
+(Sektorringe, TMA/CTR, AoR, Sektor-Labels) sitzen lesbar auf der hellen
+Basis (bkg-Palette greift). **Vollständig bestätigt** (Betreiber-Rückmeldung):
+Track-Labels rendern in **Roboto Mono**, die ⓘ-Attribution zeigt
+„© 2026 basemap.de / BKG | Datenquellen: © GeoBasis-DE" (das Upstream-Style
+bringt seinen eigenen Quellenvermerk mit — unsere Injektion bleibt reines
+Sicherheitsnetz für den Fall eines attributionslosen Styles). Damit ist die in
+„Ehrliche Grenzen (b)" offene End-zu-End-Verifikation erbracht; **H1 ist
+komplett abgenommen**.
 
 **Nachtrag (2026-07-18, H1-Lücke):** Die Compose-Dateien
 (`docker-compose.orchestrated.yml`/`.onboarding.yml`) reichten

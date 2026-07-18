@@ -7,13 +7,17 @@ import { PALETTES } from '../constants.js'
 
 describe('PALETTES per base-map theme', () => {
   it('provides a palette for every built-in theme', () => {
-    expect(Object.keys(PALETTES).sort()).toEqual(['bkg', 'dark', 'osm'])
+    expect(Object.keys(PALETTES).sort()).toEqual(['bkg', 'bkg-dark', 'dark', 'osm'])
   })
 
   it('bkg shares the bright palette with osm', () => {
     expect(PALETTES.bkg).toBe(PALETTES.osm)
     expect(PALETTES.bkg.label).toBe('#212121')
     expect(PALETTES.bkg.labelHalo).toBe('#ffffff')
+  })
+
+  it('bkg-dark shares the dark palette (H2)', () => {
+    expect(PALETTES['bkg-dark']).toBe(PALETTES.dark)
   })
 
   it('dark stays a distinct light-on-dark palette', () => {

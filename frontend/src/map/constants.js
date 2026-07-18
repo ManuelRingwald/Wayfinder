@@ -295,21 +295,27 @@ const brightPalette = {
   selection: '#0097a7', // ASD-007: selection halo — deeper cyan for the bright base
 }
 
+// The dark palette is shared by the CARTO-based "dark" theme and the official
+// basemap.de scope variant "bkg-dark" (ADR 0026 Nachtrag / H2): both are
+// near-black bases needing light foregrounds with dark halos.
+const darkPalette = {
+  label: '#dce6f0',        // = on-surface token
+  labelHalo: '#000000',
+  vector: '#9ec8de',       // speed-vector line (SVL)
+  trail: '#3a5a72',        // history trail (subdued, no map distraction)
+  symbolStroke: '#000000',
+  airspaceFillColor: '#3a6fb0', // used with opacity 0.12 in layers.js
+  airspaceLine: '#5b8fd6',
+  airspaceText: '#9fc0e8',
+  airways: '#2a8fa8',
+  aeroHalo: '#000000',
+  rangeRing: '#4a7d96', // ASD-012: subdued cyan-grey distance grid
+  selection: '#23d3e6', // ASD-007: selection halo — cyan primary
+}
+
 export const PALETTES = {
-  dark: {
-    label: '#dce6f0',        // = on-surface token
-    labelHalo: '#000000',
-    vector: '#9ec8de',       // speed-vector line (SVL)
-    trail: '#3a5a72',        // history trail (subdued, no map distraction)
-    symbolStroke: '#000000',
-    airspaceFillColor: '#3a6fb0', // used with opacity 0.12 in layers.js
-    airspaceLine: '#5b8fd6',
-    airspaceText: '#9fc0e8',
-    airways: '#2a8fa8',
-    aeroHalo: '#000000',
-    rangeRing: '#4a7d96', // ASD-012: subdued cyan-grey distance grid
-    selection: '#23d3e6', // ASD-007: selection halo — cyan primary
-  },
+  dark: darkPalette,
+  'bkg-dark': darkPalette,
   osm: brightPalette,
   bkg: brightPalette,
 }

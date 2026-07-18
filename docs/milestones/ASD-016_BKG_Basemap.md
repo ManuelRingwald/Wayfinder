@@ -1,8 +1,9 @@
-# ASD-016 — Amtliche Basiskarte: BKG basemap.de Web Vektor (H1, Theme `bkg`)
+# ASD-016 — Amtliche Basiskarte: BKG basemap.de Web Vektor (H1 `bkg` + H2 `bkg-dark`)
 
-> **Anforderung:** FR-UI-030 · **Entscheidung:** ADR 0026 · **Stand:** H1 fertig
-> (2026-07-18). H2 (dunkler Radar-Style auf Vektorbasis) und H3
-> (Selbst-Hosting/Air-Gap) folgen als eigene Häppchen.
+> **Anforderung:** FR-UI-030 (H1), FR-UI-031 (H2) · **Entscheidung:** ADR 0026
+> (+ Nachtrag H2) · **Stand:** H1 fertig und am echten Dienst abgenommen
+> (2026-07-18), H2 gebaut (2026-07-18). H3 (Selbst-Hosting/Air-Gap) folgt als
+> eigenes Häppchen.
 
 ## Fachlich — warum
 
@@ -57,6 +58,28 @@ Bausteine:
 - **Frontend:** `PALETTES.bkg` teilt die helle Vordergrund-Palette mit `osm`
   (beides helle Basen); sonst keine Änderung — root-relative Style-URLs sind
   im Bestand erprobt (Wetter-Radar-Kacheln).
+
+## H2 — Radar-Scope-Dunkelvariante `bkg-dark` (FR-UI-031)
+
+**Fachlich:** Der Lotsen-Default `dark` dimmt bisher ein fremdes CARTO-
+Rasterbild auf 40 % — ein Trick, kein Design. `WAYFINDER_MAP_THEME=bkg-dark`
+liefert erstmals einen **echten dunklen Radar-Scope aus den amtlichen
+BKG-Vektordaten**: Near-Black-Grund, zarte Küsten/Grenzen/Straßen als
+Struktur, gedämpft-helle Ortsnamen, gedimmte Schilder.
+
+**Technisch:** Kein zweites, hand-gepflegtes Style-JSON (der BKG-Schema-Katalog
+driftet mit Updates), sondern eine **regelbasierte HSL-Transformation** in der
+bestehenden Pipeline (`pkg/basemap/scope.go`, `Config.Dark`): jede Farbe des
+geholten Styles wird je Rolle (Fläche/Linie, Text, Halo) in ein Scope-Band
+gemappt — Helligkeit invertiert (Kontrast-Ordnung bleibt), Sättigung kollabiert,
+Alpha erhalten; rekursiv auch in Interpolations-Expressions und Legacy-Stops;
+nicht parsebare Werte bleiben unverändert. Symbol-Icons werden via
+`icon-opacity` gedimmt (numerische Werte skaliert, Expressions unangetastet).
+Frontend: `bkg-dark` teilt die dunkle Vordergrund-Palette mit `dark`.
+
+**Warum Default-Wechsel noch aussteht:** Staatsgrenzen-Abdeckung (siehe
+Ehrliche Grenzen) — erst mit basemap.world wird `bkg-dark` zum sinnvollen
+`dark`-Nachfolger.
 
 ## Ehrliche Grenzen
 

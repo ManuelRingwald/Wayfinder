@@ -110,3 +110,35 @@ server-seitige Style-Pipeline in **`pkg/basemap`**:
   (ersetzt den CARTO-Dimm-Trick), **H3** Selbst-Hosting per BKG-Download-Paket
   (macht den Browser-Rand internetfrei), Option **basemap.world** für
   Auslandskontext.
+
+---
+
+## Nachtrag H2 (2026-07-18): Radar-Scope-Dunkelvariante `bkg-dark`
+
+**Entscheidung:** Die dunkle Variante wird **nicht** als hand-gepflegtes
+Style-JSON gebaut, sondern als **regelbasierte Farb-Transformation** des zur
+Laufzeit geholten BKG-Styles (`pkg/basemap/scope.go`), aktiviert über das neue
+Theme **`bkg-dark`**:
+
+- **Flächen/Linien:** Helligkeit invertiert in ein Near-Black-Band
+  (L ≈ 0,035–0,38), Sättigung stark reduziert — helles Land wird der
+  Scope-Hintergrund, dunkle Grenz-/Straßen-Striche werden zarte helle Struktur;
+  die relative Kontrast-Ordnung des amtlichen Styles bleibt erhalten.
+- **Kartentext:** in ein gedämpft-helles Band gehoben (L ≈ 0,52–0,72),
+  Halos auf Backdrop-Dunkel — Ortsnamen lesbar, ohne mit den Track-Labels zu
+  konkurrieren.
+- **Symbol-Icons** (Straßenschilder etc.): per `icon-opacity` gedimmt.
+- Nur **Farbwerte** werden angefasst (rekursiv auch in Expressions/Stops);
+  Layer-Struktur, Filter und Zoom-Verhalten des amtlichen Styles bleiben
+  unangetastet. Alpha bleibt erhalten; nicht parsebare Werte (benannte Farben)
+  bleiben unverändert (lieber eine Originalfarbe als ein zerstörter Style).
+
+**Warum Transformation statt Hand-Style:** Der BKG-Kachel-Schema-Katalog ist
+groß und driftet mit Style-Updates; ein hand-gepflegter Dark-Style müsste jedem
+Update nachgeführt werden. Die Transformation ist schema-agnostisch,
+deterministisch und als reine Farb-Mathematik vollständig testbar.
+
+**Default bleibt vorerst `dark` (CARTO):** basemap.de endet an der
+Staatsgrenze; für grenzüberschreitende Sektoren wäre ein Umland-loser
+Scope-Default ein Rückschritt. Der Default-Wechsel auf `bkg-dark` kommt mit dem
+basemap.world-Häppchen (Auslandskontext). Register: **FR-UI-031**.
