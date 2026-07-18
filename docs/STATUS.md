@@ -55,6 +55,35 @@ ASD-Bedienbarkeits-Trio #271–#273, H3 Selbst-Hosting, #267 DB-Volume.
 
 ---
 
+## 🏁 Stand 2026-07-18 (Ausbau OSM/CARTO — `bkg-dark` ist der Default; ADR 0026 Nachtrag, FR-UI-033)
+
+**In normaler Sprache:** Der Betreiber hat Richtung **(a) mit Verschärfung**
+entschieden: nicht nur Default-Wechsel, sondern **sauberer Ausbau** der alten
+Karten. Die OSM- und CARTO-Raster-Basiskarten sind komplett aus dem Code
+entfernt — Wayfinder startet ab Werk mit dem **dunklen amtlichen Radar-Scope**
+(`bkg-dark`, inkl. Umland via basemap.world) und kontaktiert **keine
+OSM-/CARTO-Server mehr**. Wer die alten Theme-Namen (`dark`/`osm`) noch in
+seiner Konfiguration hat, bekommt automatisch die passende BKG-Variante plus
+eine Hinweis-Warnung im Log — nichts bricht.
+
+**Fachlich/technisch:** `defaultMapStyle`/`darkMapStyle` (Inline-Raster-Styles)
+ersatzlos entfernt; Theme-Vokabular `bkg`/`bkg-dark` (Default `bkg-dark`),
+Legacy-Aliase `dark`→`bkg-dark` / `osm`→`bkg` mit
+`MapThemeDeprecatedInput`-Startup-Warnung; map-config liefert ohne
+Custom-Style-URL immer `/basemap/style.json`; basemap-Service läuft immer
+(außer Custom-Style). Frontend-Paletten auf `bkg`/`bkg-dark` reduziert,
+Compose-Defaults nachgezogen. Historische ADRs/Milestones (ASD-003a etc.)
+bleiben als Audit-Spur; aktuelle Doku (README/INSTALLATION/TECHNICAL)
+bereinigt. Register: **FR-UI-033**. Gates grün (go test/vet/gofmt,
+golangci-lint, vitest 603, `npm run build`, dist neu).
+
+**Nächster Schritt:** Betreiber-Kurztest (ohne gesetzte Env muss ab jetzt der
+dunkle Amtsdaten-Scope erscheinen). Danach offen: #274 (BKG als
+Layer-Option/Entitlement, S4 — Design-Ankündigung nötig),
+ASD-Bedienbarkeits-Trio #271–#273, H3 Selbst-Hosting, #267 DB-Volume.
+
+---
+
 ## 🌒 Stand 2026-07-18 (BKG-Basiskarte H2: Radar-Scope-Dunkelvariante `bkg-dark`; ADR 0026 Nachtrag, FR-UI-031)
 
 **In normaler Sprache:** Der dunkle Radar-Modus konnte bisher nur ein fremdes

@@ -100,10 +100,10 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
   const res = await fetch('/api/map-config')
   const cfg = await res.json()
 
-  // Select the foreground palette to match the base-map theme (dark by
-  // default). An unknown theme falls back to the dark palette.
-  const palette = PALETTES[cfg.theme] || PALETTES.dark
-  store.setPalette(cfg.theme || 'dark')
+  // Select the foreground palette to match the base-map theme (the bkg-dark
+  // scope by default). An unknown theme falls back to the dark palette.
+  const palette = PALETTES[cfg.theme] || PALETTES['bkg-dark']
+  store.setPalette(PALETTES[cfg.theme] ? cfg.theme : 'bkg-dark')
 
   // #114: the coverage-ring layer only ever has data when coverage sensors are
   // configured server-side; expose that so the sidebar can disable the toggle
@@ -139,7 +139,7 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
     // Suppress the default expanded attribution: it printed "© OpenStreetMap …"
     // bottom-right, right under our distance/vector readout. We add a compact
     // attribution below (collapses to an ⓘ, expands on click) — the credit stays
-    // (OSM/CARTO terms) but no longer overlaps the readout.
+    // (basemap.de/BKG terms) but no longer overlaps the readout.
     attributionControl: false,
   })
   map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right')

@@ -12,6 +12,10 @@ import (
 	"github.com/manuelringwald/wayfinder/pkg/basemap"
 )
 
+// TestMapConfigHandlerDefaultStyle: without a custom style URL the map ALWAYS
+// runs on the official base map through Wayfinder's own /basemap/style.json
+// (ADR 0026 Nachtrag Ausbau OSM/CARTO — the former inline OSM/CARTO raster
+// styles are gone); a zero-value theme (tests) reports the bkg-dark default.
 func TestMapConfigHandlerDefaultStyle(t *testing.T) {
 	cfg := Config{
 		MapCenterLat: 50.0379,
@@ -30,10 +34,11 @@ func TestMapConfigHandlerDefaultStyle(t *testing.T) {
 	}
 
 	var body struct {
-		CenterLat float64         `json:"center_lat"`
-		CenterLon float64         `json:"center_lon"`
-		Zoom      float64         `json:"zoom"`
-		Style     json.RawMessage `json:"style"`
+		CenterLat float64 `json:"center_lat"`
+		CenterLon float64 `json:"center_lon"`
+		Zoom      float64 `json:"zoom"`
+		Style     string  `json:"style"`
+		Theme     string  `json:"theme"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode response: %v", err)
@@ -42,18 +47,11 @@ func TestMapConfigHandlerDefaultStyle(t *testing.T) {
 	if body.CenterLat != cfg.MapCenterLat || body.CenterLon != cfg.MapCenterLon || body.Zoom != cfg.MapZoom {
 		t.Errorf("unexpected center/zoom: %+v", body)
 	}
-
-	var style map[string]any
-	if err := json.Unmarshal(body.Style, &style); err != nil {
-		t.Fatalf("expected style to be a JSON object, got %s: %v", body.Style, err)
+	if body.Style != "/basemap/style.json" {
+		t.Errorf("expected style \"/basemap/style.json\", got %q", body.Style)
 	}
-	if style["version"] != float64(8) {
-		t.Errorf("expected style version 8, got %v", style["version"])
-	}
-	// A glyphs endpoint is mandatory: a symbol layer with a text-field renders
-	// no text without one, which previously left all track/aero labels invisible.
-	if glyphs, ok := style["glyphs"].(string); !ok || glyphs == "" {
-		t.Errorf("expected non-empty glyphs URL in built-in style, got %v", style["glyphs"])
+	if body.Theme != mapThemeBKGDark {
+		t.Errorf("expected default theme %q, got %q", mapThemeBKGDark, body.Theme)
 	}
 }
 
@@ -300,67 +298,8 @@ func TestEnvBool(t *testing.T) {
 	}
 }
 
-func TestMapConfigHandlerDarkThemeByDefault(t *testing.T) {
-	cfg := Config{MapTheme: mapThemeDark}
-
-	req := httptest.NewRequest(http.MethodGet, "/api/map-config", nil)
-	rec := httptest.NewRecorder()
-	mapConfigHandler(cfg)(rec, req)
-
-	var body struct {
-		Theme string          `json:"theme"`
-		Style json.RawMessage `json:"style"`
-	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-	if body.Theme != mapThemeDark {
-		t.Errorf("expected theme %q, got %q", mapThemeDark, body.Theme)
-	}
-
-	var style map[string]any
-	if err := json.Unmarshal(body.Style, &style); err != nil {
-		t.Fatalf("expected style object, got %s: %v", body.Style, err)
-	}
-	sources, ok := style["sources"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected sources object, got %v", style["sources"])
-	}
-	if _, ok := sources["carto-dark"]; !ok {
-		t.Errorf("expected dark theme to use the carto-dark source, got sources %v", sources)
-	}
-}
-
-func TestMapConfigHandlerOSMTheme(t *testing.T) {
-	cfg := Config{MapTheme: mapThemeOSM}
-
-	req := httptest.NewRequest(http.MethodGet, "/api/map-config", nil)
-	rec := httptest.NewRecorder()
-	mapConfigHandler(cfg)(rec, req)
-
-	var body struct {
-		Theme string          `json:"theme"`
-		Style json.RawMessage `json:"style"`
-	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-	if body.Theme != mapThemeOSM {
-		t.Errorf("expected theme %q, got %q", mapThemeOSM, body.Theme)
-	}
-
-	var style map[string]any
-	if err := json.Unmarshal(body.Style, &style); err != nil {
-		t.Fatalf("expected style object, got %s: %v", body.Style, err)
-	}
-	sources := style["sources"].(map[string]any)
-	if _, ok := sources["osm"]; !ok {
-		t.Errorf("expected osm theme to use the osm source, got sources %v", sources)
-	}
-}
-
 func TestMapConfigHandlerCustomStyleURLReportsTheme(t *testing.T) {
-	cfg := Config{MapStyleURL: "https://example.com/style.json", MapTheme: mapThemeDark}
+	cfg := Config{MapStyleURL: "https://example.com/style.json", MapTheme: mapThemeBKGDark}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/map-config", nil)
 	rec := httptest.NewRecorder()
@@ -376,8 +315,8 @@ func TestMapConfigHandlerCustomStyleURLReportsTheme(t *testing.T) {
 	if body.Style != cfg.MapStyleURL {
 		t.Errorf("expected custom style URL %q, got %q", cfg.MapStyleURL, body.Style)
 	}
-	if body.Theme != mapThemeDark {
-		t.Errorf("expected reported theme %q, got %q", mapThemeDark, body.Theme)
+	if body.Theme != mapThemeBKGDark {
+		t.Errorf("expected reported theme %q, got %q", mapThemeBKGDark, body.Theme)
 	}
 }
 
@@ -428,19 +367,24 @@ func TestLoadConfigBKGStyleURL(t *testing.T) {
 	}
 }
 
+// TestLoadConfigMapTheme: bkg-dark is the default (ADR 0026 Nachtrag Ausbau
+// OSM/CARTO); the removed raster themes' names alias to their BKG successor
+// (dark → bkg-dark, osm → bkg) with the deprecation recorded for the startup
+// warning; invalid values fall back to the default (FR-CFG-002).
 func TestLoadConfigMapTheme(t *testing.T) {
 	for _, tc := range []struct {
-		env  string
-		want string
+		env            string
+		want           string
+		wantDeprecated bool
 	}{
-		{"", mapThemeDark},            // default
-		{"dark", mapThemeDark},        //
-		{"osm", mapThemeOSM},          //
-		{"OSM", mapThemeOSM},          // case-insensitive
-		{"bkg", mapThemeBKG},          // ADR 0026
-		{"BKG", mapThemeBKG},          // case-insensitive
-		{"bkg-dark", mapThemeBKGDark}, // ADR 0026 Nachtrag / H2
-		{"nonsense", mapThemeDark},    // invalid → default
+		{"", mapThemeBKGDark, false},         // default
+		{"bkg", mapThemeBKG, false},          //
+		{"BKG", mapThemeBKG, false},          // case-insensitive
+		{"bkg-dark", mapThemeBKGDark, false}, //
+		{"dark", mapThemeBKGDark, true},      // legacy alias
+		{"DARK", mapThemeBKGDark, true},      // legacy alias, case-insensitive
+		{"osm", mapThemeBKG, true},           // legacy alias
+		{"nonsense", mapThemeBKGDark, false}, // invalid → default
 	} {
 		if tc.env == "" {
 			_ = os.Unsetenv("WAYFINDER_MAP_THEME")
@@ -452,6 +396,9 @@ func TestLoadConfigMapTheme(t *testing.T) {
 
 		if cfg.MapTheme != tc.want {
 			t.Errorf("WAYFINDER_MAP_THEME=%q: expected theme %q, got %q", tc.env, tc.want, cfg.MapTheme)
+		}
+		if got := cfg.MapThemeDeprecatedInput != ""; got != tc.wantDeprecated {
+			t.Errorf("WAYFINDER_MAP_THEME=%q: deprecated-input recorded = %v, want %v", tc.env, got, tc.wantDeprecated)
 		}
 	}
 }
