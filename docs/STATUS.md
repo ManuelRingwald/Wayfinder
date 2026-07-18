@@ -33,9 +33,18 @@ Alpha erhalten, Unparsebares unverändert. Theme-Vokabular
 Frontend-Palette. Register: **FR-UI-031**. Gates grün (go test/vet/gofmt/
 golangci-lint, vitest, `npm run build`, dist neu).
 
-**Nächster Schritt:** Betreiber-Sichttest `bkg-dark` (Screenshot); danach H3
-(Selbst-Hosting), #267 (DB-Volume) oder basemap.world — wie üblich mit
-Ankündigung + Freigabe.
+**Nachtrag (2026-07-18, Sichttest ✅):** Betreiber-Sichttest am echten
+BKG-Dienst bestanden (Screenshot Raum Hamburg, Zugang via `gh`-Port-Tunnel):
+Near-Black-Grund mit zarter Geografie-Struktur, Ortsnamen gedämpft hell im
+Zielband, Straßenschilder gedimmt (schwach sichtbar — bewusster
+`icon-opacity`-Wert 0,35; „ganz aus" wäre ein S1-Nachschlag), ASD-Overlays
+(Sektorringe/CTR/TMA/AoR) und Track-Datenblock klar dominant. Die
+HSL-Bänder passen auf dem realen BKG-Farbspektrum ohne Feintuning —
+**H2 ist abgenommen.**
+
+**Nächster Schritt:** H3 (Selbst-Hosting), #267 (DB-Volume) oder
+basemap.world (Auslandskontext; danach Default-Wechsel `dark`→`bkg-dark`) —
+wie üblich mit Ankündigung + Freigabe.
 
 ---
 
