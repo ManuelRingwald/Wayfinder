@@ -70,6 +70,11 @@ services:
       WAYFINDER_MAP_CENTER_LAT: ${WAYFINDER_MAP_CENTER_LAT:-50.0379}
       WAYFINDER_MAP_CENTER_LON: ${WAYFINDER_MAP_CENTER_LON:-8.5622}
       WAYFINDER_MAP_ZOOM: ${WAYFINDER_MAP_ZOOM:-8}
+      # Base-map theme (ADR 0026): dark (default), bkg (official basemap.de
+      # vector map) or osm (deprecated). WAYFINDER_BKG_STYLE_URL optionally
+      # points the bkg theme at a self-hosted mirror or the grey variant.
+      WAYFINDER_MAP_THEME: ${WAYFINDER_MAP_THEME:-dark}
+      WAYFINDER_BKG_STYLE_URL: ${WAYFINDER_BKG_STYLE_URL:-}
       # DWD weather overlays (radar + warnings) and QNH (NOAA) are connected-by-
       # default (ADR 0017): ON out of the box; radar/warnings need outbound https to
       # maps.dwd.de, QNH to aviationweather.gov. The QNH aerodrome is set per tenant

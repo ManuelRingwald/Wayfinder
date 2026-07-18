@@ -60,6 +60,11 @@ services:
       WAYFINDER_MAP_CENTER_LAT: ${WAYFINDER_MAP_CENTER_LAT:-50.0379}
       WAYFINDER_MAP_CENTER_LON: ${WAYFINDER_MAP_CENTER_LON:-8.5622}
       WAYFINDER_MAP_ZOOM: ${WAYFINDER_MAP_ZOOM:-8}
+      # Base-map theme (ADR 0026): dark (default), bkg (official basemap.de
+      # vector map) or osm (deprecated). WAYFINDER_BKG_STYLE_URL optionally
+      # points the bkg theme at a self-hosted mirror or the grey variant.
+      WAYFINDER_MAP_THEME: ${WAYFINDER_MAP_THEME:-dark}
+      WAYFINDER_BKG_STYLE_URL: ${WAYFINDER_BKG_STYLE_URL:-}
     restart: unless-stopped
 
   # Least-privilege control plane. Reads the desired state (subscribed feeds +
