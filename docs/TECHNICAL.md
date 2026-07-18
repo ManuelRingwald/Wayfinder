@@ -388,7 +388,8 @@ immer aktiv — ADR 0014); statische Frontend-Routen werden ausgeliefert.
 | `/admin` | GET | Admin-Oberfläche (Vue-SPA-Route, History-Mode; nur sinnvoll bei Multi-Tenancy) — WF2-32 |
 | `/ws` | GET → Upgrade | WebSocket — Track- und Feed-Status-Updates |
 | `/api/map-config` | GET | Kartentheme und Startkonfiguration als JSON |
-| `/glyphs/{fontstack}/{range}.pbf` | GET | **FR-UI-023 (ADR 0015 Nachtrag-2):** selbst-gehostete MapLibre-Glyph-PBFs (**Roboto Mono Medium**, aus dem Binary via `go:embed`) — die Datenblock-Schrift der Karte. Kein Font-CDN mehr auf der Karte (air-gap-Schritt; die UI-Fonts sind bereits offline via `@fontsource`). `application/x-protobuf`, `immutable`-Cache; nicht generierte Ranges/Traversal → 404. Beide eingebauten Kartenstile zeigen mit `"glyphs": "/glyphs/{fontstack}/{range}.pbf"` hierher |
+| `/glyphs/{fontstack}/{range}.pbf` | GET | **FR-UI-023 (ADR 0015 Nachtrag-2):** selbst-gehostete MapLibre-Glyph-PBFs (**Roboto Mono Medium**, aus dem Binary via `go:embed`) — die Datenblock-Schrift der Karte. Kein Font-CDN mehr auf der Karte (air-gap-Schritt; die UI-Fonts sind bereits offline via `@fontsource`). `application/x-protobuf`, `immutable`-Cache; nicht generierte Ranges/Traversal → 404. Alle eingebauten Kartenstile zeigen mit `"glyphs": "/glyphs/{fontstack}/{range}.pbf"` hierher. **FR-UI-030 (ADR 0026):** mit aktivem `bkg`-Theme wird der Endpoint zur **Weiche** — eingebettete Fontstacks weiter lokal, unbekannte Fontstacks (Kartenfonts des basemap.de-Styles) werden an den Upstream-Glyph-Endpoint des BKG proxied (validierte Pfadsegmente, 2-MiB-Limit, begrenzter In-Memory-Cache; Upstream-Fehler → 502) |
+| `/basemap/style.json` | GET | **FR-UI-030 (ADR 0026):** amtliche Basiskarte — nur mit `WAYFINDER_MAP_THEME=bkg` gemountet. Serviert das server-seitig geholte, **umgeschriebene** basemap.de-Style-JSON (`glyphs` → `/glyphs`, relative Sprite-/Kachel-URLs absolutisiert, Attribution © basemap.de / BKG ergänzt falls fehlend). Cache-TTL 12 h; bei Upstream-Ausfall wird der letzte gute Stand **stale** weiter serviert, ganz ohne Cache ehrliches **502**. Blockiert nie `/ready` |
 | `/api/airspace` | GET | Luftraumstrukturen (GeoJSON, best-effort). **ONB-6 (ADR 0011):** hinter der Tenant-Middleware; liefert den **Cache des Request-Mandanten** (eigener Schlüssel/AOI, Fallback auf den globalen Cache). **Feature-Gate:** ohne `airspaces`-Entitlement des Mandanten → **leere** Collection (Overlay erscheint nicht; server-seitig erzwungen). **Impersonation (ADR 0008 Nachtrag):** bei aktivem Grant zählt der **Ziel-Mandant** (Cache **und** Gate). **ASD-014 (ADR 0021):** Luftraum-Features tragen zusätzlich (additiv, nur `kind==airspace`, weggelassen wenn nicht vorhanden) `id` (stabile OpenAIP-`_id` — Referenz für die AoR-Auswahl), `icao_class` (numerisch) und die Vertikalgrenzen `lower`/`upper` als `{value, unit, referenceDatum}` (Einheiten: unit 0=m/1=ft/6=FL, referenceDatum 0=GND/1=MSL/2=STD) |
 | `/api/navaids` | GET | VOR/NDB-Beacons (GeoJSON, best-effort). **ONB-6:** mandanten-aufgelöst wie `/api/airspace`. **Feature-Gate:** ohne `vor_ndb` → leere Collection. Impersonation wie `/api/airspace` |
 | `/api/waypoints` | GET | Wegpunkte (GeoJSON, best-effort). **ONB-6:** mandanten-aufgelöst wie `/api/airspace`. **Feature-Gate:** ohne `waypoints` → leere Collection. Impersonation wie `/api/airspace` |
@@ -567,6 +568,17 @@ Metrik-Familie teilen. WX-A liefert die Quelle `dwd_radar`; WX-B/C ergänzen
 | `wayfinder_weather_fetch_failures_total{source="dwd_warnings"}` | Counter | Fehlgeschlagene Warn-Feed-Abrufe (Last-Good-Cache bleibt) |
 | `wayfinder_weather_cache_age_seconds{source="dwd_warnings"}` | Gauge | Sekunden seit dem letzten erfolgreichen Warn-Feed-Abruf; `-1` wenn nie |
 
+### 5.4b Amtliche Basiskarte (basemap.de, ADR 0026)
+
+Nur mit aktivem `bkg`-Theme emittiert. Zählt Style- **und** Glyph-Proxy-Abrufe
+gegen den BKG-Upstream (bzw. den konfigurierten Mirror) zusammen.
+
+| Metrik | Typ | Beschreibung |
+|--------|-----|--------------|
+| `wayfinder_basemap_fetch_success_total` | Counter | Erfolgreiche basemap.de-Upstream-Abrufe (Style + Glyphs) |
+| `wayfinder_basemap_fetch_failures_total` | Counter | Fehlgeschlagene Abrufe (Timeout/HTTP-Fehler/kaputtes JSON/Größenlimit); Style wird dann stale weiter serviert |
+| `wayfinder_basemap_cache_age_seconds` | Gauge | Sekunden seit dem letzten erfolgreichen Upstream-Abruf; `-1` wenn nie |
+
 ### 5.5 Feature-Entitlements (Multi-Mandant, WF2-50)
 
 | Metrik | Typ | Bedeutung |
@@ -670,8 +682,9 @@ Auflösung (höchste Priorität zuerst):
 | `WAYFINDER_MAP_CENTER_LAT` | `50.0379` | float64 | Latitude des Startzoom-Zentrums |
 | `WAYFINDER_MAP_CENTER_LON` | `8.5622` | float64 | Longitude des Startzoom-Zentrums |
 | `WAYFINDER_MAP_ZOOM` | `8` | float64 | Initialer Zoom-Level (MapLibre, 1–22) |
-| `WAYFINDER_MAP_THEME` | `dark` | enum | `dark` (CARTO Dark, keine API-Key) oder `osm` (OpenStreetMap) |
-| `WAYFINDER_MAP_STYLE_URL` | *(leer)* | URL | Überschreibt Theme komplett — beliebige MapLibre-Style-URL |
+| `WAYFINDER_MAP_THEME` | `dark` | enum | `dark` (CARTO Dark, kein API-Key), `bkg` (**amtliche basemap.de-Vektorkarte**, ADR 0026) oder `osm` (OpenStreetMap-Raster, deprecated) |
+| `WAYFINDER_BKG_STYLE_URL` | BKG-„Farbe"-Style | URL | Upstream-Style fürs `bkg`-Theme (Default `https://sgx.geodatenzentrum.de/gdz_basemapde_vektor/styles/bm_web_col.json`); Grau-Variante oder self-hosted Mirror hier eintragen |
+| `WAYFINDER_MAP_STYLE_URL` | *(leer)* | URL | Überschreibt Theme komplett — beliebige MapLibre-Style-URL. **Achtung (ADR 0026):** ein direkt eingetragener Fremd-Style bringt seine eigene `glyphs`-URL mit — kennt die unsere Roboto-Mono-Stacks nicht, bleiben die Track-Labels leer; fürs BKG-Style deshalb `WAYFINDER_MAP_THEME=bkg` nutzen |
 
 ### 6.3 OpenAIP
 

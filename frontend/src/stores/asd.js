@@ -31,7 +31,7 @@ const FEED_REASON_RANK = { auth: 3, rate_limited: 2, unreachable: 1 }
 export const useAsdStore = defineStore('asd', () => {
   // Map/app state
   const mapLoaded = ref(false)
-  const palette = ref('dark') // 'dark' | 'osm'
+  const palette = ref('dark') // 'dark' | 'osm' | 'bkg' (ADR 0026)
 
   // Feed health per feed (#117): feedId → 'ok' | 'degraded' | 'stale'. A tenant
   // can be subscribed to several feeds; the chip shows the WORST state so a dead

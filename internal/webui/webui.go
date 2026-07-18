@@ -94,6 +94,25 @@ func GlyphsHandler() (http.Handler, error) {
 	}), nil
 }
 
+// GlyphFontstacks lists the fontstack directories embedded under glyphs/ —
+// the stacks Wayfinder serves from the binary. The basemap glyph proxy
+// (pkg/basemap, ADR 0026) uses this to route a glyph request local-vs-upstream:
+// embedded stacks (the scope's Roboto Mono) stay local, base-map fonts are
+// proxied to the configured upstream.
+func GlyphFontstacks() ([]string, error) {
+	entries, err := fs.ReadDir(glyphsFS, "glyphs")
+	if err != nil {
+		return nil, err
+	}
+	var stacks []string
+	for _, e := range entries {
+		if e.IsDir() {
+			stacks = append(stacks, e.Name())
+		}
+	}
+	return stacks, nil
+}
+
 // fileExists reports whether name is a regular (non-directory) file in fsys.
 // Directories return false so a bare directory path falls through to the SPA
 // shell instead of triggering a file-server directory redirect/listing.
