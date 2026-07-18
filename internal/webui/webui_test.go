@@ -137,3 +137,16 @@ func TestGlyphsHandlerNotFound(t *testing.T) {
 		}
 	}
 }
+
+// TestGlyphFontstacks: the basemap glyph proxy (ADR 0026) routes requests
+// local-vs-upstream based on this list, so it must name exactly the embedded
+// fontstack directories.
+func TestGlyphFontstacks(t *testing.T) {
+	stacks, err := GlyphFontstacks()
+	if err != nil {
+		t.Fatalf("GlyphFontstacks: %v", err)
+	}
+	if len(stacks) != 1 || stacks[0] != "Roboto Mono Medium" {
+		t.Errorf("stacks = %v, want [\"Roboto Mono Medium\"]", stacks)
+	}
+}

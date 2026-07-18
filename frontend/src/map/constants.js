@@ -274,8 +274,27 @@ export const TRACK_STATE_COLORS = {
 
 // Foreground palettes per base-map theme (ASD-003 Häppchen 3a). On the dark
 // "Radar Dark Mode" base, labels are light with a dark halo so they stay
-// legible; on the bright OSM base the original dark-on-white palette is used.
+// legible; on the bright bases the original dark-on-white palette is used.
 // ASD-007: updated to align with docs/design/color-tokens.md §3.2 and §3.3.
+//
+// The bright palette is shared by the legacy OSM raster base and the official
+// basemap.de vector base (theme "bkg", ADR 0026): both are bright cartographic
+// bases that need dark foregrounds with light halos.
+const brightPalette = {
+  label: '#212121',
+  labelHalo: '#ffffff',
+  vector: '#212121',
+  trail: '#90a4ae',
+  symbolStroke: '#000000',
+  airspaceFillColor: '#1f4ea8',
+  airspaceLine: '#1f4ea8',
+  airspaceText: '#22305a',
+  airways: '#1a6a7a',
+  aeroHalo: '#ffffff',
+  rangeRing: '#3d6b82', // ASD-012: distance grid, readable on the bright base
+  selection: '#0097a7', // ASD-007: selection halo — deeper cyan for the bright base
+}
+
 export const PALETTES = {
   dark: {
     label: '#dce6f0',        // = on-surface token
@@ -291,18 +310,6 @@ export const PALETTES = {
     rangeRing: '#4a7d96', // ASD-012: subdued cyan-grey distance grid
     selection: '#23d3e6', // ASD-007: selection halo — cyan primary
   },
-  osm: {
-    label: '#212121',
-    labelHalo: '#ffffff',
-    vector: '#212121',
-    trail: '#90a4ae',
-    symbolStroke: '#000000',
-    airspaceFillColor: '#1f4ea8',
-    airspaceLine: '#1f4ea8',
-    airspaceText: '#22305a',
-    airways: '#1a6a7a',
-    aeroHalo: '#ffffff',
-    rangeRing: '#3d6b82', // ASD-012: distance grid, readable on the bright base
-    selection: '#0097a7', // ASD-007: selection halo — deeper cyan for the bright base
-  },
+  osm: brightPalette,
+  bkg: brightPalette,
 }

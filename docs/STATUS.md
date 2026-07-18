@@ -10,6 +10,49 @@
 
 ---
 
+## 🗺️ Stand 2026-07-18 (Amtliche Basiskarte BKG basemap.de — H1, Theme `bkg`; ADR 0026, FR-UI-030, ASD-016)
+
+**In normaler Sprache:** Die Basiskarte unter dem Luftlagebild kann jetzt aus
+**amtlichen, qualitätsgesicherten Daten** kommen: basemap.de Web Vektor, der
+gemeinsame Kartendienst von Bund und Ländern (BKG) — statt der bisherigen
+OSM-/CARTO-Bilder ohne QS-Zusage. Der Betreiber schaltet das mit
+`WAYFINDER_MAP_THEME=bkg` ein (Style-Wahl des Betreibers: **Farbe**). Die
+Track-Beschriftung bleibt dabei intakt: Wayfinder veredelt das BKG-Kartenrezept
+server-seitig, sodass **alle** Schriften — Städtenamen wie Callsigns — weiter
+aus Wayfinders eigener Schriftquelle kommen (ein MapLibre-Style kennt nur
+**eine** Glyph-Quelle; unveredelt eingebunden wären die Track-Labels stumm
+geblieben — genau deshalb ist die Migration mehr als ein URL-Tausch).
+
+**Fachlich/technisch:** Neues Paket `pkg/basemap` (Muster `pkg/weathertiles`):
+`/basemap/style.json` holt das Upstream-Style (`WAYFINDER_BKG_STYLE_URL`,
+Default BKG-„Farbe"), schreibt `glyphs` auf `/glyphs` um, absolutisiert
+relative Sprite-/Kachel-URLs (inkl. `{z}`-Template-Reparatur), injiziert die
+Pflicht-Attribution © basemap.de / BKG falls fehlend; Cache 12 h,
+stale-on-error, ohne Cache ehrliches 502 (`/ready` unberührt). `/glyphs` wird
+mit aktivem `bkg`-Theme zur **Weiche**: eingebettete Fontstacks (Roboto Mono)
+lokal, BKG-Kartenfonts via validiertem, größen-limitiertem Proxy (kein `..`,
+Range-Regex, `PathEscape`, 2-MiB-Limit, Cache-Bound 512). Metrik-Trio
+`wayfinder_basemap_fetch_*`/`_cache_age_seconds`. Frontend: `PALETTES.bkg` =
+helle Palette. `dark` bleibt Default (CARTO, bis H2), `osm` deprecated.
+Register: **FR-UI-030**. Gates grün (`go test ./...`, vet, gofmt,
+golangci-lint; vitest 603, `npm run build`, `dist` neu eingebettet).
+
+**Ehrliche Grenzen / offen:** (a) basemap.de endet an der Staatsgrenze —
+Auslandskontext via basemap.world ist ein Folge-Häppchen; darum wechselt H1 den
+Default nicht. (b) **Verifikation am echten BKG-Dienst steht aus** — die
+Entwicklungs-Sandbox hatte keinen Netzzugriff auf `sgx.geodatenzentrum.de`
+(Proxy-Policy); die Pipeline ist gegen einen realistisch geformten
+httptest-Upstream verifiziert. **Betreiber-Smoke-Test (H0/H1):**
+`WAYFINDER_MAP_THEME=bkg` setzen → Karte lädt, Track-Labels intakt,
+Attribution sichtbar.
+
+**Nächster Schritt:** Betreiber-Smoke-Test am echten Netz; danach Ankündigung
+**H2** (eigener dunkler Radar-Style aus den BKG-Vektorkacheln, ersetzt den
+CARTO-Dimm-Trick als `dark`-Default) bzw. **H3** (Selbst-Hosting/Air-Gap via
+BKG-Download-Paket). Wird wie üblich angekündigt (Freigabe abwarten).
+
+---
+
 ## 🧩 Stand 2026-07-16 (Verbund-Rolle dokumentiert: Serving-Hälfte der SDPS-Server-Funktion — #257, ADR 0025)
 
 **In normaler Sprache:** Rein dokumentarisches Häppchen — kein Code. Ein

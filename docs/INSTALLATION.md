@@ -798,8 +798,9 @@ Konfiguriert wird über **Umgebungsvariablen** (im `environment:`-Block der
 | `WAYFINDER_MAP_CENTER_LAT` | `50.0379` | Breitengrad des Kartenstartzentrums (Frankfurt) |
 | `WAYFINDER_MAP_CENTER_LON` | `8.5622` | Längengrad des Kartenstartzentrums |
 | `WAYFINDER_MAP_ZOOM` | `8` | Anfangs-Zoom (1–22) |
-| `WAYFINDER_MAP_THEME` | `dark` | `dark` (CARTO Dark, schlüsselfrei) oder `osm` (OpenStreetMap-Raster) |
-| `WAYFINDER_MAP_STYLE_URL` | *(leer)* | Vollständige MapLibre-Style-URL — überschreibt `WAYFINDER_MAP_THEME` |
+| `WAYFINDER_MAP_THEME` | `dark` | `dark` (CARTO Dark, schlüsselfrei), `bkg` (**amtliche basemap.de-Vektorkarte** des BKG, hell, ADR 0026) oder `osm` (OpenStreetMap-Raster, deprecated) |
+| `WAYFINDER_BKG_STYLE_URL` | BKG-„Farbe"-Style | Upstream-Style fürs `bkg`-Theme (Default: öffentliches `bm_web_col.json` des BKG); hier die Grau-Variante (`bm_web_gry.json`) oder einen self-hosted Mirror eintragen |
+| `WAYFINDER_MAP_STYLE_URL` | *(leer)* | Vollständige MapLibre-Style-URL — überschreibt `WAYFINDER_MAP_THEME`. Für basemap.de **nicht** hier eintragen, sondern `WAYFINDER_MAP_THEME=bkg` nutzen (sonst fehlen die Track-Label-Schriften, ADR 0026) |
 
 > Dieselben drei `map`-Werte lassen sich auch in `wayfinder.yaml` setzen (siehe
 > Schritt 4.3). Die Umgebungsvariable gewinnt, falls beides gesetzt ist.
@@ -1079,7 +1080,8 @@ Das Deployment-Netz muss **ausgehend** (HTTPS/443) folgende Ziele erreichen kön
 
 | Ziel | Wofür | Abschaltbar per |
 |------|-------|-----------------|
-| Karten-Tile-CDN (`tile.openstreetmap.org` bzw. `basemaps.cartocdn.com`) | Basiskarte | eigener `WAYFINDER_MAP_STYLE_URL` (self-hosted) |
+| Karten-Tile-CDN (`tile.openstreetmap.org` bzw. `basemaps.cartocdn.com`) | Basiskarte (Themes `osm`/`dark`) | eigener `WAYFINDER_MAP_STYLE_URL` (self-hosted) |
+| `sgx.geodatenzentrum.de` (BKG) | Amtliche Basiskarte (Theme `bkg`, ADR 0026): Style/Glyphs holt der **Server**, Kacheln/Sprite der **Browser** | `WAYFINDER_BKG_STYLE_URL` auf einen self-hosted Mirror zeigen lassen |
 | `maps.dwd.de` | DWD-Radar + Wetterwarnungen | `WAYFINDER_DWD_RADAR_ENABLED=false` / `_WARN_ENABLED=false` |
 | `aviationweather.gov` | QNH (NOAA-METAR) | `WAYFINDER_QNH_ENABLED=false` |
 | `api.core.openaip.net` | Luftraum/Navaids/Wegpunkte (OpenAIP) | kein globaler Schlüssel gesetzt = keine Abfrage |

@@ -24,6 +24,7 @@ import (
 	"github.com/manuelringwald/wayfinder/pkg/adminapi"
 	"github.com/manuelringwald/wayfinder/pkg/aeronautical"
 	"github.com/manuelringwald/wayfinder/pkg/auth"
+	"github.com/manuelringwald/wayfinder/pkg/basemap"
 	"github.com/manuelringwald/wayfinder/pkg/broadcast"
 	"github.com/manuelringwald/wayfinder/pkg/cat062"
 	"github.com/manuelringwald/wayfinder/pkg/cat063"
@@ -113,6 +114,19 @@ func main() {
 	)
 	if !radarEnabled {
 		logger.Warn("weather radar overlay disabled (WAYFINDER_DWD_RADAR_ENABLED=false); map will show no DWD radar")
+	}
+
+	// Official basemap.de base map (ADR 0026): server-side style fetch/rewrite +
+	// glyph proxy. Built only for the "bkg" theme (and never under an explicit
+	// custom style URL); nil otherwise — the /glyphs mount then stays
+	// embedded-only and /basemap/style.json is not mounted.
+	var basemapSvc *basemap.Service
+	if cfg.MapStyleURL == "" && cfg.MapTheme == mapThemeBKG {
+		basemapSvc = basemap.NewService(
+			&http.Client{Timeout: 15 * time.Second},
+			basemap.Config{StyleURL: cfg.BKGStyleURL},
+			logger,
+		)
 	}
 
 	// The QNH poller (WX-B / CBD-3) is built after the DB pool is open — its poll
@@ -461,7 +475,7 @@ func main() {
 	// OpenAIP fetch counters (ONB-6): sum across every per-tenant Service plus the
 	// global one so the process-wide counter stays meaningful as tenants come and go.
 	aeroCounts := func() (int64, int64) { return aeroRegistry.FetchSuccessCount(), aeroRegistry.FetchFailureCount() }
-	go startProbeServer(logger, &blockCount, &trackCount, &tracksCurrent, &heartbeatCount, broadcaster, decodeErrors, feedRegistry, aeroService, aeroCounts, weatherRadar, weatherQNH, weatherWarn, &lastError, featSvc, sessionRepo)
+	go startProbeServer(logger, &blockCount, &trackCount, &tracksCurrent, &heartbeatCount, broadcaster, decodeErrors, feedRegistry, aeroService, aeroCounts, weatherRadar, weatherQNH, weatherWarn, basemapSvc, &lastError, featSvc, sessionRepo)
 
 	// Start WebSocket server.
 	mux := http.NewServeMux()
@@ -509,7 +523,26 @@ func main() {
 		logger.Error("create glyphs handler", slog.String("error", err.Error()))
 		os.Exit(1)
 	}
-	mux.Handle("/glyphs/", glyphs)
+	// With the "bkg" theme active (ADR 0026), /basemap/style.json serves the
+	// rewritten official style and the glyph mount routes embedded fontstacks
+	// (the scope's Roboto Mono) locally while proxying the base map's fonts to
+	// the upstream recorded from the style. Otherwise /glyphs behaves exactly
+	// as before (embedded only).
+	if basemapSvc != nil {
+		mux.Handle("/basemap/style.json", basemapSvc.StyleHandler())
+		localStacks, err := webui.GlyphFontstacks()
+		if err != nil {
+			logger.Error("list embedded glyph fontstacks", slog.String("error", err.Error()))
+			os.Exit(1)
+		}
+		isLocal := make(map[string]bool, len(localStacks))
+		for _, s := range localStacks {
+			isLocal[s] = true
+		}
+		mux.Handle("/glyphs/", basemapSvc.GlyphsHandler(glyphs, func(fontstack string) bool { return isLocal[fontstack] }))
+	} else {
+		mux.Handle("/glyphs/", glyphs)
+	}
 	mux.HandleFunc("/api/map-config", mapConfigHandler(cfg))
 
 	// Aeronautical GeoJSON endpoints (/api/airspace, /api/navaids,
@@ -773,9 +806,15 @@ type Config struct {
 	MapStyleURL  string
 	// MapTheme selects the built-in base map theme when no explicit
 	// MapStyleURL is configured: "dark" (Radar Dark Mode, the controller
-	// default) or "osm" (the bright OpenStreetMap raster). `WAYFINDER_MAP_THEME`,
-	// default "dark". An explicit MapStyleURL always overrides the theme.
-	MapTheme       string
+	// default), "bkg" (official basemap.de Web Vektor bright map, ADR 0026) or
+	// "osm" (the legacy bright OpenStreetMap raster, deprecated).
+	// `WAYFINDER_MAP_THEME`, default "dark". An explicit MapStyleURL always
+	// overrides the theme.
+	MapTheme string
+	// BKGStyleURL is the upstream basemap.de style JSON used by the "bkg" theme
+	// (WAYFINDER_BKG_STYLE_URL). Defaults to the public BKG "Farbe" style; a
+	// self-hosted mirror or the grey variant can be configured here.
+	BKGStyleURL    string
 	AllowedOrigins []string
 	TLSCertFile    string
 	TLSKeyFile     string
@@ -935,10 +974,16 @@ const darkMapStyle = `{
 	]
 }`
 
-// mapThemeDark and mapThemeOSM are the recognised built-in theme names.
+// mapThemeDark, mapThemeOSM and mapThemeBKG are the recognised built-in theme
+// names. "bkg" (ADR 0026) is the official-data base map: basemap.de Web Vektor
+// (BKG/AdV vector tiles), served through /basemap/style.json so the style's
+// glyphs URL can point back at Wayfinder (single glyphs source per style; see
+// pkg/basemap). "osm" remains as the legacy bright raster fallback and is
+// deprecated in favour of "bkg".
 const (
 	mapThemeDark = "dark"
 	mapThemeOSM  = "osm"
+	mapThemeBKG  = "bkg"
 )
 
 // yamlFileConfig mirrors the structure of wayfinder.yaml. All fields are
@@ -1002,6 +1047,7 @@ func loadConfig() Config {
 		MapZoom:          8,
 		MapStyleURL:      "",
 		MapTheme:         mapThemeDark,
+		BKGStyleURL:      basemap.DefaultStyleURL,
 		LogLevel:         slog.LevelInfo,
 		FeedStaleTimeout: 3 * time.Second,
 		OpenAIPRadiusKM:  250,
@@ -1077,8 +1123,14 @@ func loadConfig() Config {
 	// Map theme: only the documented built-in names are accepted; anything else
 	// falls back to the default (FR-CFG-002: invalid config falls back rather
 	// than crashing).
-	if v := strings.ToLower(strings.TrimSpace(os.Getenv("WAYFINDER_MAP_THEME"))); v == mapThemeDark || v == mapThemeOSM {
+	if v := strings.ToLower(strings.TrimSpace(os.Getenv("WAYFINDER_MAP_THEME"))); v == mapThemeDark || v == mapThemeOSM || v == mapThemeBKG {
 		cfg.MapTheme = v
+	}
+
+	// Upstream basemap.de style for the "bkg" theme (ADR 0026); empty keeps the
+	// public BKG "Farbe" default.
+	if v := strings.TrimSpace(os.Getenv("WAYFINDER_BKG_STYLE_URL")); v != "" {
+		cfg.BKGStyleURL = v
 	}
 
 	if v := os.Getenv("WAYFINDER_ALLOWED_ORIGINS"); v != "" {
@@ -1590,6 +1642,10 @@ func mapConfigHandler(cfg Config) http.HandlerFunc {
 		// A custom style is opaque to us; report the configured theme so the
 		// operator can still steer the palette via WAYFINDER_MAP_THEME.
 		styleValue = cfg.MapStyleURL
+	case cfg.MapTheme == mapThemeBKG:
+		// ADR 0026: the official basemap.de style is served (fetched, rewritten,
+		// cached) by Wayfinder itself so its glyphs URL points back at /glyphs.
+		styleValue = "/basemap/style.json"
 	case cfg.MapTheme == mapThemeOSM:
 		styleValue = json.RawMessage(defaultMapStyle)
 	default:
@@ -1644,7 +1700,7 @@ func coverageRingsHandler(cfg Config) http.HandlerFunc {
 }
 
 // startProbeServer starts an HTTP server for health, readiness and metrics.
-func startProbeServer(logger *slog.Logger, blockCount, trackCount, tracksCurrent, heartbeatCount *atomic.Int64, broadcaster *broadcast.Broadcaster, decodeErrors func() int64, feedRegistry *health.Registry, aeroService *aeronautical.Service, aeroCounts func() (success, failure int64), weatherRadar *weathertiles.Service, weatherQNH *weather.Service, weatherWarn *weatherwarnings.Service, lastError *atomic.Pointer[string], featSvc *feature.Service, sessionRepo *store.SessionRepo) {
+func startProbeServer(logger *slog.Logger, blockCount, trackCount, tracksCurrent, heartbeatCount *atomic.Int64, broadcaster *broadcast.Broadcaster, decodeErrors func() int64, feedRegistry *health.Registry, aeroService *aeronautical.Service, aeroCounts func() (success, failure int64), weatherRadar *weathertiles.Service, weatherQNH *weather.Service, weatherWarn *weatherwarnings.Service, basemapSvc *basemap.Service, lastError *atomic.Pointer[string], featSvc *feature.Service, sessionRepo *store.SessionRepo) {
 	mux := http.NewServeMux()
 
 	// /health — liveness check (always ready unless startup failed).
@@ -1723,6 +1779,15 @@ func startProbeServer(logger *slog.Logger, blockCount, trackCount, tracksCurrent
 				metrics.Counter("wayfinder_weather_fetch_success_total", "Total successful weather-source fetches, by source.", weatherWarn.FetchSuccessCount()).With(warn),
 				metrics.Counter("wayfinder_weather_fetch_failures_total", "Total failed weather-source fetches, by source.", weatherWarn.FetchFailureCount()).With(warn),
 				metrics.Gauge("wayfinder_weather_cache_age_seconds", "Seconds since the last successful weather-source fetch, or -1 if never, by source.", weatherWarn.CacheAgeSeconds(time.Now())).With(warn),
+			)
+		}
+		// basemap.de upstream fetches (style + proxied glyphs; ADR 0026). Only
+		// emitted when the "bkg" theme is active.
+		if basemapSvc != nil {
+			mset = append(mset,
+				metrics.Counter("wayfinder_basemap_fetch_success_total", "Total successful basemap.de upstream fetches (style + glyphs).", basemapSvc.FetchSuccessCount()),
+				metrics.Counter("wayfinder_basemap_fetch_failures_total", "Total failed basemap.de upstream fetches (style + glyphs).", basemapSvc.FetchFailureCount()),
+				metrics.Gauge("wayfinder_basemap_cache_age_seconds", "Seconds since the last successful basemap.de upstream fetch, or -1 if never.", basemapSvc.CacheAgeSeconds(time.Now())),
 			)
 		}
 		// Active-session gauge (AP7): a live count from the registry at scrape time,
