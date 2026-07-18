@@ -46,6 +46,16 @@ httptest-Upstream verifiziert. **Betreiber-Smoke-Test (H0/H1):**
 `WAYFINDER_MAP_THEME=bkg` setzen → Karte lädt, Track-Labels intakt,
 Attribution sichtbar.
 
+**Nachtrag (2026-07-18, Smoke-Test ✅):** Betreiber-Smoke-Test am **echten
+BKG-Dienst** erfolgreich (Codespace, `WAYFINDER_MAP_THEME=bkg`, Screenshot
+Raum Hamburg): amtliche „Farbe"-Karte lädt vollständig (Kacheln + Sprite),
+die **Basemap-Ortsnamen rendern** — d. h. die BKG-Kartenfonts kommen
+nachweislich durch die `/glyphs`-Proxy-Weiche —, und die ASD-Overlays
+(Sektorringe, TMA/CTR, AoR, Sektor-Labels) sitzen lesbar auf der hellen
+Basis (bkg-Palette greift). Damit ist die in „Ehrliche Grenzen (b)" offene
+End-zu-End-Verifikation erbracht. Rest-Sichtprüfung (Track-Labels in Roboto
+Mono, ⓘ-Attribution) beim Betreiber angefragt, kein Befund gemeldet.
+
 **Nachtrag (2026-07-18, H1-Lücke):** Die Compose-Dateien
 (`docker-compose.orchestrated.yml`/`.onboarding.yml`) reichten
 `WAYFINDER_MAP_THEME`/`WAYFINDER_BKG_STYLE_URL` nicht in den
