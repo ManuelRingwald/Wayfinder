@@ -52,9 +52,13 @@ Raum Hamburg): amtliche „Farbe"-Karte lädt vollständig (Kacheln + Sprite),
 die **Basemap-Ortsnamen rendern** — d. h. die BKG-Kartenfonts kommen
 nachweislich durch die `/glyphs`-Proxy-Weiche —, und die ASD-Overlays
 (Sektorringe, TMA/CTR, AoR, Sektor-Labels) sitzen lesbar auf der hellen
-Basis (bkg-Palette greift). Damit ist die in „Ehrliche Grenzen (b)" offene
-End-zu-End-Verifikation erbracht. Rest-Sichtprüfung (Track-Labels in Roboto
-Mono, ⓘ-Attribution) beim Betreiber angefragt, kein Befund gemeldet.
+Basis (bkg-Palette greift). **Vollständig bestätigt** (Betreiber-Rückmeldung):
+Track-Labels rendern in **Roboto Mono**, die ⓘ-Attribution zeigt
+„© 2026 basemap.de / BKG | Datenquellen: © GeoBasis-DE" (das Upstream-Style
+bringt seinen eigenen Quellenvermerk mit — unsere Injektion bleibt reines
+Sicherheitsnetz für den Fall eines attributionslosen Styles). Damit ist die in
+„Ehrliche Grenzen (b)" offene End-zu-End-Verifikation erbracht; **H1 ist
+komplett abgenommen**.
 
 **Nachtrag (2026-07-18, H1-Lücke):** Die Compose-Dateien
 (`docker-compose.orchestrated.yml`/`.onboarding.yml`) reichten
