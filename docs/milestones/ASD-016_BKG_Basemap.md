@@ -77,16 +77,21 @@ nicht parsebare Werte bleiben unverändert. Symbol-Icons werden via
 `icon-opacity` gedimmt (numerische Werte skaliert, Expressions unangetastet).
 Frontend: `bkg-dark` teilt die dunkle Vordergrund-Palette mit `dark`.
 
-**Warum Default-Wechsel noch aussteht:** Staatsgrenzen-Abdeckung (siehe
-Ehrliche Grenzen) — erst mit basemap.world wird `bkg-dark` zum sinnvollen
-`dark`-Nachfolger.
+**Default-Wechsel:** Mit dem basemap.world-Nachtrag (Umland-Kontext, siehe
+Ehrliche Grenzen) ist die fachliche Hürde gefallen; der Wechsel des
+`WAYFINDER_MAP_THEME`-Defaults `dark` → `bkg-dark` folgt als eigener
+Mini-Schritt nach dem Betreiber-Smoke-Test des world-Styles.
 
 ## Ehrliche Grenzen
 
-- **Abdeckung endet an der Staatsgrenze.** Auslandskontext (basemap.world:
-  innerhalb D amtlich, außerhalb OSM/NaturalEarth) ist ein Folge-Häppchen; bis
-  dahin bleibt für grenzüberschreitende Sektoren `dark` der praktikable
-  Default. Deshalb wechselt H1 auch den Default **nicht**.
+- **Abdeckung endete an der Staatsgrenze — seit dem basemap.world-Nachtrag
+  gelöst:** Der Default-Style ist jetzt **basemap.world Web Vektor**
+  (`bm_web_wld_col.json`): innerhalb Deutschlands weiterhin die amtlichen
+  basemap.de-Daten (eigenes Kachel-Archiv), außerhalb ein vom BKG kuratierter
+  Weltkontext (OSM/NaturalEarth, halbjährlich aktualisiert). Ehrlich bleibt:
+  **amtlich ist nur der Deutschland-Anteil**; wer strikt nur amtliche Daten
+  will, pinnt `WAYFINDER_BKG_STYLE_URL` auf das Nur-Deutschland-Style
+  (`bm_web_col.json`).
 - **Dunkler Radar-Modus** bleibt bis H2 der CARTO-Dimm-Trick.
 - **Server braucht Netz zum BKG** (oder Mirror); Kacheln/Sprite lädt der
   Browser weiter direkt vom BKG. Vollständig internetfreier Browser-Rand = H3

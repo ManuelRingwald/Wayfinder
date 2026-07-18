@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/manuelringwald/wayfinder/pkg/basemap"
@@ -408,12 +409,18 @@ func TestMapConfigHandlerBKGTheme(t *testing.T) {
 	}
 }
 
-// TestLoadConfigBKGStyleURL: default is the public BKG "Farbe" style; the env
-// var overrides it (self-hosted mirror / grey variant).
+// TestLoadConfigBKGStyleURL: default is the public basemap.world "Farbe" style
+// (official Germany + BKG-curated world context, ADR 0026 Nachtrag); the env
+// var overrides it (Germany-only, grey variant, self-hosted mirror).
 func TestLoadConfigBKGStyleURL(t *testing.T) {
 	_ = os.Unsetenv("WAYFINDER_BKG_STYLE_URL")
 	if cfg := loadConfig(); cfg.BKGStyleURL != basemap.DefaultStyleURL {
 		t.Errorf("default BKGStyleURL = %q, want %q", cfg.BKGStyleURL, basemap.DefaultStyleURL)
+	}
+	// The default must be the world style — a Germany-only default would leave
+	// cross-border sectors with an empty void at the national border.
+	if !strings.Contains(basemap.DefaultStyleURL, "basemapworld") {
+		t.Errorf("DefaultStyleURL %q is not the basemap.world style", basemap.DefaultStyleURL)
 	}
 	t.Setenv("WAYFINDER_BKG_STYLE_URL", "https://mirror.example/style.json")
 	if cfg := loadConfig(); cfg.BKGStyleURL != "https://mirror.example/style.json" {

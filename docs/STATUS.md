@@ -10,6 +10,42 @@
 
 ---
 
+## 🌍 Stand 2026-07-18 (BKG-Basiskarte: basemap.world als Default-Quelle — Umland-Kontext; ADR 0026 Nachtrag, FR-UI-032)
+
+**In normaler Sprache:** Die amtliche Karte endete bisher hart an der
+Staatsgrenze — hinter Lübeck Richtung Ostsee war einfach Leere. Jetzt ist die
+Standard-Quelle der `bkg`/`bkg-dark`-Themes **basemap.world**: innerhalb
+Deutschlands weiterhin exakt die amtlichen basemap.de-Daten, außerhalb ein vom
+BKG kuratierter Weltkontext (aus OSM/NaturalEarth). Grenzüberschreitende
+Sektoren sehen damit ihr Umland — die letzte fachliche Hürde vor dem Wechsel
+des Standard-Themes auf den dunklen Amtsdaten-Scope ist gefallen.
+
+**Fachlich/technisch:** Reiner Default-Tausch — `pkg/basemap.DefaultStyleURL`
+zeigt auf `bm_web_wld_col.json` (zwei Kachel-Archive: amtliches DE monatlich,
+Welt halbjährlich); die schema-agnostische H1/H2-Pipeline (Glyph-Weiche,
+URL-Absolutisierung, Attribution, Dunkel-Transformation) verarbeitet den
+world-Style ohne Code-Änderung. `GermanyOnlyStyleURL` bleibt als dokumentierte
+Pin-Option für strikt-amtliche Deployments (`WAYFINDER_BKG_STYLE_URL`).
+Register: **FR-UI-032**. Ehrliche Grenze: amtlich ist nur der DE-Anteil.
+
+**Nachtrag (2026-07-18, Smoke-Test ✅):** Betreiber-Screenshot Sektor
+Niederrhein/NL (`bkg-dark`): Umland vorhanden — Nordsee-Küste, NL/BE-Landmasse
+mit Staatsgrenze, Auslandsbeschriftung gedämpft; unter den
+EHAA-/CTA-EHAM-/EHV-Overlays liegt jetzt Kontext statt Leere. Der ehrliche
+Detail-Unterschied (amtlich-fein in D, Welt-Kartografie gröber außerhalb) ist
+sichtbar und erwartungsgemäß; die Dunkel-Transformation greift auch auf den
+Welt-Kacheln. **basemap.world-Nachtrag abgenommen.**
+
+**Nächster Schritt:** **Theme-Default-Wechsel `dark` → `bkg-dark`** als
+Mini-Schritt (S1) — damit wären OSM/CARTO als direkte Kartenlieferanten
+endgültig abgelöst. Dabei Betreiber-Wunsch **#274** (BKG als
+mandanten-freigebbare Layer-Option mit Nutzer-Toggle, S4) berücksichtigen:
+der server-weite Default-Wechsel ist ggf. nur die Zwischenstufe zum
+Entitlement-Modell. Außerdem offen: ASD-Bedienbarkeits-Trio #271–#273,
+H3 Selbst-Hosting, #267 DB-Volume.
+
+---
+
 ## 🌒 Stand 2026-07-18 (BKG-Basiskarte H2: Radar-Scope-Dunkelvariante `bkg-dark`; ADR 0026 Nachtrag, FR-UI-031)
 
 **In normaler Sprache:** Der dunkle Radar-Modus konnte bisher nur ein fremdes

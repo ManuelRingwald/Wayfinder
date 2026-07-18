@@ -142,3 +142,30 @@ deterministisch und als reine Farb-Mathematik vollständig testbar.
 Staatsgrenze; für grenzüberschreitende Sektoren wäre ein Umland-loser
 Scope-Default ein Rückschritt. Der Default-Wechsel auf `bkg-dark` kommt mit dem
 basemap.world-Häppchen (Auslandskontext). Register: **FR-UI-031**.
+
+---
+
+## Nachtrag basemap.world (2026-07-18): Umland-Kontext als Default-Quelle
+
+**Entscheidung:** Der Default-Upstream-Style der `bkg`/`bkg-dark`-Themes
+wechselt von basemap.de (`bm_web_col.json`, nur Deutschland) auf
+**basemap.world Web Vektor** (`bm_web_wld_col.json`). Der Dienst kombiniert
+**zwei Kachel-Archive**: innerhalb Deutschlands das unveränderte amtliche
+basemap.de-Archiv (monatlich), außerhalb einen vom BKG kuratierten Weltkontext
+aus OSM/NaturalEarth (halbjährlich). Damit verschwindet das leere Umland an
+der Staatsgrenze — die letzte fachliche Hürde vor dem Wechsel des
+Theme-Defaults `dark` → `bkg-dark`.
+
+- **Kein Code-Umbau:** Die H1/H2-Pipeline (Glyph-Weiche, URL-Absolutisierung,
+  Attribution, Dunkel-Transformation) ist schema-agnostisch und verarbeitet
+  den world-Style unverändert; es ändert sich nur der Default von
+  `WAYFINDER_BKG_STYLE_URL`.
+- **Ehrliche Einordnung:** Amtlich ist weiterhin **nur der
+  Deutschland-Anteil**; der Auslandsteil ist kuratierte Community-/
+  NaturalEarth-Kartografie — als Orientierungshintergrund für das ASD bewusst
+  akzeptiert (die sicherheitsrelevante Information ist das CAT062-Lagebild).
+  Wer strikt amtliche Daten will, pinnt das Nur-Deutschland-Style
+  (`GermanyOnlyStyleURL`).
+- **Theme-Default-Wechsel** `dark` → `bkg-dark` folgt als eigener
+  Mini-Schritt nach dem Betreiber-Smoke-Test des world-Styles.
+  Register: **FR-UI-032**.
