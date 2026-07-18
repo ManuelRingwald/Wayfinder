@@ -277,9 +277,8 @@ export const TRACK_STATE_COLORS = {
 // legible; on the bright bases the original dark-on-white palette is used.
 // ASD-007: updated to align with docs/design/color-tokens.md §3.2 and §3.3.
 //
-// The bright palette is shared by the legacy OSM raster base and the official
-// basemap.de vector base (theme "bkg", ADR 0026): both are bright cartographic
-// bases that need dark foregrounds with light halos.
+// The bright palette backs "bkg" (ADR 0026), the bright official base map:
+// a bright cartographic base needing dark foregrounds with light halos.
 const brightPalette = {
   label: '#212121',
   labelHalo: '#ffffff',
@@ -295,9 +294,8 @@ const brightPalette = {
   selection: '#0097a7', // ASD-007: selection halo — deeper cyan for the bright base
 }
 
-// The dark palette is shared by the CARTO-based "dark" theme and the official
-// basemap.de scope variant "bkg-dark" (ADR 0026 Nachtrag / H2): both are
-// near-black bases needing light foregrounds with dark halos.
+// The dark palette backs "bkg-dark" (ADR 0026), the radar-scope default:
+// near-black base needing light foregrounds with dark halos.
 const darkPalette = {
   label: '#dce6f0',        // = on-surface token
   labelHalo: '#000000',
@@ -313,9 +311,10 @@ const darkPalette = {
   selection: '#23d3e6', // ASD-007: selection halo — cyan primary
 }
 
+// One palette per built-in theme (ADR 0026 Nachtrag Ausbau OSM/CARTO: only the
+// official BKG themes remain; the legacy "dark"/"osm" env values are aliased
+// server-side, so cfg.theme is always one of these keys).
 export const PALETTES = {
-  dark: darkPalette,
   'bkg-dark': darkPalette,
-  osm: brightPalette,
   bkg: brightPalette,
 }

@@ -82,6 +82,12 @@ func main() {
 			"OpenAIP is fetched once/on-demand and persisted, not on a periodic ticker")
 	}
 
+	if cfg.MapThemeDeprecatedInput != "" {
+		logger.Warn("WAYFINDER_MAP_THEME value is deprecated; the OSM/CARTO raster themes were removed (ADR 0026)",
+			slog.String("configured", cfg.MapThemeDeprecatedInput),
+			slog.String("using", cfg.MapTheme))
+	}
+
 	// Create broadcaster.
 	broadcaster := broadcast.New(logger)
 
@@ -116,12 +122,12 @@ func main() {
 		logger.Warn("weather radar overlay disabled (WAYFINDER_DWD_RADAR_ENABLED=false); map will show no DWD radar")
 	}
 
-	// Official basemap.de base map (ADR 0026): server-side style fetch/rewrite +
-	// glyph proxy. Built only for the "bkg" theme (and never under an explicit
-	// custom style URL); nil otherwise — the /glyphs mount then stays
-	// embedded-only and /basemap/style.json is not mounted.
+	// Official base map (ADR 0026): server-side style fetch/rewrite + glyph
+	// proxy. Both built-in themes are BKG-backed, so the service exists unless
+	// an explicit custom style URL bypasses it (then /glyphs stays
+	// embedded-only and /basemap/style.json is not mounted).
 	var basemapSvc *basemap.Service
-	if cfg.MapStyleURL == "" && (cfg.MapTheme == mapThemeBKG || cfg.MapTheme == mapThemeBKGDark) {
+	if cfg.MapStyleURL == "" {
 		basemapSvc = basemap.NewService(
 			&http.Client{Timeout: 15 * time.Second},
 			basemap.Config{StyleURL: cfg.BKGStyleURL, Dark: cfg.MapTheme == mapThemeBKGDark},
@@ -805,12 +811,16 @@ type Config struct {
 	MapZoom      float64
 	MapStyleURL  string
 	// MapTheme selects the built-in base map theme when no explicit
-	// MapStyleURL is configured: "dark" (Radar Dark Mode, the controller
-	// default), "bkg" (official basemap.de Web Vektor bright map, ADR 0026),
-	// "bkg-dark" (its radar-scope dark transform, H2) or "osm" (the legacy
-	// bright OpenStreetMap raster, deprecated). `WAYFINDER_MAP_THEME`, default
-	// "dark". An explicit MapStyleURL always overrides the theme.
+	// MapStyleURL is configured: "bkg-dark" (radar-scope dark on official
+	// basemap.de/basemap.world data — the controller default) or "bkg" (the
+	// bright variant). `WAYFINDER_MAP_THEME`; the legacy names "dark"/"osm"
+	// are accepted as deprecated aliases (ADR 0026 Nachtrag Ausbau OSM/CARTO).
+	// An explicit MapStyleURL always overrides the theme.
 	MapTheme string
+	// MapThemeDeprecatedInput records a legacy WAYFINDER_MAP_THEME value
+	// ("dark"/"osm") that was aliased, so main can log a deprecation warning
+	// once the logger exists (loadConfig runs before logger setup).
+	MapThemeDeprecatedInput string
 	// BKGStyleURL is the upstream basemap.de style JSON used by the "bkg" theme
 	// (WAYFINDER_BKG_STYLE_URL). Defaults to the public BKG "Farbe" style; a
 	// self-hosted mirror or the grey variant can be configured here.
@@ -926,70 +936,20 @@ func (c Config) authConfig(sessions auth.SessionResolver) auth.Config {
 	}
 }
 
-// defaultMapStyle is a minimal MapLibre style using OpenStreetMap raster
-// tiles. It needs no API key, which keeps the demo self-contained. The "glyphs"
-// endpoint is served BY WAYFINDER ITSELF (/glyphs/…, webui.GlyphsHandler,
-// embedded Roboto Mono PBFs) — a symbol layer with a text-field draws nothing
-// without a font source, and self-hosting keeps the scope font off any runtime
-// CDN (air-gap; ADR 0015). The raster tiles are still external; a fully
-// air-gapped deployment self-hosts those too via WAYFINDER_MAP_STYLE_URL.
-const defaultMapStyle = `{
-	"version": 8,
-	"glyphs": "/glyphs/{fontstack}/{range}.pbf",
-	"sources": {
-		"osm": {
-			"type": "raster",
-			"tiles": ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
-			"tileSize": 256,
-			"attribution": "© OpenStreetMap contributors"
-		}
-	},
-	"layers": [{"id": "osm", "type": "raster", "source": "osm"}]
-}`
-
-// darkMapStyle is the "Radar Dark Mode" base: a low-contrast CARTO dark raster
-// (no labels), dimmed (raster-opacity 0.4) over a near-black background so the
-// scope backdrop shows through while coastlines/borders remain as faint
-// geographic context. Like OSM it needs no API key, which keeps the demo
-// self-contained. The dimmed, label-free base lets the track symbols and
-// aeronautical overlays dominate, the way a controller's radar scope does.
-// Background is the near-black --wf-background (#070b12) per ADR 0015
-// Nachtrag-2 (design-template authoritative); ASD-003 Häppchen 3a. The raster
-// stays (real geographic context is a deliberate product choice — the pure
-// synthetic scope in the design export is a standalone-demo artefact).
-const darkMapStyle = `{
-	"version": 8,
-	"glyphs": "/glyphs/{fontstack}/{range}.pbf",
-	"sources": {
-		"carto-dark": {
-			"type": "raster",
-			"tiles": ["https://basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}.png"],
-			"tileSize": 256,
-			"attribution": "© OpenStreetMap contributors © CARTO"
-		}
-	},
-	"layers": [
-		{"id": "background", "type": "background", "paint": {"background-color": "#070b12"}},
-		{"id": "carto-dark", "type": "raster", "source": "carto-dark", "paint": {"raster-opacity": 0.4}}
-	]
-}`
-
-// mapThemeDark, mapThemeOSM and mapThemeBKG are the recognised built-in theme
-// names. "bkg" (ADR 0026) is the official-data base map: basemap.de Web Vektor
-// (BKG/AdV vector tiles), served through /basemap/style.json so the style's
-// glyphs URL can point back at Wayfinder (single glyphs source per style; see
-// pkg/basemap). "osm" remains as the legacy bright raster fallback and is
-// deprecated in favour of "bkg".
+// mapThemeBKG and mapThemeBKGDark are the built-in base-map themes (ADR 0026,
+// Nachtrag "Ausbau OSM/CARTO"): both serve the official basemap.de /
+// basemap.world data through /basemap/style.json (pkg/basemap) — "bkg" bright,
+// "bkg-dark" the radar-scope dark transform and the DEFAULT. The former raster
+// themes "dark" (CARTO) and "osm" (OpenStreetMap) are removed together with
+// their inline styles; the names remain accepted as deprecated ALIASES
+// (dark → bkg-dark, osm → bkg) so existing configurations keep working, with a
+// startup warning pointing at the new names.
 const (
-	mapThemeDark = "dark"
-	mapThemeOSM  = "osm"
-	mapThemeBKG  = "bkg"
-	// mapThemeBKGDark (ADR 0026 Nachtrag / H2): the radar-scope dark variant of
-	// the official base map — the same basemap.de tiles, recoloured server-side
-	// (pkg/basemap scope transform). Deliberately NOT yet the "dark" default:
-	// basemap.de ends at the national border, so cross-border sectors keep the
-	// CARTO-based "dark" until basemap.world provides surrounding context.
+	mapThemeBKG     = "bkg"
 	mapThemeBKGDark = "bkg-dark"
+
+	legacyThemeDark = "dark"
+	legacyThemeOSM  = "osm"
 )
 
 // yamlFileConfig mirrors the structure of wayfinder.yaml. All fields are
@@ -1052,7 +1012,7 @@ func loadConfig() Config {
 		MapCenterLon:     8.5622,
 		MapZoom:          8,
 		MapStyleURL:      "",
-		MapTheme:         mapThemeDark,
+		MapTheme:         mapThemeBKGDark,
 		BKGStyleURL:      basemap.DefaultStyleURL,
 		LogLevel:         slog.LevelInfo,
 		FeedStaleTimeout: 3 * time.Second,
@@ -1129,8 +1089,15 @@ func loadConfig() Config {
 	// Map theme: only the documented built-in names are accepted; anything else
 	// falls back to the default (FR-CFG-002: invalid config falls back rather
 	// than crashing).
-	if v := strings.ToLower(strings.TrimSpace(os.Getenv("WAYFINDER_MAP_THEME"))); v == mapThemeDark || v == mapThemeOSM || v == mapThemeBKG || v == mapThemeBKGDark {
+	switch v := strings.ToLower(strings.TrimSpace(os.Getenv("WAYFINDER_MAP_THEME"))); v {
+	case mapThemeBKG, mapThemeBKGDark:
 		cfg.MapTheme = v
+	case legacyThemeDark: // deprecated alias (ADR 0026 Nachtrag Ausbau OSM/CARTO)
+		cfg.MapTheme = mapThemeBKGDark
+		cfg.MapThemeDeprecatedInput = v
+	case legacyThemeOSM: // deprecated alias
+		cfg.MapTheme = mapThemeBKG
+		cfg.MapThemeDeprecatedInput = v
 	}
 
 	// Upstream basemap.de style for the "bkg" theme (ADR 0026); empty keeps the
@@ -1636,28 +1603,22 @@ func parseLogLevel(v string) (slog.Level, error) {
 }
 
 // mapConfigHandler serves the map center/zoom/style/theme as JSON for the
-// frontend. The style is chosen as follows: an explicit WAYFINDER_MAP_STYLE_URL
-// always wins; otherwise the built-in theme decides ("osm" → bright OSM raster,
-// "dark" → Radar Dark Mode). The reported `theme` lets the frontend pick a
-// matching foreground palette (light labels on the dark base, dark on OSM).
+// frontend. An explicit WAYFINDER_MAP_STYLE_URL always wins; otherwise the
+// official base map is served through Wayfinder's own /basemap/style.json
+// (fetched, rewritten, cached — dark-transformed for bkg-dark; ADR 0026). The
+// reported `theme` lets the frontend pick a matching foreground palette.
 func mapConfigHandler(cfg Config) http.HandlerFunc {
 	var styleValue any
 	theme := cfg.MapTheme
-	switch {
-	case cfg.MapStyleURL != "":
+	if theme == "" {
+		theme = mapThemeBKGDark // zero-value Config (tests); loadConfig always sets it
+	}
+	if cfg.MapStyleURL != "" {
 		// A custom style is opaque to us; report the configured theme so the
 		// operator can still steer the palette via WAYFINDER_MAP_THEME.
 		styleValue = cfg.MapStyleURL
-	case cfg.MapTheme == mapThemeBKG, cfg.MapTheme == mapThemeBKGDark:
-		// ADR 0026: the official basemap.de style is served (fetched, rewritten,
-		// cached — dark-transformed for bkg-dark) by Wayfinder itself so its
-		// glyphs URL points back at /glyphs.
+	} else {
 		styleValue = "/basemap/style.json"
-	case cfg.MapTheme == mapThemeOSM:
-		styleValue = json.RawMessage(defaultMapStyle)
-	default:
-		styleValue = json.RawMessage(darkMapStyle)
-		theme = mapThemeDark
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {

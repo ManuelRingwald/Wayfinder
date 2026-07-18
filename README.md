@@ -110,7 +110,7 @@ cmd/wayfinder   main: verdrahtet Receiver → Broadcaster → WebSocket + Fronte
 | `FIREFLY_CAT062_PORT` | `8600` | Multicast-Port des CAT062-Feeds |
 | `WAYFINDER_MAP_CENTER_LAT` / `_LON` | Frankfurt (50.0379 / 8.5622) | Karten-Mittelpunkt |
 | `WAYFINDER_MAP_ZOOM` | `8` | Karten-Zoomstufe |
-| `WAYFINDER_MAP_THEME` | `dark` | `dark`, `bkg` / `bkg-dark` (amtliche basemap.de-Karte hell/dunkel, ADR 0026) oder `osm` (deprecated) |
+| `WAYFINDER_MAP_THEME` | `bkg-dark` | `bkg-dark` (amtlicher Radar-Scope, Default) oder `bkg` (hell); `dark`/`osm` sind ausgebaute Alt-Themes und wirken nur noch als Alias (ADR 0026) |
 | `WAYFINDER_MAP_STYLE_URL` | (eingebautes Theme) | eigener MapLibre-Style (überschreibt das Theme) |
 
 `/health` und `/ready` laufen fest auf Port `8080`, der WebSocket-/Frontend-Server

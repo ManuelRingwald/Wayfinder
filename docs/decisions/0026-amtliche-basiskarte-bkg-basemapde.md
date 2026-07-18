@@ -169,3 +169,27 @@ Theme-Defaults `dark` → `bkg-dark`.
 - **Theme-Default-Wechsel** `dark` → `bkg-dark` folgt als eigener
   Mini-Schritt nach dem Betreiber-Smoke-Test des world-Styles.
   Register: **FR-UI-032**.
+
+---
+
+## Nachtrag Ausbau OSM/CARTO (2026-07-18): `bkg-dark` ist der Default, Alt-Themes entfernt
+
+**Entscheidung (Betreiber-Vorgabe: „sauber ausbauen, nichts Altes übrig
+lassen"):** Nach bestandenem basemap.world-Smoke-Test wird **`bkg-dark` der
+Theme-Default**, und die beiden Alt-Basiskarten werden **vollständig
+ausgebaut** — der eingebaute OSM-Raster-Style (`tile.openstreetmap.org`) und
+der CARTO-Dunkel-Raster (`basemaps.cartocdn.com`, der „Dimm-Trick" aus
+ASD-003a) fliegen samt Inline-Style-Konstanten aus dem Code. Wayfinder
+kontaktiert damit **keine OSM-/CARTO-CDNs mehr**; einzige Karten-Quelle ist
+der BKG-Dienst (bzw. ein Mirror).
+
+- **Migrations-Freundlichkeit statt Bruch:** Die Env-Werte `dark` und `osm`
+  bleiben als **deprecatete Aliase** akzeptiert (`dark` → `bkg-dark`,
+  `osm` → `bkg`) und erzeugen eine Startup-Warnung — bestehende Deployments
+  starten unverändert, nur eben auf den amtlichen Karten. Unbekannte Werte
+  fallen wie bisher auf den Default (FR-CFG-002).
+- **Frontend:** Paletten-Vokabular auf `bkg`/`bkg-dark` reduziert (Server
+  liefert nach Aliasing nur noch diese Themes).
+- **Audit-Spur:** Historische ADRs/Milestones (ASD-003a Radar Dark Mode,
+  ADR 0015-Bezüge) bleiben unverändert stehen — bereinigt ist die *aktuelle*
+  Doku (README/INSTALLATION/TECHNICAL). Register: **FR-UI-033**.

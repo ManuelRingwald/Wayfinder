@@ -28,21 +28,59 @@ world-Style ohne Code-Änderung. `GermanyOnlyStyleURL` bleibt als dokumentierte
 Pin-Option für strikt-amtliche Deployments (`WAYFINDER_BKG_STYLE_URL`).
 Register: **FR-UI-032**. Ehrliche Grenze: amtlich ist nur der DE-Anteil.
 
-**Nachtrag (2026-07-18, Smoke-Test ✅):** Betreiber-Screenshot Sektor
-Niederrhein/NL (`bkg-dark`): Umland vorhanden — Nordsee-Küste, NL/BE-Landmasse
-mit Staatsgrenze, Auslandsbeschriftung gedämpft; unter den
-EHAA-/CTA-EHAM-/EHV-Overlays liegt jetzt Kontext statt Leere. Der ehrliche
-Detail-Unterschied (amtlich-fein in D, Welt-Kartografie gröber außerhalb) ist
-sichtbar und erwartungsgemäß; die Dunkel-Transformation greift auch auf den
-Welt-Kacheln. **basemap.world-Nachtrag abgenommen.**
+**Nachtrag (2026-07-18, Korrektur):** Ein zwischenzeitlich hier verbuchter
+„Smoke-Test bestanden"-Vermerk war **falsch** und ist zurückgenommen. Der
+Betreiber-Screenshot (Sektor Niederrhein/NL, `bkg-dark`) zeigte den **alten**
+Nur-Deutschland-Stand: Links der Grenze liegt Leere; die sichtbaren Umrisse
+über NL sind Wayfinders eigene Luftraum-Overlays (EHAA/CTA-EHAM/EHV), keine
+Welt-Kacheln — der Test-Build stammte von `main` **vor** dem Merge dieses
+Nachtrags und konnte die world-Default-URL gar nicht enthalten (vom Betreiber
+erkannt, 2026-07-18).
 
-**Nächster Schritt:** **Theme-Default-Wechsel `dark` → `bkg-dark`** als
-Mini-Schritt (S1) — damit wären OSM/CARTO als direkte Kartenlieferanten
-endgültig abgelöst. Dabei Betreiber-Wunsch **#274** (BKG als
-mandanten-freigebbare Layer-Option mit Nutzer-Toggle, S4) berücksichtigen:
-der server-weite Default-Wechsel ist ggf. nur die Zwischenstufe zum
-Entitlement-Modell. Außerdem offen: ASD-Bedienbarkeits-Trio #271–#273,
-H3 Selbst-Hosting, #267 DB-Volume.
+**Nachtrag (2026-07-18, Smoke-Test jetzt wirklich ✅):** Nach Merge von
+PR #270 + Rebuild bestätigt der Betreiber am laufenden System: links der
+deutschen Grenze erscheint NL/BE-Kartografie statt Schwarz — der
+world-Kontext greift, Dunkel-Transformation inklusive. (Zwischenzeitliche
+Verwirrung war reiner **Browser-Cache** auf dem localhost-Origin des
+`gh`-Tunnels; Hard-Reload löste es. Lehre aus der Fehl-Abnahme davor bleibt:
+**vor jedem Abnahme-Vermerk Versions-Verifikation am laufenden System**.)
+**basemap.world ist abgenommen.**
+
+**Nächster Schritt:** Richtungs-Entscheid des Betreibers: **(a)**
+Theme-Default-Wechsel `dark` → `bkg-dark` (S1, server-weit — schneller
+Schlussstein, OSM/CARTO ab Werk abgelöst) und #274 später obendrauf, oder
+**(b)** direkt das **#274-Entitlement-Modell** (BKG als mandanten-freigebbare
+Layer-Option mit Nutzer-Toggle, S4) ohne die Zwischenstufe. Außerdem offen:
+ASD-Bedienbarkeits-Trio #271–#273, H3 Selbst-Hosting, #267 DB-Volume.
+
+---
+
+## 🏁 Stand 2026-07-18 (Ausbau OSM/CARTO — `bkg-dark` ist der Default; ADR 0026 Nachtrag, FR-UI-033)
+
+**In normaler Sprache:** Der Betreiber hat Richtung **(a) mit Verschärfung**
+entschieden: nicht nur Default-Wechsel, sondern **sauberer Ausbau** der alten
+Karten. Die OSM- und CARTO-Raster-Basiskarten sind komplett aus dem Code
+entfernt — Wayfinder startet ab Werk mit dem **dunklen amtlichen Radar-Scope**
+(`bkg-dark`, inkl. Umland via basemap.world) und kontaktiert **keine
+OSM-/CARTO-Server mehr**. Wer die alten Theme-Namen (`dark`/`osm`) noch in
+seiner Konfiguration hat, bekommt automatisch die passende BKG-Variante plus
+eine Hinweis-Warnung im Log — nichts bricht.
+
+**Fachlich/technisch:** `defaultMapStyle`/`darkMapStyle` (Inline-Raster-Styles)
+ersatzlos entfernt; Theme-Vokabular `bkg`/`bkg-dark` (Default `bkg-dark`),
+Legacy-Aliase `dark`→`bkg-dark` / `osm`→`bkg` mit
+`MapThemeDeprecatedInput`-Startup-Warnung; map-config liefert ohne
+Custom-Style-URL immer `/basemap/style.json`; basemap-Service läuft immer
+(außer Custom-Style). Frontend-Paletten auf `bkg`/`bkg-dark` reduziert,
+Compose-Defaults nachgezogen. Historische ADRs/Milestones (ASD-003a etc.)
+bleiben als Audit-Spur; aktuelle Doku (README/INSTALLATION/TECHNICAL)
+bereinigt. Register: **FR-UI-033**. Gates grün (go test/vet/gofmt,
+golangci-lint, vitest 603, `npm run build`, dist neu).
+
+**Nächster Schritt:** Betreiber-Kurztest (ohne gesetzte Env muss ab jetzt der
+dunkle Amtsdaten-Scope erscheinen). Danach offen: #274 (BKG als
+Layer-Option/Entitlement, S4 — Design-Ankündigung nötig),
+ASD-Bedienbarkeits-Trio #271–#273, H3 Selbst-Hosting, #267 DB-Volume.
 
 ---
 
