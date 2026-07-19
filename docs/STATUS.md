@@ -77,10 +77,15 @@ bleiben als Audit-Spur; aktuelle Doku (README/INSTALLATION/TECHNICAL)
 bereinigt. Register: **FR-UI-033**. Gates grün (go test/vet/gofmt,
 golangci-lint, vitest 603, `npm run build`, dist neu).
 
-**Nächster Schritt:** Betreiber-Kurztest (ohne gesetzte Env muss ab jetzt der
-dunkle Amtsdaten-Scope erscheinen). Danach offen: #274 (BKG als
-Layer-Option/Entitlement, S4 — Design-Ankündigung nötig),
-ASD-Bedienbarkeits-Trio #271–#273, H3 Selbst-Hosting, #267 DB-Volume.
+**Nachtrag (2026-07-18, Ab-Werk-Test ✅):** Betreiber-Bestätigung nach Merge
++ Rebuild ohne gesetzte Theme-Env: der dunkle Amtsdaten-Scope (`bkg-dark`)
+erscheint ab Werk. **Die BKG-Migration (ADR 0026, H1/H2/basemap.world/Ausbau
+OSM-CARTO) ist damit vollständig abgeschlossen und abgenommen.**
+
+**Nächster Schritt:** offen — Kandidaten: ASD-Bedienbarkeits-Trio #271–#273,
+#274 (BKG als Layer-Option/Entitlement, S4 — Design-Ankündigung nötig),
+H3 Selbst-Hosting, #267 DB-Volume. Wird wie üblich angekündigt
+(Freigabe abwarten).
 
 ---
 
