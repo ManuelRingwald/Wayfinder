@@ -29,7 +29,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useDisplay } from 'vuetify'
 
 defineEmits(['recenter'])
@@ -40,17 +40,28 @@ const { md } = useDisplay()
 const tabletLandscape = md
 const isFullscreen = ref(false)
 
+// ASD-018 follow-up: the `fullscreenchange` event is the single source of truth
+// for the icon state — the browser fires it on EVERY entry/exit, including the
+// ones the button never sees (ESC key, F11, the browser's own exit chrome).
+// Deriving the ref from the event (rather than setting it in the click handler)
+// keeps the icon correct in all of those cases; the old handler only flipped it
+// on its own promise, so an ESC exit left the icon stuck on "exit fullscreen".
+function syncFullscreen() {
+  isFullscreen.value = !!document.fullscreenElement
+}
+
 function toggleFullscreen() {
   if (!document.fullscreenElement) {
-    document.documentElement.requestFullscreen().then(() => {
-      isFullscreen.value = true
-    })
+    // requestFullscreen rejects if the browser blocks it (e.g. no user gesture);
+    // swallow it so there is no unhandled rejection. syncFullscreen keeps state.
+    document.documentElement.requestFullscreen().catch(() => {})
   } else {
-    document.exitFullscreen().then(() => {
-      isFullscreen.value = false
-    })
+    document.exitFullscreen().catch(() => {})
   }
 }
+
+onMounted(() => document.addEventListener('fullscreenchange', syncFullscreen))
+onBeforeUnmount(() => document.removeEventListener('fullscreenchange', syncFullscreen))
 </script>
 
 <style scoped>

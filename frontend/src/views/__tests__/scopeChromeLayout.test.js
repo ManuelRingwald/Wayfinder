@@ -52,4 +52,14 @@ describe('ASD-018 overlay-zone layout (ADR 0029)', () => {
     expect(mapControls).toContain("import ViewportControls from './ViewportControls.vue'")
     expect(mapControls).toMatch(/<ViewportControls\s+@recenter="\$emit\('recenter'\)"/)
   })
+
+  it('the fullscreen icon state derives from the fullscreenchange event (ESC-safe)', () => {
+    // ASD-018 follow-up: the browser fires fullscreenchange on EVERY exit —
+    // including ESC/F11 the button never sees. Deriving isFullscreen from the
+    // event (not the click handler's promise) keeps the icon correct. Without
+    // the listener an ESC exit left the icon stuck on "exit fullscreen".
+    expect(viewportControls).toContain("addEventListener('fullscreenchange'")
+    expect(viewportControls).toContain("removeEventListener('fullscreenchange'")
+    expect(viewportControls).toMatch(/isFullscreen\.value\s*=\s*!!document\.fullscreenElement/)
+  })
 })
