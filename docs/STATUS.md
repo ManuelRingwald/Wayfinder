@@ -10,6 +10,27 @@
 
 ---
 
+## 📘 Stand 2026-07-19 (INSTALLATION.md nachgezogen: BKG-Theme in den Beispiel-Composes + Karte/Suche einschalten — Doku-Currency, Opus 4.8)
+
+**In normaler Sprache:** Betreiber-Befund bei der Mac-mini-Umzugsplanung: Die
+Beispiel-Compose-Dateien in `INSTALLATION.md` setzten `WAYFINDER_MAP_THEME`
+nicht, und der Einrichtungs-Walkthrough erklärte nirgends, dass die Karte per
+Default aus ist (synthetischer Scope, #274) — wer der Anleitung folgte, sah am
+Ende einen schwarzen Scope und wunderte sich. Die Env-Referenz-Tabellen waren
+zwar aktuell, die Beispiele + der Walkthrough aber veraltet. Nachgezogen:
+(a) `WAYFINDER_MAP_THEME`/`WAYFINDER_BKG_STYLE_URL` in **beide** Beispiel-
+Composes (Schritt 4.A + 4.2) aufgenommen; (b) neuer **Schritt 4.10a**
+„Basiskarte (BKG) + Sektor-Suche einschalten" (Feature `basemap` freigeben →
+Layer togglen → Suche nutzen); (c) zwei Fehlersuch-Zeilen („Scope schwarz",
+„Such-Icon fehlt"). Klargestellt außerdem: `docker-compose.orchestrated.yml`
+lässt sich **nicht** auf den Mac verschieben (Host-Networking + Auto-Spawn +
+repo-relative Build-Kontexte) — der portable Weg ist das Bridge-Master-Compose.
+
+**Nächster Schritt:** Keiner offen aus diesem Doku-Schritt; der Betreiber
+richtet den Mac-mini-Stack nach der aktualisierten Anleitung ein.
+
+---
+
 ## 🔍 Stand 2026-07-19 (Sektor-Suche: nur bei aktivem BKG-Layer + aufklappbares Icon — Nachtrag 3 zu FR-UI-037, Opus 4.8)
 
 **In normaler Sprache:** Zwei Bedien-Wünsche des Betreibers, damit der Scope
