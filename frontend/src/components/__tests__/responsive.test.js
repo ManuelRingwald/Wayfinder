@@ -9,6 +9,7 @@ import bottomNav from '../BottomNav.vue?raw'
 import asdView from '../../views/AsdView.vue?raw'
 import adminView from '../../views/AdminView.vue?raw'
 import mapControls from '../MapControls.vue?raw'
+import viewportControls from '../ViewportControls.vue?raw'
 import trackDetail from '../TrackDetailPanel.vue?raw'
 import scopeLegend from '../ScopeLegend.vue?raw'
 import navigationRail from '../NavigationRail.vue?raw'
@@ -63,8 +64,11 @@ describe('AsdView mobile branch (#194)', () => {
 
 describe('fluid overlays + mobile controls (#194)', () => {
   it('MapControls sits above the bottom nav on mobile', () => {
-    expect(mapControls).toContain('map-controls--mobile')
+    // ASD-018: MapControls is now mobile-only (MapCanvas renders it just for
+    // !mdAndUp), so the bottom-right placement is the default .map-controls —
+    // no separate --mobile modifier vs a desktop variant any more.
     expect(mapControls).toContain('var(--wf-bottom-nav-h')
+    expect(mapControls).toMatch(/\.map-controls\s*\{[\s\S]*?bottom: calc\(12px \+ var\(--wf-bottom-nav-h/)
   })
   it('the track-detail card and scope legend use fluid, token-driven widths', () => {
     // #194 Häppchen 3: the base width is a token (so it grows a step on 24″),
@@ -131,10 +135,12 @@ describe('iPad / tablet-landscape rail (#194 Häppchen 2)', () => {
     expect(trackDetail).not.toContain('left: calc(var(--wf-nav-rail-width')
     expect(trackDetail).not.toMatch(/left:\s*68px;/)
   })
-  it('MapControls buttons reach a 44px target on the md band', () => {
-    expect(mapControls).toContain("'map-controls--touch': tabletLandscape")
-    expect(mapControls).toContain('.map-controls--touch .map-controls__group :deep(.v-btn)')
-    expect(mapControls).toContain('var(--wf-touch-min, 44px)')
+  it('viewport control buttons reach a 44px target on the md band', () => {
+    // ASD-018: the touch-target sizing moved with the recenter/fullscreen buttons
+    // into the shared ViewportControls component.
+    expect(viewportControls).toContain("'viewport-controls--touch': tabletLandscape")
+    expect(viewportControls).toContain('.viewport-controls--touch :deep(.v-btn)')
+    expect(viewportControls).toContain('var(--wf-touch-min, 44px)')
   })
 })
 

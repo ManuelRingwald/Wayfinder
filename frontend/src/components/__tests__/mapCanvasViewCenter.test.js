@@ -7,7 +7,7 @@
 import { describe, it, expect } from 'vitest'
 import sfc from '../MapCanvas.vue?raw'
 import engine from '../../map/engine.js?raw'
-import mapControls from '../MapControls.vue?raw'
+import viewportControls from '../ViewportControls.vue?raw'
 
 describe('recenter restores the full start view (#169)', () => {
   it('recenter resets bearing and pitch, not just centre + zoom', () => {
@@ -15,8 +15,9 @@ describe('recenter restores the full start view (#169)', () => {
   })
 
   it('the control is relabelled "Ansicht zurücksetzen" (no longer "Zentrum")', () => {
-    expect(mapControls).toContain('Ansicht zurücksetzen')
-    expect(mapControls).not.toContain('text="Zentrum"')
+    // ASD-018: the recenter button (with its label) moved into ViewportControls.
+    expect(viewportControls).toContain('Ansicht zurücksetzen')
+    expect(viewportControls).not.toContain('text="Zentrum"')
   })
 })
 

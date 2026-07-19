@@ -41,11 +41,13 @@ describe('zoom delegation is wired end to end', () => {
   // #194: the rail hosts zoom on desktop; on phones/tablet-portrait the rail is
   // not rendered, so MapControls carries zoom (gated to !mdAndUp) and MapCanvas
   // wires it to the engine — the rail path stays intact for desktop.
-  it('MapControls hosts zoom on mobile only (gated by !mdAndUp)', () => {
+  it('MapControls hosts zoom on mobile only (gated by !mdAndUp in MapCanvas)', () => {
     expect(mapControls).toContain("defineEmits(['recenter', 'zoom-in', 'zoom-out'])")
-    expect(mapControls).toContain('useDisplay')
-    expect(mapControls).toContain("v-if=\"!mdAndUp\"")
     expect(mapControls).toContain("$emit('zoom-in')")
+    // ASD-018: the mobile gate moved to MapCanvas — it renders MapControls only
+    // for !mdAndUp; on desktop the viewport controls live in AsdView's rail.
+    expect(mapCanvas).toContain('useDisplay')
+    expect(mapCanvas).toMatch(/<MapControls\s+v-if="!mdAndUp"/)
   })
 
   it('MapCanvas exposes zoomIn/zoomOut and wires both the rail and the map controls', () => {
