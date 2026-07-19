@@ -96,10 +96,21 @@ beim BKG-DLZ zu klären; Paket-Verifikation betreiberseitig offen
 Orts-/Straßensuche wäre über den amtlichen BKG-Geokodierungsdienst machbar
 (Lizenzfrage!), nicht über die Kacheln selbst.
 
-**Nächster Schritt:** offen — Kandidaten: ASD-Bedienbarkeits-Trio #271–#273,
-#274 (BKG als Layer-Option/Entitlement, S4 — Design-Ankündigung nötig),
-#267 DB-Volume, #277 (Suche, nach Lizenz-Klärung). Wird wie üblich
-angekündigt (Freigabe abwarten).
+**Nachtrag (2026-07-18, #267 DB-Volume ✅ — FR-CFG-005):** Der `db`-Dienst in
+`docker-compose.orchestrated.yml` nutzt jetzt das benannte Volume
+`wayfinder-db` — Mandanten/Nutzer/Feeds/Abos überleben Container-Neuanlegen;
+Reset nur noch bewusst via `docker volume rm`. Befund-Korrektur: die
+onboarding-Compose **hatte bereits** ein Volume (Issue-Annahme „beide Dateien"
+war halb falsch); Volume-Name konsistent übernommen. Ehrlicher
+Umstiegs-Preis (einmaliger Verlust des volume-losen Bestands) in INSTALLATION
+dokumentiert. Nebenbei geklärt: #277 hat durch die Betreiber-Idee
+„AOI-begrenzter Sektor-Suchindex aus den Kacheln" (Kandidat D) einen
+lizenzfreien, Air-Gap-tauglichen Vorzugsweg (S4, Kommentar im Issue).
+
+**Nächster Schritt:** offen — Kandidaten: ASD-Bedienbarkeits-Trio #271–#273
+(Ankündigung liegt vor), #274 (Layer-Option/Entitlement, S4 —
+Design-Ankündigung nötig), #277 (Sektor-Suche, S4 — Design-Ankündigung
+nötig). Wird wie üblich angekündigt (Freigabe abwarten).
 
 ---
 
