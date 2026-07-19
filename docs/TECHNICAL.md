@@ -610,6 +610,7 @@ Keys werden fail-closed verweigert und über den `unknown_key`-Zähler sichtbar.
 | `weather_warnings` | DWD-Wetterwarnungen-Overlay — WX-C (ADR 0016) | deny |
 | `airport` | Flughafen-Referenzpunkt-Marker-Overlay (#192) | deny |
 | `runways` | Runway-Mittellinien-Overlay (#192) | deny |
+| `basemap` | Amtliche BKG-Basiskarte als zuschaltbares Layer (#274, ADR 0027): ohne Freigabe läuft der Scope rein synthetisch; mit Freigabe Nutzer-Toggle in der Sidebar, Default aus. Reine Anzeige-Option (öffentliche Kartendaten — kein server-seitiger Daten-Rand) | deny |
 
 **Reservierte Keys (#175):** `stca` und `premium_layers` sind katalogisiert, haben
 aber **keinen Verbraucher** (Ein-/Ausschalten ist ein No-Op). Sie bleiben im Katalog

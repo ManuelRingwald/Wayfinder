@@ -21,8 +21,8 @@ func TestIsKnown(t *testing.T) {
 
 func TestAllSortedAndComplete(t *testing.T) {
 	all := All()
-	if len(all) != 13 {
-		t.Fatalf("All() len = %d, want 13", len(all))
+	if len(all) != 14 {
+		t.Fatalf("All() len = %d, want 14", len(all))
 	}
 	if !sort.SliceIsSorted(all, func(i, j int) bool { return all[i] < all[j] }) {
 		t.Errorf("All() not sorted: %v", all)

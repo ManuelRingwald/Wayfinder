@@ -37,6 +37,12 @@ const (
 	Airport Key = "airport"
 	// Runways — runway centreline overlay (#192, offline OurAirports).
 	Runways Key = "runways"
+	// Basemap — the official BKG base map as a switchable layer (#274). Without
+	// the grant the scope runs purely synthetic (near-black + overlays); with it
+	// the user may enable the map in the layer sidebar (default off). Display
+	// option only — the map data itself is public, so there is no server-side
+	// data edge to enforce.
+	Basemap Key = "basemap"
 )
 
 // entry is a catalog record for one feature: a short human-readable label (the
@@ -87,6 +93,7 @@ var catalog = map[Key]entry{
 	WeatherWarnings: {Label: "Wetterwarnungen (DWD)", Description: "Amtliche Wetterwarnungen des Deutschen Wetterdienstes als Kartenoverlay."},
 	Airport:         {Label: "Flughäfen", Description: "Blendet Flughäfen als Referenzpunkt-Marker mit Namen ein."},
 	Runways:         {Label: "Runways", Description: "Blendet die Start-/Landebahnen der Flughäfen als Mittellinien ein."},
+	Basemap:         {Label: "Basiskarte (BKG)", Description: "Amtliche basemap.de-Hintergrundkarte als zuschaltbares Layer; ohne Freigabe läuft die Lagedarstellung rein synthetisch."},
 }
 
 // IsKnown reports whether key is part of the feature catalog.
