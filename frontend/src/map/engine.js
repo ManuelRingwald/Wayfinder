@@ -157,6 +157,17 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
     style: mapStyle,
     center: [effectiveCenter.lon, effectiveCenter.lat],
     zoom: effectiveCenter.zoom,
+    // Track-label flicker fix: MapLibre's symbol machinery is built for
+    // cartographic labels and FADES new symbols in (default 300 ms). Our track
+    // data blocks are telemetry — every WS batch replaces the label source, and
+    // a label whose text changed (new FL) counts as a NEW symbol, so it blanked
+    // for the fade window on every update. The label layer already opts out of
+    // collision placement (text-allow-overlap/-ignore-placement, ASD-002);
+    // fadeDuration: 0 completes that opt-out on the time axis: symbol opacity
+    // snaps instead of animating, so the swapped labels stand in the same frame.
+    // Global option (no per-layer lever in the style spec) — base-map labels
+    // pop instead of fading too, which suits a radar scope.
+    fadeDuration: 0,
     // Suppress the default expanded attribution: it printed "© OpenStreetMap …"
     // bottom-right, right under our distance/vector readout. We add a compact
     // attribution below (collapses to an ⓘ, expands on click) — the credit stays

@@ -75,6 +75,15 @@ describe('engine wiring (source-guard)', () => {
     const calls = engine.match(/store\.refreshSelectedTrack\(state\.liveTrackFeatures\)/g) || []
     expect(calls.length).toBe(2)
   })
+
+  // Label-flicker fix (operator report 2026-07-19): every WS batch replaces the
+  // label source, and MapLibre fades changed-text symbols in as NEW symbols
+  // (default 300 ms) — labels blanked for the fade window on every update.
+  // fadeDuration: 0 completes the label layer's opt-out of the cartographic
+  // symbol lifecycle (collision placement is already disabled in layers.js).
+  it('creates the map with fadeDuration 0 so swapped labels render instantly', () => {
+    expect(engine).toMatch(/fadeDuration: 0,/)
+  })
 })
 
 describe('ended-track banner (#272 Nachtrag, source-guard)', () => {
