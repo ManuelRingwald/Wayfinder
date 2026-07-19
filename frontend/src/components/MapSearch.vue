@@ -42,11 +42,16 @@ const emit = defineEmits(['select', 'clear'])
 // retry re-asks the SAME query until the server-side index build finishes.
 const DEBOUNCE_MS = 300
 const BUILDING_RETRY_MS = 1500
+// Server-side build failures retry in the background; poll them more gently
+// than the normal build progress.
+const UNAVAILABLE_RETRY_MS = 3000
 const MIN_QUERY_LEN = 2 // mirrors the server's minimum (pkg/basemapsearch)
 
 const q = ref('')
 const results = ref([])
-// idle | building | ready | noarea | error — drives the hint line.
+// idle | building | ready | noarea | unavailable | error — drives the hint
+// line. 'unavailable' = the SERVER reported a failed index build (it keeps
+// retrying; we keep polling); 'error' = the request itself failed (no polling).
 const status = ref('idle')
 
 let debounceTimer = null
@@ -58,6 +63,7 @@ let requestSeq = 0
 const hint = computed(() => {
   if (status.value === 'building') return 'Suchindex wird aufgebaut …'
   if (status.value === 'noarea') return 'Kein Suchgebiet konfiguriert.'
+  if (status.value === 'unavailable') return 'Suche derzeit nicht verfügbar — neuer Versuch läuft …'
   if (status.value === 'error') return 'Suche derzeit nicht verfügbar.'
   if (status.value === 'ready' && results.value.length === 0) return 'Keine Treffer.'
   return ''
@@ -113,6 +119,15 @@ async function runSearch() {
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     const body = await res.json()
     if (seq !== requestSeq) return
+    if (body.status === 'error') {
+      // The server's index build failed (e.g. tile upstream down) and it keeps
+      // retrying in the background — say so honestly instead of pretending
+      // "building" forever, and poll on gently.
+      status.value = 'unavailable'
+      results.value = []
+      retryTimer = setTimeout(runSearch, UNAVAILABLE_RETRY_MS)
+      return
+    }
     results.value = Array.isArray(body.results) ? body.results : []
     status.value = 'ready'
   } catch (err) {

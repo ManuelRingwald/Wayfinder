@@ -27,6 +27,9 @@ func (s *Service) Handler(allowed func(*http.Request) bool, resolveBBox func(*ht
 		q := strings.TrimSpace(r.URL.Query().Get("q"))
 		res := s.Search(bbox, q)
 		w.Header().Set("Content-Type", "application/json")
+		// "building" → 202 (come back); "error" (first build failed, server
+		// keeps retrying) stays 200 — the JSON status field is the protocol,
+		// and the UI polls on through it.
 		if res.Status == "building" {
 			w.WriteHeader(http.StatusAccepted)
 		}

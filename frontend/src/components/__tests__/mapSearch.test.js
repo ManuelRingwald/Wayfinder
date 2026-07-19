@@ -143,6 +143,24 @@ describe('MapSearch component (#277)', () => {
     expect(wrapper.text()).toContain('Keine Treffer')
   })
 
+  it('shows an honest unavailable hint on server-reported build failure and keeps polling', async () => {
+    let call = 0
+    global.fetch = vi.fn(() => {
+      call++
+      return call === 1
+        ? jsonResponse(200, { status: 'error' })
+        : jsonResponse(200, { status: 'ready', results: [] })
+    })
+    const wrapper = mountSearch()
+
+    await typeQuery(wrapper, 'friedrich')
+    expect(wrapper.text()).toContain('neuer Versuch läuft')
+
+    await vi.advanceTimersByTimeAsync(3100) // past the 3000 ms unavailable retry
+    expect(global.fetch).toHaveBeenCalledTimes(2)
+    expect(wrapper.text()).toContain('Keine Treffer')
+  })
+
   it('clearing emits clear and stops the building poll', async () => {
     global.fetch = vi.fn(() => jsonResponse(202, { status: 'building' }))
     const wrapper = mountSearch()

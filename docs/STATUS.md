@@ -10,6 +10,35 @@
 
 ---
 
+## 🔧 Stand 2026-07-19 (Sektor-Suche: TileJSON-Fix + ehrlicher Fehler-Status — Nachtrag zu FR-UI-037)
+
+**In normaler Sprache:** Der Betreiber-Smoke-Test der Sektor-Suche schlug fehl —
+„Suchindex wird aufgebaut …" ohne Ende. Die Server-Logs zeigten die Ursache
+sauber: Der echte basemap.world-Stil gibt seine Kachel-Adresse als **Verweis
+auf eine TileJSON-Datei** an (`url`), nicht direkt eingebettet (`tiles`) —
+der Index-Builder las nur die eingebettete Form und scheiterte bei jedem
+Versuch sofort („style has no vector tile source"), während die UI den
+Fehler nie zu sehen bekam. Beides ist behoben: Der Builder folgt jetzt dem
+TileJSON-Verweis (defensiv: größen-limitiert, zeit-begrenzt), und ein
+fehlgeschlagener Erst-Bau erscheint in der UI als ehrliches „Suche derzeit
+nicht verfügbar — neuer Versuch läuft …" statt als ewiger Aufbau-Hinweis.
+
+**Fachlich/technisch:** `tilesTemplate` löst beide Quell-Formen auf
+(inline `tiles` zuerst, sonst TileJSON-`url`-Fetch); `Search` meldet einen
+nie erfolgreich gebauten Index mit Fehler stabil als `status:"error"`
+(sticky über Hintergrund-Retries — kein Flackern error↔building), Handler
+liefert das als 200 mit Status-Feld; `MapSearch.vue` zeigt den neuen
+Zustand und pollt gedrosselt (3 s) weiter. Genau diese Lücke war die
+dokumentierte „ehrliche Grenze" (Sandbox erreicht das BKG nicht — die
+TileJSON-Indirektion war in den Fixtures nicht abgebildet); die Fixtures
+decken jetzt beide Formen ab. Register: FR-UI-037-Nachtrag; TECHNICAL
+aktualisiert. **Offen:** Betreiber-Smoke-Test Wiederholung („Forststraße").
+
+**Nächster Schritt:** Betreiber wiederholt den Such-Smoke-Test; parallel
+steht die Sicht-Abnahme des Label-Flacker-Fixes (unten) aus.
+
+---
+
 ## ✨ Stand 2026-07-19 (Label-Flacker-Fix: `fadeDuration: 0` — FR-UI-038)
 
 **In normaler Sprache:** Betreiber-Meldung: Bei jedem Track-Update wurden die

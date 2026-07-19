@@ -70,6 +70,7 @@ const (
 	defaultTTL         = 24 * time.Hour
 	defaultConcurrency = 8
 	maxTileBytes       = 4 << 20
+	maxTileJSONBytes   = 1 << 20
 	buildTimeout       = 5 * time.Minute
 	// clusterKM merges same-named features closer than this (a street crosses
 	// many tiles; the list should show one entry per distinct location, not
@@ -182,19 +183,24 @@ func (s *Service) Search(bbox BBox, q string) Result {
 		return Result{Status: "building"}
 	}
 	idx.lastUsed = s.now()
-	if idx.building {
+	if idx.builtAt.IsZero() {
+		// Never built successfully. A failed first build is reported HONESTLY as
+		// "error" (operator finding 2026-07-19: reporting "building" here hid an
+		// endless fail-retry loop behind a perpetual spinner). The error sticks
+		// across background retries and only a successful build clears it, so
+		// the status is stable instead of flapping error↔building.
+		if idx.err != nil {
+			if !idx.building {
+				idx.building = true
+				go s.build(key, bbox)
+			}
+			s.mu.Unlock()
+			return Result{Status: "error"}
+		}
 		s.mu.Unlock()
 		return Result{Status: "building"}
 	}
-	if idx.err != nil {
-		// Failed build: retry once per request cycle (the upstream may be back).
-		idx.building = true
-		idx.err = nil
-		go s.build(key, bbox)
-		s.mu.Unlock()
-		return Result{Status: "building"}
-	}
-	if s.now().Sub(idx.builtAt) > s.cfg.TTL {
+	if !idx.building && (idx.err != nil || s.now().Sub(idx.builtAt) > s.cfg.TTL) {
 		idx.building = true // serve stale below, refresh in the background
 		go s.build(key, bbox)
 	}
@@ -443,7 +449,12 @@ func addClustered(clusters map[string][]Entry, e Entry) bool {
 
 // tilesTemplate extracts the vector source's tile URL template from the
 // style — absolute already (pkg/basemap rewrites it), so mirror deployments
-// work unchanged.
+// work unchanged. A MapLibre style declares tiles in one of TWO forms: inline
+// (`tiles: [...]`) or as a TileJSON indirection (`url: ".../tilejson.json"`
+// whose document carries the tiles array). The real basemap.de/basemap.world
+// styles use the TileJSON form (operator finding 2026-07-19 — the inline-only
+// reader failed every build with "style has no vector tile source"), so both
+// forms are resolved here.
 func (s *Service) tilesTemplate(ctx context.Context) (string, error) {
 	raw, err := s.styles.StyleJSON(ctx)
 	if err != nil {
@@ -453,6 +464,7 @@ func (s *Service) tilesTemplate(ctx context.Context) (string, error) {
 		Sources map[string]struct {
 			Type  string   `json:"type"`
 			Tiles []string `json:"tiles"`
+			URL   string   `json:"url"`
 		} `json:"sources"`
 	}
 	if err := json.Unmarshal(raw, &style); err != nil {
@@ -464,13 +476,59 @@ func (s *Service) tilesTemplate(ctx context.Context) (string, error) {
 		names = append(names, n)
 	}
 	sort.Strings(names)
+	var lastErr error
 	for _, n := range names {
 		src := style.Sources[n]
-		if src.Type == "vector" && len(src.Tiles) > 0 {
+		if src.Type != "vector" {
+			continue
+		}
+		if len(src.Tiles) > 0 {
 			return src.Tiles[0], nil
 		}
+		if src.URL != "" {
+			tmpl, err := s.tilesFromTileJSON(ctx, src.URL)
+			if err == nil {
+				return tmpl, nil
+			}
+			lastErr = err
+		}
+	}
+	if lastErr != nil {
+		return "", lastErr
 	}
 	return "", fmt.Errorf("basemapsearch: style has no vector tile source")
+}
+
+// tilesFromTileJSON follows a source's TileJSON reference and returns its tile
+// URL template. Defensive consumer like every upstream read: context-bound,
+// size-limited, status-checked.
+func (s *Service) tilesFromTileJSON(ctx context.Context, url string) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return "", fmt.Errorf("basemapsearch: tilejson request: %w", err)
+	}
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("basemapsearch: tilejson fetch: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("basemapsearch: tilejson fetch: HTTP %d", resp.StatusCode)
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxTileJSONBytes))
+	if err != nil {
+		return "", fmt.Errorf("basemapsearch: tilejson read: %w", err)
+	}
+	var tj struct {
+		Tiles []string `json:"tiles"`
+	}
+	if err := json.Unmarshal(data, &tj); err != nil {
+		return "", fmt.Errorf("basemapsearch: tilejson parse: %w", err)
+	}
+	if len(tj.Tiles) == 0 || tj.Tiles[0] == "" {
+		return "", fmt.Errorf("basemapsearch: tilejson has no tiles template")
+	}
+	return tj.Tiles[0], nil
 }
 
 // evictLocked drops the least-recently-used indexes beyond the cap. Caller
