@@ -63,12 +63,12 @@ describe('AsdView mobile branch (#194)', () => {
 })
 
 describe('fluid overlays + mobile controls (#194)', () => {
-  it('MapControls sits above the bottom nav on mobile', () => {
-    // ASD-018: MapControls is now mobile-only (MapCanvas renders it just for
-    // !mdAndUp), so the bottom-right placement is the default .map-controls —
-    // no separate --mobile modifier vs a desktop variant any more.
+  it('MapControls lifts above the bottom nav on mobile', () => {
+    // ASD-019: MapControls renders on desktop + mobile now (zoom moved onto the
+    // scope). The default .map-controls clears the attribution ⓘ at the corner;
+    // the mobile lift above the bottom tab bar moved into the <960px media query.
     expect(mapControls).toContain('var(--wf-bottom-nav-h')
-    expect(mapControls).toMatch(/\.map-controls\s*\{[\s\S]*?bottom: calc\(12px \+ var\(--wf-bottom-nav-h/)
+    expect(mapControls).toMatch(/@media \(max-width: 959\.98px\)[\s\S]*?bottom: calc\(12px \+ var\(--wf-bottom-nav-h/)
   })
   it('the track-detail card and scope legend use fluid, token-driven widths', () => {
     // #194 Häppchen 3: the base width is a token (so it grows a step on 24″),

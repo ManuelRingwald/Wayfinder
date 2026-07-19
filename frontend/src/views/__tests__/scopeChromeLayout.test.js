@@ -42,15 +42,20 @@ describe('ASD-018 overlay-zone layout (ADR 0029)', () => {
     expect(mapControls).toMatch(/bottom:\s*calc\(/)
   })
 
-  it('MapCanvas renders MapControls mobile-only and exposes recenter for the rail', () => {
-    expect(mapCanvas).toMatch(/<MapControls\s+v-if="!mdAndUp"/)
+  it('MapCanvas renders MapControls on both desktop + mobile and exposes recenter', () => {
+    // ASD-019: zoom moved onto the scope, so MapControls renders unconditionally
+    // now (it gates its viewport actions to mobile internally). The desktop
+    // top-right cluster still drives recenter, so MapCanvas keeps exposing it.
+    expect(mapCanvas).not.toMatch(/<MapControls\s+v-if="!mdAndUp"/)
     expect(mapCanvas).toContain('recenter: () => mapEngine?.recenter()')
   })
 
   it('desktop and mobile share ONE viewport-control component (no duplication)', () => {
-    // Mobile MapControls composes the same ViewportControls the desktop rail uses.
+    // MapControls composes the same ViewportControls the desktop cluster uses, but
+    // renders it only on mobile (desktop has it in AsdView's top-right cluster).
     expect(mapControls).toContain("import ViewportControls from './ViewportControls.vue'")
-    expect(mapControls).toMatch(/<ViewportControls\s+@recenter="\$emit\('recenter'\)"/)
+    expect(mapControls).toMatch(/<ViewportControls\s+v-if="!mdAndUp"/)
+    expect(mapControls).toMatch(/<ViewportControls[^>]*@recenter="\$emit\('recenter'\)"/)
   })
 
   it('the fullscreen icon state derives from the fullscreenchange event (ESC-safe)', () => {

@@ -58,6 +58,15 @@
   --wf-state-hover: rgba(220, 230, 240, 0.08);
   --wf-state-pressed: rgba(220, 230, 240, 0.12);
   --wf-state-selected: rgba(35, 211, 230, 0.16);  /* primary @ 16% — MD3 indicator */
+  /* ASD-019 (ADR 0030): the nav rail carries TWO active-state colours so the
+     Lotse can tell a modal tool apart from an open panel at a glance —
+     amber = a MEASURE tool is armed (it grabs map clicks), cyan = a MAP panel is
+     open (non-modal). `--wf-state-armed` mirrors `--wf-state-selected` but in
+     warning-amber; the `--wf-glow-*` pair are the soft halos behind an active
+     icon ("aktiv leuchtende Symbole"). */
+  --wf-state-armed: rgba(255, 176, 46, 0.16);  /* warning @ 16% — armed-tool indicator */
+  --wf-glow-armed: 0 0 12px 1px rgba(255, 176, 46, 0.45);   /* amber halo */
+  --wf-glow-selected: 0 0 12px 1px rgba(35, 211, 230, 0.45); /* cyan halo */
 
   /* ============================================================
      Domain palette — the ASD scope (MIRROR of src/map/constants.js).
