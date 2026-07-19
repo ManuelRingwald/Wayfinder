@@ -214,6 +214,67 @@ func TestBuildAndSearchEndToEnd(t *testing.T) {
 	}
 }
 
+// TestBuildResolvesTileJSONSource pins the fix for the operator-found first-run
+// failure (2026-07-19): the real basemap.de/basemap.world styles declare their
+// vector source via a TileJSON reference (`url: ".../tilejson.json"`), not an
+// inline `tiles` array — the inline-only reader failed every build with
+// "style has no vector tile source".
+func TestBuildResolvesTileJSONSource(t *testing.T) {
+	tiles := newTileUpstream(t, false)
+	defer tiles.Close()
+	mux := http.NewServeMux()
+	mux.HandleFunc("/tilejson.json", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = fmt.Fprintf(w, `{"tilejson":"3.0.0","tiles":["%s/tiles/{z}/{x}/{y}.pbf"]}`, tiles.URL)
+	})
+	meta := httptest.NewServer(mux)
+	defer meta.Close()
+
+	style := []byte(fmt.Sprintf(`{"version":8,"sources":{"basemap":{"type":"vector","url":"%s/tilejson.json"}}}`, meta.URL))
+	svc := NewService(stubStyles{style}, tiles.Client(), Config{MaxTiles: 32}, nil)
+
+	if res := svc.Search(smallBBox, "friedrich"); res.Status != "building" {
+		t.Fatalf("first search: status %q, want building", res.Status)
+	}
+	res := waitReady(t, svc, smallBBox, "friedrichstr")
+	if len(res.Results) == 0 || res.Results[0].Name != "Friedrichstraße" {
+		t.Fatalf("TileJSON-resolved build found no hits: %+v", res.Results)
+	}
+}
+
+// TestSearchReportsErrorStatus: a failing FIRST build must surface as "error"
+// (not a perpetual "building" spinner) and stay stable across the background
+// retries the service keeps launching.
+func TestSearchReportsErrorStatus(t *testing.T) {
+	// A style whose vector source resolves nowhere → every build fails fast.
+	svc := NewService(stubStyles{[]byte(`{"version":8,"sources":{}}`)}, http.DefaultClient, Config{MaxTiles: 4}, nil)
+
+	if res := svc.Search(smallBBox, "x"); res.Status != "building" {
+		t.Fatalf("first search: status %q, want building", res.Status)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		res := svc.Search(smallBBox, "x")
+		if res.Status == "error" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("failed build never surfaced as error (last status %q)", res.Status)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	// The error must be sticky: repeated polls (which kick retries) keep
+	// reporting error, never flap back to a bare "building".
+	for i := 0; i < 5; i++ {
+		if res := svc.Search(smallBBox, "x"); res.Status == "ready" {
+			t.Fatalf("impossible ready from a failing build")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if svc.BuildFailureCount() == 0 {
+		t.Error("failure metric not incremented")
+	}
+}
+
 func TestHandlerGatesAndStatuses(t *testing.T) {
 	srv := newTileUpstream(t, false)
 	defer srv.Close()
