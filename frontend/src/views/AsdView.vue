@@ -101,6 +101,18 @@
           @select="onSearchSelect"
           @clear="mapCanvas?.clearSearchMarker()"
         />
+        <!-- ASD-018 (overlay-zone layout, ADR 0029): the viewport controls
+             (recenter/fullscreen) are the LAST flex child of this right-edge
+             rail, so they flow BELOW everything above them — no matter how many
+             rows the cluster grows to. This replaced MapControls' hard-coded
+             `top:140px`, which guessed the cluster height and overlapped every
+             time a new element (profile switch, event bell, search) was added.
+             Mobile keeps its own bottom-right stack in MapControls. -->
+        <ViewportControls
+          v-if="mdAndUp"
+          class="viewport-controls-slot"
+          @recenter="mapCanvas?.recenter()"
+        />
       </div>
       <!-- Reskin 3b: floating scope legend (bottom-left). The bottom-right
            width/leader readout was removed (E2E): it read like a scale bar but
@@ -189,6 +201,7 @@ import FeedStatusChip from '@/components/FeedStatusChip.vue'
 import EventPanel from '@/components/EventPanel.vue'
 import ViewProfileMenu from '@/components/ViewProfileMenu.vue'
 import MapSearch from '@/components/MapSearch.vue'
+import ViewportControls from '@/components/ViewportControls.vue'
 import LoginCard from '@/components/LoginCard.vue'
 import { useEventsStore } from '@/stores/events.js'
 
@@ -395,9 +408,15 @@ function onMapEmptyClick() {
 </script>
 
 <style scoped>
-/* Top-right cluster: ICAO/sector + UTC header next to the feed-status badge,
-   right-aligned so the badge stays at the corner and the header extends left.
-   #194: padded past the notch/Dynamic-Island + right safe-area inset. */
+/* ASD-018 (overlay-zone layout, ADR 0029): the RIGHT-EDGE overlay zone. This is
+   ONE positioned flex column that owns everything on the top-right — ICAO/UTC
+   header, feed badge, the action row (profile/bell/search) and, as its last
+   child, the viewport controls (recenter/fullscreen). Because every element is a
+   flex CHILD of this one container, a new element pushes the ones below it in
+   flow — nothing overlaps. The rule (ADR 0029): new chrome goes INTO a zone as a
+   flex child, never as a free-floating `position:absolute` element with a
+   guessed `top`/`right` (that guessing is what caused the recurring
+   controls-overlap bug at #194 and again with the search icon). */
 .top-right-cluster {
   position: absolute;
   /* Edge inset from the overlay-gap token: 12px normally, one step wider on a
@@ -431,6 +450,13 @@ function onMapEmptyClick() {
 .events-control,
 .events-panel {
   pointer-events: auto;
+}
+
+/* ASD-018 (ADR 0029): the viewport controls sit at the foot of the right rail.
+   A touch more top spacing groups them visually apart from the status/action
+   chrome above (they used to be ~140px away as a separate stack). */
+.viewport-controls-slot {
+  margin-top: 4px;
 }
 
 /* #277: the search field lives inside the (pointer-events:none) cluster and

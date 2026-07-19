@@ -1,9 +1,12 @@
 <template>
   <div style="position: absolute; inset: 0">
     <div ref="mapEl" style="width: 100%; height: 100%" />
-    <!-- Häppchen 3: zoom moved to the navigation rail; MapControls keeps the
-         viewport actions (recenter / fullscreen) on the right edge. -->
+    <!-- ASD-018 (ADR 0029): the map-control stack renders here ONLY on mobile
+         (bottom-right, with zoom). On desktop/tablet-landscape the viewport
+         actions live in AsdView's right-edge overlay rail (ViewportControls),
+         so they flow below the top-right cluster instead of overlapping it. -->
     <MapControls
+      v-if="!mdAndUp"
       @recenter="mapEngine?.recenter()"
       @zoom-in="mapEngine?.zoomIn()"
       @zoom-out="mapEngine?.zoomOut()"
@@ -18,6 +21,7 @@
 
 <script setup>
 import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { useDisplay } from 'vuetify'
 import { useAsdStore } from '@/stores/asd.js'
 import { useImpersonationStore } from '@/stores/impersonation.js'
 import { useSessionStore } from '@/stores/session.js'
@@ -29,6 +33,7 @@ import MeasureStatus from './MeasureStatus.vue'
 import ImpersonationBar from './ImpersonationBar.vue'
 
 const emit = defineEmits(['track-click', 'connection-change', 'empty-click'])
+const { mdAndUp } = useDisplay()
 const store = useAsdStore()
 const imp = useImpersonationStore()
 const session = useSessionStore()
@@ -160,6 +165,9 @@ defineExpose({
   // Häppchen 3: zoom is driven from the navigation rail, which delegates here.
   zoomIn: () => mapEngine?.zoomIn(),
   zoomOut: () => mapEngine?.zoomOut(),
+  // ASD-018 (ADR 0029): recenter is driven from the desktop overlay rail's
+  // ViewportControls (AsdView), so expose it like zoom.
+  recenter: () => mapEngine?.recenter(),
   setLayerVisibility: (layer, val) => mapEngine?.setLayerVisibility({ [layer]: val }),
   updateFlFilter: () => mapEngine?.updateFlFilter(),
   // #121: MapLibre must be told when its container changes size (drawer/panel

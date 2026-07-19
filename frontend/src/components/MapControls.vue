@@ -1,13 +1,13 @@
 <template>
-  <!-- ASD-009: Floating map control buttons positioned on the right edge of the
-       map canvas. All controls are purely presentational — they emit named events
-       and let MapCanvas delegate to the map engine, keeping the engine
-       framework-agnostic. -->
-  <div class="map-controls" :class="{ 'map-controls--mobile': !mdAndUp, 'map-controls--touch': tabletLandscape }">
-    <!-- #194: on phones/tablet-portrait the navigation rail (which hosts zoom) is
-         not rendered, so the zoom controls move here, above the bottom tab bar. -->
+  <!-- ASD-009 / ASD-018 (ADR 0029): the MOBILE map-control stack. On phones and
+       tablet-portrait the navigation rail (which hosts zoom on desktop) is not
+       rendered, so zoom lives here alongside the viewport actions, anchored
+       bottom-right above the tab bar. On desktop/tablet-landscape this component
+       is NOT rendered — there the viewport controls live in AsdView's right-edge
+       overlay rail (ViewportControls), which is what ended the recurring
+       "controls overlap the top-right cluster" bug (no more guessed `top`). -->
+  <div class="map-controls">
     <v-btn-group
-      v-if="!mdAndUp"
       direction="vertical"
       density="compact"
       color="surface"
@@ -22,78 +22,23 @@
       </v-btn>
     </v-btn-group>
 
-    <!-- Häppchen 3: zoom moved to the navigation rail (desktop); these are the
-         viewport actions (recenter to configured centre, fullscreen toggle). -->
-    <v-btn-group
-      direction="vertical"
-      density="compact"
-      color="surface"
-      variant="flat"
-      class="map-controls__group elevation-4 rounded-lg"
-    >
-      <!-- Reset view — centre + zoom + north-up + top-down, the full start view (#169) -->
-      <v-btn
-        icon
-        size="small"
-        :ripple="false"
-        @click="$emit('recenter')"
-      >
-        <v-icon>mdi-image-filter-center-focus</v-icon>
-        <v-tooltip activator="parent" location="left" text="Ansicht zurücksetzen" />
-      </v-btn>
-
-      <!-- Fullscreen toggle -->
-      <v-btn
-        icon
-        size="small"
-        :ripple="false"
-        @click="toggleFullscreen"
-      >
-        <v-icon>{{ isFullscreen ? 'mdi-fullscreen-exit' : 'mdi-fullscreen' }}</v-icon>
-        <v-tooltip activator="parent" location="left" :text="isFullscreen ? 'Vollbild beenden' : 'Vollbild'" />
-      </v-btn>
-    </v-btn-group>
+    <!-- Recenter + fullscreen — shared with the desktop rail (ViewportControls). -->
+    <ViewportControls @recenter="$emit('recenter')" />
   </div>
 </template>
 
 <script setup>
-import { ref } from 'vue'
-import { useDisplay } from 'vuetify'
+import ViewportControls from './ViewportControls.vue'
 
 defineEmits(['recenter', 'zoom-in', 'zoom-out'])
-
-// #194 Häppchen 2: on the iPad/tablet-landscape band (`md`) the control buttons
-// grow to a 44px finger target (design mockup); phones already get the mobile
-// treatment, desktop keeps the compact size.
-const { mdAndUp, md } = useDisplay()
-const tabletLandscape = md
-const isFullscreen = ref(false)
-
-function toggleFullscreen() {
-  if (!document.fullscreenElement) {
-    document.documentElement.requestFullscreen().then(() => {
-      isFullscreen.value = true
-    })
-  } else {
-    document.exitFullscreen().then(() => {
-      isFullscreen.value = false
-    })
-  }
-}
 </script>
 
 <style scoped>
 .map-controls {
+  /* Mobile only (MapCanvas renders this component just for !mdAndUp): bottom-right,
+     above the bottom tab bar and clear of the home indicator (#194). */
   position: absolute;
-  /* The top-right cluster stacks THREE rows (ICAO/UTC header, feed badge, and
-     the profile+bell action row — AsdView .top-right-cluster, top 12px, 8px
-     gap). Start the control stack clearly below that cluster so recenter/
-     fullscreen never overlap the action row (icons-overlap fix 2026-07-08;
-     was 100px, which sat on the profile/bell row once those moved into the
-     cluster). ~140px clears all three rows with margin, including the xl step. */
-  top: calc(var(--v-layout-top, 0px) + 140px);
-  /* Edge inset from the overlay-gap token (12px, wider on a 24″ display —
-     #194 Häppchen 3), plus the right safe-area on notched phones. */
+  bottom: calc(12px + var(--wf-bottom-nav-h, 64px) + var(--wf-safe-bottom, 0px));
   right: calc(var(--wf-overlay-gap, 12px) + var(--wf-safe-right, 0px));
   z-index: 10;
   display: flex;
@@ -103,25 +48,11 @@ function toggleFullscreen() {
   pointer-events: none; /* pass clicks through to map except on buttons */
 }
 
-/* #194 — Mobile: no rail, so the controls (incl. zoom) sit bottom-right, above
-   the bottom tab bar and clear of the home indicator. */
-.map-controls--mobile {
-  top: auto;
-  bottom: calc(12px + var(--wf-bottom-nav-h, 64px) + var(--wf-safe-bottom, 0px));
-}
-
 .map-controls__group {
   /* Design System v1: floating chrome over the WebGL canvas — surface fill +
      the faint hairline token so it separates cleanly from the map. */
   pointer-events: all;
   background: rgb(var(--v-theme-surface)) !important;
   border: var(--wf-chrome-border);
-}
-
-/* #194 Häppchen 2 — iPad/tablet-landscape: enlarge the compact icon buttons to a
-   comfortable 44px finger target (the size="small" default is ~28px). */
-.map-controls--touch .map-controls__group :deep(.v-btn) {
-  width: var(--wf-touch-min, 44px);
-  height: var(--wf-touch-min, 44px);
 }
 </style>

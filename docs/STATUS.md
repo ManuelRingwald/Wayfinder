@@ -10,6 +10,43 @@
 
 ---
 
+## 🧩 Stand 2026-07-19 (ASD-Chrome-Overlay-Zonen: Schluss mit überlappenden Bedien-Elementen — ASD-018, ADR 0029, FR-UI-039)
+
+**In normaler Sprache:** Beim Mac-Test fiel dem Betreiber auf, dass die
+Such-Lupe die Vollbild-/Zentrieren-Knöpfe überlagert — und dass das schon
+mehrfach passiert ist, wenn neue Funktionen dazukamen. Ursache war
+strukturell: Am rechten Rand lagen zwei **unabhängig** positionierte
+Element-Stapel, und die Karten-Controls hingen an einem **fest verdrahteten**
+Abstand, der die Höhe des oberen Clusters nur riet — jedes neue Icon brach
+diese Annahme. Statt wieder einen Zahlenwert nachzuziehen (das haben wir bei
+#194 schon getan), ist der rechte Rand jetzt **eine durchgehende Spalte**: Die
+Controls sind das letzte Element darin und rutschen automatisch unter alles,
+was oben dazukommt. Überlappung strukturell erledigt. Dazu eine dokumentierte
+**Regel**: Neues Bedien-Chrome kommt immer in so eine Zone hinein, nie als
+frei schwebendes Einzel-Element mit geratenem Abstand.
+
+**Fachlich/technisch:** Overlay-Zonen (ADR 0029). Recenter/Vollbild in eine
+positions-neutrale `ViewportControls.vue` extrahiert (kein eigener Offset); die
+Zone (Desktop-Rail in `AsdView`) legt sie als letztes Flex-Kind aus. `MapControls`
+ist jetzt mobil-only (Zoom + `ViewportControls`, unten rechts), der geratene
+`top:140px` ist weg; `MapCanvas` rendert `MapControls` nur `!mdAndUp` und
+exponiert `recenter`. Kein Doppel-Code (mobil + Desktop teilen `ViewportControls`).
+Register FR-UI-039, ADR 0029, Milestone ASD-018. Tests: neuer
+`scopeChromeLayout.test.js` (Struktur-Garantien) + angepasste
+responsive/railTools/mapCanvasViewCenter; vitest 643.
+
+**Offen (ehrliche Grenze):** Kein WebGL-Render in der Sandbox — die **optische
+Abnahme** macht der Betreiber (Such-Lupe + Controls überlappen nicht mehr,
+Controls sitzen sauber unter dem Cluster). Transiente Panels (Ereignis-Log,
+aufgeklappte Suche) schieben die Controls beim Öffnen im Fluss nach unten —
+korrektes Verhalten; optional könnte man sie später als Overlays aus dem Fluss
+nehmen, damit die Controls völlig ruhig bleiben.
+
+**Nächster Schritt:** Betreiber-Sicht-Abnahme des Layouts (nach `git pull` +
+Frontend-Rebuild). Ansonsten weiter mit dem Bridge-Orchestrator-Test.
+
+---
+
 ## 🌉 Stand 2026-07-19 (Portables Auto-Orchestrierungs-Profil im Bridge-Netz — FR-CFG-006, Opus 4.8)
 
 **In normaler Sprache:** Beim Mac-mini-Aufbau fiel auf: Der gewohnte
