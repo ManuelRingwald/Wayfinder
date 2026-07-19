@@ -31,15 +31,18 @@
           </div>
           <div class="nav-rail__divider" role="separator" />
 
-          <!-- Häppchen 3: measurement tools (RBL/DIST/QDM), moved from the
-               floating map toolbar into the rail (design mockup). Toggle buttons
-               wired to the tools store, which drives the map's measure controller
-               (map/measure.js via MapCanvas). PROBE is intentionally omitted
-               (undefined content — no fake UI). -->
+          <!-- ASD-019 (ADR 0030): the rail is GROUPED into a MEASURE and a MAP
+               section, each under a subdued micro-label + divider so the two
+               function families read at a glance (design mockup "Vorschlag A").
+               Tools (RBL/DIST/QDM) drive the map's measure controller via the
+               tools store; they carry the `--tool` group class → they light AMBER
+               when armed (a measuring mode grabs map clicks — a modal state).
+               PROBE is intentionally omitted (undefined content — no fake UI). -->
+          <div class="nav-rail__section">MEASURE</div>
           <div
             v-for="t in measureTools"
             :key="t.id"
-            class="nav-rail__btn"
+            class="nav-rail__btn nav-rail__btn--tool"
             :class="{ 'nav-rail__btn--active': tools.activeTool === t.id }"
             role="button"
             :aria-label="t.label"
@@ -54,10 +57,14 @@
 
           <div class="nav-rail__divider" role="separator" />
 
+          <!-- MAP section: Layer/Filter open a side panel (non-modal). They carry
+               the `--panel` group class → they keep the CYAN indicator (the MD3
+               primary pill), distinct from the amber armed-tool state above. -->
+          <div class="nav-rail__section">MAP</div>
           <div
             v-for="s in sections"
             :key="s.id"
-            class="nav-rail__btn"
+            class="nav-rail__btn nav-rail__btn--panel"
             :class="{ 'nav-rail__btn--active': activePanel === s.id }"
             role="button"
             :aria-label="s.label"
@@ -70,19 +77,11 @@
             <span class="nav-rail__label">{{ s.label }}</span>
           </div>
 
-          <div class="nav-rail__divider" role="separator" />
-
-          <!-- Häppchen 3: zoom controls in the rail (design mockup). Purely
-               presentational — they emit and AsdView delegates to the map engine
-               (MapCanvas.zoomIn/zoomOut), keeping the engine framework-agnostic. -->
-          <div class="nav-rail__btn" role="button" aria-label="Zoom in" @click="emit('zoom-in')">
-            <div class="nav-rail__pill"><v-icon :size="railIconSize">mdi-magnify-plus-outline</v-icon></div>
-            <span class="nav-rail__label">Zoom +</span>
-          </div>
-          <div class="nav-rail__btn" role="button" aria-label="Zoom out" @click="emit('zoom-out')">
-            <div class="nav-rail__pill"><v-icon :size="railIconSize">mdi-magnify-minus-outline</v-icon></div>
-            <span class="nav-rail__label">Zoom −</span>
-          </div>
+          <!-- ASD-019: zoom left the rail for the bottom-right of the scope
+               (MapControls, a new overlay zone per ADR 0029/0030). The push
+               divider's auto top-margin drops the account cluster to the foot of
+               the rail, cleanly separated from the two function groups above. -->
+          <div class="nav-rail__divider nav-rail__divider--push" role="separator" />
 
           <!-- Req 1: Admin entry, visible only to admins; the account section
                (#116) sits below it at the very bottom of the rail. -->
@@ -99,10 +98,12 @@
             <span class="nav-rail__label">Admin</span>
           </div>
 
-          <!-- #116: Nutzer-Account, pinned to the very bottom -->
+          <!-- #116: Nutzer-Account, pinned to the very bottom. The push divider
+               above (nav-rail__divider--push, margin-top:auto) drops this cluster
+               to the foot of the rail — no per-item auto margin needed. -->
           <div
             class="nav-rail__btn nav-rail__btn--account"
-            :class="{ 'nav-rail__btn--bottom': !isAdmin, 'nav-rail__btn--active': activePanel === 'account' }"
+            :class="{ 'nav-rail__btn--active': activePanel === 'account' }"
             role="button"
             aria-label="Konto"
             :aria-pressed="activePanel === 'account'"
@@ -134,8 +135,9 @@
 
     <!-- ── Mobile layout ── -->
     <template v-else>
-      <!-- Häppchen 3: measurement tools + zoom, also reachable from the mobile
-           drawer (the desktop rail hosts them as labelled icons). -->
+      <!-- ASD-019: measurement tools in the mobile drawer. Zoom left the rail for
+           the bottom-right of the scope (MapControls). Armed tool → amber
+           (warning), matching the desktop MEASURE group's colour code. -->
       <div class="nav-mobile-tools">
         <v-btn
           v-for="t in measureTools"
@@ -143,13 +145,10 @@
           :icon="t.icon"
           size="small"
           variant="text"
-          :color="tools.activeTool === t.id ? 'primary' : undefined"
+          :color="tools.activeTool === t.id ? 'warning' : undefined"
           :aria-label="t.label"
           @click="tools.selectTool(t.id)"
         />
-        <v-divider vertical class="mx-1" />
-        <v-btn icon="mdi-magnify-plus-outline" size="small" variant="text" aria-label="Zoom in" @click="emit('zoom-in')" />
-        <v-btn icon="mdi-magnify-minus-outline" size="small" variant="text" aria-label="Zoom out" @click="emit('zoom-out')" />
       </div>
       <v-list-item
         v-if="isAdmin"
@@ -178,7 +177,7 @@ const props = defineProps({
   modelValue: { type: Boolean, default: true },
 })
 const emit = defineEmits([
-  'update:modelValue', 'layer-toggle', 'fl-filter-change', 'panel-resize', 'zoom-in', 'zoom-out',
+  'update:modelValue', 'layer-toggle', 'fl-filter-change', 'panel-resize',
 ])
 
 // #194 Häppchen 2: `md` is the iPad / tablet-landscape band (960–1279px) — the
@@ -329,21 +328,41 @@ function onFlFilterChange(payload) { emit('fl-filter-change', payload) }
   flex-shrink: 0;
 }
 
-/* Req 1 + #116: Admin (when present) and the account entry sit at the bottom of
-   the rail; the auto top margin on the FIRST bottom item pushes the group down
-   past the section items. The account entry is always last. */
-.nav-rail__btn--admin {
-  margin-top: auto;
-}
-.nav-rail__btn--account {
-  margin-bottom: 12px;
-}
-.nav-rail__btn--bottom {
+/* ASD-019: the push divider drops the account cluster to the rail's foot. Its
+   auto top-margin absorbs the free space in the flex column, so everything below
+   it (Admin/Konto) sinks to the bottom while the divider itself marks the split. */
+.nav-rail__divider--push {
   margin-top: auto;
 }
 
-/* MD3 Navigation Rail item: icon + label, centred in the 56px column */
+/* ASD-019: MEASURE / MAP micro-label above each function group (design mockup
+   "Vorschlag A"). Tiny, uppercase, wide-tracked and subdued (the overline
+   treatment), sized to fit the 56px rail so the two families read at a glance. */
+.nav-rail__section {
+  align-self: stretch;
+  text-align: center;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--wf-overline-color);
+  margin: 2px 0 1px;
+  user-select: none;
+}
+
+/* Req 1 + #116 + ASD-019: Admin (when present) and the account entry sit at the
+   bottom of the rail. The drop to the foot is done ONCE by the push divider's
+   auto top-margin (.nav-rail__divider--push) above this cluster — so Admin/Konto
+   stay a tight group, cleanly split from the MEASURE/MAP sections (mockup:
+   "Konto ... klar vom Rest getrennt"), without a per-item auto margin. */
+.nav-rail__btn--account {
+  margin-bottom: 12px;
+}
+
+/* MD3 Navigation Rail item: icon + label, centred in the 56px column.
+   position:relative anchors the left group-accent bar (::before). */
 .nav-rail__btn {
+  position: relative;
   width: 100%;
   display: flex;
   flex-direction: column;
@@ -356,7 +375,39 @@ function onFlFilterChange(payload) { emit('fl-filter-change', payload) }
   transition: color 0.15s;
 }
 .nav-rail__btn:hover { color: rgba(var(--v-theme-on-surface), 0.9); }
+/* ASD-019 (ADR 0030): TWO active-state colours. MAP panels keep the cyan primary
+   (the default active colour); MEASURE tools override to warning-amber, so an
+   armed measuring mode (which grabs map clicks — modal) is unmistakable next to a
+   merely-open panel. */
 .nav-rail__btn--active { color: rgb(var(--v-theme-primary)); }
+.nav-rail__btn--tool.nav-rail__btn--active { color: var(--wf-warning); }
+
+/* ASD-019: persistent group colour-code — a subtle left accent bar tints each
+   family even at rest (amber = MEASURE, cyan = MAP), so the orange/blue coding
+   reads at a glance. It brightens and glows when the item is active. */
+.nav-rail__btn--tool::before,
+.nav-rail__btn--panel::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 16px;
+  border-radius: 0 3px 3px 0;
+  opacity: 0.35;
+  transition: opacity 0.15s, box-shadow 0.15s;
+}
+.nav-rail__btn--tool::before { background: var(--wf-warning); }
+.nav-rail__btn--panel::before { background: rgb(var(--v-theme-primary)); }
+.nav-rail__btn--tool.nav-rail__btn--active::before {
+  opacity: 1;
+  box-shadow: var(--wf-glow-armed);
+}
+.nav-rail__btn--panel.nav-rail__btn--active::before {
+  opacity: 1;
+  box-shadow: var(--wf-glow-selected);
+}
 
 /* Pill highlight behind the icon (MD3 indicator) */
 .nav-rail__pill {
@@ -366,13 +417,28 @@ function onFlFilterChange(payload) { emit('fl-filter-change', payload) }
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.15s;
+  transition: background 0.15s, box-shadow 0.15s;
 }
 .nav-rail__btn:hover .nav-rail__pill {
   background: var(--wf-state-hover);
 }
+/* Active pill: tinted fill + a soft halo so the symbol "leuchtet". Cyan is the
+   default (MAP panels + account); MEASURE tools override to amber. */
 .nav-rail__btn--active .nav-rail__pill {
   background: var(--wf-state-selected); /* primary @ 16% — MD3 indicator */
+  box-shadow: var(--wf-glow-selected);
+}
+.nav-rail__btn--tool.nav-rail__btn--active .nav-rail__pill {
+  background: var(--wf-state-armed); /* warning @ 16% — armed-tool indicator */
+  box-shadow: var(--wf-glow-armed);
+}
+/* The icon itself glows in the accent colour when active (drop-shadow works for
+   both the font and SVG mdi builds). */
+.nav-rail__btn--active .nav-rail__pill :deep(.v-icon) {
+  filter: drop-shadow(0 0 5px rgba(35, 211, 230, 0.6));
+}
+.nav-rail__btn--tool.nav-rail__btn--active .nav-rail__pill :deep(.v-icon) {
+  filter: drop-shadow(0 0 5px rgba(255, 176, 46, 0.65));
 }
 
 /* Label below icon (Design System v1 token: nav-rail item label) */

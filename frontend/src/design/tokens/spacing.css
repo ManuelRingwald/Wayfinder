@@ -26,4 +26,10 @@
   --wf-overlay-gap: 12px;          /* floating overlay inset from map edge */
   --wf-overlay-legend-width: 232px; /* scope legend open width (#194 Häppchen 3) */
   --wf-overlay-detail-width: 292px; /* track-detail card width (#194 Häppchen 3) */
+  /* ASD-019 (ADR 0030): vertical space the bottom-right zoom stack (MapControls)
+     occupies from the scope's bottom edge, INCLUDING its lift over the MapLibre
+     attribution ⓘ. The desktop track-detail card subtracts this from its
+     max-height so its scroll area never runs under the zoom buttons — the two are
+     independent fixed overlays on the right edge, so they agree via this token. */
+  --wf-map-controls-reserve: 104px;
 }

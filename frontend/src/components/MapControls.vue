@@ -1,58 +1,51 @@
 <template>
-  <!-- ASD-009 / ASD-018 (ADR 0029): the MOBILE map-control stack. On phones and
-       tablet-portrait the navigation rail (which hosts zoom on desktop) is not
-       rendered, so zoom lives here alongside the viewport actions, anchored
-       bottom-right above the tab bar. On desktop/tablet-landscape this component
-       is NOT rendered — there the viewport controls live in AsdView's right-edge
-       overlay rail (ViewportControls), which is what ended the recurring
-       "controls overlap the top-right cluster" bug (no more guessed `top`). -->
+  <!-- ASD-009 / ASD-018 / ASD-019 (ADR 0029/0030): the bottom-right map-control
+       zone. Zoom lives here on BOTH desktop and mobile now (mockup "Vorschlag A":
+       zoom belongs on the scope, not in the tool rail). The recenter/fullscreen
+       viewport actions are added here only on MOBILE — on desktop they are the
+       last child of AsdView's top-right cluster (ADR 0029), so we don't duplicate
+       them. The stack is a flow zone (flex column), so a future control drops in
+       as a flex child rather than a free-floating, guessed offset. -->
   <div class="map-controls">
-    <v-btn-group
-      direction="vertical"
-      density="compact"
-      color="surface"
-      variant="flat"
-      class="map-controls__group elevation-4 rounded-lg"
-    >
-      <v-btn icon size="small" :ripple="false" aria-label="Zoom in" @click="$emit('zoom-in')">
-        <v-icon>mdi-plus</v-icon>
-      </v-btn>
-      <v-btn icon size="small" :ripple="false" aria-label="Zoom out" @click="$emit('zoom-out')">
-        <v-icon>mdi-minus</v-icon>
-      </v-btn>
-    </v-btn-group>
-
-    <!-- Recenter + fullscreen — shared with the desktop rail (ViewportControls). -->
-    <ViewportControls @recenter="$emit('recenter')" />
+    <ZoomControls @zoom-in="$emit('zoom-in')" @zoom-out="$emit('zoom-out')" />
+    <!-- Recenter + fullscreen — mobile only here; desktop hosts them in the
+         top-right cluster. Shared component (no duplicated logic). -->
+    <ViewportControls v-if="!mdAndUp" @recenter="$emit('recenter')" />
   </div>
 </template>
 
 <script setup>
+import { useDisplay } from 'vuetify'
+import ZoomControls from './ZoomControls.vue'
 import ViewportControls from './ViewportControls.vue'
 
+const { mdAndUp } = useDisplay()
 defineEmits(['recenter', 'zoom-in', 'zoom-out'])
 </script>
 
 <style scoped>
 .map-controls {
-  /* Mobile only (MapCanvas renders this component just for !mdAndUp): bottom-right,
-     above the bottom tab bar and clear of the home indicator (#194). */
   position: absolute;
-  bottom: calc(12px + var(--wf-bottom-nav-h, 64px) + var(--wf-safe-bottom, 0px));
+  /* Bottom-right overlay zone. Desktop default: the overlay gap, lifted clear of
+     the MapLibre compact attribution ⓘ that sits in the very corner (same idea as
+     the track-detail card's attribution clearance). The mobile override below
+     lifts the whole stack above the bottom tab bar instead. */
+  bottom: calc(var(--wf-overlay-gap, 12px) + 22px + var(--wf-safe-bottom, 0px));
   right: calc(var(--wf-overlay-gap, 12px) + var(--wf-safe-right, 0px));
   z-index: 10;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
   gap: 10px;
-  pointer-events: none; /* pass clicks through to map except on buttons */
+  pointer-events: none; /* pass clicks through to map except on the buttons */
 }
 
-.map-controls__group {
-  /* Design System v1: floating chrome over the WebGL canvas — surface fill +
-     the faint hairline token so it separates cleanly from the map. */
-  pointer-events: all;
-  background: rgb(var(--v-theme-surface)) !important;
-  border: var(--wf-chrome-border);
+/* #194 — Mobile (< md): the navigation rail is not rendered on phones/tablet-
+   portrait, so this stack carries zoom AND the viewport actions, lifted above the
+   bottom tab bar and clear of the home indicator. */
+@media (max-width: 959.98px) {
+  .map-controls {
+    bottom: calc(12px + var(--wf-bottom-nav-h, 64px) + var(--wf-safe-bottom, 0px));
+  }
 }
 </style>

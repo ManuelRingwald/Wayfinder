@@ -179,9 +179,10 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
 
   // Native MapLibre compass control. It shows the current bearing and resets to
   // north on click (replacing the old hand-rolled reset-north button). Zoom lives
-  // on the navigation rail; showZoom is off here to avoid duplicate buttons. The
-  // absolute distance reference is the range-ring overlay (constant-ground-distance
-  // circles around the display centre); there is no scale bar.
+  // in the bottom-right map controls (MapControls, ASD-019); showZoom is off here
+  // to avoid duplicate buttons. The absolute distance reference is the range-ring
+  // overlay (constant-ground-distance circles around the display centre); there is
+  // no scale bar.
   map.addControl(
     new maplibregl.NavigationControl({ showZoom: false, showCompass: true, visualizePitch: false }),
     'top-left',

@@ -10,6 +10,49 @@
 
 ---
 
+## 🎨 Stand 2026-07-19 (Gruppierte Rail, Orange/Blau-Farbcode, Zoom auf die Karte — ASD-019, ADR 0030, FR-UI-040)
+
+**In normaler Sprache:** Die schmale Werkzeug-Leiste links am Lagebild war eine
+flache Reihe gleich aussehender Symbole. Jetzt ist sie **in zwei benannte Gruppen
+geteilt** — **MEASURE** (die Mess-Werkzeuge RBL/DIST/QDM) und **MAP** (die
+Karten-Panels Layer/Filter) — jede unter einem kleinen Titel. Die beiden Familien
+sind **farblich getrennt**: Ein scharf gestelltes **Mess-Werkzeug leuchtet
+bernstein/orange** (Warnfarbe — passt, weil es dann die Karten-Klicks „an sich
+zieht", ein besonderer Modus), ein offenes **Karten-Panel leuchtet cyan/blau**
+(normaler Zustand). Das aktive Symbol bekommt einen weichen Schein, damit man den
+aktiven Zustand sofort sieht; das **Konto** sitzt klar abgesetzt ganz unten. Die
+**Zoom-Knöpfe (+/−)** sind aus der Leiste **auf die Karte gewandert** — an die
+**untere rechte Ecke**, dort wo sie wirken. Die Leiste wird dadurch kürzer und
+trägt nur noch echte Lotsen-Werkzeuge.
+
+**Fachlich/technisch:** ADR 0030. Ein Mess-Werkzeug ist **modal** (fängt
+Karten-Klicks), ein Panel **nicht-modal** — vorher sahen beide gleich aus (cyan).
+Die **zwei Aktiv-Farben** kodieren genau diesen Unterschied (Sicherheit: scharfer
+Mess-Modus ≠ offener Layer). `NavigationRail` bekommt `.nav-rail__section`-Mikro-
+Labels + `--tool`/`--panel`-Gruppen; `--tool`-aktiv → `--wf-warning` +
+`--wf-state-armed` + `--wf-glow-armed`, `--panel`/Konto → Cyan + `--wf-glow-
+selected`; dezente Dauer-Akzentleiste je Familie; Konto per Push-Divider
+(`margin-top:auto`) an den Fuß. Zoom: neue positions-neutrale `ZoomControls.vue`,
+gehostet von `MapControls` (jetzt die **bottom-right-Zone** auf Desktop **und**
+Mobil, erweitert ADR 0029); `MapCanvas` rendert sie unbedingt und verdrahtet Zoom
+an die Engine; Recenter/Vollbild bleiben desktop-seitig in der top-right-Zone.
+`TrackDetailPanel` reserviert die Zoom-Höhe (`--wf-map-controls-reserve`), damit
+sich Karte und Zoom am rechten Rand nie überlappen. Neue Tokens in
+`colors.css`/`spacing.css`. Kein CAT062-/Backend-/ICD-Bezug (reines Chrome).
+Tests: `railTools.test.js` neu geschnitten, `scopeChromeLayout.test.js` +
+`responsive.test.js` angepasst; **vitest 648 grün, vite build grün, dist neu**.
+
+**Offen (ehrliche Grenze):** Kein WebGL-/Mount-Harness in der Sandbox — die
+**optische Abnahme** macht der Betreiber nach `git pull` + Frontend-Rebuild:
+Farb-Codierung (amber Werkzeug / cyan Panel), Glow der aktiven Symbole,
+Zoom-Position unten rechts, keine Überlappung mit der Track-Detail-Karte,
+sauberer Abstand zur Attribution-ⓘ in der Ecke.
+
+**Nächster Schritt:** Betreiber-Sicht-Abnahme des neuen Rail-/Zoom-Layouts.
+Ansonsten weiter mit dem Bridge-Orchestrator-Test.
+
+---
+
 ## 🧩 Stand 2026-07-19 (ASD-Chrome-Overlay-Zonen: Schluss mit überlappenden Bedien-Elementen — ASD-018, ADR 0029, FR-UI-039)
 
 **In normaler Sprache:** Beim Mac-Test fiel dem Betreiber auf, dass die

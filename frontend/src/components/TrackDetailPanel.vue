@@ -37,13 +37,16 @@ const open = computed(() => store.selectedTrack !== null)
      chrome rather than stacking on it. ~220px keeps the same controls→detail
      clearance as before (map-controls moved down 40px when the profile+bell
      action row joined the cluster, icons-overlap fix); the bottom inset keeps
-     the scroll area above the OSM attribution chip (bottom-right). */
+     the scroll area above the bottom-right zoom stack (MapControls, ASD-019) and
+     the attribution ⓘ below it. */
   top: calc(var(--v-layout-top, 0px) + 220px + var(--wf-safe-top, 0px));
   right: calc(var(--wf-overlay-gap, 12px) + var(--wf-safe-right, 0px));
   /* #194: fluid width (token default 292px, one step wider on a 24″ display),
      capped to the viewport so it never overflows a narrow tablet-landscape. */
   width: min(var(--wf-overlay-detail-width, 292px), calc(100vw - 24px));
-  max-height: calc(100vh - 220px - var(--wf-overlay-gap, 12px) - 28px);
+  /* ASD-019: subtract the bottom-right zoom-stack reserve (token) so the card's
+     scroll area never overlaps the zoom buttons that share the right edge. */
+  max-height: calc(100vh - 220px - var(--wf-overlay-gap, 12px) - var(--wf-map-controls-reserve, 104px));
   overflow-y: auto;
   z-index: 10;
   /* Design System v1: floating chrome over the WebGL canvas pairs elevation

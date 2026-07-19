@@ -82,3 +82,12 @@ Neues Chrome ordnet sich einer dieser Zonen zu (Flex-Kind) oder bekommt eine
 - **Ehrliche Grenze:** Es gibt keinen WebGL-/Mount-Harness für eine *visuelle*
   Zusicherung; die Struktur ist per Source-Guards festgezurrt
   (`scopeChromeLayout.test.js`), die optische Abnahme macht der Betreiber.
+
+## Nachtrag (2026-07-19, ADR 0030)
+
+Die **bottom-right-Zone** (`MapControls`) gilt jetzt auch auf dem **Desktop** und
+trägt dort die **Zoom**-Knöpfe (ADR 0030 hat Zoom aus der Rail auf die Karte
+verlegt). Damit ist die Zeile „bottom-right (mobil)" in der Zonen-Tabelle oben
+überholt — die maßgebliche, aktualisierte Tabelle steht in **ADR 0030**. Die
+Regel dieser Entscheidung bleibt unverändert: neues Chrome ist ein Flex-Kind
+einer Zone, kein frei geratener Offset.

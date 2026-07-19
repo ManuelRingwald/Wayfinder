@@ -1,12 +1,12 @@
 <template>
   <div style="position: absolute; inset: 0">
     <div ref="mapEl" style="width: 100%; height: 100%" />
-    <!-- ASD-018 (ADR 0029): the map-control stack renders here ONLY on mobile
-         (bottom-right, with zoom). On desktop/tablet-landscape the viewport
-         actions live in AsdView's right-edge overlay rail (ViewportControls),
-         so they flow below the top-right cluster instead of overlapping it. -->
+    <!-- ASD-019 (ADR 0030): the bottom-right map-control stack renders on BOTH
+         desktop and mobile now — zoom moved off the navigation rail onto the
+         scope. MapControls itself gates the viewport actions to mobile (on desktop
+         recenter/fullscreen stay in AsdView's top-right cluster, ADR 0029), so it
+         shows only zoom on desktop and zoom + viewport actions on mobile. -->
     <MapControls
-      v-if="!mdAndUp"
       @recenter="mapEngine?.recenter()"
       @zoom-in="mapEngine?.zoomIn()"
       @zoom-out="mapEngine?.zoomOut()"
@@ -21,7 +21,6 @@
 
 <script setup>
 import { ref, onMounted, onUnmounted, watch } from 'vue'
-import { useDisplay } from 'vuetify'
 import { useAsdStore } from '@/stores/asd.js'
 import { useImpersonationStore } from '@/stores/impersonation.js'
 import { useSessionStore } from '@/stores/session.js'
@@ -33,7 +32,6 @@ import MeasureStatus from './MeasureStatus.vue'
 import ImpersonationBar from './ImpersonationBar.vue'
 
 const emit = defineEmits(['track-click', 'connection-change', 'empty-click'])
-const { mdAndUp } = useDisplay()
 const store = useAsdStore()
 const imp = useImpersonationStore()
 const session = useSessionStore()
@@ -162,11 +160,11 @@ watch(() => session.aorAirspaceIds, (ids) => {
 }, { deep: true })
 
 defineExpose({
-  // Häppchen 3: zoom is driven from the navigation rail, which delegates here.
-  zoomIn: () => mapEngine?.zoomIn(),
-  zoomOut: () => mapEngine?.zoomOut(),
-  // ASD-018 (ADR 0029): recenter is driven from the desktop overlay rail's
-  // ViewportControls (AsdView), so expose it like zoom.
+  // ASD-019 (ADR 0030): zoom is driven by the bottom-right MapControls, whose
+  // zoom-in/zoom-out are wired straight to the engine in this component's template
+  // — so no zoomIn/zoomOut needs to be exposed here any more.
+  // ASD-018 (ADR 0029): recenter is driven from the desktop top-right cluster's
+  // ViewportControls (AsdView), so expose it.
   recenter: () => mapEngine?.recenter(),
   setLayerVisibility: (layer, val) => mapEngine?.setLayerVisibility({ [layer]: val }),
   updateFlFilter: () => mapEngine?.updateFlFilter(),
