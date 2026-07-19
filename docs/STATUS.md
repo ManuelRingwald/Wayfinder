@@ -10,6 +10,47 @@
 
 ---
 
+## 🌉 Stand 2026-07-19 (Portables Auto-Orchestrierungs-Profil im Bridge-Netz — FR-CFG-006, Opus 4.8)
+
+**In normaler Sprache:** Beim Mac-mini-Aufbau fiel auf: Der gewohnte
+Auto-Spawn-Betrieb (Feed zuweisen → Firefly startet automatisch mit passender
+Adresse) lief nur auf Codespace, weil das orchestrierte Profil
+Host-Networking braucht — das kann macOS nicht. Auf dem Mac blieb nur das
+statische Bridge-Compose (eine feste Firefly, Adresse von Hand angleichen).
+Der Betreiber will aber **eine** Setup-Weise, die auf Mac **und** Codespace
+gleich läuft. Neu: **`docker-compose.orchestrated-bridge.yml`** — der volle
+Orchestrator-Betrieb (Server + Orchestrator + auto-gespawnte Firefly je Feed),
+aber alles in **einem Bridge-Netz** (`asd-net`) statt Host-Networking. Bridges
+leiten Multicast zwischen ihren Mitgliedern weiter, also erreichen die
+gespawnten Firefly den Server ohne Host-Netz — und die automatische
+Gruppenvergabe je Feed bleibt. Läuft damit auf Mac, Windows und Codespace/Linux
+identisch.
+
+**Fachlich/technisch:** Kein Go-Umbau nötig — der Orchestrator konnte das
+Zielnetz der gespawnten Container schon frei setzen
+(`WAYFINDER_FIREFLY_NETWORK` → `dockerbackend.New(networkMode)` →
+`HostConfig.NetworkMode`, nimmt einen Netznamen). Das neue Profil setzt es auf
+`asd-net` (`networks.asd.name`), legt Server/Orchestrator/DB in dasselbe Netz,
+veröffentlicht 8081/8080. Firefly wird als `firefly:latest` gespawnt
+(Voraussetzung: `docker build -t firefly:latest ../firefly`). Per-Feed-Gruppe
+(`feed_alloc.go`) + Weitergabe an die Firefly (`fireflyEnv`) unverändert →
+Sender/Empfänger passen je Feed automatisch. Doku: INSTALLATION Schritt 4.C
+(inkl. Codespace↔Mac-Hinweis, Aufräumen), Orchestrierungs-Hinweise nachgezogen,
+Register FR-CFG-006. Host-Net-Profil bleibt für reine Linux-Hosts.
+
+**Offen (ehrliche Grenze):** Die Sandbox kann keinen Docker-Build/Runtime
+ausführen — `docker compose config` validiert die Datei, aber die
+**End-to-End-Abnahme** (Feed zuweisen → Tracker spawnt im Bridge → Tracks
+kommen an) macht der Betreiber auf dem Mac. Falls dabei etwas klemmt
+(Multicast im Bridge, Netz-Attach der gespawnten Container), nachsteuern.
+
+**Nächster Schritt:** Betreiber-Abnahme des Bridge-Orchestrierungs-Profils auf
+dem Mac: `docker build -t firefly:latest ../firefly` +
+`docker compose -f docker-compose.orchestrated-bridge.yml up -d --build`, Feed
+zuweisen, prüfen dass der Tracker spawnt und Tracks erscheinen.
+
+---
+
 ## 📘 Stand 2026-07-19 (INSTALLATION.md nachgezogen: BKG-Theme in den Beispiel-Composes + Karte/Suche einschalten — Doku-Currency, Opus 4.8)
 
 **In normaler Sprache:** Betreiber-Befund bei der Mac-mini-Umzugsplanung: Die
