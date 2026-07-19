@@ -213,11 +213,19 @@ function toggleEvents() {
   if (eventsOpen.value) events.markSeen()
 }
 
-// #277: cosmetic search gate, mirroring LayerFilterContent's showLayer —
-// entitlement-driven for tenant users, fail-open for an admin in read-only
-// guest mode (whose identity carries no tenant feature map). The server
-// enforces the basemap entitlement on /api/basemap/search fail-closed anyway.
-const showSearch = computed(() => session.isAdmin || session.hasFeature('basemap'))
+// #277 Nachtrag (operator 2026-07-19): the search is a companion to the VISIBLE
+// base map — it appears only once the Lotse has actually switched the BKG layer
+// ON (store.layerVisibility.basemap), not merely on entitlement. No map on
+// screen ⇒ nothing to locate against ⇒ no search icon, keeping the scope clear
+// over the tracks. The layer toggle itself is entitlement-gated (WF2-50) and the
+// server enforces /api/basemap/search fail-closed, so this stays a display gate.
+const showSearch = computed(() => store.layerVisibility.basemap === true)
+
+// Turning the base map back off removes the search — clear any leftover result
+// marker so a found place does not linger on the synthetic scope.
+watch(showSearch, (on) => {
+  if (!on) mapCanvas.value?.clearSearchMarker()
+})
 
 // #277: a picked search hit → magenta marker + camera onto the place.
 function onSearchSelect(hit) {

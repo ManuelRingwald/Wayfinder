@@ -10,6 +10,32 @@
 
 ---
 
+## 🔍 Stand 2026-07-19 (Sektor-Suche: nur bei aktivem BKG-Layer + aufklappbares Icon — Nachtrag 3 zu FR-UI-037, Opus 4.8)
+
+**In normaler Sprache:** Zwei Bedien-Wünsche des Betreibers, damit der Scope
+frei auf die Tracks bleibt: (1) Die Suche soll nur erscheinen, wenn die
+BKG-Karte tatsächlich *eingeschaltet* ist — ohne sichtbare Karte gibt es
+nichts zu verorten. (2) Im Ruhezustand soll nur ein kleines Lupen-Icon zu
+sehen sein; ein Klick fährt das Suchfeld aus, nach der Treffer-Wahl klappt es
+wieder zusammen. Beides umgesetzt: Die Suche ist jetzt an den Layer-Schalter
+gekoppelt (nicht mehr an die bloße Freigabe), und das Suchfeld ist
+standardmäßig zu einem Icon eingeklappt.
+
+**Fachlich/technisch:** `showSearch = store.layerVisibility.basemap === true`
+(reaktiv am Sidebar-Toggle); ein `watch` räumt beim Abschalten den Treffer-
+Marker auf. `MapSearch.vue` hat einen Ausklapp-Zustand (`expanded`): Icon-Button
+→ `v-expand-x-transition` → Feld mit Auto-Fokus; Zuklappen bei Treffer-Wahl
+(`onSelect`), Esc/× (`onClose`) und leerem Blur (`onBlur`, guard verhindert
+Klau des Treffer-Klicks). Tests: Gate-Source-Guard (Layer-Kopplung +
+Marker-Aufräumen), Icon→Feld-Aufklappen, Zuklappen nach Treffer (via
+exponiertem `expanded`). Register: FR-UI-037-Nachtrag-3. vitest 638, dist neu.
+
+**Nächster Schritt:** Betreiber-Sicht-Abnahme: Icon nur bei aktivem
+BKG-Layer, Klick fährt Feld aus, Treffer-Wahl klappt zu. Weiterhin offen:
+Label-Flacker-Fix (Sicht-Abnahme), Treffer-Kontext/Zoom (Nachtrag 2).
+
+---
+
 ## 🎯 Stand 2026-07-19 (Sektor-Suche: Treffer unterscheidbar + Zoom auf Ziel — Nachtrag 2 zu FR-UI-037, Opus 4.8)
 
 **In normaler Sprache:** Zwei Bedien-Rückmeldungen des Betreibers nach der
