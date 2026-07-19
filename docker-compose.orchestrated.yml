@@ -26,6 +26,12 @@ services:
       POSTGRES_DB: wayfinder
     ports:
       - "127.0.0.1:5432:5432"
+    # Named volume (#267): tenants/users/feeds/subscriptions live OUTSIDE the
+    # container, so recreating it (--force-recreate, image update, `down`)
+    # keeps the data. Deliberate reset: `docker volume rm <project>_wayfinder-db`.
+    # Same volume name as docker-compose.onboarding.yml (which already had one).
+    volumes:
+      - wayfinder-db:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "wayfinder"]
       interval: 5s
@@ -109,3 +115,6 @@ services:
       WAYFINDER_ORCHESTRATOR_INTERVAL: ${WAYFINDER_ORCHESTRATOR_INTERVAL:-10s}
       WAYFINDER_LOG_LEVEL: ${WAYFINDER_LOG_LEVEL:-info}
     restart: unless-stopped
+
+volumes:
+  wayfinder-db:

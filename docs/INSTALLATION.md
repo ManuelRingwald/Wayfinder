@@ -363,6 +363,15 @@ und ihn einem Mandanten zuzuweisen.
 > ist nötig (Host-Networking-Multicast). Die End-to-End-Abnahme inkl. Skript
 > (`scripts/e2e-orchestrated.sh`) und Prüfpunkten steht in **`docs/E2E-ABNAHME.md`**.
 
+> **Daten-Persistenz (#267):** Beide Compose-Profile legen die Postgres-Daten in
+> ein **benanntes Docker-Volume** (`wayfinder-db`) — Mandanten, Nutzer, Feeds und
+> Abos überleben damit jedes Neuanlegen der Container (`down`, `--force-recreate`,
+> Image-Updates). Ein **bewusster** Komplett-Reset geht nur noch explizit über
+> `docker volume rm <projekt>_wayfinder-db` (bei gestoppter DB). ⚠️ Einmalig beim
+> **Umstieg** auf den Volume-Stand: Der DB-Container wird dabei neu aufgesetzt —
+> ein davor ohne Volume angelegter Datenbestand geht bei genau diesem einen
+> Wechsel verloren (danach nie wieder).
+
 ---
 
 ### Schritt 4.1 — Steuerungsordner anlegen
