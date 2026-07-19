@@ -107,9 +107,22 @@ dokumentiert. Nebenbei geklärt: #277 hat durch die Betreiber-Idee
 „AOI-begrenzter Sektor-Suchindex aus den Kacheln" (Kandidat D) einen
 lizenzfreien, Air-Gap-tauglichen Vorzugsweg (S4, Kommentar im Issue).
 
-**Nächster Schritt:** offen — Kandidaten: ASD-Bedienbarkeits-Trio #271–#273
-(Ankündigung liegt vor), #274 (Layer-Option/Entitlement, S4 —
-Design-Ankündigung nötig), #277 (Sektor-Suche, S4 — Design-Ankündigung
+**Nachtrag (2026-07-19, ASD-Bedien-Trio #271–#273 ✅ — FR-UI-034):** Drei
+Betreiber-gemeldete Bedien-Reibungen behoben: **(#271)** Klick auf den
+Datenblock (Label) selektiert den Track wie ein Symbol-Klick — Label-Drags
+bleiben unterscheidbar (MapLibre unterdrückt Clicks jenseits der
+clickTolerance), Werkzeug-Guard unverändert. **(#272)** Das Detail-Panel
+läuft **live** mit: jeder WS-Batch ersetzt den Selektions-Snapshot
+(`refreshSelectedTrack`); verschwundener Track (TSE) behält den letzten
+Stand (Panel bleibt offen). Subtile Stelle gelöst: der
+Korrelations-Prefill-Watch keyt jetzt auf `track_num` — sonst hätte jede
+Live-Meldung das getippte Callsign-Feld zurückgesetzt. **(#273)** Klick auf
+freie Kartenfläche deselektiert (Panel zu, Halo weg); Mess-Werkzeuge und
+Kamera-Pan sind ausgenommen. Rein Frontend. Register: **FR-UI-034**. Gates
+grün (vitest 613, `npm run build`, dist neu; Go unberührt).
+
+**Nächster Schritt:** offen — Kandidaten: #274 (Layer-Option/Entitlement,
+S4 — Design-Ankündigung nötig), #277 (Sektor-Suche, S4 — Design-Ankündigung
 nötig). Wird wie üblich angekündigt (Freigabe abwarten).
 
 ---

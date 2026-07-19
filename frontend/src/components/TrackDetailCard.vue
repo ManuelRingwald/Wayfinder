@@ -324,9 +324,13 @@ const correlationNotice = ref(null)
 // Pre-fill the field with the track's best-known identity (filed plan callsign,
 // else the downlinked I062/245 callsign) and clear the last result whenever the
 // selected track changes — so a notice never bleeds across selections.
+// #272: the watch keys on the track NUMBER, not the track object — the live
+// panel replaces the snapshot object on every WS update, and resetting the
+// operator's typed callsign (or wiping a notice) mid-edit would be wrong.
 watch(
-  track,
-  (t) => {
+  () => track.value?.track_num,
+  () => {
+    const t = track.value
     correlationCallsign.value = t?.plan_callsign || t?.callsign || ''
     correlationNotice.value = null
   },
