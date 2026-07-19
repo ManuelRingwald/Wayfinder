@@ -77,6 +77,24 @@ describe('engine wiring (source-guard)', () => {
   })
 })
 
+describe('ended-track banner (#272 Nachtrag, source-guard)', () => {
+  const card = src('../TrackDetailCard.vue')
+
+  it('derives liveness from the store live-track set', () => {
+    expect(card).toMatch(/store\.liveTrackNums\.has\(track\.value\.track_num\)/)
+  })
+
+  it('shows the honesty banner when the track ended', () => {
+    expect(card).toMatch(/v-if="!isTrackLive"/)
+    expect(card).toContain('Track beendet — letzte bekannte Werte')
+  })
+
+  it('disables all three correlation commands on an ended track', () => {
+    const disabled = card.match(/:disabled="correlationBusy \|\| !isTrackLive/g) || []
+    expect(disabled.length).toBe(3)
+  })
+})
+
 describe('component wiring (source-guard)', () => {
   it('#272: the correlation pre-fill watch keys on track_num, not the object', () => {
     const card = src('../TrackDetailCard.vue')

@@ -121,6 +121,15 @@ freie Kartenfläche deselektiert (Panel zu, Halo weg); Mess-Werkzeuge und
 Kamera-Pan sind ausgenommen. Rein Frontend. Register: **FR-UI-034**. Gates
 grün (vitest 613, `npm run build`, dist neu; Go unberührt).
 
+**Nachtrag (2026-07-19, „Track beendet"-Banner — FR-UI-035):** Auf
+Betreiber-Rückfrage („Wird ein verschwundener Track im Panel angezeigt?" —
+Antwort war Nein) als kleines Folge-Häppchen zu #272: Das Live-Panel zeigt
+bei verschwundenem Track (TSE) jetzt ein Warn-Banner „Track beendet —
+letzte bekannte Werte" (Liveness aus `liveTrackNums`; Coasting zählt als
+lebend) und deaktiviert die drei Korrelations-Kommandos (Kommando auf einen
+gelöschten Track liefe ins Leere). Rein Frontend. Gates grün (vitest 616,
+build, dist neu).
+
 **Nächster Schritt:** offen — Kandidaten: #274 (Layer-Option/Entitlement,
 S4 — Design-Ankündigung nötig), #277 (Sektor-Suche, S4 — Design-Ankündigung
 nötig). Wird wie üblich angekündigt (Freigabe abwarten).

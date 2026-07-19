@@ -3,6 +3,18 @@
     <span class="text-h6">{{ track.callsign ?? `#${track.track_num}` }}</span>
     <v-btn icon="mdi-close" size="small" variant="text" @click="emit('close')" />
   </v-card-title>
+  <!-- #272 Nachtrag: the live panel keeps a vanished track's last snapshot on
+       screen (deliberate — data must not vanish under the operator's cursor),
+       but data honesty demands saying so: without this banner an ended track's
+       frozen values would be indistinguishable from a live track's. -->
+  <v-alert
+    v-if="!isTrackLive"
+    type="warning"
+    variant="tonal"
+    density="compact"
+    icon="mdi-airplane-off"
+    class="mx-4 mb-1"
+  >Track beendet — letzte bekannte Werte</v-alert>
   <v-card-text class="pb-3">
     <v-list density="compact" class="pa-0">
       <v-list-item v-if="track.flight_level_ft != null" prepend-icon="mdi-airplane-cruise">
@@ -159,19 +171,22 @@
         :disabled="correlationBusy"
         @keyup.enter="doCorrelate"
       />
+      <!-- #272 Nachtrag: correlation commands on an ended track would hit a
+           track Firefly already deleted — disable them instead of letting the
+           operator collect a pointless error. -->
       <div class="d-flex flex-wrap ga-2">
         <v-btn
           size="small"
           color="primary"
           variant="flat"
           :loading="correlationBusy"
-          :disabled="correlationBusy || !correlationCallsign.trim()"
+          :disabled="correlationBusy || !isTrackLive || !correlationCallsign.trim()"
           @click="doCorrelate"
         >Korrelieren</v-btn>
-        <v-btn size="small" variant="tonal" :disabled="correlationBusy" @click="doUncorrelate">
+        <v-btn size="small" variant="tonal" :disabled="correlationBusy || !isTrackLive" @click="doUncorrelate">
           Unkorreliert
         </v-btn>
-        <v-btn size="small" variant="text" :disabled="correlationBusy" @click="doClear">
+        <v-btn size="small" variant="text" :disabled="correlationBusy || !isTrackLive" @click="doClear">
           Zurücksetzen
         </v-btn>
       </div>
@@ -216,6 +231,14 @@ import {
 const emit = defineEmits(['close'])
 const store = useAsdStore()
 const track = computed(() => store.selectedTrack)
+
+// #272 Nachtrag: whether the selected track is still in the displayed set
+// (live or coasting). The store mirrors it per WS batch (setLiveTrackNums,
+// FR-UI-029); a track missing from it has ended (TSE) or left the scope —
+// the panel then shows the honesty banner and disables correlation commands.
+const isTrackLive = computed(
+  () => track.value != null && store.liveTrackNums.has(track.value.track_num),
+)
 
 // WF2-40: surveillance source label, from the provenance baked onto the track
 // feature when it was selected (see provenance.js / tracks.js).
