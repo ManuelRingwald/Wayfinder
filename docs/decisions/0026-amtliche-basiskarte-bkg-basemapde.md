@@ -193,3 +193,28 @@ der BKG-Dienst (bzw. ein Mirror).
 - **Audit-Spur:** Historische ADRs/Milestones (ASD-003a Radar Dark Mode,
   ADR 0015-Bezüge) bleiben unverändert stehen — bereinigt ist die *aktuelle*
   Doku (README/INSTALLATION/TECHNICAL). Register: **FR-UI-033**.
+
+---
+
+## Nachtrag H3 (2026-07-18): Selbst-Hosting / Air-Gap der Basiskarte
+
+**Entscheidung:** Der Air-Gap-Pfad wird als **Deployment-Baustein ohne
+Code-Umbau** umgesetzt. Das BKG bietet für basemap.de Web Vektor ein
+**monatlich aktualisiertes Download-Paket** mit exakt der Struktur des
+Online-Dienstes (`fonts/ sprites/ styles/ tiles/`); ein beliebiger statischer
+Webserver serviert es, und `WAYFINDER_BKG_STYLE_URL` zeigt auf den Spiegel.
+Die H1-Pipeline erledigt den Rest — genau die URL-Umschreibungen, die die
+BKG-Hosting-Anleitung manuell verlangt (Glyphs/Sprites/Sources), macht
+Wayfinder ohnehin automatisch gegen die konfigurierte Style-URL.
+
+- **Deliverables:** INSTALLATION §8.0a (Schritt-für-Schritt),
+  `docker-compose.basemap-mirror.yml` + `deploy/basemap-mirror/nginx.conf`
+  als Referenz-Spiegel (CORS, `Content-Encoding: gzip` für vorkomprimierte
+  `.pbf`-Kacheln, Cache-Header).
+- **Ehrliche Grenzen:** (a) Das Paket deckt **Deutschland** ab; ein
+  world-Offline-Paket ist beim BKG-DLZ zu klären — ohne es läuft Air-Gap mit
+  DE-Karte ohne Umland. (b) Aktualität = Betreiber-Prozess (Monats-Paket
+  einspielen). (c) Die Verifikation gegen ein echtes Paket steht aus
+  (zweistelliger GB-Download, Betreiber-seitig) — die Mechanik
+  (Style-Rewrite gegen beliebige Quelle) ist durch die H1-Tests abgedeckt.
+  Register: **FR-CFG-004**.

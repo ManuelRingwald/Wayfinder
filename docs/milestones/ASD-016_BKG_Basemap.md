@@ -1,9 +1,12 @@
-# ASD-016 — Amtliche Basiskarte: BKG basemap.de Web Vektor (H1 `bkg` + H2 `bkg-dark`)
+# ASD-016 — Amtliche Basiskarte: BKG basemap.de Web Vektor (H1–H3 + world + Ausbau)
 
-> **Anforderung:** FR-UI-030 (H1), FR-UI-031 (H2) · **Entscheidung:** ADR 0026
-> (+ Nachtrag H2) · **Stand:** H1 fertig und am echten Dienst abgenommen
-> (2026-07-18), H2 gebaut (2026-07-18). H3 (Selbst-Hosting/Air-Gap) folgt als
-> eigenes Häppchen.
+> **Anforderung:** FR-UI-030 (H1), FR-UI-031 (H2), FR-UI-032 (basemap.world),
+> FR-UI-033 (Ausbau OSM/CARTO), FR-CFG-004 (H3 Selbst-Hosting) ·
+> **Entscheidung:** ADR 0026 (+ Nachträge) · **Stand:** H1/H2/world/Ausbau
+> gebaut, gemergt und am echten System abgenommen (2026-07-18); `bkg-dark`
+> ist der Ab-Werk-Default. H3 als Deployment-Baustein dokumentiert
+> (INSTALLATION §8.0a + Referenz-Spiegel); Verifikation gegen ein echtes
+> BKG-Paket steht betreiberseitig aus.
 
 ## Fachlich — warum
 

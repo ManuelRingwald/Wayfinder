@@ -82,10 +82,24 @@ golangci-lint, vitest 603, `npm run build`, dist neu).
 erscheint ab Werk. **Die BKG-Migration (ADR 0026, H1/H2/basemap.world/Ausbau
 OSM-CARTO) ist damit vollständig abgeschlossen und abgenommen.**
 
+**Nachtrag (2026-07-18, H3 Selbst-Hosting/Air-Gap — FR-CFG-004):** Auf
+Betreiber-Wahl als Abschluss des BKG-Themas umgesetzt — als reiner
+**Deployment-Baustein ohne Code-Umbau**: INSTALLATION §8.0a beschreibt den
+Spiegel-Aufbau (monatliches BKG-Download-Paket `fonts/sprites/styles/tiles`,
+statisch serviert, `WAYFINDER_BKG_STYLE_URL` auf den Spiegel — die
+H1-Pipeline macht die von der BKG-Hosting-Anleitung verlangten
+URL-Umschreibungen automatisch); Referenz-Spiegel
+`docker-compose.basemap-mirror.yml` + `deploy/basemap-mirror/nginx.conf`
+(CORS, gzip-Content-Encoding, Cache). Ehrliche Grenzen: world-Offline-Paket
+beim BKG-DLZ zu klären; Paket-Verifikation betreiberseitig offen
+(zweistelliger GB-Download). Nebenbei geklärt + als **#277** erfasst:
+Orts-/Straßensuche wäre über den amtlichen BKG-Geokodierungsdienst machbar
+(Lizenzfrage!), nicht über die Kacheln selbst.
+
 **Nächster Schritt:** offen — Kandidaten: ASD-Bedienbarkeits-Trio #271–#273,
 #274 (BKG als Layer-Option/Entitlement, S4 — Design-Ankündigung nötig),
-H3 Selbst-Hosting, #267 DB-Volume. Wird wie üblich angekündigt
-(Freigabe abwarten).
+#267 DB-Volume, #277 (Suche, nach Lizenz-Klärung). Wird wie üblich
+angekündigt (Freigabe abwarten).
 
 ---
 
