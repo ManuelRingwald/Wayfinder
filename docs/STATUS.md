@@ -77,10 +77,29 @@ bleiben als Audit-Spur; aktuelle Doku (README/INSTALLATION/TECHNICAL)
 bereinigt. Register: **FR-UI-033**. Gates grün (go test/vet/gofmt,
 golangci-lint, vitest 603, `npm run build`, dist neu).
 
-**Nächster Schritt:** Betreiber-Kurztest (ohne gesetzte Env muss ab jetzt der
-dunkle Amtsdaten-Scope erscheinen). Danach offen: #274 (BKG als
-Layer-Option/Entitlement, S4 — Design-Ankündigung nötig),
-ASD-Bedienbarkeits-Trio #271–#273, H3 Selbst-Hosting, #267 DB-Volume.
+**Nachtrag (2026-07-18, Ab-Werk-Test ✅):** Betreiber-Bestätigung nach Merge
++ Rebuild ohne gesetzte Theme-Env: der dunkle Amtsdaten-Scope (`bkg-dark`)
+erscheint ab Werk. **Die BKG-Migration (ADR 0026, H1/H2/basemap.world/Ausbau
+OSM-CARTO) ist damit vollständig abgeschlossen und abgenommen.**
+
+**Nachtrag (2026-07-18, H3 Selbst-Hosting/Air-Gap — FR-CFG-004):** Auf
+Betreiber-Wahl als Abschluss des BKG-Themas umgesetzt — als reiner
+**Deployment-Baustein ohne Code-Umbau**: INSTALLATION §8.0a beschreibt den
+Spiegel-Aufbau (monatliches BKG-Download-Paket `fonts/sprites/styles/tiles`,
+statisch serviert, `WAYFINDER_BKG_STYLE_URL` auf den Spiegel — die
+H1-Pipeline macht die von der BKG-Hosting-Anleitung verlangten
+URL-Umschreibungen automatisch); Referenz-Spiegel
+`docker-compose.basemap-mirror.yml` + `deploy/basemap-mirror/nginx.conf`
+(CORS, gzip-Content-Encoding, Cache). Ehrliche Grenzen: world-Offline-Paket
+beim BKG-DLZ zu klären; Paket-Verifikation betreiberseitig offen
+(zweistelliger GB-Download). Nebenbei geklärt + als **#277** erfasst:
+Orts-/Straßensuche wäre über den amtlichen BKG-Geokodierungsdienst machbar
+(Lizenzfrage!), nicht über die Kacheln selbst.
+
+**Nächster Schritt:** offen — Kandidaten: ASD-Bedienbarkeits-Trio #271–#273,
+#274 (BKG als Layer-Option/Entitlement, S4 — Design-Ankündigung nötig),
+#267 DB-Volume, #277 (Suche, nach Lizenz-Klärung). Wird wie üblich
+angekündigt (Freigabe abwarten).
 
 ---
 

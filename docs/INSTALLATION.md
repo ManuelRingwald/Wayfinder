@@ -1106,6 +1106,61 @@ Das Deployment-Netz muss **ausgehend** (HTTPS/443) folgende Ziele erreichen kön
 > `WAYFINDER_..._ENABLED=false`-Schalter ab (bzw. hinterlegt keinen OpenAIP-
 > Schlüssel und einen self-hosted Kartenstil).
 
+### 8.0a Selbst-Hosting / Air-Gap der Basiskarte (ADR 0026 H3)
+
+Für Betriebsräume **ohne Internet am Browser-Rand** — oder zur Unabhängigkeit
+von der BKG-Verfügbarkeit — lässt sich die komplette Basiskarte auf eigener
+Infrastruktur spiegeln. **Wayfinder braucht dafür keinen Code-Umbau**: Die
+Style-Pipeline (`pkg/basemap`) absolutisiert relative URLs gegen die
+konfigurierte Style-Quelle und leitet Schriften automatisch um — es genügt,
+`WAYFINDER_BKG_STYLE_URL` auf den eigenen Spiegel zu zeigen.
+
+**Schritt 1 — Download-Paket beziehen (einmalig je Monats-Stand):** Das BKG
+bietet für basemap.de Web Vektor ein **monatlich aktualisiertes
+Download-Paket** an (basemap.de → „Web Vektor Hosting" bzw. Open-Data-Portal).
+Inhalt ist genau die Struktur, die der Online-Dienst nutzt:
+
+```
+fonts/    sprites/    styles/    tiles/
+```
+
+Umfang: Deutschland vollständig, **zweistelliger GB-Bereich** — Download und
+Speicher beim Betreiber einplanen.
+
+**Schritt 2 — Paket statisch servieren.** Jeder statische Webserver genügt.
+Beispiel-Setup im Repo: `docker-compose.basemap-mirror.yml` (nginx, serviert
+ein gemountetes Paket-Verzeichnis unter Port 8090) mit
+`deploy/basemap-mirror/nginx.conf`. Zwei Punkte muss der Spiegel erfüllen:
+
+- **CORS:** Der Browser lädt Kacheln/Sprite direkt vom Spiegel — läuft der auf
+  einer anderen Origin als Wayfinder, braucht er
+  `Access-Control-Allow-Origin` (Beispiel-Konfiguration setzt es; im
+  abgeschotteten Betriebsnetz unkritisch, sonst auf die Wayfinder-Origin
+  einschränken).
+- **Vorkomprimierte Kacheln:** Die `.pbf`-Kacheln des Pakets sind i. d. R.
+  **bereits gzip-komprimiert** und müssen mit `Content-Encoding: gzip`
+  ausgeliefert werden (siehe BKG-Hosting-Anleitung; die
+  Beispiel-Konfiguration enthält den passenden Block).
+
+**Schritt 3 — Wayfinder umstellen:**
+
+```bash
+WAYFINDER_BKG_STYLE_URL=http://<mirror-host>:8090/styles/bm_web_col.json
+```
+
+Die Pipeline erledigt den Rest (Glyphs → Wayfinder-Proxy → Spiegel, relative
+Sprite-/Kachel-Pfade → absolut auf den Spiegel). Der `bkg-dark`-Scope entsteht
+wie gehabt server-seitig aus demselben Spiegel-Style.
+
+**Ehrliche Grenzen:** (a) Das Download-Paket deckt **Deutschland** ab
+(basemap.de); ob das BKG auch für **basemap.world** ein Offline-Paket
+anbietet, ist beim BKG-Dienstleistungszentrum zu klären — ohne world-Paket
+läuft ein Air-Gap-Deployment mit Deutschland-Karte ohne Umland (wie H1 vor dem
+world-Nachtrag). (b) Die Aktualität liegt beim Betreiber: neues Monats-Paket =
+manueller (oder selbst automatisierter) Austausch des Spiegel-Verzeichnisses.
+(c) Wetter/QNH/OpenAIP sind eigene Egress-Ziele (Tabelle oben) und von diesem
+Spiegel unabhängig.
+
 ### 8.1 Image bauen und pushen
 
 ```bash

@@ -1,0 +1,22 @@
+# Example self-hosting mirror for the official base map (ADR 0026 H3,
+# INSTALLATION.md §8.0a): serves the monthly BKG download package
+# (fonts/ sprites/ styles/ tiles/) as a static site on port 8090.
+#
+# Usage:
+#   1. Unpack the BKG package into ./basemap-mirror-data/ (so that
+#      ./basemap-mirror-data/styles/bm_web_col.json exists).
+#   2. docker compose -f docker-compose.basemap-mirror.yml up -d
+#   3. Point Wayfinder at the mirror:
+#      WAYFINDER_BKG_STYLE_URL=http://<mirror-host>:8090/styles/bm_web_col.json
+#
+# Wayfinder's style pipeline (pkg/basemap) rewrites/absolutises all URLs
+# against this style URL — no further configuration needed.
+services:
+  basemap-mirror:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./basemap-mirror-data:/usr/share/nginx/html:ro
+      - ./deploy/basemap-mirror/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "8090:80"
+    restart: unless-stopped
