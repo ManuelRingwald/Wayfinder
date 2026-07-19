@@ -54,6 +54,10 @@ onMounted(async () => {
     // #273: click on free map area (no track/label hit) → parent decides
     // whether to deselect (tool guard lives there, mirroring track-click).
     () => emit('empty-click'),
+    // #297: feed each track batch to the measure controller so a track-anchored
+    // measure endpoint follows the moving track. No-op until the controller is
+    // set up on map 'load' (measure is null before then).
+    (features) => measure?.refreshTracks(features),
   )
   // #219: initMap is async (it awaits /api/map-config), so session.viewCenter /
   // session.aoi can resolve DURING that await — most notably when an admin enters
