@@ -10,6 +10,34 @@
 
 ---
 
+## ✨ Stand 2026-07-19 (Label-Flacker-Fix: `fadeDuration: 0` — FR-UI-038)
+
+**In normaler Sprache:** Betreiber-Meldung: Bei jedem Track-Update wurden die
+Datenblock-Labels für einen kurzen Moment leer. Verdacht war das neue
+Live-Detail-Panel — tatsächlich war es MapLibres eingebaute
+Label-**Einblend-Animation**: Die Karten-Engine behandelt ein Label mit
+geändertem Text (neue Flugfläche) als „neues" Symbol und blendet es über
+300 ms ein; sichtbar wurde das erst durch die viel höhere Beschriftungs-Last
+der BKG-Vektor-Basiskarte. Fix: Die Blende ist jetzt abgeschaltet
+(`fadeDuration: 0`) — getauschte Labels stehen im selben Frame. Das ist die
+saubere Lösung, kein Workaround: Der Track-Label-Layer verzichtet seit
+ASD-002 bewusst auf MapLibres Karten-Label-Logik (eigene Deconfliction,
+Kollisions-Placement aus); die Zeitachse war das letzte fehlende Drittel
+dieses Opt-outs. Nebenwirkung: Auch Basiskarten-Beschriftung poppt beim
+Zoomen hart ein statt weich zu blenden — scope-konsistent.
+
+**Geprüft und verworfen:** differentielle Quell-Updates (beheben das Blinken
+nicht — MapLibre matcht Symbole über den Inhalt; bleibt als reine
+Effizienz-Option), DOM-Marker/Custom-WebGL-Layer (falsche Flughöhe).
+Register: **FR-UI-038**. **Offen:** Sicht-Abnahme durch den Betreiber (die
+Sandbox kann WebGL nicht rendern) — Scope beobachten: Labels müssen bei
+jedem Update stehen bleiben, ohne Leer-Moment.
+
+**Nächster Schritt:** Betreiber-Sicht-Abnahme Flacker-Fix + Smoke-Test
+Sektor-Suche (#277, unten). Danach Betriebs-Härtung laut Roadmap.
+
+---
+
 ## 🔎 Stand 2026-07-19 (Sektor-Suche über die Basiskarten-Daten — #277, ADR 0028, FR-UI-037)
 
 **In normaler Sprache:** Der Lotse kann jetzt im Scope nach Straßen und Orten
