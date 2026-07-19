@@ -6,7 +6,10 @@
 // only for UI-facing state (feedStatus, mapLoaded, palette key).
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import { PALETTES, TRACKS_LAYER_ID, LABELS_LAYER_ID, AIRSPACE_GROUPS } from './constants.js'
+import {
+  PALETTES, TRACKS_LAYER_ID, LABELS_LAYER_ID, AIRSPACE_GROUPS,
+  SYNTHETIC_BACKGROUND_LAYER_ID, SYNTHETIC_BACKGROUND_COLOR, SYNTHETIC_SCOPE_STYLE,
+} from './constants.js'
 import {
   addAeronauticalIcons,
   addAirspaceLayers,
@@ -131,9 +134,25 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
     zoom: initialCenter?.zoom != null ? initialCenter.zoom : cfg.zoom,
   }
 
+  // #274 (W1=b): resolve a URL-style ourselves so a failing base-map upstream
+  // degrades to the synthetic scope instead of a dead map — the ASD works
+  // without the map layer by design, so a BKG outage must never cost the air
+  // picture (track labels keep rendering: the fallback keeps the local glyphs).
+  let mapStyle = cfg.style
+  if (typeof mapStyle === 'string') {
+    try {
+      const styleRes = await fetch(mapStyle)
+      if (!styleRes.ok) throw new Error(`HTTP ${styleRes.status}`)
+      mapStyle = await styleRes.json()
+    } catch (err) {
+      console.warn('Base-map style unavailable — starting the synthetic scope:', err)
+      mapStyle = SYNTHETIC_SCOPE_STYLE
+    }
+  }
+
   const map = new maplibregl.Map({
     container,
-    style: cfg.style,
+    style: mapStyle,
     center: [effectiveCenter.lon, effectiveCenter.lat],
     zoom: effectiveCenter.zoom,
     // Suppress the default expanded attribution: it printed "© OpenStreetMap …"
@@ -159,6 +178,8 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
   const state = {
     mapLoaded: false,
     pendingTracks: null,
+    // #274: layer ids of the (toggleable) base map, snapshotted at style load.
+    basemapLayerIds: [],
     // Per-track history of past positions ([lon, lat]), for trail and dot display.
     trackHistory: new Map(),
     // Per-track last-known flight level in feet, for the vertical-tendency
@@ -348,6 +369,30 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
 
   // Wire everything once the MapLibre style is fully loaded.
   map.on('load', () => {
+    // #274: snapshot the BASE style's layer ids before any overlay is added —
+    // that set IS the "Basiskarte" the sidebar toggle shows/hides. Then lay an
+    // always-visible near-black floor underneath (the base style's own
+    // background hides with the rest, and a transparent canvas is not a scope).
+    // Default per W2 is OFF: the map starts hidden unless the store (a view
+    // profile, or the user's earlier toggle) says otherwise.
+    state.basemapLayerIds = map.getStyle().layers
+      .map((l) => l.id)
+      .filter((id) => id !== SYNTHETIC_BACKGROUND_LAYER_ID)
+    if (!map.getLayer(SYNTHETIC_BACKGROUND_LAYER_ID)) {
+      map.addLayer(
+        {
+          id: SYNTHETIC_BACKGROUND_LAYER_ID,
+          type: 'background',
+          paint: { 'background-color': SYNTHETIC_BACKGROUND_COLOR },
+        },
+        state.basemapLayerIds[0],
+      )
+    }
+    const basemapVisible = store.layerVisibility.basemap ? 'visible' : 'none'
+    state.basemapLayerIds.forEach((id) => {
+      map.setLayoutProperty(id, 'visibility', basemapVisible)
+    })
+
     // WX-A: DWD weather-radar overlay first of all, so it sits directly above the
     // base map and beneath every operational overlay. Starts hidden; toggled via
     // the sidebar (gated by the weather_radar entitlement + availability).
@@ -505,6 +550,7 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
   function setLayerVisibility(vis) {
     if (!state.mapLoaded) return
     const groups = {
+      basemap: state.basemapLayerIds, // #274: the snapshotted base-style layers
       airspace: [AIRSPACE_FILL_LAYER_ID, AIRSPACE_LINE_LAYER_ID, AIRSPACE_LABEL_LAYER_ID],
       aor: [AIRSPACE_AOR_LAYER_ID], // ASD-014: AoR highlight toggle
       navaids: [NAVAIDS_LAYER_ID],

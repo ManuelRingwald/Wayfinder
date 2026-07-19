@@ -808,6 +808,15 @@ Konfiguriert wird über **Umgebungsvariablen** (im `environment:`-Block der
 | `WAYFINDER_MAP_CENTER_LON` | `8.5622` | Längengrad des Kartenstartzentrums |
 | `WAYFINDER_MAP_ZOOM` | `8` | Anfangs-Zoom (1–22) |
 | `WAYFINDER_MAP_THEME` | `bkg-dark` | `bkg-dark` (**dunkler Radar-Scope** auf amtlichen basemap.de-/basemap.world-Daten — Default) oder `bkg` (helle Variante). Die früheren Raster-Themes `dark` (CARTO) / `osm` (OpenStreetMap) sind **ausgebaut** (ADR 0026); ihre Namen wirken als Alias auf `bkg-dark`/`bkg` (Warnung im Log) |
+
+> **Basiskarte ist ein freigebbares Layer (#274, ADR 0027):** Seit FR-UI-036
+> startet der Scope **rein synthetisch** (Near-Black + Overlays). Die Karte
+> erscheint erst, wenn der Admin dem Mandanten das Feature **`basemap`**
+> freigibt **und** der Lotse sie in der Layer-Sidebar zuschaltet (Default aus;
+> Wahl persistiert über View-Profile). Das Theme oben bestimmt weiterhin, WIE
+> die Karte aussieht, sobald sie zugeschaltet ist. Fällt der Karten-Upstream
+> aus, startet der Scope trotzdem (eingebauter synthetischer Fallback-Style —
+> Track-Beschriftung bleibt intakt).
 | `WAYFINDER_BKG_STYLE_URL` | basemap.world-„Farbe"-Style | Upstream-Style für `bkg`/`bkg-dark` (Default: `bm_web_wld_col.json` — innerhalb Deutschlands amtlich, außerhalb BKG-kuratierter Weltkontext); Alternativen: Nur-Deutschland `bm_web_col.json`, Grau `bm_web_gry.json` oder self-hosted Mirror |
 | `WAYFINDER_MAP_STYLE_URL` | *(leer)* | Vollständige MapLibre-Style-URL — überschreibt `WAYFINDER_MAP_THEME`. Für basemap.de **nicht** hier eintragen, sondern `WAYFINDER_MAP_THEME=bkg` nutzen (sonst fehlen die Track-Label-Schriften, ADR 0026) |
 

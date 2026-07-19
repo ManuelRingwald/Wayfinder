@@ -92,6 +92,10 @@ export const useAsdStore = defineStore('asd', () => {
 
   // Layer visibility
   const layerVisibility = reactive({
+    // #274 (W1=b/W2=aus): the official base map is a grantable nice-to-have,
+    // not the foundation — the scope starts purely synthetic (near-black +
+    // overlays) and an entitled user opts into the map via the sidebar.
+    basemap: false,
     airspace: true,
     aor: true, // ASD-014: AoR highlight on by default (only shows when configured)
     navaids: true,

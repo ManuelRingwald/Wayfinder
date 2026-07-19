@@ -130,9 +130,20 @@ lebend) und deaktiviert die drei Korrelations-Kommandos (Kommando auf einen
 gelöschten Track liefe ins Leere). Rein Frontend. Gates grün (vitest 616,
 build, dist neu).
 
-**Nächster Schritt:** offen — Kandidaten: #274 (Layer-Option/Entitlement,
-S4 — Design-Ankündigung nötig), #277 (Sektor-Suche, S4 — Design-Ankündigung
-nötig). Wird wie üblich angekündigt (Freigabe abwarten).
+**Nachtrag (2026-07-19, #274 Basiskarte als Entitlement-Layer ✅ — ADR 0027,
+FR-UI-036):** Betreiber-Weichen **W1=b / W2=aus** ratifiziert: Die BKG-Karte
+ist ein freigebbares Nice-to-have — der Scope startet **rein synthetisch**
+(Near-Black + Overlays); erst Admin-Freigabe (`basemap`-Entitlement, Katalog
+jetzt 14 Keys) plus bewusstes Zuschalten in der Sidebar (Default aus,
+View-Profile persistieren) zeigt die Karte. Mechanik ohne Style-Wechsel
+(Layer-Snapshot + Sichtbarkeit, immer sichtbarer Near-Black-Grund); dazu der
+**synthetische Fallback-Style** bei nicht ladbarem Karten-Upstream (lokale
+Glyphs — ein BKG-Ausfall kostet nie das Lagebild). Migrations-Wirkung von
+W1=b bewusst: Bestandsmandanten sehen bis zur Freigabe den synthetischen
+Scope (INSTALLATION-Hinweis). Gates grün (go test, vitest 623, build, dist).
+
+**Nächster Schritt:** offen — Kandidat: #277 (Sektor-Suche, S4 —
+Design-Ankündigung nötig). Wird wie üblich angekündigt (Freigabe abwarten).
 
 ---
 

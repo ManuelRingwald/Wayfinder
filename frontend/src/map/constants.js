@@ -311,6 +311,26 @@ const darkPalette = {
   selection: '#23d3e6', // ASD-007: selection halo — cyan primary
 }
 
+// #274: the synthetic scope. The always-present floor under the (toggleable)
+// base map, and the complete fallback style when the base-map upstream is
+// unreachable — the ASD works without the map layer by design, so a BKG outage
+// must never cost the air picture. Glyphs stay local (track labels keep
+// rendering); background matches --wf-background (ADR 0015).
+export const SYNTHETIC_BACKGROUND_LAYER_ID = 'synthetic-background'
+export const SYNTHETIC_BACKGROUND_COLOR = '#070b12'
+export const SYNTHETIC_SCOPE_STYLE = {
+  version: 8,
+  glyphs: '/glyphs/{fontstack}/{range}.pbf',
+  sources: {},
+  layers: [
+    {
+      id: SYNTHETIC_BACKGROUND_LAYER_ID,
+      type: 'background',
+      paint: { 'background-color': SYNTHETIC_BACKGROUND_COLOR },
+    },
+  ],
+}
+
 // One palette per built-in theme (ADR 0026 Nachtrag Ausbau OSM/CARTO: only the
 // official BKG themes remain; the legacy "dark"/"osm" env values are aliased
 // server-side, so cfg.theme is always one of these keys).

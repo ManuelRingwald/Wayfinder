@@ -15,6 +15,21 @@
            tenant is not entitled to. Fail-open while the identity is still loading or
            for an admin viewer (gateReady false → show all). The server enforces
            access independently; this is a pure UX gate. -->
+      <!-- #274 (W1=b/W2=aus): the official BKG base map is a grantable
+           nice-to-have, not the foundation — the scope runs synthetic by
+           default and an entitled user opts into the map here. First in the
+           list because it is the visual floor everything else sits on. -->
+      <div v-if="showLayer('basemap')" class="filter-row">
+        <v-switch
+          v-model="store.layerVisibility.basemap"
+          label="Basiskarte (BKG)"
+          color="primary"
+          density="compact"
+          hide-details
+          inset
+          @update:model-value="onLayerToggle('basemap', $event)"
+        />
+      </div>
       <!-- ASD-011 / #176: the four airspace groups are first-class toggles (the
            parent "Lufträume" toggle was removed). The airspace layer is visible
            iff at least one group is on, derived in the store (setAirspaceGroup).
