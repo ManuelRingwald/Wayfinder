@@ -44,6 +44,7 @@
         ref="mapCanvas"
         @track-click="onTrackClick"
         @connection-change="onConnectionChange"
+        @empty-click="onMapEmptyClick"
       />
       <!-- ASD-007 (design template 'nacht' scheme): a faint cyan radar-scope
            bloom at the display centre. Sits above the map tiles but below the
@@ -352,6 +353,14 @@ function onTrackClick(track) {
   // (DIST/QDM pick it via the map controller) — don't also open the detail panel.
   if (tools.activeTool) return
   store.selectTrack(track)
+}
+
+// #273: a click on free map area deselects (panel closes, halo clears) — the
+// standard map-UI convention. Same measure-tool guard as onTrackClick: RBL/
+// DIST/QDM consume map clicks, so a tool click must never drop the selection.
+function onMapEmptyClick() {
+  if (tools.activeTool) return
+  store.clearTrackSelection()
 }
 </script>
 

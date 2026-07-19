@@ -6,7 +6,7 @@
 // only for UI-facing state (feedStatus, mapLoaded, palette key).
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import { PALETTES, TRACKS_LAYER_ID, AIRSPACE_GROUPS } from './constants.js'
+import { PALETTES, TRACKS_LAYER_ID, LABELS_LAYER_ID, AIRSPACE_GROUPS } from './constants.js'
 import {
   addAeronauticalIcons,
   addAirspaceLayers,
@@ -85,7 +85,7 @@ import {
 //                  the tenant's own sector; when null it uses the global
 //                  /api/map-config centre (FR-UI-013). Later changes flow through
 //                  applyViewCenter (e.g. an admin switching impersonation target).
-export async function initMap(container, store, onTrackClick, onConnectionChange, initialCenter = null, initialAOI = null) {
+export async function initMap(container, store, onTrackClick, onConnectionChange, initialCenter = null, initialAOI = null, onEmptyClick = null) {
   // #189/#190: the tenant's AOI (whoami) clips the DWD weather overlays to the
   // sector. Held in a closure so loadWarnings and applyWeatherAOI can re-clip.
   let weatherAOI = initialAOI
@@ -300,6 +300,9 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
         if (state.mapLoaded) {
           updateTracksLayer(msg, state, doRender, startFadeLoop, store.historyConfig.durationS * 1000)
           syncLiveTrackNums()
+          // #272: keep the open detail panel live — refresh the selected
+          // track's snapshot from the just-updated displayed set.
+          store.refreshSelectedTrack(state.liveTrackFeatures)
         } else {
           state.pendingTracks = msg
         }
@@ -419,6 +422,7 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
       updateTracksLayer(state.pendingTracks, state, doRender, startFadeLoop, store.historyConfig.durationS * 1000)
       state.pendingTracks = null
       syncLiveTrackNums()
+      store.refreshSelectedTrack(state.liveTrackFeatures) // #272
     }
 
     // Load aeronautical data and start periodic refresh.
@@ -457,9 +461,13 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
       })
     })
 
-    // Track click → emit to Vue component.
-    map.on('click', TRACKS_LAYER_ID, (e) => {
-      const features = map.queryRenderedFeatures(e.point, { layers: [TRACKS_LAYER_ID] })
+    // Track click → emit to Vue component. #271: a click on the data-block
+    // LABEL selects the same track as a click on the symbol — the label is the
+    // larger, natural click target. Label DRAGS (ASD-002 pinning) stay
+    // distinct for free: MapLibre suppresses the click event once the pointer
+    // moves beyond clickTolerance, so only true clicks arrive here.
+    const emitTrackClick = (layerId) => (e) => {
+      const features = map.queryRenderedFeatures(e.point, { layers: [layerId] })
       if (!features || features.length === 0) return
       const props = features[0].properties
       // Find the full track data from liveTrackFeatures.
@@ -469,6 +477,22 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
       if (liveFeature && onTrackClick) {
         onTrackClick(liveFeature.properties)
       }
+    }
+    map.on('click', TRACKS_LAYER_ID, emitTrackClick(TRACKS_LAYER_ID))
+    map.on('click', LABELS_LAYER_ID, emitTrackClick(LABELS_LAYER_ID))
+
+    // #273: a click on FREE map area (no track symbol/label under the cursor)
+    // deselects — the standard map-UI convention. The layer-specific handlers
+    // above fire alongside this general one; when they hit a track the query
+    // here is non-empty and nothing happens. Camera pans never arrive (MapLibre
+    // suppresses click after a drag) and the measure-tool guard lives with the
+    // callback owner (AsdView), mirroring onTrackClick.
+    map.on('click', (e) => {
+      if (!onEmptyClick) return
+      const hits = map.queryRenderedFeatures(e.point, {
+        layers: [TRACKS_LAYER_ID, LABELS_LAYER_ID],
+      })
+      if (!hits || hits.length === 0) onEmptyClick()
     })
 
     // Store cleanup ref for aeroInterval.

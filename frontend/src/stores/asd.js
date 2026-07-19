@@ -204,6 +204,20 @@ export const useAsdStore = defineStore('asd', () => {
   function setFlFilter(updates) { Object.assign(flFilter, updates) }
   function selectTrack(track) { selectedTrack.value = track }
   function clearTrackSelection() { selectedTrack.value = null }
+  // #272: refresh the selected track's snapshot from the displayed feature set
+  // so the open detail panel follows every WS update instead of freezing at
+  // selection time. A fresh object is assigned (Vue reactivity keys off
+  // identity). A track that vanished (TSE / out of scope) keeps its last
+  // snapshot — the panel stays open with the final values, matching the
+  // established selectTrackByNum no-op behaviour (FR-UI-029).
+  function refreshSelectedTrack(liveFeatures) {
+    const current = selectedTrack.value
+    if (!current) return
+    const feature = (liveFeatures || []).find(
+      (f) => f.properties.track_num === current.track_num,
+    )
+    if (feature) selectedTrack.value = { ...feature.properties }
+  }
 
   // #245 Teil B: manual flight-plan correlation commands (ADR 0024). Each is the
   // browser half of the first Wayfinder→Firefly WRITE path: it posts to the
@@ -271,7 +285,7 @@ export const useAsdStore = defineStore('asd', () => {
     setFeedHealth, resetFeedHealth, setMapLoaded, setPalette, setLayerVisibility,
     setFlFilter,
     toggleAirspaceGroup, setAirspaceGroup,
-    selectTrack, clearTrackSelection, setLabelPin, deleteLabelPin, setLiveTrackNums,
+    selectTrack, clearTrackSelection, refreshSelectedTrack, setLabelPin, deleteLabelPin, setLiveTrackNums,
     correlate, setUncorrelated, clearOverride,
   }
 })

@@ -28,7 +28,7 @@ import MapControls from './MapControls.vue'
 import MeasureStatus from './MeasureStatus.vue'
 import ImpersonationBar from './ImpersonationBar.vue'
 
-const emit = defineEmits(['track-click', 'connection-change'])
+const emit = defineEmits(['track-click', 'connection-change', 'empty-click'])
 const store = useAsdStore()
 const imp = useImpersonationStore()
 const session = useSessionStore()
@@ -48,6 +48,9 @@ onMounted(async () => {
     session.viewCenter,
     // #189/#190: clip the DWD weather overlays (radar/warnings) to the tenant AOI.
     session.aoi,
+    // #273: click on free map area (no track/label hit) → parent decides
+    // whether to deselect (tool guard lives there, mirroring track-click).
+    () => emit('empty-click'),
   )
   // #219: initMap is async (it awaits /api/map-config), so session.viewCenter /
   // session.aoi can resolve DURING that await — most notably when an admin enters
