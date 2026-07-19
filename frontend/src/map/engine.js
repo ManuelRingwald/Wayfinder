@@ -37,6 +37,8 @@ import {
   setWeatherRadarAOI,
   addWeatherWarningsLayer,
   updateWeatherWarnings,
+  addSearchMarkerLayer,
+  updateSearchMarker,
 } from './layers.js'
 import { clipFeatureCollectionToBBox } from './clip.js'
 import { rangeRingsGeoJSON } from './rangerings.js'
@@ -446,6 +448,7 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
     addSpiHighlightLayer(map)         // #236: SPI ident ring, framing the symbol
     addLabelsLayer(map, palette)      // ASD-002: above track circles
     addSelectionLabelLayer(map)       // ASD-011b: selected-label outline, above labels
+    addSearchMarkerLayer(map, palette) // #277: search result pin, topmost
     state.mapLoaded = true
     store.setMapLoaded(true)
     // ASD-011 (#179): apply the airspace type filter directly on load, so the
@@ -605,6 +608,27 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
     return true
   }
 
+  // #277 (ADR 0028): drop the sector-search result marker on the picked place
+  // and ease the camera onto it. The marker is a transient navigation aid, not
+  // scope state — it lives outside the render loop and is cleared explicitly
+  // (next selection replaces it; clear/Esc in MapSearch removes it).
+  function showSearchMarker(lon, lat, name) {
+    if (!state.mapLoaded) return
+    if (!Number.isFinite(lon) || !Number.isFinite(lat)) return
+    updateSearchMarker(map, {
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: [lon, lat] },
+      properties: { name: name || '' },
+    })
+    map.easeTo({ center: [lon, lat], duration: 600 })
+  }
+
+  // #277: remove the search result marker (search cleared / Esc).
+  function clearSearchMarker() {
+    if (!state.mapLoaded) return
+    updateSearchMarker(map, null)
+  }
+
   // #191: history retention/fade changed — re-render immediately so the new
   // window takes effect without waiting for the next WS update. (Points already
   // stored are only pruned on the next updateTrackHistory, but the age fade and
@@ -711,5 +735,5 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
     src.setData(rangeRingsGeoJSON(effectiveCenter.lat, effectiveCenter.lon, spacingNM, count))
   }
 
-  return { map, destroy, reconnect, setLayerVisibility, updateFlFilter, updateAirspaceFilter, updateAoR, updateSelection, selectTrackByNum, updateHistoryConfig, applyWeatherAOI, zoomIn, zoomOut, recenter, applyViewCenter, updateRangeRings }
+  return { map, destroy, reconnect, setLayerVisibility, updateFlFilter, updateAirspaceFilter, updateAoR, updateSelection, selectTrackByNum, updateHistoryConfig, applyWeatherAOI, zoomIn, zoomOut, recenter, applyViewCenter, updateRangeRings, showSearchMarker, clearSearchMarker }
 }

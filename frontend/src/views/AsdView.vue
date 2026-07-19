@@ -91,6 +91,16 @@
           @close="eventsOpen = false"
           @select-track="onEventSelectTrack"
         />
+        <!-- #277 (ADR 0028): sector search over the tenant AOI's base-map data.
+             Cosmetic gate mirroring the sidebar's showLayer pattern (fail-open
+             for admins in guest mode); the server enforces the basemap
+             entitlement on /api/basemap/search independently, fail-closed. -->
+        <MapSearch
+          v-if="showSearch"
+          class="map-search-control"
+          @select="onSearchSelect"
+          @clear="mapCanvas?.clearSearchMarker()"
+        />
       </div>
       <!-- Reskin 3b: floating scope legend (bottom-left). The bottom-right
            width/leader readout was removed (E2E): it read like a scale bar but
@@ -178,6 +188,7 @@ import TrackDetailPanel from '@/components/TrackDetailPanel.vue'
 import FeedStatusChip from '@/components/FeedStatusChip.vue'
 import EventPanel from '@/components/EventPanel.vue'
 import ViewProfileMenu from '@/components/ViewProfileMenu.vue'
+import MapSearch from '@/components/MapSearch.vue'
 import LoginCard from '@/components/LoginCard.vue'
 import { useEventsStore } from '@/stores/events.js'
 
@@ -200,6 +211,17 @@ const badgeContent = computed(() => (events.unseenCount > 99 ? '99+' : String(ev
 function toggleEvents() {
   eventsOpen.value = !eventsOpen.value
   if (eventsOpen.value) events.markSeen()
+}
+
+// #277: cosmetic search gate, mirroring LayerFilterContent's showLayer —
+// entitlement-driven for tenant users, fail-open for an admin in read-only
+// guest mode (whose identity carries no tenant feature map). The server
+// enforces the basemap entitlement on /api/basemap/search fail-closed anyway.
+const showSearch = computed(() => session.isAdmin || session.hasFeature('basemap'))
+
+// #277: a picked search hit → magenta marker + camera onto the place.
+function onSearchSelect(hit) {
+  mapCanvas.value?.showSearchMarker(hit.lon, hit.lat, hit.name)
 }
 
 // ASD-013: clicking a still-live "Track N erschienen" row selects that track
@@ -400,6 +422,12 @@ function onMapEmptyClick() {
    top-right cluster, so they must re-enable pointer events to stay clickable. */
 .events-control,
 .events-panel {
+  pointer-events: auto;
+}
+
+/* #277: the search field lives inside the (pointer-events:none) cluster and
+   must stay typeable/clickable. */
+.map-search-control {
   pointer-events: auto;
 }
 

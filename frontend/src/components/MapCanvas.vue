@@ -168,6 +168,9 @@ defineExpose({
   // ASD-013: select a track by number from the Ereignis-Panel. Returns false if
   // the track is no longer live so AsdView can leave the panel open.
   selectTrackByNum: (trackNum) => mapEngine?.selectTrackByNum(trackNum) ?? false,
+  // #277: sector search — drop/clear the result marker (MapSearch via AsdView).
+  showSearchMarker: (lon, lat, name) => mapEngine?.showSearchMarker(lon, lat, name),
+  clearSearchMarker: () => mapEngine?.clearSearchMarker(),
 })
 </script>
 

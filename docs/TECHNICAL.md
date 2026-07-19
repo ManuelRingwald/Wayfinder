@@ -390,6 +390,7 @@ immer aktiv — ADR 0014); statische Frontend-Routen werden ausgeliefert.
 | `/api/map-config` | GET | Kartentheme und Startkonfiguration als JSON |
 | `/glyphs/{fontstack}/{range}.pbf` | GET | **FR-UI-023 (ADR 0015 Nachtrag-2):** selbst-gehostete MapLibre-Glyph-PBFs (**Roboto Mono Medium**, aus dem Binary via `go:embed`) — die Datenblock-Schrift der Karte. Kein Font-CDN mehr auf der Karte (air-gap-Schritt; die UI-Fonts sind bereits offline via `@fontsource`). `application/x-protobuf`, `immutable`-Cache; nicht generierte Ranges/Traversal → 404. Alle eingebauten Kartenstile zeigen mit `"glyphs": "/glyphs/{fontstack}/{range}.pbf"` hierher. **FR-UI-030 (ADR 0026):** mit aktivem `bkg`-Theme wird der Endpoint zur **Weiche** — eingebettete Fontstacks weiter lokal, unbekannte Fontstacks (Kartenfonts des basemap.de-Styles) werden an den Upstream-Glyph-Endpoint des BKG proxied (validierte Pfadsegmente, 2-MiB-Limit, begrenzter In-Memory-Cache; Upstream-Fehler → 502) |
 | `/basemap/style.json` | GET | **FR-UI-030/031 (ADR 0026):** amtliche Basiskarte — gemountet mit `WAYFINDER_MAP_THEME=bkg` **oder** `bkg-dark`. Serviert das server-seitig geholte, **umgeschriebene** basemap.de-Style-JSON (`glyphs` → `/glyphs`, relative Sprite-/Kachel-URLs absolutisiert, Attribution © basemap.de / BKG ergänzt falls fehlend); bei `bkg-dark` zusätzlich **regelbasiert dunkel transformiert** (HSL-Scope-Bänder, Kartentext gedämpft hell, Icons gedimmt — ADR 0026 Nachtrag H2). Cache-TTL 12 h; bei Upstream-Ausfall wird der letzte gute Stand **stale** weiter serviert, ganz ohne Cache ehrliches **502**. Blockiert nie `/ready` |
+| `/api/basemap/search` | GET | **FR-UI-037 (#277, ADR 0028):** Sektor-Suche über die Vektor-Tile-Namen der Basiskarte (`?q=…`, min. 2 Zeichen). Server-seitiger, **lazy** je AOI gebauter Index (`pkg/basemapsearch`): z14-Tiles der effektiven View-AOI (ohne AOI: 30-NM-Box ums View-Zentrum), MVT-dekodiert, benannte Features normalisiert (ä→ae/ß→ss/„straße|str." → `str`) und gleichnamig im 3-km-Umkreis geclustert. Antworten: `202 {status:"building"}` während des Baus (Single-Flight; UI pollt), `200 {status:"ready", results:[{name,category,lat,lon}]}` mit max. 20 Treffern (Präfix vor Infix), `503` ohne auflösbares Suchgebiet. Hinter der Tenant-Middleware; **Feature-Gate `basemap` fail-closed → `403`** (der Index-Bau kostet reale Ressourcen — tausende Tile-Fetches — und ist kein rein kosmetisches Gate). Limits: 4096 Tiles je Index (übergroße AOI Zentrum-erhaltend geclampt), 8 Indexe (LRU), 250 k Einträge, 4 MiB je Tile, Build-Timeout 5 min, TTL 24 h mit Stale-Serve + Hintergrund-Rebuild. Impersonation wie `/api/airspace` (Ziel-Mandant zählt) |
 | `/api/airspace` | GET | Luftraumstrukturen (GeoJSON, best-effort). **ONB-6 (ADR 0011):** hinter der Tenant-Middleware; liefert den **Cache des Request-Mandanten** (eigener Schlüssel/AOI, Fallback auf den globalen Cache). **Feature-Gate:** ohne `airspaces`-Entitlement des Mandanten → **leere** Collection (Overlay erscheint nicht; server-seitig erzwungen). **Impersonation (ADR 0008 Nachtrag):** bei aktivem Grant zählt der **Ziel-Mandant** (Cache **und** Gate). **ASD-014 (ADR 0021):** Luftraum-Features tragen zusätzlich (additiv, nur `kind==airspace`, weggelassen wenn nicht vorhanden) `id` (stabile OpenAIP-`_id` — Referenz für die AoR-Auswahl), `icao_class` (numerisch) und die Vertikalgrenzen `lower`/`upper` als `{value, unit, referenceDatum}` (Einheiten: unit 0=m/1=ft/6=FL, referenceDatum 0=GND/1=MSL/2=STD) |
 | `/api/navaids` | GET | VOR/NDB-Beacons (GeoJSON, best-effort). **ONB-6:** mandanten-aufgelöst wie `/api/airspace`. **Feature-Gate:** ohne `vor_ndb` → leere Collection. Impersonation wie `/api/airspace` |
 | `/api/waypoints` | GET | Wegpunkte (GeoJSON, best-effort). **ONB-6:** mandanten-aufgelöst wie `/api/airspace`. **Feature-Gate:** ohne `waypoints` → leere Collection. Impersonation wie `/api/airspace` |
@@ -579,6 +580,17 @@ gegen den BKG-Upstream (bzw. den konfigurierten Mirror) zusammen.
 | `wayfinder_basemap_fetch_failures_total` | Counter | Fehlgeschlagene Abrufe (Timeout/HTTP-Fehler/kaputtes JSON/Größenlimit); Style wird dann stale weiter serviert |
 | `wayfinder_basemap_cache_age_seconds` | Gauge | Sekunden seit dem letzten erfolgreichen Upstream-Abruf; `-1` wenn nie |
 
+### 5.4c Sektor-Suche (#277, ADR 0028)
+
+Nur mit aktivem `bkg`/`bkg-dark`-Theme emittiert (die Suche existiert nur mit
+konfigurierter Basiskarte als Tile-Quelle).
+
+| Metrik | Typ | Beschreibung |
+|--------|-----|--------------|
+| `wayfinder_basemap_search_builds_total{result="success"}` | Counter | Erfolgreich gebaute Sektor-Suchindexe (je AOI, lazy beim ersten Suchaufruf) |
+| `wayfinder_basemap_search_builds_total{result="failure"}` | Counter | Fehlgeschlagene Index-Builds (Upstream-/Timeout-/Dekodier-Fehler); die UI zeigt weiter „wird aufgebaut" und der nächste Aufruf stößt einen neuen Versuch an |
+| `wayfinder_basemap_searches_total` | Counter | Beantwortete Suchanfragen (`/api/basemap/search`, nach Gate) |
+
 ### 5.5 Feature-Entitlements (Multi-Mandant, WF2-50)
 
 | Metrik | Typ | Bedeutung |
@@ -610,7 +622,7 @@ Keys werden fail-closed verweigert und über den `unknown_key`-Zähler sichtbar.
 | `weather_warnings` | DWD-Wetterwarnungen-Overlay — WX-C (ADR 0016) | deny |
 | `airport` | Flughafen-Referenzpunkt-Marker-Overlay (#192) | deny |
 | `runways` | Runway-Mittellinien-Overlay (#192) | deny |
-| `basemap` | Amtliche BKG-Basiskarte als zuschaltbares Layer (#274, ADR 0027): ohne Freigabe läuft der Scope rein synthetisch; mit Freigabe Nutzer-Toggle in der Sidebar, Default aus. Reine Anzeige-Option (öffentliche Kartendaten — kein server-seitiger Daten-Rand) | deny |
+| `basemap` | Amtliche BKG-Basiskarte als zuschaltbares Layer (#274, ADR 0027): ohne Freigabe läuft der Scope rein synthetisch; mit Freigabe Nutzer-Toggle in der Sidebar, Default aus. Für die Karten-*Anzeige* rein kosmetisches Gate (öffentliche Kartendaten); seit #277 (ADR 0028) gated derselbe Key zusätzlich **fail-closed server-seitig** die Sektor-Suche `/api/basemap/search` (`403`), weil der Suchindex-Bau reale Ressourcen kostet | deny |
 
 **Reservierte Keys (#175):** `stca` und `premium_layers` sind katalogisiert, haben
 aber **keinen Verbraucher** (Ein-/Ausschalten ist ein No-Op). Sie bleiben im Katalog

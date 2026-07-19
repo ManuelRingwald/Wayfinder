@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
 	"os"
 	"os/signal"
@@ -25,6 +26,7 @@ import (
 	"github.com/manuelringwald/wayfinder/pkg/aeronautical"
 	"github.com/manuelringwald/wayfinder/pkg/auth"
 	"github.com/manuelringwald/wayfinder/pkg/basemap"
+	"github.com/manuelringwald/wayfinder/pkg/basemapsearch"
 	"github.com/manuelringwald/wayfinder/pkg/broadcast"
 	"github.com/manuelringwald/wayfinder/pkg/cat062"
 	"github.com/manuelringwald/wayfinder/pkg/cat063"
@@ -127,11 +129,16 @@ func main() {
 	// an explicit custom style URL bypasses it (then /glyphs stays
 	// embedded-only and /basemap/style.json is not mounted).
 	var basemapSvc *basemap.Service
+	var basemapSearchSvc *basemapsearch.Service
 	if cfg.MapStyleURL == "" {
 		basemapSvc = basemap.NewService(
 			&http.Client{Timeout: 15 * time.Second},
 			basemap.Config{StyleURL: cfg.BKGStyleURL, Dark: cfg.MapTheme == mapThemeBKGDark},
 			logger,
+		)
+		// #277: sector search reads the same rewritten style/tiles the map uses.
+		basemapSearchSvc = basemapsearch.NewService(
+			basemapSvc, &http.Client{Timeout: 20 * time.Second}, basemapsearch.Config{}, logger,
 		)
 	}
 
@@ -481,7 +488,7 @@ func main() {
 	// OpenAIP fetch counters (ONB-6): sum across every per-tenant Service plus the
 	// global one so the process-wide counter stays meaningful as tenants come and go.
 	aeroCounts := func() (int64, int64) { return aeroRegistry.FetchSuccessCount(), aeroRegistry.FetchFailureCount() }
-	go startProbeServer(logger, &blockCount, &trackCount, &tracksCurrent, &heartbeatCount, broadcaster, decodeErrors, feedRegistry, aeroService, aeroCounts, weatherRadar, weatherQNH, weatherWarn, basemapSvc, &lastError, featSvc, sessionRepo)
+	go startProbeServer(logger, &blockCount, &trackCount, &tracksCurrent, &heartbeatCount, broadcaster, decodeErrors, feedRegistry, aeroService, aeroCounts, weatherRadar, weatherQNH, weatherWarn, basemapSvc, basemapSearchSvc, &lastError, featSvc, sessionRepo)
 
 	// Start WebSocket server.
 	mux := http.NewServeMux()
@@ -605,6 +612,47 @@ func main() {
 		}
 		return []string{*vc.QNHICAO}
 	})))))
+
+	// Sector search over the base map's vector tiles (#277, ADR 0028): the
+	// controller finds a street/place in the tenant's AOI ("drone launching from
+	// Friedrichstraße"). Server-side fail-closed on the basemap entitlement —
+	// index building costs real resources (thousands of tile fetches), so this
+	// gate is enforcement, not cosmetics. The search area is the effective view
+	// AOI, else a 30 NM box around the effective view centre (W3), else the
+	// global map centre. Impersonation-aware like the aero endpoints. Only
+	// mounted when the basemap service exists (a custom WAYFINDER_MAP_STYLE_URL
+	// bypasses the BKG pipeline and with it the search).
+	if basemapSvc != nil {
+		searchAllowed := func(r *http.Request) bool {
+			id, ok := tenant.FromContext(r.Context())
+			if !ok {
+				return false
+			}
+			return featSvc.HasFeature(r.Context(), tenant.ReadTenant(r.Context(), id.TenantID), feature.Basemap)
+		}
+		searchBBox := func(r *http.Request) (basemapsearch.BBox, bool) {
+			lat, lon := cfg.MapCenterLat, cfg.MapCenterLon
+			if id, ok := tenant.FromContext(r.Context()); ok {
+				if vc, err := qnhViews.GetEffective(r.Context(), tenant.ReadTenant(r.Context(), id.TenantID), id.UserID); err == nil {
+					if vc.AOI != nil {
+						return basemapsearch.BBox{
+							MinLat: vc.AOI.MinLat, MinLon: vc.AOI.MinLon,
+							MaxLat: vc.AOI.MaxLat, MaxLon: vc.AOI.MaxLon,
+						}, true
+					}
+					if vc.CenterLat != 0 || vc.CenterLon != 0 {
+						lat, lon = vc.CenterLat, vc.CenterLon
+					}
+				}
+			}
+			// 30 NM half-width box around the centre (1° lat = 60 NM).
+			dLat := 30.0 / 60.0
+			dLon := dLat / math.Cos(lat*math.Pi/180)
+			return basemapsearch.BBox{MinLat: lat - dLat, MinLon: lon - dLon, MaxLat: lat + dLat, MaxLon: lon + dLon}, true
+		}
+		mux.Handle("GET /api/basemap/search",
+			tenantMW(pwGate(impReadMW(basemapSearchSvc.Handler(searchAllowed, searchBBox)))))
+	}
 
 	// Weather-warnings GeoJSON (WX-C, ADR 0016): the map fetches this and renders
 	// warning polygons coloured by severity. Behind the tenant middleware;
@@ -1668,7 +1716,7 @@ func coverageRingsHandler(cfg Config) http.HandlerFunc {
 }
 
 // startProbeServer starts an HTTP server for health, readiness and metrics.
-func startProbeServer(logger *slog.Logger, blockCount, trackCount, tracksCurrent, heartbeatCount *atomic.Int64, broadcaster *broadcast.Broadcaster, decodeErrors func() int64, feedRegistry *health.Registry, aeroService *aeronautical.Service, aeroCounts func() (success, failure int64), weatherRadar *weathertiles.Service, weatherQNH *weather.Service, weatherWarn *weatherwarnings.Service, basemapSvc *basemap.Service, lastError *atomic.Pointer[string], featSvc *feature.Service, sessionRepo *store.SessionRepo) {
+func startProbeServer(logger *slog.Logger, blockCount, trackCount, tracksCurrent, heartbeatCount *atomic.Int64, broadcaster *broadcast.Broadcaster, decodeErrors func() int64, feedRegistry *health.Registry, aeroService *aeronautical.Service, aeroCounts func() (success, failure int64), weatherRadar *weathertiles.Service, weatherQNH *weather.Service, weatherWarn *weatherwarnings.Service, basemapSvc *basemap.Service, basemapSearchSvc *basemapsearch.Service, lastError *atomic.Pointer[string], featSvc *feature.Service, sessionRepo *store.SessionRepo) {
 	mux := http.NewServeMux()
 
 	// /health — liveness check (always ready unless startup failed).
@@ -1756,6 +1804,14 @@ func startProbeServer(logger *slog.Logger, blockCount, trackCount, tracksCurrent
 				metrics.Counter("wayfinder_basemap_fetch_success_total", "Total successful basemap.de upstream fetches (style + glyphs).", basemapSvc.FetchSuccessCount()),
 				metrics.Counter("wayfinder_basemap_fetch_failures_total", "Total failed basemap.de upstream fetches (style + glyphs).", basemapSvc.FetchFailureCount()),
 				metrics.Gauge("wayfinder_basemap_cache_age_seconds", "Seconds since the last successful basemap.de upstream fetch, or -1 if never.", basemapSvc.CacheAgeSeconds(time.Now())),
+			)
+		}
+		// Sector-search index (#277, ADR 0028).
+		if basemapSearchSvc != nil {
+			mset = append(mset,
+				metrics.Counter("wayfinder_basemap_search_builds_total", "Total sector-search index builds, by result.", basemapSearchSvc.BuildSuccessCount()).With(metrics.Label{Name: "result", Value: "success"}),
+				metrics.Counter("wayfinder_basemap_search_builds_total", "Total sector-search index builds, by result.", basemapSearchSvc.BuildFailureCount()).With(metrics.Label{Name: "result", Value: "failure"}),
+				metrics.Counter("wayfinder_basemap_searches_total", "Total sector-search queries served.", basemapSearchSvc.SearchCount()),
 			)
 		}
 		// Active-session gauge (AP7): a live count from the registry at scrape time,
