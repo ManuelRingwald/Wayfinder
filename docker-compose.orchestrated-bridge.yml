@@ -1,0 +1,126 @@
+# Portable auto-orchestration harness — the cross-platform sibling of
+# docker-compose.orchestrated.yml. SAME control plane (assign a feed → the
+# orchestrator auto-spawns a Firefly tracker for it → CAT062/UDP-multicast → the
+# ASD shows tracks), but on a USER-DEFINED BRIDGE instead of host networking, so
+# it runs IDENTICALLY on macOS, Windows and Linux/Codespace.
+#
+# Why this exists: docker-compose.orchestrated.yml uses network_mode: host,
+# which macOS/Windows Docker Desktop cannot do (containers live in a Linux VM).
+# A user-defined bridge forwards multicast between its members, so both the
+# server AND the orchestrator-spawned Firefly containers exchange the feed
+# multicast on the shared `asd-net` bridge — no host networking needed. The
+# orchestrator assigns each feed its own multicast group (pkg/store/feed_alloc.go)
+# and passes it to the Firefly it spawns (pkg/dockerbackend fireflyEnv), so
+# sender and receiver always match — exactly the auto-spawn behaviour of the
+# host-net profile, now portable.
+#
+# ── Prerequisite: build the Firefly image the orchestrator spawns (once) ──
+#   Firefly is a SIBLING repo (…/asd/firefly). The orchestrator runs it BY IMAGE
+#   (firefly:latest), it is not a compose service here — so build it first:
+#     docker build -t firefly:latest ../firefly
+#
+# ── Run (from the wayfinder repo dir; Firefly must sit at ../firefly) ──
+#     docker build -t firefly:latest ../firefly
+#     docker compose -f docker-compose.orchestrated-bridge.yml up -d --build
+#   Browser: http://localhost:8081/admin  (admin / admin, forced password change)
+#   Then assign a feed + configure its source in the admin UI — the orchestrator
+#   spawns the tracker automatically (docs/INSTALLATION.md Schritt 4.5–4.9).
+#
+# ── Teardown ──
+#   The orchestrator-spawned Firefly containers are NOT part of this compose
+#   (created via the Docker API). `docker compose … down` leaves them; if the
+#   `asd-net` removal then complains about active endpoints, stop them first:
+#     docker ps --filter name=firefly --format '{{.Names}}' | xargs -r docker rm -f
+#
+# Security (ADR 0012 §6): ONLY the orchestrator mounts the Docker socket — the
+# browser-facing server never gets that privilege.
+name: asd-orchestrated-bridge
+
+networks:
+  asd:
+    # Explicit, project-independent network name. The orchestrator attaches the
+    # Firefly containers it spawns to THIS name (WAYFINDER_FIREFLY_NETWORK below),
+    # so it must be stable regardless of the compose project name.
+    name: asd-net
+    driver: bridge
+
+volumes:
+  wayfinder-db:
+
+services:
+  db:
+    image: postgres:16-bookworm
+    networks: [asd]
+    environment:
+      POSTGRES_USER: wayfinder
+      POSTGRES_PASSWORD: wayfinder
+      POSTGRES_DB: wayfinder
+    # Named volume (#267): tenants/users/feeds/subscriptions survive recreation.
+    volumes:
+      - wayfinder-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "wayfinder"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  # Browser-facing ASD server. Reachable at localhost:8081 via the published
+  # port; receives every feed's multicast on the shared bridge.
+  wayfinder:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    networks: [asd]
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8081:8081"     # browser air picture + admin UI
+      - "8080:8080"     # /health, /ready, /metrics
+    environment:
+      WAYFINDER_DB_URL: "postgres://wayfinder:wayfinder@db:5432/wayfinder?sslmode=disable"
+      WAYFINDER_AUTH_MODE: "builtin"
+      WAYFINDER_SESSION_KEY: ${WAYFINDER_SESSION_KEY:-}
+      # AES-256 key that encrypts per-feed source credentials + the global
+      # OpenAIP key (UI secret management). Empty = that UI stays disabled.
+      # Generate: export WAYFINDER_SECRET_KEY=$(openssl rand -base64 32)
+      WAYFINDER_SECRET_KEY: ${WAYFINDER_SECRET_KEY:-}
+      WAYFINDER_MAP_CENTER_LAT: ${WAYFINDER_MAP_CENTER_LAT:-50.0379}
+      WAYFINDER_MAP_CENTER_LON: ${WAYFINDER_MAP_CENTER_LON:-8.5622}
+      WAYFINDER_MAP_ZOOM: ${WAYFINDER_MAP_ZOOM:-8}
+      WAYFINDER_MAP_THEME: ${WAYFINDER_MAP_THEME:-bkg-dark}
+      WAYFINDER_BKG_STYLE_URL: ${WAYFINDER_BKG_STYLE_URL:-}
+    restart: unless-stopped
+
+  # Least-privilege control plane. Reconciles the running Firefly set toward the
+  # desired state (subscribed feeds + source config) via the Docker backend.
+  orchestrator:
+    build:
+      context: .
+      dockerfile: Dockerfile.orchestrator
+    networks: [asd]
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      # ⚠️ SECURITY: the Docker socket grants root-equivalent host control. That
+      # is exactly why the orchestrator is a SEPARATE, least-privilege process
+      # and the browser-facing server never gets the socket.
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      WAYFINDER_DB_URL: "postgres://wayfinder:wayfinder@db:5432/wayfinder?sslmode=disable"
+      WAYFINDER_ORCHESTRATOR_BACKEND: "docker"
+      # Build this first: docker build -t firefly:latest ../firefly
+      WAYFINDER_FIREFLY_IMAGE: ${WAYFINDER_FIREFLY_IMAGE:-firefly:latest}
+      # THE difference from the host-net profile: spawned Firefly containers join
+      # the SAME user-defined bridge as the server (must match networks.asd.name
+      # above), so their CAT062/065 multicast reaches the receiver without host
+      # networking — the reason this profile is macOS/Windows-portable.
+      WAYFINDER_FIREFLY_NETWORK: "asd-net"
+      # Same key as the server — needed to decrypt per-feed source credentials at
+      # tracker-spawn time (ORCH-5b). Without it, credentialled sources run anon.
+      WAYFINDER_SECRET_KEY: ${WAYFINDER_SECRET_KEY:-}
+      WAYFINDER_ORCHESTRATOR_INTERVAL: ${WAYFINDER_ORCHESTRATOR_INTERVAL:-10s}
+      WAYFINDER_LOG_LEVEL: ${WAYFINDER_LOG_LEVEL:-info}
+    restart: unless-stopped

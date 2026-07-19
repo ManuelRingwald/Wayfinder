@@ -362,12 +362,69 @@ Sie fertig. **Weiter mit Schritt 4.5**, um den Firefly-Feed dem Admin zuzuordnen
 und ihn einem Mandanten zuzuweisen.
 
 > **Auto-Orchestrierung (ORCH, ADR 0012).** Das obige `docker-compose.yml` fährt
-> den ASD-Server gegen einen **externen** Firefly-Feed. Für den Modus „Feed
-> zuweisen ⇒ Tracker startet automatisch" gibt es ein eigenes Compose-Profil
-> `docker-compose.orchestrated.yml` (Postgres + Server + Least-Privilege-
-> Orchestrator, der pro Feed eine Firefly-Instanz spawnt). Ein Linux-Docker-Host
-> ist nötig (Host-Networking-Multicast). Die End-to-End-Abnahme inkl. Skript
-> (`scripts/e2e-orchestrated.sh`) und Prüfpunkten steht in **`docs/E2E-ABNAHME.md`**.
+> den ASD-Server gegen einen **festen, externen** Firefly-Feed (eine Firefly,
+> feste Gruppe). Für den Modus „**Feed zuweisen ⇒ Tracker startet automatisch**"
+> (auch mehrere Feeds, jeder mit **automatisch vergebener** Multicast-Gruppe)
+> gibt es zwei Compose-Profile im Wayfinder-Repo:
+>
+> - **`docker-compose.orchestrated-bridge.yml` — portabel (macOS, Windows,
+>   Linux/Codespace).** Server + Orchestrator + gespawnte Firefly laufen alle in
+>   **einem Bridge-Netz** (`asd-net`); Multicast bleibt darin. **Empfohlen**, wenn
+>   du zwischen Mac und Codespace wechselst — dieselbe Datei läuft überall.
+>   Details unten in [Schritt 4.C](#schritt-4c--auto-orchestrierung-portabel-bridge).
+> - **`docker-compose.orchestrated.yml` — nur Linux** (`network_mode: host`).
+>   Etwas direkter, aber **nicht** auf macOS/Windows (Docker-VM ohne Host-Netz).
+>
+> Die End-to-End-Abnahme inkl. Skript (`scripts/e2e-orchestrated.sh`) und
+> Prüfpunkten steht in **`docs/E2E-ABNAHME.md`**.
+
+### Schritt 4.C — Auto-Orchestrierung, portabel (Bridge)
+
+> ℹ️ **Wann dieser Weg?** Wenn du das gewohnte „Feed zuweisen ⇒ Tracker startet
+> automatisch" willst (statt einer festen Firefly wie in Schritt 4.A) — und das
+> **plattformunabhängig**: **dieselbe** Datei läuft auf **Mac, Windows und
+> Codespace/Linux**. Sie ersetzt für dich den früheren Wechsel zwischen
+> Host-Net-Profil (Codespace) und statischem Bridge-Compose (Mac).
+
+**Warum es überall läuft:** `docker-compose.orchestrated.yml` nutzt
+`network_mode: host` — das kann macOS/Windows-Docker nicht (Container leben in
+einer Linux-VM). Das Bridge-Profil legt Server, Orchestrator **und** die vom
+Orchestrator gespawnten Firefly-Container in **ein** benutzerdefiniertes
+Bridge-Netz (`asd-net`); ein solches Netz leitet Multicast zwischen seinen
+Mitgliedern weiter. Der Orchestrator vergibt jedem Feed **automatisch** eine
+eigene Gruppe und gibt sie der dafür gespawnten Firefly mit — Sender und
+Empfänger passen also immer zusammen (kein Gruppen-Mismatch von Hand mehr).
+
+**Voraussetzung — das Firefly-Image einmal bauen.** Der Orchestrator startet
+Firefly **als Image** (`firefly:latest`), nicht als Compose-Dienst. Firefly liegt
+als Schwester-Repo unter `../firefly`:
+```bash
+cd ~/asd/wayfinder
+docker build -t firefly:latest ../firefly
+```
+
+**Starten** (aus dem Wayfinder-Repo, Firefly unter `../firefly`):
+```bash
+docker compose -f docker-compose.orchestrated-bridge.yml up -d --build
+```
+Browser: **<http://localhost:8081/admin>** (admin/admin, Passwortwechsel). Danach
+**Feed anlegen + Quelle konfigurieren** wie in Schritt 4.5–4.9 — die Gruppe wird
+**automatisch** vergeben, und der Orchestrator spawnt den Tracker selbst. Anders
+als beim statischen Profil (Schritt 4.A) setzt du die Datenquelle (z. B.
+ADS-B-Aggregator) **pro Feed im Admin** unter *Feed → Quellen*, nicht per
+Compose-Env.
+
+> **Aufräumen:** Die gespawnten Firefly-Container gehören **nicht** zu diesem
+> Compose (sie entstehen über die Docker-API). `docker compose … down` lässt sie
+> stehen; meckert das Entfernen von `asd-net` über aktive Endpunkte, vorher:
+> ```bash
+> docker ps --filter name=firefly --format '{{.Names}}' | xargs -r docker rm -f
+> ```
+
+> **Codespace ↔ Mac:** Auf beiden identisch — dieselbe Datei, dieselben Befehle.
+> (Das ältere Host-Net-Profil `docker-compose.orchestrated.yml` bleibt für reine
+> Linux-Hosts erhalten, ist aber nicht mehr nötig, wenn du das Bridge-Profil
+> nutzt.)
 
 > **Daten-Persistenz (#267):** Beide Compose-Profile legen die Postgres-Daten in
 > ein **benanntes Docker-Volume** (`wayfinder-db`) — Mandanten, Nutzer, Feeds und
@@ -1289,8 +1346,10 @@ services:
 ```
 
 > ℹ️ Für den vollen orchestrierten Aufbau (Postgres + Server + Orchestrator, der
-> pro Feed eine Firefly-Instanz startet) liegt ein fertiges Host-Net-Profil bereit:
-> `docker-compose.orchestrated.yml` (Linux). Details in `docs/E2E-ABNAHME.md`.
+> pro Feed eine Firefly-Instanz startet) liegen zwei Profile bereit:
+> **`docker-compose.orchestrated-bridge.yml`** (portabel — macOS/Windows/Linux,
+> Bridge-Netz; siehe Schritt 4.C) und **`docker-compose.orchestrated.yml`**
+> (nur Linux, Host-Netz). Details in `docs/E2E-ABNAHME.md`.
 
 ### 8.4 Kubernetes-Hinweise
 
