@@ -85,3 +85,18 @@ describe('zoom lives in the bottom-right map controls, not the rail (ASD-019)', 
     expect(mapCanvas).toContain('@zoom-out="mapEngine?.zoomOut()"')
   })
 })
+
+describe('#296: measurement tools carry an explaining tooltip', () => {
+  it('each tool defines a one-line description', () => {
+    expect(rail).toContain('description:')
+    expect(rail).toContain('Range/Bearing Line') // RBL
+    expect(rail).toContain('zwischen zwei Tracks') // DIST
+    expect(rail).toContain('rechtweisend') // QDM
+  })
+
+  it('renders the description as a hover/focus tooltip on the tool buttons', () => {
+    // House style: a parent-activated v-tooltip bound to the tool description.
+    expect(rail).toContain('activator="parent"')
+    expect(rail).toContain(':text="t.description"')
+  })
+})

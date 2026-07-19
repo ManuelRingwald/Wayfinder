@@ -53,6 +53,8 @@
               <v-icon :size="railIconSize">{{ t.icon }}</v-icon>
             </div>
             <span class="nav-rail__label">{{ t.label }}</span>
+            <!-- #296: hover/focus tooltip explaining the tool before selection. -->
+            <v-tooltip activator="parent" location="right" open-delay="300" :text="t.description" />
           </div>
 
           <div class="nav-rail__divider" role="separator" />
@@ -142,13 +144,17 @@
         <v-btn
           v-for="t in measureTools"
           :key="t.id"
-          :icon="t.icon"
+          icon
           size="small"
           variant="text"
           :color="tools.activeTool === t.id ? 'warning' : undefined"
           :aria-label="t.label"
           @click="tools.selectTool(t.id)"
-        />
+        >
+          <v-icon>{{ t.icon }}</v-icon>
+          <!-- #296: same tool description as the desktop rail, reachable on touch. -->
+          <v-tooltip activator="parent" location="bottom" open-delay="300" :text="t.description" />
+        </v-btn>
       </div>
       <v-list-item
         v-if="isAdmin"
@@ -194,10 +200,14 @@ const railIconSize = computed(() => (tabletLandscape.value ? 24 : 20))
 // (tools store) and drives the map's measure controller via MapCanvas, so the
 // rail only has to toggle it — no map reference needed here.
 const tools = useToolsStore()
+// #296: each tool carries a one-line `description` shown as a hover/focus tooltip
+// on its rail button, so the ATC abbreviation (RBL/DIST/QDM) is understandable
+// BEFORE it is selected. This complements the active-state `hint` (tools store),
+// which is the operating instruction shown only WHILE a tool is engaged.
 const measureTools = [
-  { id: 'rbl', icon: 'mdi-vector-line', label: 'RBL' },
-  { id: 'dist', icon: 'mdi-ruler', label: 'DIST' },
-  { id: 'qdm', icon: 'mdi-compass-outline', label: 'QDM' },
+  { id: 'rbl', icon: 'mdi-vector-line', label: 'RBL', description: 'Range/Bearing Line: Entfernung + Peilung frei auf der Karte ziehen.' },
+  { id: 'dist', icon: 'mdi-ruler', label: 'DIST', description: 'Abstand + Peilung zwischen zwei Tracks.' },
+  { id: 'qdm', icon: 'mdi-compass-outline', label: 'QDM', description: 'Peilung von einem Track zu einem beliebigen Punkt (rechtweisend).' },
 ]
 
 // Req 1: an Admin entry appears in the rail only for the admin role (ADR 0009).
