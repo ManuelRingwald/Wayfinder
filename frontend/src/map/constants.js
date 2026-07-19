@@ -342,6 +342,12 @@ export const SEARCH_MARKER_SOURCE_ID = 'search-marker'
 export const SEARCH_MARKER_LAYER_ID = 'search-marker-ring'
 export const SEARCH_MARKER_LABEL_LAYER_ID = 'search-marker-label'
 export const SEARCH_MARKER_COLOR = '#e040fb'
+// #277 Nachtrag: the zoom the camera settles at when the Lotse picks a search
+// hit. Set ABSOLUTELY (not min/max) so the place lands at one consistent focus
+// distance — the scope zooms IN when it was far out AND OUT when it was too
+// close (operator report 2026-07-19: centring alone left the street invisible).
+// z14 shows the street + enough surrounding context to orient on it.
+export const SEARCH_RESULT_ZOOM = 14
 
 // One palette per built-in theme (ADR 0026 Nachtrag Ausbau OSM/CARTO: only the
 // official BKG themes remain; the legacy "dark"/"osm" env values are aliased

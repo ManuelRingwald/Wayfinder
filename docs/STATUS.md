@@ -10,6 +10,38 @@
 
 ---
 
+## 🎯 Stand 2026-07-19 (Sektor-Suche: Treffer unterscheidbar + Zoom auf Ziel — Nachtrag 2 zu FR-UI-037, Opus 4.8)
+
+**In normaler Sprache:** Zwei Bedien-Rückmeldungen des Betreibers nach der
+ersten funktionierenden Suche: (1) Fünf identische „Forststraße"-Zeilen waren
+nicht auseinanderzuhalten. (2) Ein Treffer wurde zwar zentriert, aber die
+Karte blieb herausgezoomt — die Straße war unauffindbar. Beides behoben:
+Jede Trefferzeile trägt jetzt ein Ortsmerkmal — den nächstgelegenen Ort
+(„bei Wegberg") plus Peilung und Entfernung vom Sektorzentrum („8,2 NM ·
+295°"). Und ein Klick auf einen Treffer fährt die Kamera nicht nur hin,
+sondern stellt einen festen, sinnvollen Zoom ein (Straßenebene) — egal ob du
+vorher zu weit draußen oder zu nah dran warst.
+
+**Fachlich/technisch:** Server-seitig reichert `enrichHits` jeden Treffer an:
+Radial (Haversine-Entfernung NM + Anfangs-Peilung ° vom bbox-Zentrum, immer
+verfügbar) und der nächste Ort ≤ 8 km aus einer schema-tolerant gefilterten
+Siedlungs-Teilmenge (`filterPlaces`/`isPlaceCategory` — best-effort, leer bei
+abweichendem Tile-Schema → Zeile zeigt dann nur das Radial, genau die vom
+Betreiber gewählte graceful degradation). Ergebnisfelder additiv
+`near`/`dist_nm`/`bearing_deg`. Frontend: `hitDetail(h)` baut
+`Kategorie · bei Ort · NM · Peilung`, fehlende Teile fallen weg;
+`showSearchMarker` nutzt `flyTo` mit **absolutem** `SEARCH_RESULT_ZOOM=14`
+(zoomt in beide Richtungen). Tests: Distanz/Peilung, `isPlaceCategory`,
+`enrichHits` (Ort + Radial + Nicht-Anhängen entfernter Orte), Frontend-Zeile
+mit/ohne Kontext, Zoom-Source-Guard. Register: FR-UI-037-Nachtrag-2.
+
+**Nächster Schritt:** Betreiber-Sicht-Abnahme („Forststraße" → unterscheidbare
+Zeilen, Klick zoomt aufs Ziel). Ggf. Kategorie-/Ort-Labels ans reale
+BKG-Schema feinschleifen. Label-Flacker-Fix (weiter unten) ebenfalls noch
+offen zur Sicht-Abnahme.
+
+---
+
 ## 🔧 Stand 2026-07-19 (Sektor-Suche: TileJSON-Fix + ehrlicher Fehler-Status — Nachtrag zu FR-UI-037)
 
 **In normaler Sprache:** Der Betreiber-Smoke-Test der Sektor-Suche schlug fehl —

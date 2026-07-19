@@ -17,6 +17,7 @@ import {
   SEARCH_MARKER_SOURCE_ID,
   SEARCH_MARKER_LAYER_ID,
   SEARCH_MARKER_LABEL_LAYER_ID,
+  SEARCH_RESULT_ZOOM,
 } from '@/map/constants.js'
 
 const src = (rel) =>
@@ -41,9 +42,14 @@ describe('engine wiring (source-guard)', () => {
 
   it('exposes showSearchMarker (marker + camera) and clearSearchMarker', () => {
     expect(engine).toMatch(/function showSearchMarker\(lon, lat, name\)/)
-    expect(engine).toMatch(/map\.easeTo\(\{ center: \[lon, lat\]/)
     expect(engine).toMatch(/function clearSearchMarker\(\)/)
     expect(engine).toMatch(/showSearchMarker, clearSearchMarker \}/)
+  })
+
+  it('flies to a fixed ABSOLUTE focus zoom on selection (not just centre)', () => {
+    // #277 Nachtrag: the zoom pulls in when far out AND out when too close.
+    expect(engine).toMatch(/map\.flyTo\(\{ center: \[lon, lat\], zoom: SEARCH_RESULT_ZOOM/)
+    expect(SEARCH_RESULT_ZOOM).toBe(14)
   })
 })
 
@@ -98,9 +104,9 @@ describe('MapSearch component (#277)', () => {
     await vi.advanceTimersByTimeAsync(350) // past the 300 ms debounce
   }
 
-  it('debounces, queries the endpoint and lists ready hits; picking emits select', async () => {
+  it('debounces, queries the endpoint and lists ready hits with location context; picking emits select', async () => {
     const hits = [
-      { name: 'Friedrichstraße', category: 'verkehrslinie', lat: 50.04, lon: 8.56 },
+      { name: 'Friedrichstraße', category: 'verkehrslinie', lat: 50.04, lon: 8.56, near: 'Wegberg', dist_nm: 8.2, bearing_deg: 295 },
     ]
     global.fetch = vi.fn(() => jsonResponse(200, { status: 'ready', results: hits }))
     const wrapper = mountSearch()
@@ -112,10 +118,24 @@ describe('MapSearch component (#277)', () => {
     const rows = wrapper.findAll('.v-list-item')
     expect(rows).toHaveLength(1)
     expect(wrapper.text()).toContain('Friedrichstraße')
+    // #277 Nachtrag: same-named hits are told apart by category · town · radial.
     expect(wrapper.text()).toContain('Straße / Weg') // category label mapping
+    expect(wrapper.text()).toContain('bei Wegberg')
+    expect(wrapper.text()).toContain('8.2 NM')
+    expect(wrapper.text()).toContain('295°')
 
     await rows[0].trigger('click')
     expect(wrapper.emitted('select')[0][0]).toEqual(hits[0])
+  })
+
+  it('drops missing location pieces gracefully (category-only row)', async () => {
+    const hits = [{ name: 'Forststraße', category: 'verkehrslinie', lat: 50, lon: 8 }]
+    global.fetch = vi.fn(() => jsonResponse(200, { status: 'ready', results: hits }))
+    const wrapper = mountSearch()
+    await typeQuery(wrapper, 'forst')
+    expect(wrapper.text()).toContain('Straße / Weg')
+    expect(wrapper.text()).not.toContain('NM')
+    expect(wrapper.text()).not.toContain('bei ')
   })
 
   it('does not query below two characters', async () => {

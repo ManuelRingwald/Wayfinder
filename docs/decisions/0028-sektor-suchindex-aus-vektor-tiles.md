@@ -85,3 +85,24 @@ konfigurierten Basiskarten-Styles (`pkg/basemapsearch`):
   Geokodierungsdienst-Upgrade vorbehalten.
 - Metriken: `wayfinder_basemap_search_builds_total{result}`,
   `wayfinder_basemap_searches_total` (TECHNICAL § 5.4b).
+
+## Nachtrag (2026-07-19) — Betreiber-Smoke-Test: TileJSON, Fehler-Status, Treffer-Kontext, Zoom
+
+Der erste Live-Betrieb gegen den echten BKG-Stil deckte drei Punkte auf:
+
+1. **TileJSON-Quellform.** Die realen basemap.de/world-Styles deklarieren die
+   Vektor-Quelle als TileJSON-Verweis (`url`), nicht inline (`tiles`) — jeder
+   Bau scheiterte mit „style has no vector tile source". `tilesTemplate` löst
+   nun beide Formen auf (`tilesFromTileJSON`, defensiv: ctx-bound, 1-MiB-Limit,
+   Status-Check). Fixtures decken beide Formen ab.
+2. **Ehrlicher Fehler-Status.** Ein fehlgeschlagener Erst-Bau erschien als
+   endloses „wird aufgebaut". `Search` meldet ihn stabil als `status:"error"`
+   (sticky über Hintergrund-Retries); die UI zeigt „nicht verfügbar" und pollt
+   gedrosselt weiter.
+3. **Treffer-Kontext + Zoom (Bedienbefund).** Gleichnamige Treffer waren nicht
+   unterscheidbar und der Klick zentrierte ohne Zoom. Additive Ergebnisfelder
+   `near`/`dist_nm`/`bearing_deg` (Ort ≤ 8 km best-effort + Radial vom
+   Sektorzentrum, `enrichHits`) machen die Zeilen unterscheidbar; das Frontend
+   fährt den Treffer mit festem absolutem Fokus-Zoom (`SEARCH_RESULT_ZOOM=14`,
+   `flyTo`) an. Betreiber-Entscheidung zur Unterscheidung: **Ort + Radial
+   kombiniert** mit Radial als schema-unabhängiger Rückfalllinie.

@@ -9,6 +9,7 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 import {
   PALETTES, TRACKS_LAYER_ID, LABELS_LAYER_ID, AIRSPACE_GROUPS,
   SYNTHETIC_BACKGROUND_LAYER_ID, SYNTHETIC_BACKGROUND_COLOR, SYNTHETIC_SCOPE_STYLE,
+  SEARCH_RESULT_ZOOM,
 } from './constants.js'
 import {
   addAeronauticalIcons,
@@ -620,7 +621,7 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
   }
 
   // #277 (ADR 0028): drop the sector-search result marker on the picked place
-  // and ease the camera onto it. The marker is a transient navigation aid, not
+  // and fly the camera onto it. The marker is a transient navigation aid, not
   // scope state — it lives outside the render loop and is cleared explicitly
   // (next selection replaces it; clear/Esc in MapSearch removes it).
   function showSearchMarker(lon, lat, name) {
@@ -631,7 +632,11 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
       geometry: { type: 'Point', coordinates: [lon, lat] },
       properties: { name: name || '' },
     })
-    map.easeTo({ center: [lon, lat], duration: 600 })
+    // #277 Nachtrag: fly to the place at a fixed focus zoom, not just centre.
+    // The zoom is ABSOLUTE — it pulls the scope IN when it was far out and OUT
+    // when it was zoomed in too close, so the street is always readable at one
+    // consistent distance regardless of where the Lotse was looking before.
+    map.flyTo({ center: [lon, lat], zoom: SEARCH_RESULT_ZOOM, duration: 900 })
   }
 
   // #277: remove the search result marker (search cleared / Esc).

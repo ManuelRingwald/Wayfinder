@@ -27,7 +27,7 @@
         @click="onSelect(h)"
       >
         <v-list-item-title class="map-search__name">{{ h.name }}</v-list-item-title>
-        <v-list-item-subtitle class="map-search__cat">{{ categoryLabel(h.category) }}</v-list-item-subtitle>
+        <v-list-item-subtitle class="map-search__cat">{{ hitDetail(h) }}</v-list-item-subtitle>
       </v-list-item>
     </v-list>
   </div>
@@ -85,6 +85,23 @@ const CATEGORY_LABELS = {
 }
 function categoryLabel(cat) {
   return CATEGORY_LABELS[cat] || cat || ''
+}
+
+// #277 Nachtrag: the secondary line that tells same-named hits apart —
+// category · nearest town · radial (distance + bearing from the sector centre).
+// Each piece is optional and dropped when absent, so a hit with no nearby town
+// still shows category + radial, and one with neither shows just the category.
+function hitDetail(h) {
+  const parts = [categoryLabel(h.category)]
+  if (h.near) parts.push(`bei ${h.near}`)
+  // Radial is always sent for a real hit; suppress it only for the meaningless
+  // ~0 NM case (a feature essentially at the sector centre).
+  if (typeof h.dist_nm === 'number' && h.dist_nm >= 0.1 && typeof h.bearing_deg === 'number') {
+    const dist = h.dist_nm < 10 ? h.dist_nm.toFixed(1) : String(Math.round(h.dist_nm))
+    const brg = String(h.bearing_deg).padStart(3, '0')
+    parts.push(`${dist} NM · ${brg}°`)
+  }
+  return parts.filter(Boolean).join(' · ')
 }
 
 function scheduleSearch() {

@@ -275,6 +275,87 @@ func TestSearchReportsErrorStatus(t *testing.T) {
 	}
 }
 
+func TestDistanceAndBearing(t *testing.T) {
+	// Due north: one degree of latitude ≈ 60 NM, bearing 0°.
+	if d := distanceNM(50, 8, 51, 8); d < 59 || d > 61 {
+		t.Errorf("distanceNM north = %.1f, want ~60", d)
+	}
+	if b := bearingDeg(50, 8, 51, 8); b != 0 {
+		t.Errorf("bearing due north = %d, want 0", b)
+	}
+	// Due east at 50°N: bearing ≈ 90°, distance ≈ 60·cos(50°) ≈ 38.6 NM.
+	if b := bearingDeg(50, 8, 50, 9); b < 88 || b > 92 {
+		t.Errorf("bearing due east = %d, want ~90", b)
+	}
+	if d := distanceNM(50, 8, 50, 9); d < 37 || d > 40 {
+		t.Errorf("distanceNM east = %.1f, want ~38.6", d)
+	}
+}
+
+func TestIsPlaceCategory(t *testing.T) {
+	for cat, want := range map[string]bool{
+		"siedlung": true, "siedlungsflaeche": true, "ortslage": true,
+		"ort": true, "gemeinde_label": true, "wohnplatz": true,
+		"verkehrslinie": false, "gewaesserlinie": false,
+		"vegetationsflaeche": false, "": false,
+	} {
+		if got := isPlaceCategory(cat); got != want {
+			t.Errorf("isPlaceCategory(%q) = %v, want %v", cat, got, want)
+		}
+	}
+}
+
+func TestEnrichHitsAddsRadialAndNearestPlace(t *testing.T) {
+	bbox := BBox{MinLat: 50.0, MinLon: 8.0, MaxLat: 50.2, MaxLon: 8.2} // centre 50.1/8.1
+	places := []Entry{{Name: "Wegberg", norm: "wegberg", Lat: 50.155, Lon: 8.152}}
+	hits := []Entry{{Name: "Forststraße", norm: "forststr", Lat: 50.15, Lon: 8.15}}
+	enrichHits(hits, bbox, places)
+	if hits[0].Near != "Wegberg" {
+		t.Errorf("Near = %q, want Wegberg", hits[0].Near)
+	}
+	if hits[0].DistNM <= 0 {
+		t.Errorf("DistNM = %v, want > 0", hits[0].DistNM)
+	}
+	if hits[0].Bearing < 0 || hits[0].Bearing >= 360 {
+		t.Errorf("Bearing = %d out of range", hits[0].Bearing)
+	}
+	// A place beyond maxNearKM must not attach — the row then shows the radial
+	// alone (graceful degradation the operator chose).
+	far := []Entry{{Name: "Forststraße", norm: "forststr", Lat: 50.15, Lon: 8.15}}
+	enrichHits(far, bbox, []Entry{{Name: "Fernort", norm: "fernort", Lat: 51.0, Lon: 8.15}})
+	if far[0].Near != "" {
+		t.Errorf("far place should not attach: %q", far[0].Near)
+	}
+}
+
+// TestRadialAlwaysMarshalled guards the fix for the omitempty pitfall: a valid
+// due-north bearing of 0° (and a 0 NM distance) must still appear on the wire,
+// or the frontend would drop the whole radial for the northern arc.
+func TestRadialAlwaysMarshalled(t *testing.T) {
+	// A hit exactly due north of the sector centre → bearing rounds to 0.
+	bbox := BBox{MinLat: 50.0, MinLon: 8.0, MaxLat: 50.4, MaxLon: 8.0} // centre 50.2/8.0
+	hits := []Entry{{Name: "Nordstraße", norm: "nordstr", Lat: 50.3, Lon: 8.0}}
+	enrichHits(hits, bbox, nil)
+	if hits[0].Bearing != 0 {
+		t.Fatalf("bearing due north = %d, want 0", hits[0].Bearing)
+	}
+	raw, err := json.Marshal(hits[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(raw)
+	if !strings.Contains(s, `"bearing_deg":0`) {
+		t.Errorf("bearing_deg dropped from JSON for due-north hit: %s", s)
+	}
+	if !strings.Contains(s, `"dist_nm":`) {
+		t.Errorf("dist_nm missing from JSON: %s", s)
+	}
+	// near is optional and absent here → must be omitted.
+	if strings.Contains(s, `"near"`) {
+		t.Errorf("near should be omitted when empty: %s", s)
+	}
+}
+
 func TestHandlerGatesAndStatuses(t *testing.T) {
 	srv := newTileUpstream(t, false)
 	defer srv.Close()
