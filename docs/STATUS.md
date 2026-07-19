@@ -10,6 +10,46 @@
 
 ---
 
+## 🔎 Stand 2026-07-19 (Sektor-Suche über die Basiskarten-Daten — #277, ADR 0028, FR-UI-037)
+
+**In normaler Sprache:** Der Lotse kann jetzt im Scope nach Straßen und Orten
+in seinem Sektor **suchen** (Use Case des Betreibers: „Eine Drohne startet aus
+der Friedrichstraße — wo ist die?"). Ein Suchfeld oben rechts liefert nach
+2+ Zeichen Treffer aus dem eigenen Sektor; ein Klick auf einen Treffer setzt
+einen magenta Marker mit Namen und fährt die Kamera dorthin. Beim allerersten
+Suchen eines Sektors baut der Server sich einmalig ein Suchregister aus den
+Kartendaten auf („Suchindex wird aufgebaut …", wenige Sekunden), danach ist
+die Suche sofort. Kein externer Suchdienst: Es werden ausschließlich die
+BKG-Kartendaten benutzt, die Wayfinder ohnehin lädt — funktioniert damit auch
+im Air-Gap-Betrieb und ohne Lizenzfrage (BKG-Geokodierung wäre nur für
+Behörden kostenfrei).
+
+**Fachlich/technisch:** Neues `pkg/basemapsearch` — lazy je AOI gebauter Index
+aus den z14-Vektor-Tiles des konfigurierten Styles (Worker-Pool, Single-Flight,
+MVT-Dekodierung via `github.com/paulmach/orb`, schema-tolerante
+Namens-Extraktion, Normalisierung ä→ae/ß→ss/„straße"→`str`, 3-km-Clustering,
+Präfix-vor-Infix-Ranking, max. 20 Treffer). Limits fail-safe: 4096 Tiles
+(übergroße AOI Zentrum-erhaltend geclampt), 8 Indexe (LRU), 250 k Einträge,
+4 MiB/Tile, Build-Timeout 5 min, TTL 24 h mit Stale-Serve; ohne AOI 30-NM-Box
+ums View-Zentrum. Endpoint `GET /api/basemap/search?q=…` (202 building → UI
+pollt / 200 ready / 503 ohne Gebiet), **Feature-Gate `basemap` fail-closed
+(403)** — der Index-Bau kostet reale Ressourcen. UI: `MapSearch.vue` im
+Top-Cluster (Debounce 300 ms, Building-Poll, Esc/Clear), Marker + `easeTo` in
+der Engine (`SEARCH_MARKER_*`, oberste Layer-Ebene). Metriken
+`wayfinder_basemap_search_builds_total{result}` /
+`wayfinder_basemap_searches_total`. Doku: **ADR 0028**, FR-UI-037, TECHNICAL
+(Endpoint + § 5.4c). Betreiber-Weichen 1–3 wie freigegeben umgesetzt.
+**Offen:** Betreiber-Smoke-Test gegen echte BKG-Tiles (die Sandbox erreicht
+`sgx.geodatenzentrum.de` nicht — das reale Tile-Schema konnte nur
+schema-tolerant, nicht live verifiziert werden): Suche nach einer bekannten
+Straße im Sektor, Treffer-Klick, Marker prüfen.
+
+**Nächster Schritt:** Betreiber-Smoke-Test #277; danach ggf. Feinschliff
+(Kategorie-Labels ans reale BKG-Schema anpassen). Ansonsten Betriebs-Härtung
+laut Roadmap.
+
+---
+
 ## 🌍 Stand 2026-07-18 (BKG-Basiskarte: basemap.world als Default-Quelle — Umland-Kontext; ADR 0026 Nachtrag, FR-UI-032)
 
 **In normaler Sprache:** Die amtliche Karte endete bisher hart an der

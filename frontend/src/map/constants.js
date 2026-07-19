@@ -331,6 +331,18 @@ export const SYNTHETIC_SCOPE_STYLE = {
   ],
 }
 
+// #277 (ADR 0028): sector-search result marker — a transient highlight pin on
+// the place the Lotse picked from the search hit list (MapSearch.vue). One
+// GeoJSON source holding at most one Point; ring + name label are added LAST in
+// the engine's load handler so the found place is never buried under the air
+// picture. Cleared explicitly (new search / clear / Esc), never state-driven.
+// Magenta: distinct from every track colour (cyan/amber/red/gold/green) and
+// from the cyan selection ring, so a ground place never reads as a track.
+export const SEARCH_MARKER_SOURCE_ID = 'search-marker'
+export const SEARCH_MARKER_LAYER_ID = 'search-marker-ring'
+export const SEARCH_MARKER_LABEL_LAYER_ID = 'search-marker-label'
+export const SEARCH_MARKER_COLOR = '#e040fb'
+
 // One palette per built-in theme (ADR 0026 Nachtrag Ausbau OSM/CARTO: only the
 // official BKG themes remain; the legacy "dark"/"osm" env values are aliased
 // server-side, so cfg.theme is always one of these keys).

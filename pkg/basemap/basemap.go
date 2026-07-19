@@ -214,6 +214,13 @@ func (s *Service) ensureStyle(ctx context.Context) ([]byte, error) {
 	return nil, err
 }
 
+// StyleJSON returns the rewritten (URL-absolutised) style — the same bytes
+// StyleHandler serves. Consumed by pkg/basemapsearch (#277), whose sector
+// index must read the SAME tile source the map renders (online or mirror).
+func (s *Service) StyleJSON(ctx context.Context) ([]byte, error) {
+	return s.ensureStyle(ctx)
+}
+
 // upstreamGlyphsTemplate returns the recorded upstream glyphs URL template,
 // fetching the style first if it has never been loaded (a browser may request
 // glyphs before the style on a warm reload).

@@ -57,6 +57,10 @@ import {
   WEATHER_WARNINGS_FILL_LAYER_ID,
   WEATHER_WARNINGS_LINE_LAYER_ID,
   WEATHER_WARNINGS_COLORS,
+  SEARCH_MARKER_SOURCE_ID,
+  SEARCH_MARKER_LAYER_ID,
+  SEARCH_MARKER_LABEL_LAYER_ID,
+  SEARCH_MARKER_COLOR,
 } from './constants.js'
 
 // severityColorExpr builds a MapLibre 'match' on the normalised wf_level
@@ -1068,4 +1072,55 @@ export function addCoverageLayer(map) {
 export function updateCoverageSource(map, geojson) {
   const src = map.getSource(COVERAGE_SOURCE_ID)
   if (src) src.setData(geojson)
+}
+
+// addSearchMarkerLayer registers the sector-search result marker (#277,
+// ADR 0028): a ring + name label on the single Point the Lotse picked from the
+// search hit list. Added LAST in the engine's load handler, so the marker sits
+// above every track layer — a found place must never be buried under the air
+// picture (the whole point of the search is to LOCATE it).
+export function addSearchMarkerLayer(map, palette) {
+  map.addSource(SEARCH_MARKER_SOURCE_ID, {
+    type: 'geojson',
+    data: { type: 'FeatureCollection', features: [] },
+  })
+
+  map.addLayer({
+    id: SEARCH_MARKER_LAYER_ID,
+    type: 'circle',
+    source: SEARCH_MARKER_SOURCE_ID,
+    paint: {
+      'circle-radius': 9,
+      'circle-color': 'rgba(0, 0, 0, 0)',
+      'circle-stroke-color': SEARCH_MARKER_COLOR,
+      'circle-stroke-width': 2.5,
+    },
+  })
+
+  map.addLayer({
+    id: SEARCH_MARKER_LABEL_LAYER_ID,
+    type: 'symbol',
+    source: SEARCH_MARKER_SOURCE_ID,
+    layout: {
+      'text-field': ['get', 'name'],
+      'text-font': ['Roboto Mono Medium'],
+      'text-size': 11,
+      'text-anchor': 'top',
+      'text-offset': [0, 1.1],
+      // The marker is a deliberate, single highlight — it must never lose the
+      // deconfliction fight against nearby track labels.
+      'text-allow-overlap': true,
+    },
+    paint: {
+      'text-color': SEARCH_MARKER_COLOR,
+      'text-halo-color': palette.labelHalo,
+      'text-halo-width': 1.2,
+    },
+  })
+}
+
+// updateSearchMarker sets (feature) or clears (null) the search result marker.
+export function updateSearchMarker(map, feature) {
+  const src = map.getSource(SEARCH_MARKER_SOURCE_ID)
+  if (src) src.setData({ type: 'FeatureCollection', features: feature ? [feature] : [] })
 }

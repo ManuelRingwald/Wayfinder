@@ -23,5 +23,12 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./src/test-setup.js'],
+    // #277: component tests mount real Vuetify components; Vuetify ships raw
+    // .css imports that Node can't load unless Vite inlines the package.
+    server: {
+      deps: {
+        inline: ['vuetify'],
+      },
+    },
   },
 })
