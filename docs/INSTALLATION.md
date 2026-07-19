@@ -339,6 +339,12 @@ services:
       WAYFINDER_MAP_CENTER_LAT: "50.0379"   # Frankfurt
       WAYFINDER_MAP_CENTER_LON: "8.5622"
       WAYFINDER_MAP_ZOOM: "8"
+      # Basiskarte (ADR 0026): bkg-dark (dunkler Radar-Scope, Default) oder bkg
+      # (helle Variante). Ungesetzt ergibt bkg-dark. WAYFINDER_BKG_STYLE_URL leer
+      # = basemap.world; für Air-Gap auf einen self-hosted Spiegel zeigen (Teil
+      # 8.0a). Die Karte selbst ist ein freigebbares Layer — siehe Schritt 4.10a.
+      WAYFINDER_MAP_THEME: "bkg-dark"
+      WAYFINDER_BKG_STYLE_URL: ""
     restart: unless-stopped
 ```
 
@@ -456,6 +462,11 @@ services:
       # Geheimer Schlüssel zum Signieren der Login-Cookies — UNBEDINGT ändern,
       # mind. 32 zufällige Zeichen (z. B. Ausgabe von:  openssl rand -hex 32):
       WAYFINDER_SESSION_KEY: "BITTE-AENDERN-mind-32-zufaellige-zeichen-einsetzen"
+      # Basiskarte (ADR 0026): bkg-dark (Default) oder bkg (hell); Weglassen geht
+      # auch (Default bkg-dark). Style-Quelle via WAYFINDER_BKG_STYLE_URL (leer =
+      # basemap.world). Zuschalten der Karte: Schritt 4.10a.
+      WAYFINDER_MAP_THEME: "bkg-dark"
+      WAYFINDER_BKG_STYLE_URL: ""
     volumes:
       - ./wayfinder.yaml:/app/wayfinder.yaml:ro
     restart: unless-stopped
@@ -697,6 +708,39 @@ zugewiesenen Feeds — und **keine** anderen.
 ✅ **Fertig!** Sie haben eine Multi-Tenant-Plattform aufgesetzt. Weitere Kunden:
 Schritte 4.8 + 4.9 wiederholen.
 
+### Schritt 4.10a — Basiskarte (BKG) + Sektor-Suche einschalten
+
+Standardmäßig zeigt das Lagebild den **synthetischen Radar-Scope** (near-black,
+nur Tracks/Sektoren/Ringe) — **ohne** Kartenhintergrund. Das ist Absicht
+(#274, ADR 0027): Die amtliche Basiskarte ist ein **freigebbares Zusatz-Layer**,
+kein Fundament; das ASD funktioniert bewusst auch ganz ohne Karte. Deshalb ist
+sie **doppelt** abgesichert — der Admin gibt sie je Mandant frei, der Nutzer
+schaltet sie bei Bedarf zu.
+
+So schalten Sie die BKG-Karte zu:
+
+1. **Als `admin`** in **`/admin`** → Mandanten-Übersicht → den Mandanten öffnen
+   (z. B. „Kunde Nord GmbH"). Im Abschnitt **„Features"** das Feature
+   **„Basiskarte (BKG)"** (`basemap`) aktivieren und speichern.
+2. **Als Nutzer** (z. B. `anna`) auf dem Lagebild im Seitenmenü **„Layer &
+   Filter"** den Schalter **„Basiskarte (BKG)"** einschalten (Default aus). Jetzt
+   erscheint die amtliche Karte unter den Tracks.
+
+> ℹ️ **Voraussetzung:** Der Server braucht ausgehenden Zugriff auf das BKG
+> (`sgx.geodatenzentrum.de`, Teil 8.0 — oder einen self-hosted Spiegel, Teil
+> 8.0a). Ist das BKG nicht erreichbar oder die Karte nicht freigegeben, bleibt
+> der synthetische Scope; die **Track-Darstellung ist davon nie betroffen**.
+
+**Sektor-Suche (#277):** Sobald die Basiskarte eingeschaltet ist, erscheint oben
+rechts ein **Lupen-Icon**. Ein Klick fährt ein Suchfeld aus; tippen Sie einen
+Straßen-/Ortsnamen aus dem eigenen Sektor (z. B. „Forststraße"). Beim ersten Mal
+baut der Server einmalig einen Suchindex aus den Kartendaten der AOI auf
+(„Suchindex wird aufgebaut …" — wenige Sekunden bis Minuten je nach
+Sektorgröße), danach kommen Treffer sofort. Jeder Treffer zeigt Ort +
+Peilung/Entfernung zum Unterscheiden; ein Klick setzt einen Marker und zoomt auf
+die Stelle. Das Feld klappt danach wieder zum Icon zusammen, damit die Sicht auf
+die Tracks frei bleibt.
+
 ### Schritt 4.11 — „View as Tenant": die Sicht eines Kunden einsehen (nur `admin`)
 
 Für den Support gibt es einen **Read-Only-Einblick**: ein `admin` kann die
@@ -775,6 +819,8 @@ curl -s http://localhost:8080/metrics | grep wayfinder_feed_stale
 | **Mac: Docker-Befehle hängen / „Cannot connect to the Docker daemon"** | Docker Desktop ist nicht gestartet. Docker aus dem Launchpad öffnen, warten bis das Wal-Symbol ruhig steht. |
 | **Multi-Tenant: Login schlägt fehl (401)** | Passwort falsch; **oder** der Zugang bzw. sein Mandant ist **pausiert** (Schritt 4.8b — fail-closed ist Absicht, im Reiter „Zugänge" reaktivieren); **oder** `WAYFINDER_SESSION_KEY` fehlt/ist zu kurz (Schlüssel setzen mit `openssl rand -hex 32`, Container neu starten, `bootstrap` ggf. erneut ausführen). |
 | **Multi-Tenant: Kunde sieht keine Flugzeuge** | Dem Mandanten wurde **kein Feed zugewiesen** (Schritt 4.9) — fail-closed ist Absicht. Zuweisung als `admin` nachholen. |
+| **Scope ist schwarz / keine Hintergrundkarte** | **Kein Fehler** — der synthetische Radar-Scope ist der Grundzustand (#274). Karte zuschalten: Feature `basemap` freigeben **und** Layer „Basiskarte (BKG)" einschalten (Schritt 4.10a). Bleibt sie trotz Freigabe leer: erreicht der Server das BKG (`sgx.geodatenzentrum.de`, Teil 8.0)? `docker compose logs wayfinder` auf `basemap`-Warnungen prüfen. |
+| **Such-Icon fehlt / „Suchindex wird aufgebaut" endet nicht** | Das Lupen-Icon erscheint nur bei **eingeschalteter** Basiskarte (Schritt 4.10a). Endloser Index-Aufbau: der Server erreicht die BKG-Kacheln nicht — Egress zum BKG bzw. Spiegel prüfen (Teil 8.0/8.0a), Logs auf `basemap search index build failed`. |
 | **Logs ansehen** | `docker compose logs -f wayfinder` (live mitlaufen, `Strg+C` beendet die Anzeige, **nicht** den Dienst). |
 | **Alles sauber neu aufsetzen** | `docker compose down -v` löscht Container **und** die Datenbank-Daten (`-v`!). Danach bei Teil 4 neu beginnen. |
 

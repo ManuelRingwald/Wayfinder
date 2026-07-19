@@ -10,6 +10,85 @@
 
 ---
 
+## 📘 Stand 2026-07-19 (INSTALLATION.md nachgezogen: BKG-Theme in den Beispiel-Composes + Karte/Suche einschalten — Doku-Currency, Opus 4.8)
+
+**In normaler Sprache:** Betreiber-Befund bei der Mac-mini-Umzugsplanung: Die
+Beispiel-Compose-Dateien in `INSTALLATION.md` setzten `WAYFINDER_MAP_THEME`
+nicht, und der Einrichtungs-Walkthrough erklärte nirgends, dass die Karte per
+Default aus ist (synthetischer Scope, #274) — wer der Anleitung folgte, sah am
+Ende einen schwarzen Scope und wunderte sich. Die Env-Referenz-Tabellen waren
+zwar aktuell, die Beispiele + der Walkthrough aber veraltet. Nachgezogen:
+(a) `WAYFINDER_MAP_THEME`/`WAYFINDER_BKG_STYLE_URL` in **beide** Beispiel-
+Composes (Schritt 4.A + 4.2) aufgenommen; (b) neuer **Schritt 4.10a**
+„Basiskarte (BKG) + Sektor-Suche einschalten" (Feature `basemap` freigeben →
+Layer togglen → Suche nutzen); (c) zwei Fehlersuch-Zeilen („Scope schwarz",
+„Such-Icon fehlt"). Klargestellt außerdem: `docker-compose.orchestrated.yml`
+lässt sich **nicht** auf den Mac verschieben (Host-Networking + Auto-Spawn +
+repo-relative Build-Kontexte) — der portable Weg ist das Bridge-Master-Compose.
+
+**Nächster Schritt:** Keiner offen aus diesem Doku-Schritt; der Betreiber
+richtet den Mac-mini-Stack nach der aktualisierten Anleitung ein.
+
+---
+
+## 🔍 Stand 2026-07-19 (Sektor-Suche: nur bei aktivem BKG-Layer + aufklappbares Icon — Nachtrag 3 zu FR-UI-037, Opus 4.8)
+
+**In normaler Sprache:** Zwei Bedien-Wünsche des Betreibers, damit der Scope
+frei auf die Tracks bleibt: (1) Die Suche soll nur erscheinen, wenn die
+BKG-Karte tatsächlich *eingeschaltet* ist — ohne sichtbare Karte gibt es
+nichts zu verorten. (2) Im Ruhezustand soll nur ein kleines Lupen-Icon zu
+sehen sein; ein Klick fährt das Suchfeld aus, nach der Treffer-Wahl klappt es
+wieder zusammen. Beides umgesetzt: Die Suche ist jetzt an den Layer-Schalter
+gekoppelt (nicht mehr an die bloße Freigabe), und das Suchfeld ist
+standardmäßig zu einem Icon eingeklappt.
+
+**Fachlich/technisch:** `showSearch = store.layerVisibility.basemap === true`
+(reaktiv am Sidebar-Toggle); ein `watch` räumt beim Abschalten den Treffer-
+Marker auf. `MapSearch.vue` hat einen Ausklapp-Zustand (`expanded`): Icon-Button
+→ `v-expand-x-transition` → Feld mit Auto-Fokus; Zuklappen bei Treffer-Wahl
+(`onSelect`), Esc/× (`onClose`) und leerem Blur (`onBlur`, guard verhindert
+Klau des Treffer-Klicks). Tests: Gate-Source-Guard (Layer-Kopplung +
+Marker-Aufräumen), Icon→Feld-Aufklappen, Zuklappen nach Treffer (via
+exponiertem `expanded`). Register: FR-UI-037-Nachtrag-3. vitest 638, dist neu.
+
+**Nächster Schritt:** Betreiber-Sicht-Abnahme: Icon nur bei aktivem
+BKG-Layer, Klick fährt Feld aus, Treffer-Wahl klappt zu. Weiterhin offen:
+Label-Flacker-Fix (Sicht-Abnahme), Treffer-Kontext/Zoom (Nachtrag 2).
+
+---
+
+## 🎯 Stand 2026-07-19 (Sektor-Suche: Treffer unterscheidbar + Zoom auf Ziel — Nachtrag 2 zu FR-UI-037, Opus 4.8)
+
+**In normaler Sprache:** Zwei Bedien-Rückmeldungen des Betreibers nach der
+ersten funktionierenden Suche: (1) Fünf identische „Forststraße"-Zeilen waren
+nicht auseinanderzuhalten. (2) Ein Treffer wurde zwar zentriert, aber die
+Karte blieb herausgezoomt — die Straße war unauffindbar. Beides behoben:
+Jede Trefferzeile trägt jetzt ein Ortsmerkmal — den nächstgelegenen Ort
+(„bei Wegberg") plus Peilung und Entfernung vom Sektorzentrum („8,2 NM ·
+295°"). Und ein Klick auf einen Treffer fährt die Kamera nicht nur hin,
+sondern stellt einen festen, sinnvollen Zoom ein (Straßenebene) — egal ob du
+vorher zu weit draußen oder zu nah dran warst.
+
+**Fachlich/technisch:** Server-seitig reichert `enrichHits` jeden Treffer an:
+Radial (Haversine-Entfernung NM + Anfangs-Peilung ° vom bbox-Zentrum, immer
+verfügbar) und der nächste Ort ≤ 8 km aus einer schema-tolerant gefilterten
+Siedlungs-Teilmenge (`filterPlaces`/`isPlaceCategory` — best-effort, leer bei
+abweichendem Tile-Schema → Zeile zeigt dann nur das Radial, genau die vom
+Betreiber gewählte graceful degradation). Ergebnisfelder additiv
+`near`/`dist_nm`/`bearing_deg`. Frontend: `hitDetail(h)` baut
+`Kategorie · bei Ort · NM · Peilung`, fehlende Teile fallen weg;
+`showSearchMarker` nutzt `flyTo` mit **absolutem** `SEARCH_RESULT_ZOOM=14`
+(zoomt in beide Richtungen). Tests: Distanz/Peilung, `isPlaceCategory`,
+`enrichHits` (Ort + Radial + Nicht-Anhängen entfernter Orte), Frontend-Zeile
+mit/ohne Kontext, Zoom-Source-Guard. Register: FR-UI-037-Nachtrag-2.
+
+**Nächster Schritt:** Betreiber-Sicht-Abnahme („Forststraße" → unterscheidbare
+Zeilen, Klick zoomt aufs Ziel). Ggf. Kategorie-/Ort-Labels ans reale
+BKG-Schema feinschleifen. Label-Flacker-Fix (weiter unten) ebenfalls noch
+offen zur Sicht-Abnahme.
+
+---
+
 ## 🔧 Stand 2026-07-19 (Sektor-Suche: TileJSON-Fix + ehrlicher Fehler-Status — Nachtrag zu FR-UI-037)
 
 **In normaler Sprache:** Der Betreiber-Smoke-Test der Sektor-Suche schlug fehl —

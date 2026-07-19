@@ -6,6 +6,7 @@
 // (house pattern); the MapSearch component itself is exercised with a mounted
 // instance against a stubbed fetch.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { nextTick } from 'vue'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { mount } from '@vue/test-utils'
@@ -17,6 +18,7 @@ import {
   SEARCH_MARKER_SOURCE_ID,
   SEARCH_MARKER_LAYER_ID,
   SEARCH_MARKER_LABEL_LAYER_ID,
+  SEARCH_RESULT_ZOOM,
 } from '@/map/constants.js'
 
 const src = (rel) =>
@@ -41,9 +43,14 @@ describe('engine wiring (source-guard)', () => {
 
   it('exposes showSearchMarker (marker + camera) and clearSearchMarker', () => {
     expect(engine).toMatch(/function showSearchMarker\(lon, lat, name\)/)
-    expect(engine).toMatch(/map\.easeTo\(\{ center: \[lon, lat\]/)
     expect(engine).toMatch(/function clearSearchMarker\(\)/)
     expect(engine).toMatch(/showSearchMarker, clearSearchMarker \}/)
+  })
+
+  it('flies to a fixed ABSOLUTE focus zoom on selection (not just centre)', () => {
+    // #277 Nachtrag: the zoom pulls in when far out AND out when too close.
+    expect(engine).toMatch(/map\.flyTo\(\{ center: \[lon, lat\], zoom: SEARCH_RESULT_ZOOM/)
+    expect(SEARCH_RESULT_ZOOM).toBe(14)
   })
 })
 
@@ -54,11 +61,14 @@ describe('MapCanvas / AsdView wiring (source-guard)', () => {
     expect(canvas).toContain('clearSearchMarker: () => mapEngine?.clearSearchMarker()')
   })
 
-  it('AsdView mounts MapSearch behind the basemap entitlement gate', () => {
+  it('AsdView shows the search only when the base-map layer is switched ON', () => {
     const view = src('../../views/AsdView.vue')
     expect(view).toMatch(/<MapSearch\s/)
     expect(view).toMatch(/v-if="showSearch"/)
-    expect(view).toMatch(/session\.isAdmin \|\| session\.hasFeature\('basemap'\)/)
+    // #277 Nachtrag: gated on the actual layer toggle, not merely entitlement.
+    expect(view).toMatch(/showSearch = computed\(\(\) => store\.layerVisibility\.basemap === true\)/)
+    // Turning the layer off clears any leftover result marker.
+    expect(view).toMatch(/if \(!on\) mapCanvas\.value\?\.clearSearchMarker\(\)/)
     expect(view).toMatch(/mapCanvas\.value\?\.showSearchMarker\(hit\.lon, hit\.lat, hit\.name\)/)
   })
 })
@@ -93,14 +103,23 @@ describe('MapSearch component (#277)', () => {
     vi.useRealTimers()
   })
 
+  // The search rests as an icon; open it before interacting with the field.
+  async function open(wrapper) {
+    const toggle = wrapper.find('.map-search__toggle')
+    if (toggle.exists()) {
+      await toggle.trigger('click')
+      await nextTick()
+    }
+  }
   async function typeQuery(wrapper, text) {
+    await open(wrapper)
     await wrapper.find('input').setValue(text)
     await vi.advanceTimersByTimeAsync(350) // past the 300 ms debounce
   }
 
-  it('debounces, queries the endpoint and lists ready hits; picking emits select', async () => {
+  it('debounces, queries the endpoint and lists ready hits with location context; picking emits select', async () => {
     const hits = [
-      { name: 'Friedrichstraße', category: 'verkehrslinie', lat: 50.04, lon: 8.56 },
+      { name: 'Friedrichstraße', category: 'verkehrslinie', lat: 50.04, lon: 8.56, near: 'Wegberg', dist_nm: 8.2, bearing_deg: 295 },
     ]
     global.fetch = vi.fn(() => jsonResponse(200, { status: 'ready', results: hits }))
     const wrapper = mountSearch()
@@ -112,10 +131,49 @@ describe('MapSearch component (#277)', () => {
     const rows = wrapper.findAll('.v-list-item')
     expect(rows).toHaveLength(1)
     expect(wrapper.text()).toContain('Friedrichstraße')
+    // #277 Nachtrag: same-named hits are told apart by category · town · radial.
     expect(wrapper.text()).toContain('Straße / Weg') // category label mapping
+    expect(wrapper.text()).toContain('bei Wegberg')
+    expect(wrapper.text()).toContain('8.2 NM')
+    expect(wrapper.text()).toContain('295°')
 
     await rows[0].trigger('click')
     expect(wrapper.emitted('select')[0][0]).toEqual(hits[0])
+  })
+
+  it('drops missing location pieces gracefully (category-only row)', async () => {
+    const hits = [{ name: 'Forststraße', category: 'verkehrslinie', lat: 50, lon: 8 }]
+    global.fetch = vi.fn(() => jsonResponse(200, { status: 'ready', results: hits }))
+    const wrapper = mountSearch()
+    await typeQuery(wrapper, 'forst')
+    expect(wrapper.text()).toContain('Straße / Weg')
+    expect(wrapper.text()).not.toContain('NM')
+    expect(wrapper.text()).not.toContain('bei ')
+  })
+
+  it('rests as an icon and expands to a field on click (keeps the scope clear)', async () => {
+    global.fetch = vi.fn()
+    const wrapper = mountSearch()
+    expect(wrapper.vm.expanded).toBe(false)
+    expect(wrapper.find('input').exists()).toBe(false)
+    expect(wrapper.find('.map-search__toggle').exists()).toBe(true)
+    await wrapper.find('.map-search__toggle').trigger('click')
+    await nextTick()
+    expect(wrapper.vm.expanded).toBe(true)
+    expect(wrapper.find('input').exists()).toBe(true)
+  })
+
+  it('collapses back to the icon after picking a hit', async () => {
+    const hits = [{ name: 'Forststraße', category: 'verkehrslinie', lat: 50, lon: 8, dist_nm: 5, bearing_deg: 90 }]
+    global.fetch = vi.fn(() => jsonResponse(200, { status: 'ready', results: hits }))
+    const wrapper = mountSearch()
+    await typeQuery(wrapper, 'forst')
+    expect(wrapper.vm.expanded).toBe(true)
+    await wrapper.findAll('.v-list-item')[0].trigger('click')
+    await nextTick()
+    expect(wrapper.emitted('select')).toBeTruthy()
+    expect(wrapper.vm.expanded).toBe(false) // collapsed back to the icon
+    expect(wrapper.find('.map-search__toggle').exists()).toBe(true)
   })
 
   it('does not query below two characters', async () => {

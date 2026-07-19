@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
 	"sort"
 	"strings"
@@ -78,13 +79,24 @@ const (
 	clusterKM = 3.0
 )
 
-// Entry is one searchable named feature.
+// Entry is one searchable named feature. Near/DistNM/Bearing are the location
+// context computed per RESULT (not stored in the index) so a Lotse can tell
+// several same-named hits apart (#277 Nachtrag: five identical "Forststraße"
+// rows are useless): Near is the closest settlement ("bei Wegberg", best-effort
+// — depends on the tile schema carrying a settlement layer), DistNM/Bearing are
+// the always-available radial from the sector centre.
 type Entry struct {
 	Name     string  `json:"name"`
 	Category string  `json:"category"`
 	Lat      float64 `json:"lat"`
 	Lon      float64 `json:"lon"`
-	norm     string
+	Near     string  `json:"near,omitempty"`
+	// DistNM/Bearing are always emitted for a ready hit (they are always
+	// computable): a bearing of exactly 0° (due north) is valid data and must
+	// not be dropped by omitempty, which would hide the whole radial.
+	DistNM  float64 `json:"dist_nm"`
+	Bearing int     `json:"bearing_deg"`
+	norm    string
 }
 
 // Result is the search response payload.
@@ -96,6 +108,7 @@ type Result struct {
 type index struct {
 	bbox     BBox
 	entries  []Entry
+	places   []Entry // settlement-like subset, for the nearest-place lookup
 	builtAt  time.Time
 	err      error
 	building bool
@@ -205,9 +218,75 @@ func (s *Service) Search(bbox BBox, q string) Result {
 		go s.build(key, bbox)
 	}
 	entries := idx.entries
+	places := idx.places
 	s.mu.Unlock()
 
-	return Result{Status: "ready", Results: match(entries, q)}
+	hits := match(entries, q)
+	enrichHits(hits, bbox, places)
+	return Result{Status: "ready", Results: hits}
+}
+
+// enrichHits annotates each result with location context so the Lotse can tell
+// same-named hits apart: the radial (distance + bearing) from the sector centre
+// — always available — plus, best-effort, the nearest settlement name.
+func enrichHits(hits []Entry, bbox BBox, places []Entry) {
+	cLat := (bbox.MinLat + bbox.MaxLat) / 2
+	cLon := (bbox.MinLon + bbox.MaxLon) / 2
+	for i := range hits {
+		hits[i].DistNM = distanceNM(cLat, cLon, hits[i].Lat, hits[i].Lon)
+		hits[i].Bearing = bearingDeg(cLat, cLon, hits[i].Lat, hits[i].Lon)
+		hits[i].Near = nearestPlace(hits[i], places)
+	}
+}
+
+// maxNearKM bounds the nearest-settlement lookup: a place farther than this is
+// no useful "bei X" hint, so the row falls back to the radial alone.
+const maxNearKM = 8.0
+
+// nearestPlace returns the closest differently-named settlement within
+// maxNearKM, or "" when none is near (or the tile schema carried no settlement
+// layer — the graceful-degradation path the operator chose).
+func nearestPlace(hit Entry, places []Entry) string {
+	best := ""
+	bestKM2 := maxNearKM * maxNearKM
+	cosLat := math.Cos(hit.Lat * math.Pi / 180)
+	for _, p := range places {
+		if p.norm == hit.norm {
+			continue
+		}
+		dLat := (p.Lat - hit.Lat) * 111.0
+		dLon := (p.Lon - hit.Lon) * 111.0 * cosLat
+		if km2 := dLat*dLat + dLon*dLon; km2 < bestKM2 {
+			bestKM2 = km2
+			best = p.Name
+		}
+	}
+	return best
+}
+
+// distanceNM is the great-circle distance in nautical miles (haversine).
+func distanceNM(lat1, lon1, lat2, lon2 float64) float64 {
+	const earthR = 6371000.0
+	rl1 := lat1 * math.Pi / 180
+	rl2 := lat2 * math.Pi / 180
+	dLat := (lat2 - lat1) * math.Pi / 180
+	dLon := (lon2 - lon1) * math.Pi / 180
+	a := math.Sin(dLat/2)*math.Sin(dLat/2) +
+		math.Cos(rl1)*math.Cos(rl2)*math.Sin(dLon/2)*math.Sin(dLon/2)
+	c := 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
+	return earthR * c / 1852.0
+}
+
+// bearingDeg is the initial true bearing from (lat1,lon1) to (lat2,lon2),
+// rounded to whole degrees in [0,360) — the ATC-native radial.
+func bearingDeg(lat1, lon1, lat2, lon2 float64) int {
+	rl1 := lat1 * math.Pi / 180
+	rl2 := lat2 * math.Pi / 180
+	dLon := (lon2 - lon1) * math.Pi / 180
+	y := math.Sin(dLon) * math.Cos(rl2)
+	x := math.Cos(rl1)*math.Sin(rl2) - math.Sin(rl1)*math.Cos(rl2)*math.Cos(dLon)
+	deg := math.Atan2(y, x) * 180 / math.Pi
+	return ((int(math.Round(deg)) % 360) + 360) % 360
 }
 
 // match filters + ranks: prefix hits first, then shorter names, then
@@ -266,6 +345,7 @@ func (s *Service) build(key string, bbox BBox) {
 		return
 	}
 	idx.entries = entries
+	idx.places = filterPlaces(entries)
 	idx.builtAt = s.now()
 	idx.err = nil
 	s.buildSuccess.Add(1)
@@ -429,6 +509,39 @@ func featureName(props map[string]interface{}) string {
 func nameOK(v string) bool {
 	v = strings.TrimSpace(v)
 	return len(v) >= 2 && len(v) <= 80
+}
+
+// filterPlaces extracts the settlement-like entries used for the "bei X" hint.
+// Schema-tolerant like featureName: we can't hard-code the BKG layer names, so
+// we match on category keywords. A no-match (schema differs) simply yields an
+// empty place list — hits then show the radial alone (graceful degradation).
+func filterPlaces(entries []Entry) []Entry {
+	var out []Entry
+	for _, e := range entries {
+		if isPlaceCategory(e.Category) {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// isPlaceCategory guesses whether a tile layer name denotes a settlement/place.
+// Deliberately inclusive of the common basemap.de settlement layers and their
+// label variants; deliberately excludes the street/water/vegetation layers that
+// would pollute a "nearby town" hint.
+func isPlaceCategory(cat string) bool {
+	c := strings.ToLower(cat)
+	// Full-ish keywords only — no bare "ort_", which would false-match
+	// "airport_"/"transport_" layer names (review 2026-07-19).
+	for _, k := range []string{
+		"siedl", "ortslage", "ortsname", "ortschaft", "wohnplatz", "wohnbau",
+		"stadt", "gemeinde", "dorf", "flecken", "label_ort",
+	} {
+		if strings.Contains(c, k) {
+			return true
+		}
+	}
+	return c == "ort"
 }
 
 // addClustered merges e into the per-name clusters; entries of the same name
