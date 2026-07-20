@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"testing"
+
+	"github.com/manuelringwald/wayfinder/pkg/coverage"
 )
 
 // K2 (#310): the map-data config plane resolves theme DB-override ?? env-default
@@ -54,4 +56,50 @@ func TestReloadBasemapNilServiceNoop(t *testing.T) {
 	}
 	// applyAtBoot must not panic either.
 	md.applyAtBoot(context.Background())
+}
+
+// K4 (#312): coverage sensor list + ring colour override, with validation.
+func TestValidateSensors(t *testing.T) {
+	ok := []coverage.SensorConfig{{Lat: 50, Lon: 8, MinRangeM: 0, MaxRangeM: 120000, Label: "FRA"}}
+	if err := validateSensors(ok); err != nil {
+		t.Fatalf("valid sensor rejected: %v", err)
+	}
+	bad := [][]coverage.SensorConfig{
+		{{Lat: 91, Lon: 8, MaxRangeM: 1000}},                  // lat out of range
+		{{Lat: 50, Lon: 181, MaxRangeM: 1000}},                // lon out of range
+		{{Lat: 50, Lon: 8, MaxRangeM: 0}},                     // max range 0
+		{{Lat: 50, Lon: 8, MinRangeM: 2000, MaxRangeM: 1000}}, // min ≥ max
+	}
+	for i, s := range bad {
+		if err := validateSensors(s); err == nil {
+			t.Errorf("bad sensor set %d should be rejected", i)
+		}
+	}
+}
+
+func TestEffectiveSensors(t *testing.T) {
+	ctx := context.Background()
+	st := newMemSettings()
+	env := []coverage.SensorConfig{{Lat: 50, Lon: 8, MaxRangeM: 120000, Label: "env"}}
+	md := newMapDataConfig(st, Config{CoverageSensors: env, CoverageRingColor: "#abcdef"}, nil, nil)
+
+	// No override → env sensors + env colour.
+	if got := md.effectiveSensors(ctx); len(got) != 1 || got[0].Label != "env" {
+		t.Fatalf("default sensors = %+v", got)
+	}
+	if c := md.effectiveRingColor(ctx); c != "#abcdef" {
+		t.Fatalf("default colour = %q", c)
+	}
+
+	// Override with a stored JSON list.
+	_ = md.coverageSensors.Set(ctx, `[{"Lat":52,"Lon":9,"MaxRangeM":90000,"Label":"db"}]`)
+	if got := md.effectiveSensors(ctx); len(got) != 1 || got[0].Label != "db" {
+		t.Fatalf("override sensors = %+v", got)
+	}
+
+	// Malformed override degrades to the env sensors (never a broken overlay).
+	_ = md.coverageSensors.Set(ctx, `not json`)
+	if got := md.effectiveSensors(ctx); len(got) != 1 || got[0].Label != "env" {
+		t.Fatalf("malformed override should fall back to env, got %+v", got)
+	}
 }

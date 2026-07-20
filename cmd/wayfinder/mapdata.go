@@ -2,11 +2,14 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/manuelringwald/wayfinder/pkg/basemap"
+	"github.com/manuelringwald/wayfinder/pkg/coverage"
 	"github.com/manuelringwald/wayfinder/pkg/mapconfig"
 )
 
@@ -27,6 +30,12 @@ type mapDataConfig struct {
 	// Basiskarte (K2)
 	styleURL *mapconfig.Setting
 	theme    *mapconfig.Setting
+
+	// Radar-/Luftlageabdeckung (K4): the sensor list is a JSON blob; the ring
+	// colour a plain string. Both fall back to the env-configured start-up value.
+	coverageSensors *mapconfig.Setting
+	coverageColor   *mapconfig.Setting
+	envSensors      []coverage.SensorConfig // start-up env default
 }
 
 // platform_settings keys for the map-data plane. Namespaced so they never clash
@@ -34,8 +43,13 @@ type mapDataConfig struct {
 const (
 	msBasemapStyleURL = "mapdata.basemap.style_url"
 	msBasemapTheme    = "mapdata.basemap.theme"
+	msCoverageSensors = "mapdata.coverage.sensors"
+	msCoverageColor   = "mapdata.coverage.ring_color"
 
 	domainBasemap = "basemap"
+
+	defaultCoverageColor = "#5B8DEF"
+	maxCoverageSensors   = 20
 )
 
 // newMapDataConfig seeds each setting with the process start-up env default and
@@ -48,15 +62,46 @@ func newMapDataConfig(st mapconfig.Store, cfg Config, basemapSvc *basemap.Servic
 	if styleDefault == "" {
 		styleDefault = basemap.DefaultStyleURL
 	}
+	colorDefault := cfg.CoverageRingColor
+	if colorDefault == "" {
+		colorDefault = defaultCoverageColor
+	}
 	m := &mapDataConfig{
-		registry:   mapconfig.NewRegistry(logger),
-		logger:     logger,
-		basemapSvc: basemapSvc,
-		styleURL:   mapconfig.NewSetting(st, msBasemapStyleURL, styleDefault),
-		theme:      mapconfig.NewSetting(st, msBasemapTheme, cfg.MapTheme),
+		registry:        mapconfig.NewRegistry(logger),
+		logger:          logger,
+		basemapSvc:      basemapSvc,
+		styleURL:        mapconfig.NewSetting(st, msBasemapStyleURL, styleDefault),
+		theme:           mapconfig.NewSetting(st, msBasemapTheme, cfg.MapTheme),
+		coverageSensors: mapconfig.NewSetting(st, msCoverageSensors, ""),
+		coverageColor:   mapconfig.NewSetting(st, msCoverageColor, colorDefault),
+		envSensors:      cfg.CoverageSensors,
 	}
 	m.registry.Register(domainBasemap, m.reloadBasemap)
 	return m
+}
+
+// effectiveSensors returns the live coverage sensor list: the stored JSON
+// override, else the start-up env sensors. A malformed override degrades to the
+// env sensors (never an empty/broken overlay).
+func (m *mapDataConfig) effectiveSensors(ctx context.Context) []coverage.SensorConfig {
+	raw, err := m.coverageSensors.Effective(ctx)
+	if err != nil || strings.TrimSpace(raw) == "" {
+		return m.envSensors
+	}
+	var s []coverage.SensorConfig
+	if json.Unmarshal([]byte(raw), &s) != nil {
+		return m.envSensors
+	}
+	return s
+}
+
+// effectiveRingColor returns the live coverage ring colour.
+func (m *mapDataConfig) effectiveRingColor(ctx context.Context) string {
+	v, err := m.coverageColor.Effective(ctx)
+	if err != nil || strings.TrimSpace(v) == "" {
+		return defaultCoverageColor
+	}
+	return v
 }
 
 // reloadBasemap re-reads the effective style URL + theme and applies them to the
@@ -124,4 +169,94 @@ func (m *mapDataConfig) mountAdminRoutes(mux *http.ServeMux, wrap func(http.Hand
 	}
 	mux.Handle("/api/admin/mapdata/basemap/style-url", wrap(styleRes.Handler()))
 	mux.Handle("/api/admin/mapdata/basemap/theme", wrap(themeRes.Handler()))
+	mux.Handle("/api/admin/mapdata/coverage", wrap(m.coverageHandler()))
+}
+
+// coverageRequest / coverageResponse are the admin coverage payloads.
+type coverageRequest struct {
+	Sensors   []coverage.SensorConfig `json:"sensors"`
+	RingColor string                  `json:"ring_color"`
+}
+type coverageResponse struct {
+	Sensors    []coverage.SensorConfig `json:"sensors"`
+	RingColor  string                  `json:"ring_color"`
+	Overridden bool                    `json:"overridden"`
+}
+
+// coverageHandler serves GET/PUT for the radar-coverage sensor list + ring
+// colour (K4). GET returns the effective list; PUT validates + stores it. The
+// /coverage GeoJSON and /api/map-config recompute from the effective values on
+// their next request — no service to reload.
+func (m *mapDataConfig) coverageHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		switch r.Method {
+		case http.MethodGet:
+			m.writeCoverage(w, ctx)
+		case http.MethodPut:
+			var req coverageRequest
+			if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
+				http.Error(w, "invalid JSON body", http.StatusBadRequest)
+				return
+			}
+			if err := validateSensors(req.Sensors); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			blob, err := json.Marshal(req.Sensors)
+			if err != nil {
+				http.Error(w, "could not encode sensors", http.StatusInternalServerError)
+				return
+			}
+			if err := m.coverageSensors.Set(ctx, string(blob)); err != nil {
+				http.Error(w, "could not store sensors", http.StatusInternalServerError)
+				return
+			}
+			if err := m.coverageColor.Set(ctx, strings.TrimSpace(req.RingColor)); err != nil {
+				http.Error(w, "could not store ring colour", http.StatusInternalServerError)
+				return
+			}
+			m.writeCoverage(w, ctx)
+		case http.MethodDelete:
+			// Reset to the env default (delete both overrides). Distinct from a
+			// PUT with an empty list, which is an explicit "zero sensors" override.
+			_ = m.coverageSensors.Reset(ctx)
+			_ = m.coverageColor.Reset(ctx)
+			m.writeCoverage(w, ctx)
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	}
+}
+
+func (m *mapDataConfig) writeCoverage(w http.ResponseWriter, ctx context.Context) {
+	overridden, _ := m.coverageSensors.Overridden(ctx)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(coverageResponse{
+		Sensors:    m.effectiveSensors(ctx),
+		RingColor:  m.effectiveRingColor(ctx),
+		Overridden: overridden,
+	})
+}
+
+// validateSensors screens an admin-supplied sensor list before it is stored.
+func validateSensors(sensors []coverage.SensorConfig) error {
+	if len(sensors) > maxCoverageSensors {
+		return fmt.Errorf("at most %d sensors", maxCoverageSensors)
+	}
+	for i, s := range sensors {
+		if s.Lat < -90 || s.Lat > 90 {
+			return fmt.Errorf("sensor %d: latitude out of range", i+1)
+		}
+		if s.Lon < -180 || s.Lon > 180 {
+			return fmt.Errorf("sensor %d: longitude out of range", i+1)
+		}
+		if s.MaxRangeM <= 0 {
+			return fmt.Errorf("sensor %d: max range must be > 0", i+1)
+		}
+		if s.MinRangeM < 0 || s.MinRangeM >= s.MaxRangeM {
+			return fmt.Errorf("sensor %d: min range must be ≥ 0 and < max range", i+1)
+		}
+	}
+	return nil
 }

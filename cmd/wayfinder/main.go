@@ -591,7 +591,7 @@ func main() {
 	// Coverage rings: static GeoJSON computed once from config, served to the
 	// browser on demand. An empty FeatureCollection is returned when no sensors
 	// are configured so the frontend can always fetch unconditionally.
-	mux.HandleFunc("/api/coverage/rings", coverageRingsHandler(cfg))
+	mux.HandleFunc("/api/coverage/rings", coverageRingsHandler(cfg, mapData))
 
 	// Weather-radar tile proxy (WX-A, ADR 0016): MapLibre requests XYZ tiles from
 	// Wayfinder; the backend translates each into a DWD WMS GetMap. Behind the
@@ -1688,8 +1688,12 @@ func mapConfigHandler(cfg Config, md *mapDataConfig) http.HandlerFunc {
 		// K2 (#310): the theme is runtime-overridable via the admin plane; read the
 		// effective value per request so /api/map-config reflects a live override.
 		effTheme := theme
+		coverageColor := cfg.CoverageRingColor
+		coverageCount := len(cfg.CoverageSensors)
 		if md != nil {
 			effTheme = md.effectiveTheme(r.Context())
+			coverageColor = md.effectiveRingColor(r.Context())
+			coverageCount = len(md.effectiveSensors(r.Context()))
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
@@ -1698,8 +1702,8 @@ func mapConfigHandler(cfg Config, md *mapDataConfig) http.HandlerFunc {
 			"zoom":                  cfg.MapZoom,
 			"style":                 styleValue,
 			"theme":                 effTheme,
-			"coverage_ring_color":   cfg.CoverageRingColor,
-			"coverage_sensor_count": len(cfg.CoverageSensors),
+			"coverage_ring_color":   coverageColor,
+			"coverage_sensor_count": coverageCount,
 			// WX-A / ADR 0017: whether the DWD radar overlay is active (connected-by-
 			// default; off only when explicitly disabled). Gates the sidebar switch.
 			"weather_radar_available": cfg.DWDRadarEnabled && cfg.DWDWMSURL != "",
@@ -1722,14 +1726,21 @@ func mapConfigHandler(cfg Config, md *mapDataConfig) http.HandlerFunc {
 // FeatureCollection. The GeoJSON is computed once at startup from the
 // configured sensors; an empty FeatureCollection is returned when no sensors
 // are configured so the frontend can always fetch unconditionally.
-func coverageRingsHandler(cfg Config) http.HandlerFunc {
-	body, err := coverage.RingsGeoJSON(cfg.CoverageSensors, cfg.CoverageRingColor)
-	if err != nil {
-		// RingsGeoJSON only fails when json.Marshal fails — effectively never.
-		// Fall back to a minimal empty collection rather than crashing.
-		body = []byte(`{"type":"FeatureCollection","features":[]}`)
-	}
+func coverageRingsHandler(cfg Config, md *mapDataConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// K4 (#312): recompute from the EFFECTIVE sensor list + colour so an admin
+		// edit takes effect without a restart (≤20 sensors → cheap per request).
+		sensors := cfg.CoverageSensors
+		color := cfg.CoverageRingColor
+		if md != nil {
+			sensors = md.effectiveSensors(r.Context())
+			color = md.effectiveRingColor(r.Context())
+		}
+		body, err := coverage.RingsGeoJSON(sensors, color)
+		if err != nil {
+			// RingsGeoJSON only fails when json.Marshal fails — effectively never.
+			body = []byte(`{"type":"FeatureCollection","features":[]}`)
+		}
 		w.Header().Set("Content-Type", "application/geo+json")
 		w.Header().Set("Cache-Control", "no-cache")
 		_, _ = w.Write(body)

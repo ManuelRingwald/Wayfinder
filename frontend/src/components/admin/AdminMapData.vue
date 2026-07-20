@@ -110,28 +110,43 @@
         </v-card>
       </v-window-item>
 
-      <!-- ── Radar-/Luftlageabdeckung ── -->
+      <!-- ── Radar-/Luftlageabdeckung (K4 #312: Sensor-CRUD) ── -->
       <v-window-item value="coverage">
         <v-card variant="tonal">
-          <v-card-title class="text-subtitle-1">Radar-/Luftlageabdeckung</v-card-title>
+          <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
+            Radar-/Luftlageabdeckung
+            <v-chip size="x-small" :color="coverage.overridden ? 'primary' : 'default'" variant="tonal">
+              {{ coverage.overridden ? 'überschrieben' : 'Standard (Env)' }}
+            </v-chip>
+          </v-card-title>
           <v-card-text>
-            <div class="mapdata-row">
-              <span class="mapdata-label">Konfigurierte Sensoren</span>
-              <v-chip size="small" variant="tonal" :color="statusColor(sensorCount > 0)">
-                {{ sensorCount }}
-              </v-chip>
+            <p class="text-body-2 text-medium-emphasis mb-3">
+              Reichweiten-Ringe der Radar-Standorte. Änderungen greifen live (die
+              Abdeckungs-GeoJSON wird neu berechnet). Ohne Sensoren ist der Layer
+              im ASD nicht verfügbar.
+            </p>
+
+            <div v-for="(s, i) in sensors" :key="i" class="coverage-sensor">
+              <v-text-field v-model.number="s.Lat" label="Lat" type="number" density="compact" variant="outlined" hide-details style="width: 90px" />
+              <v-text-field v-model.number="s.Lon" label="Lon" type="number" density="compact" variant="outlined" hide-details style="width: 90px" />
+              <v-text-field v-model.number="s.MinRangeM" label="Min (m)" type="number" density="compact" variant="outlined" hide-details style="width: 100px" />
+              <v-text-field v-model.number="s.MaxRangeM" label="Max (m)" type="number" density="compact" variant="outlined" hide-details style="width: 100px" />
+              <v-text-field v-model="s.Label" label="Label" density="compact" variant="outlined" hide-details style="flex: 1; min-width: 100px" />
+              <v-btn icon="mdi-delete" size="small" variant="text" color="error" @click="sensors.splice(i, 1)" />
             </div>
-            <div class="mapdata-row">
-              <span class="mapdata-label">Ringfarbe</span>
-              <span class="mapdata-value d-flex align-center ga-2">
-                <span class="mapdata-swatch" :style="{ background: cfg.coverage_ring_color || '#5B8DEF' }" />
-                {{ cfg.coverage_ring_color || '—' }}
-              </span>
+
+            <div class="d-flex flex-wrap ga-3 align-center mt-3">
+              <v-btn size="small" variant="tonal" prepend-icon="mdi-plus" @click="addSensor">Sensor</v-btn>
+              <v-text-field v-model="ringColor" label="Ringfarbe" density="compact" variant="outlined" hide-details style="width: 140px" />
+              <span class="mapdata-swatch" :style="{ background: ringColor || '#5B8DEF' }" />
+              <v-spacer />
+              <v-btn color="primary" :loading="busy" @click="saveCoverage">Speichern</v-btn>
+              <v-btn v-if="coverage.overridden" color="error" variant="tonal" :loading="busy" @click="resetCoverage">Auf Standard</v-btn>
             </div>
-            <div class="mapdata-hint">
-              Ohne konfigurierte Sensoren ist der Abdeckungs-Layer im ASD nicht
-              verfügbar. Sensor-Pflege in der UI folgt in einem späteren Schritt.
-            </div>
+
+            <v-alert v-if="coverage.error" type="warning" variant="tonal" density="compact" class="mt-3">
+              {{ coverage.error }}
+            </v-alert>
           </v-card-text>
         </v-card>
       </v-window-item>
@@ -175,7 +190,7 @@ onMounted(async () => {
   } catch (e) {
     loadError.value = e?.message || 'Netzwerkfehler'
   }
-  await loadBasemap()
+  await Promise.all([loadBasemap(), loadCoverage()])
 })
 
 async function loadBasemap() {
@@ -210,6 +225,48 @@ const saveTheme = () => putSetting('/api/admin/mapdata/basemap/theme', themeInpu
 const saveStyle = () => putSetting('/api/admin/mapdata/basemap/style-url', styleInput.value)
 const resetStyle = () => putSetting('/api/admin/mapdata/basemap/style-url', '')
 
+// K4 (#312): coverage sensor CRUD.
+const sensors = ref([])
+const ringColor = ref('#5B8DEF')
+const coverage = ref({ overridden: false, error: '' })
+
+async function loadCoverage() {
+  const r = await apiFetch('/api/admin/mapdata/coverage')
+  if (r?.ok && r.data) {
+    sensors.value = (r.data.sensors || []).map((s) => ({ ...s }))
+    ringColor.value = r.data.ring_color || '#5B8DEF'
+    coverage.value.overridden = !!r.data.overridden
+  }
+}
+function addSensor() {
+  sensors.value.push({ Lat: 50, Lon: 8, MinRangeM: 0, MaxRangeM: 100000, Label: '' })
+}
+async function saveCoverage() {
+  busy.value = true
+  coverage.value.error = ''
+  try {
+    const r = await apiFetch('/api/admin/mapdata/coverage', {
+      method: 'PUT',
+      body: JSON.stringify({ sensors: sensors.value, ring_color: ringColor.value }),
+    })
+    if (!r?.ok) coverage.value.error = r?.error || 'Speichern fehlgeschlagen (Werte prüfen).'
+    await loadCoverage()
+  } finally {
+    busy.value = false
+  }
+}
+async function resetCoverage() {
+  // DELETE resets to the env default (distinct from a PUT with an empty list,
+  // which is an explicit "zero sensors" override).
+  busy.value = true
+  try {
+    await apiFetch('/api/admin/mapdata/coverage', { method: 'DELETE' })
+    await loadCoverage()
+  } finally {
+    busy.value = false
+  }
+}
+
 const sensorCount = computed(() => Number(cfg.value.coverage_sensor_count ?? 0))
 
 function statusColor(ok) { return ok ? 'success' : 'default' }
@@ -238,6 +295,14 @@ function statusText(ok) { return ok ? 'verfügbar' : 'nicht konfiguriert' }
   border-radius: 3px;
   display: inline-block;
   flex-shrink: 0;
+}
+.coverage-sensor {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(var(--v-border-color), 0.12);
 }
 .mapdata-hint {
   margin-top: 10px;

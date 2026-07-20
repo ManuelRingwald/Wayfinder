@@ -65,3 +65,17 @@ describe('AdminMapData: Basiskarte live editing (K2 #310)', () => {
     expect(mapData).toContain('basemap.value.reloadError')
   })
 })
+
+describe('AdminMapData: Radar-Abdeckung sensor CRUD (K4 #312)', () => {
+  it('loads, edits and saves the sensor list + ring colour', () => {
+    expect(mapData).toContain("apiFetch('/api/admin/mapdata/coverage')")
+    expect(mapData).toContain('v-for="(s, i) in sensors"')
+    expect(mapData).toContain('addSensor')
+    expect(mapData).toContain('saveCoverage')
+    expect(mapData).toContain('ring_color: ringColor.value')
+  })
+
+  it('reset to env default uses DELETE (distinct from an empty-list override)', () => {
+    expect(mapData).toMatch(/resetCoverage[\s\S]*method: 'DELETE'/)
+  })
+})
