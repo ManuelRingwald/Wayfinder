@@ -10,6 +10,26 @@
 
 ---
 
+## 💾 Stand 2026-07-20 (BKG-Element-Auswahl im View-Profil gespeichert — ASD-023, E4, FR-UI-047)
+
+**In normaler Sprache:** Die Element-Schalter der Basiskarte (aus E2) blieben nach
+einem Reload nicht erhalten — es standen wieder alle auf an. Jetzt **speichert das
+View-Profil die Auswahl mit**: Wer sich eine entclutterte Karte einstellt (z. B.
+Gebäude und Beschriftung aus), findet sie nach Reload oder Profilwechsel genauso
+wieder. Standardmäßig (und bei älteren Profilen) sind weiterhin alle Elemente an.
+
+**Fachlich/technisch:** ASD-023, E4 des Epics **#290** (Issue #295). Reine
+Ergänzung der Profil-Serialisierung (`stores/profileSettings.js`), gespiegelt zur
+`airspaceGroups`-Behandlung: `captureSettings` schreibt `basemapElements`,
+`applySettings` liest sie tolerant zurück (unbekannte Schlüssel übersprungen,
+älteres Profil ohne Abschnitt lädt fehlerfrei). Die Karte folgt über den
+bestehenden MapCanvas-Element-Watcher. **Verifikation:** 710 Frontend-Tests grün,
+`go build`/`vet` grün, Dist neu eingebettet. **Damit ist der praktische Kern des
+BKG-Element-Features rund** (E0–E2 + E4). **Optional offen:** Presets
+„Minimal/Standard/Detailliert" (E3/#294) — reine Bequemlichkeit.
+
+---
+
 ## 🗺️ Stand 2026-07-20 (BKG-Basiskarte: Element-Schalter „nur Flüsse/Straßen" — ASD-022, E2, FR-UI-046)
 
 **In normaler Sprache:** Der ursprüngliche Wunsch ist erfüllt — die amtliche

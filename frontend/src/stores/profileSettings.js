@@ -23,6 +23,8 @@ export function captureSettings(asd) {
     v: SETTINGS_VERSION,
     layers: { ...asd.layerVisibility },
     airspaceGroups: { ...asd.airspaceGroupVisibility },
+    basemapElements: { ...asd.basemapElementVisibility }, // E4 (#293/#295): per-element base-map switches
+
     rangeRings: { spacingNM: asd.rangeRingConfig.spacingNM, count: asd.rangeRingConfig.count },
     history: { durationS: asd.historyConfig.durationS },
     flFilter: { minFL: asd.flFilter.minFL, maxFL: asd.flFilter.maxFL, hide: asd.flFilter.hide },
@@ -48,6 +50,14 @@ export function applySettings(asd, settings) {
   if (settings.airspaceGroups && typeof settings.airspaceGroups === 'object') {
     for (const [k, v] of Object.entries(settings.airspaceGroups)) {
       if (k in asd.airspaceGroupVisibility) asd.setAirspaceGroup(k, !!v)
+    }
+  }
+  // E4 (#295): per-element base-map switches (Gewässer/Verkehr/…). Same tolerant
+  // pattern — unknown keys skipped, so an older profile (or a future element set)
+  // loads without error. Absent section → elements keep their all-on defaults.
+  if (settings.basemapElements && typeof settings.basemapElements === 'object') {
+    for (const [k, v] of Object.entries(settings.basemapElements)) {
+      if (k in asd.basemapElementVisibility) asd.setBasemapElement(k, !!v)
     }
   }
   // Range-ring configuration (spacing / count) — only finite values.
