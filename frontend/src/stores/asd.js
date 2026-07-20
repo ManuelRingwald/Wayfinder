@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, reactive, computed } from 'vue'
 import { apiFetch } from '@/api.js'
 import { DEFAULT_RANGE_RING_SPACING_NM, DEFAULT_RANGE_RING_COUNT, DEFAULT_HISTORY_DURATION_S } from '@/map/constants.js'
+import { BASEMAP_PRESETS } from '@/map/basemapGroups.js'
 
 // #245 Teil B: the correlation endpoint (pkg/correlationapi) answers with HTTP
 // statuses; this table turns them into short German controller-facing lines. The
@@ -125,6 +126,17 @@ export const useAsdStore = defineStore('asd', () => {
     background: true,
   })
   function setBasemapElement(group, val) { basemapElementVisibility[group] = !!val }
+  // E3 (#294): apply a one-click element preset (Minimal/Standard/Detailliert).
+  // Mutates the reactive object directly, so the MapCanvas watcher fires once
+  // (Vue batches the sync mutations) → a single applyBasemap. Unknown preset id
+  // is a no-op; only known element keys are written (forward-compatible).
+  function applyBasemapPreset(id) {
+    const preset = BASEMAP_PRESETS.find((p) => p.id === id)
+    if (!preset) return
+    for (const [k, v] of Object.entries(preset.elements)) {
+      if (k in basemapElementVisibility) basemapElementVisibility[k] = !!v
+    }
+  }
 
   // ASD-012: operator-tunable range-ring configuration, applied live. The engine
   // regenerates the overlay from the configured centre whenever this changes.
@@ -300,7 +312,7 @@ export const useAsdStore = defineStore('asd', () => {
     weatherWarningsAvailable, setWeatherWarningsAvailable,
     correlationAvailable, setCorrelationAvailable,
     airspaceGroupVisibility,
-    basemapElementVisibility, setBasemapElement,
+    basemapElementVisibility, setBasemapElement, applyBasemapPreset,
     rangeRingConfig, setRangeRingConfig,
     historyConfig, setHistoryConfig,
     selectedTrack, labelPins, liveTrackNums,

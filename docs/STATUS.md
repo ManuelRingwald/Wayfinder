@@ -10,6 +10,30 @@
 
 ---
 
+## ✨ Stand 2026-07-20 (BKG-Element-Presets „Minimal/Standard/Detailliert" — ASD-024, E3, FR-UI-048; Epic #290 abgeschlossen)
+
+**In normaler Sprache:** Statt die acht Element-Schalter der Basiskarte einzeln
+zu stellen, gibt es jetzt drei **1-Klick-Profile** darüber: **Minimal** (nur
+Gewässer/Grenzen/Beschriftung auf dem Scope), **Standard** (dazu Verkehr +
+Hintergrund) und **Detailliert** (alles an). Ändert der Lotse danach einen
+Schalter, steht die Auswahl auf „Benutzerdefiniert". Damit ist das BKG-Element-
+Feature rund: nach Elementen schalten, per Preset schnell wählen, und alles bleibt
+im View-Profil erhalten.
+
+**Fachlich/technisch:** ASD-024, E3 (letzte Komfort-Stufe) des Epics **#290**
+(Issue #294). `BASEMAP_PRESETS` + `matchPreset` in `map/basemapGroups.js`
+(unit-getestet), Store-Action `applyBasemapPreset` (gebündelte Mutation → ein
+`applyBasemap`), kompakte Preset-Button-Reihe in der Sidebar (nur bei Karte-an,
+aktiver Preset hervorgehoben). Persistenz kostenlos über E4 (Preset setzt nur
+Element-Zustände). **Verifikation:** 719 Frontend-Tests grün, `go build`/`vet`
+grün, Dist neu eingebettet.
+
+**Epic #290 (BKG-Karte in Elemente unterteilen) ist damit abgeschlossen** —
+E0 (Bucketing) → E1 (Sidebar-Gruppen) → E2 (Element-Schalter) → E4 (Persistenz)
+→ E3 (Presets). Optionaler Rest E5 (Panel-Suche/Straßenklassen) ist nicht geplant.
+
+---
+
 ## 💾 Stand 2026-07-20 (BKG-Element-Auswahl im View-Profil gespeichert — ASD-023, E4, FR-UI-047)
 
 **In normaler Sprache:** Die Element-Schalter der Basiskarte (aus E2) blieben nach
