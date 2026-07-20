@@ -10,6 +10,33 @@
 
 ---
 
+## 🧩 Stand 2026-07-20 (BKG-Basiskarte: Element-Bucketing — ASD-021, E0, FR-UI-045)
+
+**In normaler Sprache:** Vorbereitung dafür, die amtliche Basiskarte später in
+**einzelne Elemente** zerlegbar zu machen (nur Flüsse, nur Straßen …). Damit die
+kommenden Schalter (E2/#293) wissen, *welche* Karten-Ebene zu *welchem* Element
+gehört, ordnet dieser Schritt jede Ebene der Vektorkarte einer **Element-Gruppe**
+zu (Gewässer, Verkehr, Vegetation, Siedlung, Gebäude, Grenzen, Beschriftung,
+Hintergrund). **Noch ohne Bedienoberfläche** — reine Grundlage. Weil die
+Ebenen-Namen der BKG mit Updates wechseln, geschieht die Zuordnung **per Muster**
+(nicht per fester Namensliste), und alles Unerkannte landet sicher in „Sonstiges",
+sodass nie eine Ebene verloren geht.
+
+**Fachlich/technisch:** ASD-021, E0 des Epics **#290** (Issue #291). Neu
+`map/basemapGroups.js` (`classifyBasemapLayer`/`bucketBasemapLayers`, rein +
+unit-getestet gegen einen Fixture aus basemap.de- **und** basemap.world-Namen);
+`engine.js` bucketet beim Style-Load (`state.basemapGroups`) und exponiert
+`setBasemapGroupVisibility(group, visible)` — den Schalthebel für E2, **noch von
+keiner UI aufgerufen**. Ein Symbol-Layer ist immer „Beschriftung" (Regel zuerst).
+**Verifikation:** 701 Frontend-Tests grün (neu `basemapGroups.test.js` + E0-Block
+in `basemapLayer.test.js`), `go build`/`vet` grün, Dist neu eingebettet. **Ehrliche
+Grenze:** Live-BKG-Style von hier nicht prüfbar (Proxy 403) → Feinjustierung der
+Muster am echten `/basemap/style.json`, bis dahin fängt „Sonstiges" alles auf.
+**Nächster Schritt:** E2/#293 — die Element-Schalter im „Karte"-Abschnitt an
+`setBasemapGroupVisibility` hängen.
+
+---
+
 ## 🗂️ Stand 2026-07-20 (Layer-Sidebar in aufklappbare Gruppen — ASD-020, ADR 0031, FR-UI-044)
 
 **In normaler Sprache:** Der „Layer"-Bereich der Seitenleiste war eine lange,

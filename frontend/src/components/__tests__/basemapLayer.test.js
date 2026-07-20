@@ -54,7 +54,8 @@ describe('engine wiring (source-guard)', () => {
   })
 
   it('snapshots the base-style layers before overlays and floors them with the synthetic background', () => {
-    expect(engine).toContain('state.basemapLayerIds = map.getStyle().layers')
+    expect(engine).toContain('const baseStyleLayers = map.getStyle().layers')
+    expect(engine).toContain('state.basemapLayerIds = baseStyleLayers')
     expect(engine).toMatch(/filter\(\(id\) => id !== SYNTHETIC_BACKGROUND_LAYER_ID\)/)
     expect(engine).toMatch(/map\.addLayer\(\s*\{\s*id: SYNTHETIC_BACKGROUND_LAYER_ID/)
   })
@@ -62,6 +63,21 @@ describe('engine wiring (source-guard)', () => {
   it('applies the store default at load and exposes the toggle group', () => {
     expect(engine).toMatch(/store\.layerVisibility\.basemap \? 'visible' : 'none'/)
     expect(engine).toMatch(/basemap: state\.basemapLayerIds/)
+  })
+
+  // E0 (#291): the base-map layers are also bucketed by element group at load,
+  // and a per-group visibility helper is exposed for the future element switches
+  // (E2/#293). No UI calls it yet — this only pins the capability.
+  it('buckets the base-map layers by element group at load', () => {
+    expect(engine).toContain("import { bucketBasemapLayers } from './basemapGroups.js'")
+    expect(engine).toMatch(/state\.basemapGroups = bucketBasemapLayers\(baseStyleLayers, SYNTHETIC_BACKGROUND_LAYER_ID\)/)
+  })
+
+  it('exposes setBasemapGroupVisibility(group, visible) for the per-element switches', () => {
+    expect(engine).toMatch(/function setBasemapGroupVisibility\(group, visible\)/)
+    expect(engine).toMatch(/const ids = state\.basemapGroups\[group\]/)
+    // and it is part of the engine's public API
+    expect(engine).toMatch(/return \{[^}]*setBasemapGroupVisibility/)
   })
 })
 
