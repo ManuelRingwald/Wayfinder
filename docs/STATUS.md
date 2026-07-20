@@ -10,6 +10,32 @@
 
 ---
 
+## 🗺️ Stand 2026-07-20 (BKG-Basiskarte: Element-Schalter „nur Flüsse/Straßen" — ASD-022, E2, FR-UI-046)
+
+**In normaler Sprache:** Der ursprüngliche Wunsch ist erfüllt — die amtliche
+Basiskarte lässt sich jetzt **nach Elementen** ein-/ausblenden. Unter „Karte" in
+der Seitenleiste gibt es acht Unterschalter (**Gewässer, Verkehr, Vegetation,
+Siedlung, Gebäude, Grenzen, Beschriftung, Hintergrund**). So kann der Lotse z. B.
+„nur Flüsse" oder „nur Straßen" zeigen. Die Unterschalter sind ausgegraut, solange
+die Karte insgesamt aus ist (der bekannte #274-Schalter „Basiskarte" bleibt der
+Hauptschalter). Standardmäßig sind alle Elemente an — es ändert sich also nichts,
+bis man bewusst etwas ausblendet.
+
+**Fachlich/technisch:** ASD-022, E2 des Epics **#290** (Issue #293), auf E0
+(#291, Bucketing) + E1 (#292, Gruppen) aufbauend. Kein Style-Wechsel: neue
+Engine-Funktion `applyBasemap()` schaltet jede Ebene sichtbar **gdw. Master an UND
+Element-Gruppe an** (unerkannte `other`-Ebenen folgen dem Master). Store
+`basemapElementVisibility` (alle an Default) + `setBasemapElement`; MapCanvas-
+Watcher wendet Element-Änderungen sofort an; Sidebar zeigt die acht Unterschalter
+(deaktiviert bei Karte-aus). **Verifikation:** 707 Frontend-Tests grün, `go build`/
+`vet` grün, Dist neu eingebettet. **Offen:** Persistenz der Element-Auswahl im
+View-Profil (E4/#295) — nach Reload sind wieder alle Elemente an; danach optional
+Presets (E3/#294). **Ehrliche Grenze:** Ebene→Element-Zuordnung muster-basiert,
+Feinjustierung am echten `/basemap/style.json` durch den Betreiber; optische
+Abnahme durch den Betreiber (kein WebGL-Test).
+
+---
+
 ## 🧩 Stand 2026-07-20 (BKG-Basiskarte: Element-Bucketing — ASD-021, E0, FR-UI-045)
 
 **In normaler Sprache:** Vorbereitung dafür, die amtliche Basiskarte später in

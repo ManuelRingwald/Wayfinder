@@ -99,6 +99,13 @@ watch(() => ({ ...store.layerVisibility }), (vis) => {
   mapEngine?.setLayerVisibility(vis)
 }, { deep: true })
 
+// E2 (#293): re-apply the base map when a per-element switch changes (Gewässer/
+// Verkehr/…). The master (layerVisibility.basemap) flows through the watcher
+// above; applyBasemap combines both, so an element toggle takes effect at once.
+watch(() => ({ ...store.basemapElementVisibility }), () => {
+  mapEngine?.applyBasemap()
+}, { deep: true })
+
 // FL filter reactive sync
 watch(() => ({ ...store.flFilter }), () => {
   mapEngine?.updateFlFilter()

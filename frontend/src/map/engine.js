@@ -421,10 +421,11 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
         state.basemapLayerIds[0],
       )
     }
-    const basemapVisible = store.layerVisibility.basemap ? 'visible' : 'none'
-    state.basemapLayerIds.forEach((id) => {
-      map.setLayoutProperty(id, 'visibility', basemapVisible)
-    })
+    // #274 + E2 (#293): apply the base map respecting BOTH the master (is the
+    // map shown at all) AND the per-element switches (which parts show when it
+    // is). Default per W2 is master OFF, so this hides everything unless the
+    // store (a view profile, or an earlier toggle) says otherwise.
+    applyBasemap()
 
     // WX-A: DWD weather-radar overlay first of all, so it sits directly above the
     // base map and beneath every operational overlay. Starts hidden; toggled via
@@ -584,8 +585,10 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
   // Layer visibility control: called by MapCanvas when store changes.
   function setLayerVisibility(vis) {
     if (!state.mapLoaded) return
+    // #274 + E2 (#293): the base map is NOT a plain group here — its visibility
+    // is the master AND the per-element switches combined (applyBasemap), so it
+    // is handled below instead of in this flat show/hide loop.
     const groups = {
-      basemap: state.basemapLayerIds, // #274: the snapshotted base-style layers
       airspace: [AIRSPACE_FILL_LAYER_ID, AIRSPACE_LINE_LAYER_ID, AIRSPACE_LABEL_LAYER_ID],
       aor: [AIRSPACE_AOR_LAYER_ID], // ASD-014: AoR highlight toggle
       navaids: [NAVAIDS_LAYER_ID],
@@ -607,6 +610,33 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
           }
         })
       }
+    }
+    // #274 + E2 (#293): apply the base map (master × per-element) when its master
+    // changed. Element-only changes come through the dedicated watcher → applyBasemap.
+    if ('basemap' in vis) applyBasemap()
+  }
+
+  // #274 + E2 (#293): apply the base map's visibility as the combination of the
+  // MASTER (store.layerVisibility.basemap — is the map shown at all, #274) and
+  // the PER-ELEMENT switches (store.basemapElementVisibility — which parts show
+  // when it is). A layer is visible iff the master is on AND its element group is
+  // on; an unclassified group ('other', absent from the element map) defaults to
+  // on, so it simply follows the master. All hidden when the master is off.
+  function applyBasemap() {
+    // No mapLoaded guard: this also runs from the load handler BEFORE mapLoaded
+    // is set, to apply the initial base-map visibility. Safe before load anyway —
+    // state.basemapGroups is empty until the style loads, so the loop is a no-op.
+    const on = store.layerVisibility.basemap
+    const elements = store.basemapElementVisibility
+    for (const [group, ids] of Object.entries(state.basemapGroups)) {
+      const el = elements[group]
+      const visible = on && (el === undefined ? true : el)
+      const visibility = visible ? 'visible' : 'none'
+      ids.forEach((id) => {
+        if (map.getLayer(id)) {
+          map.setLayoutProperty(id, 'visibility', visibility)
+        }
+      })
     }
   }
 
@@ -787,5 +817,5 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
     src.setData(rangeRingsGeoJSON(effectiveCenter.lat, effectiveCenter.lon, spacingNM, count))
   }
 
-  return { map, destroy, reconnect, setLayerVisibility, setBasemapGroupVisibility, updateFlFilter, updateAirspaceFilter, updateAoR, updateSelection, selectTrackByNum, updateHistoryConfig, applyWeatherAOI, zoomIn, zoomOut, recenter, applyViewCenter, updateRangeRings, showSearchMarker, clearSearchMarker }
+  return { map, destroy, reconnect, setLayerVisibility, setBasemapGroupVisibility, applyBasemap, updateFlFilter, updateAirspaceFilter, updateAoR, updateSelection, selectTrackByNum, updateHistoryConfig, applyWeatherAOI, zoomIn, zoomOut, recenter, applyViewCenter, updateRangeRings, showSearchMarker, clearSearchMarker }
 }

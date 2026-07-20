@@ -60,9 +60,12 @@ describe('engine wiring (source-guard)', () => {
     expect(engine).toMatch(/map\.addLayer\(\s*\{\s*id: SYNTHETIC_BACKGROUND_LAYER_ID/)
   })
 
-  it('applies the store default at load and exposes the toggle group', () => {
-    expect(engine).toMatch(/store\.layerVisibility\.basemap \? 'visible' : 'none'/)
-    expect(engine).toMatch(/basemap: state\.basemapLayerIds/)
+  it('applies the base map at load via applyBasemap (master × elements, E2)', () => {
+    // #274 + E2 (#293): the load handler no longer flat-shows every basemap layer;
+    // it calls applyBasemap(), which combines the master with the per-element
+    // switches. So basemap is NOT a plain entry in the flat show/hide group map.
+    expect(engine).toMatch(/applyBasemap\(\)/)
+    expect(engine).not.toMatch(/basemap: state\.basemapLayerIds/)
   })
 
   // E0 (#291): the base-map layers are also bucketed by element group at load,
@@ -87,5 +90,48 @@ describe('sidebar wiring (source-guard)', () => {
     expect(sidebar).toMatch(/v-if="showLayer\('basemap'\)"/)
     expect(sidebar).toContain('v-model="store.layerVisibility.basemap"')
     expect(sidebar).toMatch(/onLayerToggle\('basemap', \$event\)/)
+  })
+})
+
+// E2 (#293): per-element base-map switches ("only rivers"/"only roads"). Store
+// defaults are tested directly; the wiring (engine applyBasemap, MapCanvas
+// watcher, sidebar sub-rows) is pinned with source-guards.
+describe('base-map element switches (E2 #293)', () => {
+  const engine = src('../../map/engine.js')
+  const sidebar = src('../LayerFilterContent.vue')
+  const canvas = src('../MapCanvas.vue')
+
+  it('all element groups start visible — nothing changes until the operator hides one', () => {
+    const store = useAsdStore()
+    for (const v of Object.values(store.basemapElementVisibility)) expect(v).toBe(true)
+    store.setBasemapElement('water', false)
+    expect(store.basemapElementVisibility.water).toBe(false)
+  })
+
+  it('applyBasemap combines the master with the per-element visibility', () => {
+    expect(engine).toMatch(/function applyBasemap\(\)/)
+    expect(engine).toContain('store.layerVisibility.basemap')
+    expect(engine).toContain('store.basemapElementVisibility')
+    // visible iff master on AND element on; an unclassified group ('other',
+    // absent from the map) defaults on, so it follows the master.
+    expect(engine).toMatch(/on && \(el === undefined \? true : el\)/)
+    expect(engine).toMatch(/return \{[^}]*applyBasemap/)
+  })
+
+  it('routes basemap through applyBasemap, not the flat show/hide loop', () => {
+    expect(engine).toMatch(/if \('basemap' in vis\) applyBasemap\(\)/)
+  })
+
+  it('MapCanvas re-applies the base map when an element switch changes', () => {
+    expect(canvas).toMatch(/watch\(\(\) => \(\{ \.\.\.store\.basemapElementVisibility \}\)/)
+    expect(canvas).toContain('mapEngine?.applyBasemap()')
+  })
+
+  it('renders an element switch per BASEMAP_ELEMENTS, disabled while the map is off', () => {
+    expect(sidebar).toContain("import { BASEMAP_ELEMENTS } from '@/map/basemapGroups.js'")
+    expect(sidebar).toMatch(/v-for="el in BASEMAP_ELEMENTS"/)
+    expect(sidebar).toContain('store.basemapElementVisibility[el.id]')
+    expect(sidebar).toContain('store.setBasemapElement(el.id, $event)')
+    expect(sidebar).toMatch(/:disabled="!store\.layerVisibility\.basemap"/)
   })
 })

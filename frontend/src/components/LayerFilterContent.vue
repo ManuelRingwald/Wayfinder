@@ -137,6 +137,29 @@
             @update:model-value="onLayerToggle('basemap', $event)"
           />
         </div>
+
+        <!-- E2 (#293): per-element switches — "only rivers"/"only roads". They
+             REFINE the base map WHEN it is shown, so they are disabled (greyed)
+             while the master is off. All on by default; toggling one takes effect
+             at once (MapCanvas element watcher → engine applyBasemap). -->
+        <template v-if="showLayer('basemap')">
+          <div
+            v-for="el in BASEMAP_ELEMENTS"
+            :key="el.id"
+            class="filter-row filter-row--sub"
+          >
+            <v-switch
+              :model-value="store.basemapElementVisibility[el.id]"
+              :label="el.label"
+              color="primary"
+              density="compact"
+              hide-details
+              inset
+              :disabled="!store.layerVisibility.basemap"
+              @update:model-value="store.setBasemapElement(el.id, $event)"
+            />
+          </div>
+        </template>
       </LayerGroup>
 
       <!-- ── Radar & Reichweite: coverage, history dots, range rings ── -->
@@ -415,6 +438,7 @@ import { useSessionStore } from '@/stores/session.js'
 import { AIRSPACE_GROUPS, AIRSPACE_AOR_COLOR, RANGE_RING_SPACING_OPTIONS_NM, MAX_RANGE_RING_COUNT, HISTORY_DURATION_OPTIONS_S, WEATHER_RADAR_LEGEND, WEATHER_WARNINGS_LEGEND } from '@/map/constants.js'
 import { filterProvenanceLegend } from '@/map/provenance.js'
 import { masterState, nextMaster } from '@/map/layerGroups.js'
+import { BASEMAP_ELEMENTS } from '@/map/basemapGroups.js'
 import LayerGroup from './LayerGroup.vue'
 
 // #116: the NavigationRail opens one section at a time on desktop; the mobile

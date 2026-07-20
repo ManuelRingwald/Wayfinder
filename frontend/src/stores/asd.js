@@ -109,6 +109,23 @@ export const useAsdStore = defineStore('asd', () => {
     runways: false, // #192: runway centrelines off by default (opt-in context)
   })
 
+  // E2 (#293): per-element visibility of the BKG base map (Gewässer/Verkehr/…).
+  // These REFINE the base map WHEN it is shown (layerVisibility.basemap) — they do
+  // not turn the map on. All on by default (the whole map), so nothing changes
+  // until the operator hides an element. The engine (applyBasemap) combines these
+  // with the master; a group not listed here ('other') follows the master.
+  const basemapElementVisibility = reactive({
+    water: true,
+    traffic: true,
+    vegetation: true,
+    settlement: true,
+    building: true,
+    boundary: true,
+    label: true,
+    background: true,
+  })
+  function setBasemapElement(group, val) { basemapElementVisibility[group] = !!val }
+
   // ASD-012: operator-tunable range-ring configuration, applied live. The engine
   // regenerates the overlay from the configured centre whenever this changes.
   const rangeRingConfig = reactive({
@@ -283,6 +300,7 @@ export const useAsdStore = defineStore('asd', () => {
     weatherWarningsAvailable, setWeatherWarningsAvailable,
     correlationAvailable, setCorrelationAvailable,
     airspaceGroupVisibility,
+    basemapElementVisibility, setBasemapElement,
     rangeRingConfig, setRangeRingConfig,
     historyConfig, setHistoryConfig,
     selectedTrack, labelPins, liveTrackNums,
