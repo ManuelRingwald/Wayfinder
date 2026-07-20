@@ -337,6 +337,16 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// Map-data config plane (Epic #307, K1–K5): runtime-overridable settings for
+	// the base map / weather / coverage on top of platform_settings. Built after
+	// the DB pool is open; applies any stored overrides to the services at boot.
+	mapData := newMapDataConfig(store.NewSettingsRepo(dbPool), cfg, basemapSvc, logger)
+	func() {
+		bootApply, cancelApply := context.WithTimeout(ctx, 10*time.Second)
+		defer cancelApply()
+		mapData.applyAtBoot(bootApply)
+	}()
+
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
@@ -556,7 +566,7 @@ func main() {
 	} else {
 		mux.Handle("/glyphs/", glyphs)
 	}
-	mux.HandleFunc("/api/map-config", mapConfigHandler(cfg))
+	mux.HandleFunc("/api/map-config", mapConfigHandler(cfg, mapData))
 
 	// Aeronautical GeoJSON endpoints (/api/airspace, /api/navaids,
 	// /api/waypoints), served from the OpenAIP cache (ADR 0004). They are
@@ -754,6 +764,11 @@ func main() {
 		adminAPI = adminAPI.WithSessionRevoker(countingRevoker{repo: sessionRepo})
 	}
 	mux.Handle("/api/admin/", tenantMW(requireAdmin(adminAPI)))
+
+	// Epic #307 (K2–K5): map-data configuration endpoints under
+	// /api/admin/mapdata/* — more specific patterns than the /api/admin/ subtree
+	// above, so ServeMux routes them here. Same admin auth wrap.
+	mapData.mountAdminRoutes(mux, func(h http.Handler) http.Handler { return tenantMW(requireAdmin(h)) })
 
 	// Role-agnostic identity probe for the ASD map (any authenticated principal,
 	// not just admins): the map reads it to decide between its login screen and
@@ -1655,7 +1670,7 @@ func parseLogLevel(v string) (slog.Level, error) {
 // official base map is served through Wayfinder's own /basemap/style.json
 // (fetched, rewritten, cached — dark-transformed for bkg-dark; ADR 0026). The
 // reported `theme` lets the frontend pick a matching foreground palette.
-func mapConfigHandler(cfg Config) http.HandlerFunc {
+func mapConfigHandler(cfg Config, md *mapDataConfig) http.HandlerFunc {
 	var styleValue any
 	theme := cfg.MapTheme
 	if theme == "" {
@@ -1670,13 +1685,19 @@ func mapConfigHandler(cfg Config) http.HandlerFunc {
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
+		// K2 (#310): the theme is runtime-overridable via the admin plane; read the
+		// effective value per request so /api/map-config reflects a live override.
+		effTheme := theme
+		if md != nil {
+			effTheme = md.effectiveTheme(r.Context())
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"center_lat":            cfg.MapCenterLat,
 			"center_lon":            cfg.MapCenterLon,
 			"zoom":                  cfg.MapZoom,
 			"style":                 styleValue,
-			"theme":                 theme,
+			"theme":                 effTheme,
 			"coverage_ring_color":   cfg.CoverageRingColor,
 			"coverage_sensor_count": len(cfg.CoverageSensors),
 			// WX-A / ADR 0017: whether the DWD radar overlay is active (connected-by-

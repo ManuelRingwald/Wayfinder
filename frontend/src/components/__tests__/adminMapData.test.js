@@ -41,8 +41,6 @@ describe('AdminMapData: four sources, status view, OpenAIP embedded', () => {
     expect(mapData).toContain('weather_warnings_available')
     expect(mapData).toContain('qnh_available')
     expect(mapData).toContain('coverage_sensor_count')
-    expect(mapData).toContain('cfg.theme')
-    expect(mapData).toContain('cfg.style')
   })
 
   it('embeds the existing global-OpenAIP panel in the Aeronautik tab (no duplication)', () => {
@@ -50,8 +48,20 @@ describe('AdminMapData: four sources, status view, OpenAIP embedded', () => {
     expect(mapData).toContain('<AdminGlobalOpenAIP />')
   })
 
-  it('is read-only status in K1 (editing arrives in K2–K5)', () => {
-    // No PUT/save wiring yet — the editing endpoints come per subsystem.
-    expect(mapData).not.toContain("method: 'PUT'")
+})
+
+describe('AdminMapData: Basiskarte live editing (K2 #310)', () => {
+  it('loads + saves the base-map settings via the mapconfig admin endpoints', () => {
+    expect(mapData).toContain("apiFetch('/api/admin/mapdata/basemap/theme')")
+    expect(mapData).toContain("apiFetch('/api/admin/mapdata/basemap/style-url')")
+    expect(mapData).toContain("method: 'PUT'")
+    expect(mapData).toContain('saveTheme')
+    expect(mapData).toContain('saveStyle')
+    expect(mapData).toContain('resetStyle') // empty value resets to env default
+  })
+
+  it('surfaces a reload error honestly (stored but not applied)', () => {
+    expect(mapData).toContain('reload_error')
+    expect(mapData).toContain('basemap.value.reloadError')
   })
 })
