@@ -128,10 +128,35 @@ describe('base-map element switches (E2 #293)', () => {
   })
 
   it('renders an element switch per BASEMAP_ELEMENTS, disabled while the map is off', () => {
-    expect(sidebar).toContain("import { BASEMAP_ELEMENTS } from '@/map/basemapGroups.js'")
+    expect(sidebar).toContain("import { BASEMAP_ELEMENTS, BASEMAP_PRESETS, matchPreset } from '@/map/basemapGroups.js'")
     expect(sidebar).toMatch(/v-for="el in BASEMAP_ELEMENTS"/)
     expect(sidebar).toContain('store.basemapElementVisibility[el.id]')
     expect(sidebar).toContain('store.setBasemapElement(el.id, $event)')
     expect(sidebar).toMatch(/:disabled="!store\.layerVisibility\.basemap"/)
+  })
+})
+
+// E3 (#294): one-click element presets (Minimal/Standard/Detailliert).
+describe('base-map element presets (E3 #294)', () => {
+  const sidebar = src('../LayerFilterContent.vue')
+
+  it('the store applies a preset by id (unknown id is a no-op)', () => {
+    const store = useAsdStore()
+    store.applyBasemapPreset('minimal')
+    // Minimal keeps water/boundary/label, drops building/traffic/…
+    expect(store.basemapElementVisibility.building).toBe(false)
+    expect(store.basemapElementVisibility.boundary).toBe(true)
+    const before = { ...store.basemapElementVisibility }
+    store.applyBasemapPreset('does-not-exist')
+    expect({ ...store.basemapElementVisibility }).toEqual(before)
+  })
+
+  it('renders the preset buttons, shown only while the map is on, active one highlighted', () => {
+    expect(sidebar).toMatch(/v-for="p in BASEMAP_PRESETS"/)
+    expect(sidebar).toContain('store.applyBasemapPreset(p.id)')
+    expect(sidebar).toContain('activeBasemapPreset')
+    expect(sidebar).toContain('matchPreset(store.basemapElementVisibility)')
+    // gated on the master being on (presets are meaningless when the map is off)
+    expect(sidebar).toMatch(/v-if="showLayer\('basemap'\) && store\.layerVisibility\.basemap"/)
   })
 })

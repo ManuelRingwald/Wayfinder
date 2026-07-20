@@ -138,6 +138,25 @@
           />
         </div>
 
+        <!-- E3 (#294): one-click element presets. Shown only while the map is on
+             (they are meaningless otherwise); the active preset is highlighted,
+             or none when the element set is "Benutzerdefiniert". -->
+        <div
+          v-if="showLayer('basemap') && store.layerVisibility.basemap"
+          class="filter-row filter-row--sub basemap-presets"
+        >
+          <v-btn-group density="compact" divided class="basemap-presets__group">
+            <v-btn
+              v-for="p in BASEMAP_PRESETS"
+              :key="p.id"
+              size="x-small"
+              :variant="activeBasemapPreset === p.id ? 'flat' : 'text'"
+              :color="activeBasemapPreset === p.id ? 'primary' : undefined"
+              @click="store.applyBasemapPreset(p.id)"
+            >{{ p.label }}</v-btn>
+          </v-btn-group>
+        </div>
+
         <!-- E2 (#293): per-element switches — "only rivers"/"only roads". They
              REFINE the base map WHEN it is shown, so they are disabled (greyed)
              while the master is off. All on by default; toggling one takes effect
@@ -438,7 +457,7 @@ import { useSessionStore } from '@/stores/session.js'
 import { AIRSPACE_GROUPS, AIRSPACE_AOR_COLOR, RANGE_RING_SPACING_OPTIONS_NM, MAX_RANGE_RING_COUNT, HISTORY_DURATION_OPTIONS_S, WEATHER_RADAR_LEGEND, WEATHER_WARNINGS_LEGEND } from '@/map/constants.js'
 import { filterProvenanceLegend } from '@/map/provenance.js'
 import { masterState, nextMaster } from '@/map/layerGroups.js'
-import { BASEMAP_ELEMENTS } from '@/map/basemapGroups.js'
+import { BASEMAP_ELEMENTS, BASEMAP_PRESETS, matchPreset } from '@/map/basemapGroups.js'
 import LayerGroup from './LayerGroup.vue'
 
 // #116: the NavigationRail opens one section at a time on desktop; the mobile
@@ -521,6 +540,10 @@ const aeroState = computed(() => groupMaster(aeroMembers))
 const karteState = computed(() => groupMaster(karteMembers))
 const radarState = computed(() => groupMaster(radarMembers))
 const wetterState = computed(() => groupMaster(wetterMembers))
+
+// E3 (#294): which preset (if any) the current element set matches — drives the
+// highlight; null = "Benutzerdefiniert" (no button highlighted).
+const activeBasemapPreset = computed(() => matchPreset(store.basemapElementVisibility))
 
 const showAero = computed(() => aeroMembers().length > 0)
 const showKarte = computed(() => karteMembers().length > 0)
@@ -766,6 +789,21 @@ async function onLogout() {
   border-radius: 2px;
   margin-right: 4px;
   flex-shrink: 0;
+}
+
+/* E3 (#294): base-map preset buttons — a compact segmented row above the element
+   switches, so a preset is one tap and does not crowd the narrow panel. */
+.basemap-presets {
+  padding-top: 4px;
+  padding-bottom: 2px;
+}
+.basemap-presets__group {
+  width: 100%;
+}
+.basemap-presets__group :deep(.v-btn) {
+  flex: 1;
+  font-size: 0.68rem;
+  letter-spacing: 0;
 }
 
 /* ASD-014: AoR toggle swatch — a short line stroke echoing the map highlight. */

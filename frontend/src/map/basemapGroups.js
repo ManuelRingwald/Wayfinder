@@ -38,6 +38,45 @@ export const BASEMAP_ELEMENTS = [
   { id: 'background', label: 'Hintergrund' },
 ]
 
+// E3 (#294): one-click element presets, so the operator rarely touches the eight
+// switches individually. Each preset names a full element set; every BASEMAP_
+// ELEMENTS id MUST be listed (a preset test guards this) so applying one is
+// deterministic. Minimal = orientation only (coast/borders/labels on the bare
+// scope); Standard = a clean operational map (+ roads + backdrop); Detailliert =
+// everything. Anything not matching a preset is "Benutzerdefiniert".
+export const BASEMAP_PRESETS = [
+  {
+    id: 'minimal',
+    label: 'Minimal',
+    elements: { water: true, traffic: false, vegetation: false, settlement: false, building: false, boundary: true, label: true, background: false },
+  },
+  {
+    id: 'standard',
+    label: 'Standard',
+    elements: { water: true, traffic: true, vegetation: false, settlement: false, building: false, boundary: true, label: true, background: true },
+  },
+  {
+    id: 'detail',
+    label: 'Detailliert',
+    elements: { water: true, traffic: true, vegetation: true, settlement: true, building: true, boundary: true, label: true, background: true },
+  },
+]
+
+/**
+ * matchPreset returns the id of the preset whose element set equals `current`,
+ * or null ("Benutzerdefiniert") when none matches. Compared over BASEMAP_ELEMENTS
+ * so extra/missing keys never falsely match.
+ * @param {Record<string, boolean>} current basemapElementVisibility
+ * @returns {string|null}
+ */
+export function matchPreset(current) {
+  if (!current) return null
+  for (const p of BASEMAP_PRESETS) {
+    if (BASEMAP_ELEMENTS.every((e) => !!current[e.id] === !!p.elements[e.id])) return p.id
+  }
+  return null
+}
+
 // Priority-ordered classification rules: FIRST match wins. More specific groups
 // precede more generic ones so an overlapping name is classified by its
 // strongest signal — e.g. a forest/park "…landuse…" hits `vegetation` before the

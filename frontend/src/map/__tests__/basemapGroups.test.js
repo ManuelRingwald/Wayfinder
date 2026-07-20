@@ -5,7 +5,7 @@
 // cannot be fetched here. The point is robustness: known stems land in the right
 // group, and nothing is ever silently dropped.
 import { describe, it, expect } from 'vitest'
-import { classifyBasemapLayer, bucketBasemapLayers, BASEMAP_GROUPS, BASEMAP_ELEMENTS } from '../basemapGroups.js'
+import { classifyBasemapLayer, bucketBasemapLayers, BASEMAP_GROUPS, BASEMAP_ELEMENTS, BASEMAP_PRESETS, matchPreset } from '../basemapGroups.js'
 
 // basemap.de (German source-layer stems) — the primary target.
 const bmDe = [
@@ -118,5 +118,52 @@ describe('BASEMAP_ELEMENTS (E2 exposed sidebar switches)', () => {
     }
     expect(ids).toContain('water')
     expect(ids).toContain('traffic')
+  })
+})
+
+describe('BASEMAP_PRESETS (E3 one-click element sets)', () => {
+  it('every preset assigns a value to EVERY element (deterministic apply)', () => {
+    const elementIds = BASEMAP_ELEMENTS.map((e) => e.id)
+    for (const p of BASEMAP_PRESETS) {
+      for (const id of elementIds) {
+        expect(typeof p.elements[id]).toBe('boolean')
+      }
+      expect(typeof p.label).toBe('string')
+    }
+  })
+
+  it('"Detailliert" turns every element on', () => {
+    const detail = BASEMAP_PRESETS.find((p) => p.id === 'detail')
+    for (const e of BASEMAP_ELEMENTS) expect(detail.elements[e.id]).toBe(true)
+  })
+
+  it('presets are distinct (Minimal reduces vs Standard vs Detailliert)', () => {
+    const onCount = (p) => BASEMAP_ELEMENTS.filter((e) => p.elements[e.id]).length
+    const [min, std, det] = ['minimal', 'standard', 'detail'].map((id) => BASEMAP_PRESETS.find((p) => p.id === id))
+    expect(onCount(min)).toBeLessThan(onCount(std))
+    expect(onCount(std)).toBeLessThan(onCount(det))
+  })
+})
+
+describe('matchPreset', () => {
+  it('matches a preset when the element set equals it', () => {
+    const std = BASEMAP_PRESETS.find((p) => p.id === 'standard')
+    expect(matchPreset(std.elements)).toBe('standard')
+  })
+
+  it('returns null ("Benutzerdefiniert") for a set matching no preset', () => {
+    // all-off matches no preset (Minimal keeps water/boundary/label on)
+    const allOff = Object.fromEntries(BASEMAP_ELEMENTS.map((e) => [e.id, false]))
+    expect(matchPreset(allOff)).toBeNull()
+  })
+
+  it('does not falsely match when an extra key differs', () => {
+    const det = BASEMAP_PRESETS.find((p) => p.id === 'detail')
+    // detail is all-on; flip one element → custom
+    expect(matchPreset({ ...det.elements, building: false })).toBeNull()
+  })
+
+  it('is null-safe', () => {
+    expect(matchPreset(null)).toBeNull()
   })
 })
