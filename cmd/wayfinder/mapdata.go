@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/manuelringwald/wayfinder/pkg/basemap"
@@ -49,6 +50,15 @@ type mapDataConfig struct {
 	warnURL      *mapconfig.Setting
 	warnLayer    *mapconfig.Setting
 	qnhEnabled   *mapconfig.Setting
+
+	// Aeronautik (K5): OpenAIP fetch radius (km) + optional base-URL override.
+	// The API key stays SEALED (pkg/secret, globalOpenAIP) — not on this plane.
+	// Both are applied at (re)start: the OpenAIP services fetch a box around the
+	// map centre and are built once at boot from the effective values (a live
+	// re-fetch is the existing manual "Refresh" trigger, unchanged).
+	openaipRadiusKM  *mapconfig.Setting
+	openaipBaseURL   *mapconfig.Setting
+	envOpenAIPRadius float64 // start-up env default (parse fallback)
 }
 
 // platform_settings keys for the map-data plane. Namespaced so they never clash
@@ -65,11 +75,14 @@ const (
 	msWarnURL         = "mapdata.weather.warn_url"
 	msWarnLayer       = "mapdata.weather.warn_layer"
 	msQNHEnabled      = "mapdata.weather.qnh_enabled"
+	msOpenAIPRadiusKM = "mapdata.aero.radius_km"
+	msOpenAIPBaseURL  = "mapdata.aero.base_url"
 
 	domainBasemap = "basemap"
 
 	defaultCoverageColor = "#5B8DEF"
 	maxCoverageSensors   = 20
+	maxOpenAIPRadiusKM   = 5000 // sanity bound (a box larger than this is a mistake)
 )
 
 // boolStr renders a Go bool as the "true"/"false" string stored in settings.
@@ -136,9 +149,38 @@ func newMapDataConfig(st mapconfig.Store, cfg Config, basemapSvc *basemap.Servic
 		warnURL:      mapconfig.NewSetting(st, msWarnURL, cfg.DWDWarnURL),
 		warnLayer:    mapconfig.NewSetting(st, msWarnLayer, cfg.DWDWarnLayer),
 		qnhEnabled:   mapconfig.NewSetting(st, msQNHEnabled, boolStr(cfg.QNHEnabled)),
+
+		openaipRadiusKM:  mapconfig.NewSetting(st, msOpenAIPRadiusKM, strconv.FormatFloat(cfg.OpenAIPRadiusKM, 'f', -1, 64)),
+		openaipBaseURL:   mapconfig.NewSetting(st, msOpenAIPBaseURL, cfg.OpenAIPBaseURL),
+		envOpenAIPRadius: cfg.OpenAIPRadiusKM,
 	}
 	m.registry.Register(domainBasemap, m.reloadBasemap)
 	return m
+}
+
+// effectiveOpenAIP returns the live (override ?? env) OpenAIP fetch radius and
+// base URL. A malformed/empty radius override degrades to the env default. These
+// are read once at boot to build the OpenAIP services (applied at restart).
+func (m *mapDataConfig) effectiveOpenAIP(ctx context.Context) (radiusKM float64, baseURL string) {
+	baseURL = strings.TrimSpace(effStr(ctx, m.openaipBaseURL))
+	raw := strings.TrimSpace(effStr(ctx, m.openaipRadiusKM))
+	km, err := strconv.ParseFloat(raw, 64)
+	if err != nil || km <= 0 {
+		return m.envOpenAIPRadius, baseURL
+	}
+	return km, baseURL
+}
+
+// validRadiusKM validates an admin-supplied OpenAIP fetch radius.
+func validRadiusKM(v string) error {
+	km, err := strconv.ParseFloat(strings.TrimSpace(v), 64)
+	if err != nil {
+		return fmt.Errorf("radius must be a number (km)")
+	}
+	if km <= 0 || km > maxOpenAIPRadiusKM {
+		return fmt.Errorf("radius must be > 0 and ≤ %d km", maxOpenAIPRadiusKM)
+	}
+	return nil
 }
 
 // Weather availability — LIVE (read by /api/map-config): a source is available
@@ -270,6 +312,11 @@ func (m *mapDataConfig) mountAdminRoutes(mux *http.ServeMux, wrap func(http.Hand
 	mux.Handle("/api/admin/mapdata/weather/warn-url", wrap(res(m.warnURL, urlV).Handler()))
 	mux.Handle("/api/admin/mapdata/weather/warn-layer", wrap(res(m.warnLayer, nil).Handler()))
 	mux.Handle("/api/admin/mapdata/weather/qnh-enabled", wrap(res(m.qnhEnabled, validBool).Handler()))
+
+	// Aeronautik (K5): fetch radius + optional base-URL override (applied at
+	// restart). An empty base-URL resets to the env default / provider default.
+	mux.Handle("/api/admin/mapdata/aero/radius-km", wrap(res(m.openaipRadiusKM, validRadiusKM).Handler()))
+	mux.Handle("/api/admin/mapdata/aero/base-url", wrap(res(m.openaipBaseURL, urlV).Handler()))
 }
 
 // coverageRequest / coverageResponse are the admin coverage payloads.

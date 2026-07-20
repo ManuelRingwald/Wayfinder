@@ -300,6 +300,25 @@ func main() {
 	// This global Service is the fallback cache (tenant_id NULL) behind the per-tenant
 	// registry.
 	aeroCache := newAeroCacheStore(store.NewAeroCacheRepo(dbPool))
+
+	// Map-data config plane (Epic #307, K1–K5): runtime-overridable settings for
+	// the base map / weather / coverage / aeronautics on top of platform_settings.
+	// Built here (before the OpenAIP services) so the effective OpenAIP fetch
+	// radius + base-URL overrides are folded into cfg and honoured at (re)start —
+	// mapData still owns the true env values as its reset defaults. Live overrides
+	// (basemap/weather-enable/coverage) are applied further down once ctx exists.
+	mapData := newMapDataConfig(store.NewSettingsRepo(dbPool), cfg, basemapSvc, logger)
+	func() {
+		aeroBoot, cancelAeroBoot := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancelAeroBoot()
+		if radiusKM, baseURL := mapData.effectiveOpenAIP(aeroBoot); radiusKM != cfg.OpenAIPRadiusKM || baseURL != cfg.OpenAIPBaseURL {
+			cfg.OpenAIPRadiusKM = radiusKM
+			cfg.OpenAIPBaseURL = baseURL
+			logger.Info("openaip: applied admin override at boot",
+				slog.Float64("radius_km", radiusKM), slog.String("base_url", baseURL))
+		}
+	}()
+
 	aeroService := aeronautical.NewService(
 		aeronautical.NewClient(&http.Client{Timeout: 15 * time.Second}, cfg.OpenAIPBaseURL, cfg.OpenAIPAPIKey),
 		aeronautical.Config{
@@ -337,10 +356,9 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Map-data config plane (Epic #307, K1–K5): runtime-overridable settings for
-	// the base map / weather / coverage on top of platform_settings. Built after
-	// the DB pool is open; applies any stored overrides to the services at boot.
-	mapData := newMapDataConfig(store.NewSettingsRepo(dbPool), cfg, basemapSvc, logger)
+	// Apply the live map-data overrides (basemap style/theme, weather enable +
+	// service rebuild) now that ctx exists. The OpenAIP overrides were already
+	// folded into cfg above (before the OpenAIP services were built).
 	func() {
 		bootApply, cancelApply := context.WithTimeout(ctx, 10*time.Second)
 		defer cancelApply()

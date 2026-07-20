@@ -188,6 +188,33 @@
 
       <!-- ── Aeronautik (OpenAIP) — bestehendes Panel eingegliedert ── -->
       <v-window-item value="aero">
+        <!-- K5 (#313): fehlende Konfig-Felder (Fetch-Radius + Base-URL) als
+             DB-Override; der API-Key + Fetch/Refresh bleiben im bestehenden Panel. -->
+        <v-card variant="tonal" class="mb-4">
+          <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
+            OpenAIP-Abruf
+            <v-chip size="x-small" :color="aero.overridden ? 'primary' : 'default'" variant="tonal">
+              {{ aero.overridden ? 'überschrieben' : 'Standard (Env)' }}
+            </v-chip>
+          </v-card-title>
+          <v-card-text>
+            <v-alert type="info" variant="tonal" density="compact" class="mb-3">
+              Fetch-Radius und Base-URL greifen beim <strong>nächsten Neustart</strong>
+              (der OpenAIP-Abruf holt eine Box um das Kartenzentrum). Der API-Key
+              bleibt <strong>versiegelt</strong> und wird unten verwaltet.
+            </v-alert>
+            <div class="d-flex flex-wrap ga-3 align-center">
+              <v-text-field v-model.number="aero.radiusKM" label="Fetch-Radius (km)" type="number" variant="outlined" density="compact" hide-details style="width: 180px" />
+              <v-text-field v-model="aero.baseURL" label="Base-URL (leer = Standard)" :placeholder="aero.baseDefault || 'Anbieter-Standard'" persistent-placeholder variant="outlined" density="compact" hide-details style="min-width: 320px; flex: 1" />
+              <v-btn color="primary" :loading="busy" @click="saveAero">Speichern</v-btn>
+              <v-btn v-if="aero.overridden" color="error" variant="tonal" :loading="busy" @click="resetAero">Auf Standard</v-btn>
+            </div>
+            <v-alert v-if="aero.error" type="warning" variant="tonal" density="compact" class="mt-3">
+              {{ aero.error }}
+            </v-alert>
+          </v-card-text>
+        </v-card>
+
         <AdminGlobalOpenAIP />
       </v-window-item>
     </v-window>
@@ -225,7 +252,7 @@ onMounted(async () => {
   } catch (e) {
     loadError.value = e?.message || 'Netzwerkfehler'
   }
-  await Promise.all([loadBasemap(), loadCoverage(), loadWeather()])
+  await Promise.all([loadBasemap(), loadCoverage(), loadWeather(), loadAero()])
 })
 
 async function loadBasemap() {
@@ -362,6 +389,59 @@ async function saveWeather() {
 }
 
 const boolStr = (b) => (b ? 'true' : 'false')
+
+// K5 (#313): OpenAIP fetch radius + base-URL (DB-override, applied at restart).
+// The API key stays sealed and is managed by the embedded OpenAIP panel below.
+const aeroBase = '/api/admin/mapdata/aero'
+const aero = ref({ radiusKM: 250, baseURL: '', baseDefault: '', overridden: false, error: '' })
+
+async function loadAero() {
+  const [radius, base] = await Promise.all([
+    apiFetch(`${aeroBase}/radius-km`),
+    apiFetch(`${aeroBase}/base-url`),
+  ])
+  if (radius?.ok && radius.data) {
+    aero.value.radiusKM = Number(radius.data.value) || Number(radius.data.default) || 250
+    aero.value.overridden = !!radius.data.overridden
+  }
+  if (base?.ok && base.data) {
+    aero.value.baseURL = base.data.overridden ? base.data.value : ''
+    aero.value.baseDefault = base.data.default || ''
+    aero.value.overridden = aero.value.overridden || !!base.data.overridden
+  }
+}
+
+async function saveAero() {
+  busy.value = true
+  aero.value.error = ''
+  const put = (p, value) => apiFetch(`${aeroBase}/${p}`, { method: 'PUT', body: JSON.stringify({ value }) })
+  try {
+    const results = await Promise.all([
+      put('radius-km', String(aero.value.radiusKM)),
+      put('base-url', aero.value.baseURL),
+    ])
+    if (results.some((r) => !r?.ok)) {
+      aero.value.error = 'Speichern fehlgeschlagen (Radius > 0, gültige URL prüfen).'
+    }
+    await loadAero()
+  } finally {
+    busy.value = false
+  }
+}
+
+async function resetAero() {
+  busy.value = true
+  try {
+    // Empty value resets each setting to its env default.
+    await Promise.all([
+      apiFetch(`${aeroBase}/radius-km`, { method: 'PUT', body: JSON.stringify({ value: '' }) }),
+      apiFetch(`${aeroBase}/base-url`, { method: 'PUT', body: JSON.stringify({ value: '' }) }),
+    ])
+    await loadAero()
+  } finally {
+    busy.value = false
+  }
+}
 
 function statusColor(ok) { return ok ? 'success' : 'default' }
 function statusText(ok) { return ok ? 'verfügbar' : 'nicht konfiguriert' }

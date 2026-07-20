@@ -50,6 +50,29 @@ describe('AdminMapData: four sources, status view, OpenAIP embedded', () => {
 
 })
 
+describe('AdminMapData: Aeronautik radius + base-URL (K5 #313)', () => {
+  it('loads + saves the OpenAIP fetch radius and base URL via the mapconfig endpoints', () => {
+    expect(mapData).toContain("'/api/admin/mapdata/aero'")
+    expect(mapData).toContain("'radius-km'")
+    expect(mapData).toContain("'base-url'")
+    expect(mapData).toContain('loadAero')
+    expect(mapData).toContain('saveAero')
+    expect(mapData).toContain('resetAero') // empty value resets to env default
+    expect(mapData).toContain('v-model.number="aero.radiusKM"')
+    expect(mapData).toContain('v-model="aero.baseURL"')
+  })
+
+  it('keeps the API key sealed (managed by the embedded panel, not this form)', () => {
+    // The radius/base-url form must not touch the key endpoint.
+    expect(mapData).not.toContain('api-key')
+    expect(mapData).toContain('versiegelt')
+  })
+
+  it('states honestly that radius/base-URL apply only at the next restart', () => {
+    expect(mapData).toMatch(/Fetch-Radius[\s\S]*nächsten Neustart/)
+  })
+})
+
 describe('AdminMapData: Basiskarte live editing (K2 #310)', () => {
   it('loads + saves the base-map settings via the mapconfig admin endpoints', () => {
     expect(mapData).toContain("apiFetch('/api/admin/mapdata/basemap/theme')")

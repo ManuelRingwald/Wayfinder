@@ -133,6 +133,49 @@ func TestWeatherAvailabilityEffective(t *testing.T) {
 	}
 }
 
+// K5 (#313): OpenAIP fetch radius + base-URL override, applied at restart.
+func TestEffectiveOpenAIP(t *testing.T) {
+	ctx := context.Background()
+	st := newMemSettings()
+	cfg := Config{OpenAIPRadiusKM: 250, OpenAIPBaseURL: "https://api.core.openaip.net"}
+	md := newMapDataConfig(st, cfg, nil, nil)
+
+	// Env defaults.
+	if km, url := md.effectiveOpenAIP(ctx); km != 250 || url != "https://api.core.openaip.net" {
+		t.Fatalf("default openaip = %v / %q", km, url)
+	}
+	// Override radius + base URL.
+	_ = md.openaipRadiusKM.Set(ctx, "400")
+	_ = md.openaipBaseURL.Set(ctx, "https://mirror.example/openaip")
+	if km, url := md.effectiveOpenAIP(ctx); km != 400 || url != "https://mirror.example/openaip" {
+		t.Fatalf("override openaip = %v / %q", km, url)
+	}
+	// Malformed radius degrades to the env default (never a broken box).
+	_ = md.openaipRadiusKM.Set(ctx, "not-a-number")
+	if km, _ := md.effectiveOpenAIP(ctx); km != 250 {
+		t.Fatalf("malformed radius should fall back to env, got %v", km)
+	}
+	// Reset (empty) → env default radius + provider default URL.
+	_ = md.openaipRadiusKM.Set(ctx, "")
+	_ = md.openaipBaseURL.Set(ctx, "")
+	if km, url := md.effectiveOpenAIP(ctx); km != 250 || url != "https://api.core.openaip.net" {
+		t.Fatalf("after reset openaip = %v / %q", km, url)
+	}
+}
+
+func TestValidRadiusKM(t *testing.T) {
+	for _, ok := range []string{"1", "250", "5000", " 300 "} {
+		if err := validRadiusKM(ok); err != nil {
+			t.Errorf("%q should be a valid radius: %v", ok, err)
+		}
+	}
+	for _, bad := range []string{"0", "-5", "5001", "abc", ""} {
+		if err := validRadiusKM(bad); err == nil {
+			t.Errorf("%q should be rejected", bad)
+		}
+	}
+}
+
 func TestValidBool(t *testing.T) {
 	for _, ok := range []string{"true", "false", "TRUE", " false "} {
 		if err := validBool(ok); err != nil {
