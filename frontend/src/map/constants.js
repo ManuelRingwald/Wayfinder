@@ -318,6 +318,15 @@ const darkPalette = {
 // rendering); background matches --wf-background (ADR 0015).
 export const SYNTHETIC_BACKGROUND_LAYER_ID = 'synthetic-background'
 export const SYNTHETIC_BACKGROUND_COLOR = '#070b12'
+
+// #289: base-map AOI mask — a fill in the scope backdrop colour covering the map
+// OUTSIDE the tenant AOI, so the official base map is limited to the sector. Sits
+// above the base map but below every operational overlay. Full opacity = a clean
+// hard edge (outside looks like the bare scope); a soft/faded edge is an optional
+// follow-up (issue #289).
+export const BASEMAP_MASK_SOURCE_ID = 'basemap-aoi-mask'
+export const BASEMAP_MASK_LAYER_ID = 'basemap-aoi-mask'
+export const BASEMAP_MASK_OPACITY = 1
 export const SYNTHETIC_SCOPE_STYLE = {
   version: 8,
   glyphs: '/glyphs/{fontstack}/{range}.pbf',

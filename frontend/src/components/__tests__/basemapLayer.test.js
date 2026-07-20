@@ -160,3 +160,26 @@ describe('base-map element presets (E3 #294)', () => {
     expect(sidebar).toMatch(/v-if="showLayer\('basemap'\) && store\.layerVisibility\.basemap"/)
   })
 })
+
+// #289: limit the BKG base map to the tenant AOI via a mask layer (covers the
+// map outside the sector). Source-guards over the engine + layers wiring.
+describe('base-map AOI mask (#289)', () => {
+  const engine = src('../../map/engine.js')
+  const layers = src('../../map/layers.js')
+
+  it('adds the mask directly above the base map, before the overlays', () => {
+    // The mask is registered right after applyBasemap() and BEFORE the weather
+    // radar (the first overlay), so it hides the map but not tracks/weather.
+    expect(engine).toMatch(/applyBasemap\(\)[\s\S]*addBasemapMaskLayer\(map, weatherAOI\)[\s\S]*addWeatherRadarLayer/)
+  })
+
+  it('re-cuts the mask when the AOI resolves/changes (the AOI hook)', () => {
+    expect(engine).toMatch(/function applyWeatherAOI\(aoi\)[\s\S]*setBasemapMaskAOI\(map, aoi\)/)
+  })
+
+  it('the mask fill uses the scope backdrop colour and clears on a null AOI', () => {
+    expect(layers).toContain("'fill-color': SYNTHETIC_BACKGROUND_COLOR")
+    expect(layers).toMatch(/aoiMaskFeature\(aoi\) \|\| EMPTY_FC/)
+    expect(layers).toMatch(/function setBasemapMaskAOI\(map, aoi\)/)
+  })
+})

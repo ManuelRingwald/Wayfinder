@@ -37,6 +37,8 @@ import {
   addRangeRingsLayer,
   addWeatherRadarLayer,
   setWeatherRadarAOI,
+  addBasemapMaskLayer,
+  setBasemapMaskAOI,
   addWeatherWarningsLayer,
   updateWeatherWarnings,
   addSearchMarkerLayer,
@@ -427,6 +429,13 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
     // store (a view profile, or an earlier toggle) says otherwise.
     applyBasemap()
 
+    // #289: the base-map AOI mask — covers the map OUTSIDE the tenant AOI with the
+    // scope backdrop colour, so the official BKG base map is limited to the
+    // sector. Added here (directly above the base map, before every operational
+    // overlay below) so it hides only the map, never the tracks/weather/
+    // aeronautical layers. Empty when no AOI is configured (full map, no clip).
+    addBasemapMaskLayer(map, weatherAOI)
+
     // WX-A: DWD weather-radar overlay first of all, so it sits directly above the
     // base map and beneath every operational overlay. Starts hidden; toggled via
     // the sidebar (gated by the weather_radar entitlement + availability).
@@ -719,13 +728,15 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
     doRender()
   }
 
-  // #189/#190: the tenant's AOI resolved after mount or changed (e.g. an admin
-  // switching the impersonation target). Re-bound the radar raster and re-clip
-  // the warnings to the new sector. No-op before the style has loaded.
+  // #189/#190 + #289: the tenant's AOI resolved after mount or changed (e.g. an
+  // admin switching the impersonation target). Re-bound the radar raster, re-clip
+  // the warnings, and re-cut the base-map mask to the new sector. No-op before
+  // the style has loaded. (Named for weather historically; it is the AOI hook.)
   function applyWeatherAOI(aoi) {
     weatherAOI = aoi
     if (!state.mapLoaded) return
     setWeatherRadarAOI(map, aoi)
+    setBasemapMaskAOI(map, aoi) // #289: limit the base map to the AOI
     if (lastWarningsRaw) {
       updateWeatherWarnings(map, clipFeatureCollectionToBBox(lastWarningsRaw, aoi))
     }
