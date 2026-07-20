@@ -11,6 +11,7 @@ import {
   SYNTHETIC_BACKGROUND_LAYER_ID, SYNTHETIC_BACKGROUND_COLOR, SYNTHETIC_SCOPE_STYLE,
   SEARCH_RESULT_ZOOM,
 } from './constants.js'
+import { bucketBasemapLayers } from './basemapGroups.js'
 import {
   addAeronauticalIcons,
   addAirspaceLayers,
@@ -199,6 +200,11 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
     pendingTracks: null,
     // #274: layer ids of the (toggleable) base map, snapshotted at style load.
     basemapLayerIds: [],
+    // E0 (#291): the base-map layers bucketed by element group ({group: id[]}),
+    // so the sidebar can later toggle "only rivers"/"only roads" (E2/#293). The
+    // union of all buckets equals basemapLayerIds; the #274 master keeps using
+    // that flat set. Populated at style load; empty until then.
+    basemapGroups: {},
     // Per-track history of past positions ([lon, lat]), for trail and dot display.
     trackHistory: new Map(),
     // Per-track last-known flight level in feet, for the vertical-tendency
@@ -397,9 +403,14 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
     // background hides with the rest, and a transparent canvas is not a scope).
     // Default per W2 is OFF: the map starts hidden unless the store (a view
     // profile, or the user's earlier toggle) says otherwise.
-    state.basemapLayerIds = map.getStyle().layers
+    const baseStyleLayers = map.getStyle().layers
+    state.basemapLayerIds = baseStyleLayers
       .map((l) => l.id)
       .filter((id) => id !== SYNTHETIC_BACKGROUND_LAYER_ID)
+    // E0 (#291): bucket the same snapshotted layers by element group. Uses the
+    // full layer objects (source-layer/type) for schema-agnostic classification;
+    // the synthetic floor is excluded (it is not part of the official base map).
+    state.basemapGroups = bucketBasemapLayers(baseStyleLayers, SYNTHETIC_BACKGROUND_LAYER_ID)
     if (!map.getLayer(SYNTHETIC_BACKGROUND_LAYER_ID)) {
       map.addLayer(
         {
@@ -599,6 +610,22 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
     }
   }
 
+  // E0 (#291): show/hide ONE base-map element group (water, traffic, …). The
+  // group→ids map was bucketed at style load (state.basemapGroups). No UI calls
+  // this yet — it is the capability E2/#293 wires the per-element sidebar
+  // switches to. A no-op for an unknown group or before the map has loaded.
+  function setBasemapGroupVisibility(group, visible) {
+    if (!state.mapLoaded) return
+    const ids = state.basemapGroups[group]
+    if (!ids) return
+    const visibility = visible ? 'visible' : 'none'
+    ids.forEach((id) => {
+      if (map.getLayer(id)) {
+        map.setLayoutProperty(id, 'visibility', visibility)
+      }
+    })
+  }
+
   // FL filter update: re-render immediately without waiting for a WS update.
   function updateFlFilter() {
     doRender()
@@ -760,5 +787,5 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
     src.setData(rangeRingsGeoJSON(effectiveCenter.lat, effectiveCenter.lon, spacingNM, count))
   }
 
-  return { map, destroy, reconnect, setLayerVisibility, updateFlFilter, updateAirspaceFilter, updateAoR, updateSelection, selectTrackByNum, updateHistoryConfig, applyWeatherAOI, zoomIn, zoomOut, recenter, applyViewCenter, updateRangeRings, showSearchMarker, clearSearchMarker }
+  return { map, destroy, reconnect, setLayerVisibility, setBasemapGroupVisibility, updateFlFilter, updateAirspaceFilter, updateAoR, updateSelection, selectTrackByNum, updateHistoryConfig, applyWeatherAOI, zoomIn, zoomOut, recenter, applyViewCenter, updateRangeRings, showSearchMarker, clearSearchMarker }
 }
