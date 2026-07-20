@@ -6,12 +6,14 @@ import { captureSettings, applySettings, SETTINGS_VERSION } from '@/stores/profi
 function makeAsd() {
   const layerVisibility = { airspace: true, aor: true, rangeRings: false, historyDots: true, navaids: true }
   const airspaceGroupVisibility = { ctr: true, tma: true, restricted: true, info: true }
+  const basemapElementVisibility = { water: true, traffic: true, vegetation: true, settlement: true, building: true, boundary: true, label: true, background: true }
   const rangeRingConfig = { spacingNM: 10, count: 5 }
   const historyConfig = { durationS: 60 }
   const flFilter = { minFL: null, maxFL: null, hide: false }
   return {
     layerVisibility,
     airspaceGroupVisibility,
+    basemapElementVisibility,
     rangeRingConfig,
     historyConfig,
     flFilter,
@@ -20,6 +22,7 @@ function makeAsd() {
       airspaceGroupVisibility[k] = v
       layerVisibility.airspace = Object.values(airspaceGroupVisibility).some(Boolean)
     }),
+    setBasemapElement: vi.fn((k, v) => { basemapElementVisibility[k] = v }),
     setRangeRingConfig: vi.fn((u) => Object.assign(rangeRingConfig, u)),
     setHistoryConfig: vi.fn((u) => Object.assign(historyConfig, u)),
     setFlFilter: vi.fn((u) => Object.assign(flFilter, u)),
@@ -110,5 +113,37 @@ describe('applySettings', () => {
     expect(b.airspaceGroupVisibility.tma).toBe(false)
     expect(b.rangeRingConfig.count).toBe(7)
     expect(b.flFilter).toEqual({ minFL: 80, maxFL: null, hide: true })
+  })
+
+  // E4 (#295): the per-element base-map switches persist in the view profile so a
+  // decluttered scope (e.g. buildings + labels off) survives a reload/profile swap.
+  it('captures and restores the per-element base-map switches', () => {
+    const a = makeAsd()
+    a.basemapElementVisibility.building = false
+    a.basemapElementVisibility.label = false
+    const snapshot = captureSettings(a)
+    expect(snapshot.basemapElements.building).toBe(false)
+    expect(snapshot.basemapElements.label).toBe(false)
+
+    const b = makeAsd()
+    applySettings(b, snapshot)
+    expect(b.basemapElementVisibility.building).toBe(false)
+    expect(b.basemapElementVisibility.label).toBe(false)
+    expect(b.basemapElementVisibility.water).toBe(true) // untouched stays on
+  })
+
+  it('tolerates an older profile without a basemapElements section (elements stay default)', () => {
+    const asd = makeAsd()
+    applySettings(asd, { v: 1, layers: { rangeRings: true } }) // no basemapElements key
+    expect(asd.setBasemapElement).not.toHaveBeenCalled()
+    // all elements keep their all-on defaults
+    for (const v of Object.values(asd.basemapElementVisibility)) expect(v).toBe(true)
+  })
+
+  it('skips an unknown element key in a stored profile', () => {
+    const asd = makeAsd()
+    applySettings(asd, { basemapElements: { water: false, bogusElement: true } })
+    expect(asd.basemapElementVisibility.water).toBe(false)
+    expect(asd.setBasemapElement).not.toHaveBeenCalledWith('bogusElement', expect.anything())
   })
 })
