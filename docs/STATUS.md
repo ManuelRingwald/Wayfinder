@@ -10,6 +10,25 @@
 
 ---
 
+## 🗂️ Stand 2026-07-20 (Admin-Bereich „Kartendaten": Rahmen + Status — K1, FR-CFG-008)
+
+**In normaler Sprache:** Im Admin gibt es jetzt einen neuen Bereich **„Kartendaten"**
+mit vier Reitern — **Basiskarte, Wetter, Radar-Abdeckung, Aeronautik**. Er zeigt
+auf einen Blick, **was konfiguriert und verfügbar** ist (z. B. „DWD-Regenradar
+verfügbar", „3 Sensoren konfiguriert", Theme/Style der Karte). Der bisherige
+„OpenAIP"-Bereich ist als Reiter **Aeronautik** hier eingezogen. In diesem Schritt
+ist alles **nur Anzeige** — das direkte Bearbeiten der Werte folgt je Quelle.
+
+**Fachlich/technisch:** K1 des Epics **#307** (Issue #309), auf K0 (`pkg/mapconfig`)
+aufbauend. Neue `AdminMapData.vue` (vier `v-tabs`), Status aus **demselben**
+`/api/map-config`, das das ASD beim Start liest (Single Source of Truth); Reiter
+Aeronautik bettet das bestehende `AdminGlobalOpenAIP.vue` ein (keine Doppelung).
+Read-only. **Verifikation:** 731 Frontend-Tests grün, `go build` grün, Dist neu
+eingebettet. **Nächster Schritt:** K2 (#310) — Basiskarte live editierbar
+(Style-URL/Theme), dann K3 Wetter · K4 Abdeckung · K5 Aeronautik-Felder · K6 Doku.
+
+---
+
 ## 🛠️ Stand 2026-07-20 (Config-Plane für Kartendaten — K0, ADR 0033, FR-CFG-007)
 
 **In normaler Sprache:** Fundament für ein neues Admin-Vorhaben (#307): Wetter,
