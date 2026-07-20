@@ -61,7 +61,14 @@ import {
   SEARCH_MARKER_LAYER_ID,
   SEARCH_MARKER_LABEL_LAYER_ID,
   SEARCH_MARKER_COLOR,
+  BASEMAP_MASK_SOURCE_ID,
+  BASEMAP_MASK_LAYER_ID,
+  BASEMAP_MASK_OPACITY,
+  SYNTHETIC_BACKGROUND_COLOR,
 } from './constants.js'
+import { aoiMaskFeature } from './clip.js'
+
+const EMPTY_FC = { type: 'FeatureCollection', features: [] }
 
 // severityColorExpr builds a MapLibre 'match' on the normalised wf_level
 // (1..4), falling back to the moderate colour for any unexpected value.
@@ -339,6 +346,37 @@ export function addWeatherRadarLayer(map, aoi = null) {
     layout: { visibility: 'none' },
     paint: { 'raster-opacity': WEATHER_RADAR_OPACITY },
   })
+}
+
+// addBasemapMaskLayer (#289) registers the base-map AOI mask: a fill in the
+// scope backdrop colour covering everything OUTSIDE the tenant AOI, so the
+// official BKG base map is limited to the sector. Added directly above the base
+// map (before the operational overlays, which are registered afterwards), so it
+// hides the map outside the AOI but never the tracks/weather/aeronautical layers
+// (those clip to the AOI on their own). Empty when no AOI is configured → no clip.
+export function addBasemapMaskLayer(map, aoi) {
+  map.addSource(BASEMAP_MASK_SOURCE_ID, {
+    type: 'geojson',
+    data: aoiMaskFeature(aoi) || EMPTY_FC,
+  })
+  map.addLayer({
+    id: BASEMAP_MASK_LAYER_ID,
+    type: 'fill',
+    source: BASEMAP_MASK_SOURCE_ID,
+    paint: {
+      'fill-color': SYNTHETIC_BACKGROUND_COLOR,
+      'fill-opacity': BASEMAP_MASK_OPACITY,
+      'fill-antialias': false, // a solid cover; no seam at the world ring
+    },
+  })
+}
+
+// setBasemapMaskAOI (#289) updates the mask when the tenant AOI resolves after
+// mount or changes (mirrors setWeatherRadarAOI). A null AOI clears the mask
+// (empty data → full map, no clip).
+export function setBasemapMaskAOI(map, aoi) {
+  const src = map.getSource(BASEMAP_MASK_SOURCE_ID)
+  if (src) src.setData(aoiMaskFeature(aoi) || EMPTY_FC)
 }
 
 // setWeatherRadarAOI re-creates the radar raster source with new AOI bounds

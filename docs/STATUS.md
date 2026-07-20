@@ -10,6 +10,31 @@
 
 ---
 
+## 🎯 Stand 2026-07-20 (BKG-Basiskarte auf die Mandanten-AOI begrenzt — ASD-025, #289, ADR 0032, FR-UI-049)
+
+**In normaler Sprache:** Bisher war die amtliche Basiskarte flächig (Deutschland/
+Welt) zu sehen — auch weit außerhalb des Kundengebiets. Tracks und Wetter waren
+aber schon auf das **Zuständigkeitsgebiet (AOI)** begrenzt. Jetzt endet auch die
+**Karte am Sektorrand**: außerhalb der AOI wird sie ausgeblendet (mit der dunklen
+Scope-Farbe überdeckt). So bleibt der Blick auf das eigene Gebiet konzentriert und
+Karte/Tracks/Wetter enden an derselben Kante. Ist beim Kunden keine AOI hinterlegt,
+bleibt die Karte vollflächig.
+
+**Fachlich/technisch:** ASD-025 / ADR 0032. **Form = Rechteck aus der vorhandenen
+AOI-BBox** — deckt sich exakt mit dem server-seitigen Track-/Wetter-Zuschnitt und
+braucht kein neues Konfig-Feld. (Der Betreiber denkt die AOI als **Radius/Kreis**;
+das ist als Folge-Option festgehalten — der Code ist vorbereitet, ein Kreis tauscht
+nur den Loch-Ring in `aoiMaskFeature`. Die Zuschnitt-Form-Rückfrage war wegen einer
+Tool-Störung nicht interaktiv möglich; gewählt wurde die konsistente, reversible
+Rechteck-Variante.) **Mittel:** eine Masken-Fill-Ebene (Welt-Polygon mit AOI-Loch,
+`map/clip.js`), über der Karte, unter allen Overlays — begrenzt nur die Karte, nie
+Tracks/Wetter/Aeronautik. **Verifikation:** 725 Frontend-Tests grün, `go build`/
+`vet` grün, Dist neu eingebettet. **Ehrliche Grenze:** harte rechteckige Kante
+(Kreis/Radius + weicher Rand = dokumentierte Folge-Optionen #289); optische Abnahme
+durch den Betreiber.
+
+---
+
 ## ✨ Stand 2026-07-20 (BKG-Element-Presets „Minimal/Standard/Detailliert" — ASD-024, E3, FR-UI-048; Epic #290 abgeschlossen)
 
 **In normaler Sprache:** Statt die acht Element-Schalter der Basiskarte einzeln

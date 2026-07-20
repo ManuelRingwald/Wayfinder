@@ -2,7 +2,7 @@
 // region can span half of Germany; clipping it to the tenant AOI rectangle keeps
 // only the in-sector part so the map no longer shows a "riesiges gelbes Feld".
 import { describe, it, expect } from 'vitest'
-import { clipFeatureCollectionToBBox } from '../clip.js'
+import { clipFeatureCollectionToBBox, aoiMaskFeature } from '../clip.js'
 
 const AOI = { minLon: 0, minLat: 0, maxLon: 10, maxLat: 10 }
 
@@ -64,5 +64,32 @@ describe('clipFeatureCollectionToBBox', () => {
     const out = clipFeatureCollectionToBBox(fc, AOI)
     expect(out.features).toHaveLength(1)
     expect(out.features[0].geometry.coordinates).toHaveLength(1)
+  })
+})
+
+// #289: the base-map AOI mask geometry — a world-spanning fill with a rectangular
+// hole at the tenant AOI, so the official BKG base map is limited to the sector.
+describe('aoiMaskFeature (#289 base-map AOI mask)', () => {
+  it('returns null when no AOI is configured (→ full map, no clip)', () => {
+    expect(aoiMaskFeature(null)).toBeNull()
+    expect(aoiMaskFeature(undefined)).toBeNull()
+  })
+
+  it('returns null when a bound is non-finite (never a broken polygon)', () => {
+    expect(aoiMaskFeature({ minLat: 0, minLon: 0, maxLat: NaN, maxLon: 10 })).toBeNull()
+  })
+
+  it('builds a Polygon: outer world ring + AOI hole', () => {
+    const f = aoiMaskFeature({ minLat: 48, minLon: 8, maxLat: 50, maxLon: 12 })
+    expect(f.type).toBe('Feature')
+    expect(f.geometry.type).toBe('Polygon')
+    const [outer, hole] = f.geometry.coordinates
+    // outer ring spans the renderable world (covers everything to be masked)
+    expect(outer).toContainEqual([-180, -85])
+    expect(outer).toContainEqual([180, 85])
+    // the hole is the AOI rectangle, closed (first === last)
+    expect(hole[0]).toEqual([8, 48])
+    expect(hole).toContainEqual([12, 50])
+    expect(hole[0]).toEqual(hole[hole.length - 1])
   })
 })

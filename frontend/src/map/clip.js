@@ -9,6 +9,34 @@
 // radar RASTER is clipped separately via the raster source `bounds` (see
 // layers.js); this module handles the GeoJSON warnings polygons.
 
+// MASK_WORLD_RING is the outer ring of the base-map AOI mask: the whole Web-
+// Mercator-renderable world (±180 lon, ±85 lat). The AOI rectangle is punched
+// out as a hole, so the fill covers everything OUTSIDE the sector.
+const MASK_WORLD_RING = [
+  [-180, -85], [180, -85], [180, 85], [-180, 85], [-180, -85],
+]
+
+// aoiMaskFeature (#289) builds the GeoJSON Polygon for the base-map mask: a
+// world-spanning fill with a rectangular HOLE at the tenant AOI, so the map is
+// visible only inside the sector and covered (by the scope backdrop colour)
+// outside it. Returns null when no AOI is configured or a bound is non-finite —
+// the caller then draws nothing (full map, no clip). Kept pure/testable here
+// next to the other AOI geometry; a future circular variant (issue #289 radius)
+// only swaps this one function's hole ring.
+export function aoiMaskFeature(bbox) {
+  if (!bbox) return null
+  const { minLat, minLon, maxLat, maxLon } = bbox
+  if (![minLat, minLon, maxLat, maxLon].every(Number.isFinite)) return null
+  const hole = [
+    [minLon, minLat], [maxLon, minLat], [maxLon, maxLat], [minLon, maxLat], [minLon, minLat],
+  ]
+  return {
+    type: 'Feature',
+    properties: {},
+    geometry: { type: 'Polygon', coordinates: [MASK_WORLD_RING, hole] },
+  }
+}
+
 // clipRingToBBox clips a single linear ring (array of [lon, lat]) to the AOI
 // rectangle using the Sutherland–Hodgman algorithm (convex clip window). Returns
 // the clipped ring, or an empty array when the ring falls entirely outside.
