@@ -10,6 +10,31 @@
 
 ---
 
+## 🛠️ Stand 2026-07-20 (Config-Plane für Kartendaten — K0, ADR 0033, FR-CFG-007)
+
+**In normaler Sprache:** Fundament für ein neues Admin-Vorhaben (#307): Wetter,
+Basiskarte, Radar-Abdeckung und Aeronautik sollen sich später **im Admin live
+einstellen** lassen (heute meist nur über Env + Neustart). K0 baut noch **keine
+Oberfläche**, sondern die wiederverwendbaren Bausteine darunter: eine Einstellung
+kann in der Datenbank überschrieben werden (mit dem Env-Wert als Rückfall), eine
+Änderung lädt den betroffenen Dienst **ohne Neustart** neu (und behält bei Fehler
+die letzte gute Konfig), und vom Admin gesetzte URLs werden vor dem Speichern
+**auf Sicherheit geprüft** (kein Zugriff auf interne Adressen — SSRF-Schutz).
+
+**Fachlich/technisch:** K0 des Epics **#307** (Issue #308), ADR 0033. Neues Paket
+`pkg/mapconfig` (rein, unit-getestet): `Setting` (DB-Override ?? Env-Default,
+Reset, Store-Fehler → Default), `Registry`+`ReloadFunc` (defensives Hot-Reload je
+Domain), `ValidateFetchURL` (SSRF-Leitplanken), `Resource.Handler` (generischer
+GET/PUT-Admin-Endpunkt, Reload-Fehler ehrlich als `reload_error`). **12-Factor
+bleibt gültig** (frisches Deployment ohne DB-Config = wie bisher). Secrets bleiben
+versiegelt (nicht in dieser Plane). **Verifikation:** `go test ./pkg/mapconfig`
+grün, `go vet`/`gofmt` sauber, `go build ./...` grün. **Ehrliche Grenze:**
+DNS-Rebinding-SSRF nicht abgedeckt (Trusted-Admin-Modell, dokumentiert).
+**Nächster Schritt:** K1 (#309) — Admin-Abschnitt „Kartendaten" + Status-Anzeige,
+dann K2–K5 (Subsysteme live) → K6 (Doku).
+
+---
+
 ## 🎯 Stand 2026-07-20 (BKG-Basiskarte auf die Mandanten-AOI begrenzt — ASD-025, #289, ADR 0032, FR-UI-049)
 
 **In normaler Sprache:** Bisher war die amtliche Basiskarte flächig (Deutschland/
