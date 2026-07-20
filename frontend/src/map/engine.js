@@ -91,7 +91,11 @@ import {
 //                  the tenant's own sector; when null it uses the global
 //                  /api/map-config centre (FR-UI-013). Later changes flow through
 //                  applyViewCenter (e.g. an admin switching impersonation target).
-export async function initMap(container, store, onTrackClick, onConnectionChange, initialCenter = null, initialAOI = null, onEmptyClick = null) {
+//   onTracks     — optional callback(liveTrackFeatures) fired after every track
+//                  batch (and the pending flush on load). The measure controller
+//                  (#297) uses it to re-anchor track-referenced endpoints to the
+//                  moving track; it is decoupled from the engine like onTrackClick.
+export async function initMap(container, store, onTrackClick, onConnectionChange, initialCenter = null, initialAOI = null, onEmptyClick = null, onTracks = null) {
   // #189/#190: the tenant's AOI (whoami) clips the DWD weather overlays to the
   // sector. Held in a closure so loadWarnings and applyWeatherAOI can re-clip.
   let weatherAOI = initialAOI
@@ -339,6 +343,9 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
           // #272: keep the open detail panel live — refresh the selected
           // track's snapshot from the just-updated displayed set.
           store.refreshSelectedTrack(state.liveTrackFeatures)
+          // #297: feed the same displayed set to the measure controller so a
+          // track-anchored measure endpoint follows the moving track.
+          onTracks?.(state.liveTrackFeatures)
         } else {
           state.pendingTracks = msg
         }
@@ -484,6 +491,7 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
       state.pendingTracks = null
       syncLiveTrackNums()
       store.refreshSelectedTrack(state.liveTrackFeatures) // #272
+      onTracks?.(state.liveTrackFeatures) // #297: initial anchor for measure endpoints
     }
 
     // Load aeronautical data and start periodic refresh.
