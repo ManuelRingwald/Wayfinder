@@ -905,6 +905,37 @@ Konfiguriert wird über **Umgebungsvariablen** (im `environment:`-Block der
 
 ### 7.2 Karte & Darstellung
 
+> ### 🗺️ Kartendaten sind im Admin **live überschreibbar** (Epic #307, ADR 0033)
+>
+> Seit dem „Kartendaten"-Ausbau (K0–K5) sind die unten stehenden Umgebungs-
+> Variablen für **Basiskarte, Wetter (DWD/QNH), Radar-Abdeckung und Aeronautik
+> (OpenAIP)** nur noch **Default/Bootstrap**: Ein Admin kann sie **zur Laufzeit**
+> in der Web-UI unter **Admin → Kartendaten** überschreiben. Es gilt eine klare
+> Rangfolge:
+>
+> **DB-Override (Admin-UI) gewinnt über Env-Default.** Wird ein Feld in der UI
+> geleert (bzw. „Auf Standard"), fällt der Wert **auf die Env-Variable zurück**
+> — 12-Factor bleibt gültig: eine frische Instanz ohne DB-Overrides verhält sich
+> exakt wie zuvor.
+>
+> **Was sofort wirkt vs. beim Neustart:**
+> - **Sofort (live):** Basiskarte (Style-URL + Theme — der Server holt den Style
+>   neu), Wetter-An/Aus + Verfügbarkeit, Radar-Abdeckung (Sensoren + Ringfarbe).
+> - **Beim nächsten Neustart:** Wetter-Upstream-URLs/Layer und OpenAIP
+>   Fetch-Radius/Base-URL (die Abruf-Dienste laufen als sperrfreie Poll-Schleifen
+>   und werden beim Start aus den effektiven Werten neu gebaut — ein laufender
+>   Feed wird nicht im Betrieb umkonfiguriert).
+>
+> **Sicherheit:** Vom Admin gesetzte, **server-seitig gefetchte** URLs
+> durchlaufen SSRF-Leitplanken (nur http/https, private/Loopback/Link-Local/
+> Cloud-Metadaten-Adressen abgelehnt). **Secrets** (OpenAIP-API-Key) bleiben
+> **versiegelt** (`WAYFINDER_SECRET_KEY`) und sind **nicht** Teil dieser
+> Konfig-Ebene.
+>
+> Die vollständige Liste der `platform_settings`-Schlüssel steht in
+> `docs/TECHNICAL.md` (Abschnitt „Live-konfigurierbare Kartendaten"). Die
+> folgenden Env-Tabellen sind damit **Defaults, im Admin überschreibbar**.
+
 | Variable | Default | Beschreibung |
 |----------|---------|--------------|
 | `WAYFINDER_MAP_CENTER_LAT` | `50.0379` | Breitengrad des Kartenstartzentrums (Frankfurt) |
@@ -923,6 +954,10 @@ Konfiguriert wird über **Umgebungsvariablen** (im `environment:`-Block der
 | `WAYFINDER_BKG_STYLE_URL` | basemap.world-„Farbe"-Style | Upstream-Style für `bkg`/`bkg-dark` (Default: `bm_web_wld_col.json` — innerhalb Deutschlands amtlich, außerhalb BKG-kuratierter Weltkontext); Alternativen: Nur-Deutschland `bm_web_col.json`, Grau `bm_web_gry.json` oder self-hosted Mirror |
 | `WAYFINDER_MAP_STYLE_URL` | *(leer)* | Vollständige MapLibre-Style-URL — überschreibt `WAYFINDER_MAP_THEME`. Für basemap.de **nicht** hier eintragen, sondern `WAYFINDER_MAP_THEME=bkg` nutzen (sonst fehlen die Track-Label-Schriften, ADR 0026) |
 
+> `WAYFINDER_MAP_THEME` + `WAYFINDER_BKG_STYLE_URL`: **Default; im Admin unter
+> *Kartendaten → Basiskarte* live überschreibbar** (`mapdata.basemap.theme` /
+> `mapdata.basemap.style_url`, wirkt sofort beim nächsten Karten-Neuladen).
+
 > Dieselben drei `map`-Werte lassen sich auch in `wayfinder.yaml` setzen (siehe
 > Schritt 4.3). Die Umgebungsvariable gewinnt, falls beides gesetzt ist.
 
@@ -933,9 +968,9 @@ Ohne `WAYFINDER_OPENAIP_API_KEY` ist das Feature aus (Warn-Log, kein Fehler).
 | Variable | Default | Beschreibung |
 |----------|---------|--------------|
 | `WAYFINDER_OPENAIP_API_KEY` | *(leer)* | **Globaler** OpenAIP-API-Schlüssel; leer = Feature global aus |
-| `WAYFINDER_OPENAIP_RADIUS_KM` | `250` | Umkreis um das Zentrum für Luftraum-/Navaid-Abfragen (auch via `wayfinder.yaml` → `openaip.radius_km`) |
+| `WAYFINDER_OPENAIP_RADIUS_KM` | `250` | Umkreis um das Zentrum für Luftraum-/Navaid-Abfragen (auch via `wayfinder.yaml` → `openaip.radius_km`). **Default; im Admin unter *Kartendaten → Aeronautik* überschreibbar** (`mapdata.aero.radius_km`, greift beim Neustart) |
 | `WAYFINDER_OPENAIP_REFRESH` | *(ignoriert)* | **Deprecated seit AERO-1 (ADR 0018)** — OpenAIP wird **einmalig/on-demand** geholt und **persistiert**, nicht mehr periodisch. Ein gesetzter Wert wird ignoriert (Warn-Log), bricht aber den Start nicht |
-| `WAYFINDER_OPENAIP_BASE_URL` | *(intern)* | Override der OpenAIP-Basis-URL (Tests/Proxies) |
+| `WAYFINDER_OPENAIP_BASE_URL` | *(intern)* | Override der OpenAIP-Basis-URL (Tests/Proxies). **Default; im Admin unter *Kartendaten → Aeronautik* überschreibbar** (`mapdata.aero.base_url`, greift beim Neustart) |
 
 > **Persistenter Cache & Fetch-once (AERO-1, ADR 0018).** Die geholten
 > Aeronautik-Daten (Luftraum/Navaids/Wegpunkte) werden in der DB **persistiert**
@@ -1003,6 +1038,11 @@ transparente Kacheln, nie einen Fehler).
 | `WAYFINDER_DWD_RADAR_STYLE` | (leer) | Optionaler WMS-`STYLES`-Parameter (#189); leer = Default-Style. Für ein echo-only-Rendering ohne Messbereichs-Grau/Stationsringe (Style-Name gegen den DWD-GeoServer verifizieren) |
 | `WAYFINDER_DWD_REFRESH` | `5m` | Cache-Lebensdauer je Radar-Kachel (DWD-Radar aktualisiert ~5 min) |
 
+> `WAYFINDER_DWD_RADAR_ENABLED`/`_WMS_URL`/`_RADAR_LAYER`: **Default; im Admin
+> unter *Kartendaten → Wetter* überschreibbar** (`mapdata.weather.radar_enabled`
+> / `.radar_wms_url` / `.radar_layer`). An/Aus wirkt sofort (Verfügbarkeit),
+> URL/Layer greifen beim Neustart.
+
 **QNH-Infobox (NOAA-METAR, WX-B / CBD-3).** Zeigt das aktuelle QNH (Höhenmesser-
 Einstellung, hPa) des Flugplatzes des Mandanten in der Kopfzeile.
 **Connected-by-default (ADR 0017): die NOAA-Quelle ist standardmäßig AN**,
@@ -1022,6 +1062,10 @@ abzufragen). **Wichtig:** QNH kommt **nur aus echtem METAR** (NOAA-Feld `altim`)
 | `WAYFINDER_METAR_USER_AGENT` | `Wayfinder-ASD/1.0` | Distinktiver User-Agent (leere/Default-UAs werden von der AWC gefiltert → 403) |
 | `WAYFINDER_QNH_REFRESH` | `15m` | METAR-Poll-Intervall (METAR ~30 min; unter dem AWC-Limit von ~100 req/min) |
 
+> `WAYFINDER_QNH_ENABLED`: **Default; im Admin unter *Kartendaten → Wetter*
+> überschreibbar** (`mapdata.weather.qnh_enabled`, wirkt beim Neustart auf den
+> Poller, Verfügbarkeit sofort).
+
 **Wetterwarnungen-Overlay (DWD-WFS, WX-C).** Amtliche DWD-Warnpolygone (Gewitter,
 Sturm, Schnee/Eis …), nach Warnstufe eingefärbt. **Connected-by-default (ADR 0017):
 standardmäßig AN**; Mandant braucht nur das Entitlement `weather_warnings`.
@@ -1033,6 +1077,10 @@ Abschalten mit `WAYFINDER_DWD_WARN_ENABLED=false`.
 | `WAYFINDER_DWD_WARN_URL` | `https://maps.dwd.de/geoserver/dwd/ows` | DWD-GeoServer-WFS/OWS-Basis-URL (Override) |
 | `WAYFINDER_DWD_WARN_LAYER` | `dwd:Warnungen_Gemeinden_vereinigt` | WFS-Layer (aufgelöste Gemeinde-Warnungen; leichtgewichtig) |
 | `WAYFINDER_DWD_WARN_REFRESH` | `5m` | Poll-Intervall des Warn-Feeds |
+
+> `WAYFINDER_DWD_WARN_ENABLED`/`_WARN_URL`/`_WARN_LAYER`: **Default; im Admin
+> unter *Kartendaten → Wetter* überschreibbar** (`mapdata.weather.warn_enabled`
+> / `.warn_url` / `.warn_layer`). An/Aus sofort, URL/Layer beim Neustart.
 
 > **Ausgehender Netzzugang (Vertrauensgrenze, ADR 0016).** Wayfinder holt Radar,
 > Warnungen und QNH **server-seitig** und liefert sie same-origin an den Browser
@@ -1162,6 +1210,11 @@ lückenlos beginnend.
 | `WAYFINDER_COVERAGE_SENSOR_N_MIN_RANGE_M` | `0` | Innerer Blindbereich in Metern |
 | `WAYFINDER_COVERAGE_SENSOR_N_LABEL` | *(leer)* | Tooltip-Bezeichnung |
 | `WAYFINDER_COVERAGE_RING_COLOR` | `#5B8DEF` | Farbe aller Ringe (CSS-Hex) |
+
+> Die gesamte Sensor-Liste + Ringfarbe: **Default; im Admin unter *Kartendaten →
+> Radar-Abdeckung* live überschreibbar** (`mapdata.coverage.sensors` als
+> JSON-Liste / `mapdata.coverage.ring_color`, wirkt sofort). „Auf Standard"
+> (DELETE) fällt auf diese Env-Sensoren zurück.
 
 ### 7.8 Betrieb
 
