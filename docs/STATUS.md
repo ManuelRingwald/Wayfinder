@@ -10,6 +10,33 @@
 
 ---
 
+## 🗂️ Stand 2026-07-20 (Layer-Sidebar in aufklappbare Gruppen — ASD-020, ADR 0031, FR-UI-044)
+
+**In normaler Sprache:** Der „Layer"-Bereich der Seitenleiste war eine lange,
+flache Reihe von Schaltern. Jetzt sind sie in **vier benannte, aufklappbare
+Gruppen** einsortiert — **Aeronautik**, **Karte**, **Radar & Reichweite**,
+**Wetter** — jede mit einem **Sammel-Schalter** oben, der die ganze Gruppe auf
+einen Klick ein-/ausblendet (drei Zustände: alles an / aus / teilweise). Man kann
+Gruppen zuklappen, die man nicht braucht. Das ist die Vorbereitung dafür, die
+Basiskarte später in einzelne Elemente (nur Flüsse, nur Straßen …) zerlegbar zu
+machen (#293) — dann gibt es mehr Schalter, und die Gliederung hält das bedienbar.
+
+**Fachlich/technisch:** ASD-020 / ADR 0031, erster Schritt (E1) des BKG-Element-
+Epics **#290** (Issue #292). Spiegel zu den Overlay-Zonen am Scope-Rand (ADR 0029),
+jetzt fürs Panel: neue `LayerGroup.vue` (aufklappbarer Rahmen + tri-state Master),
+schema-agnostische Tri-State-Logik in `map/layerGroups.js` (unit-getestet), die
+vier Gruppen in `LayerFilterContent.vue` mit Member-Modell. Der Master routet über
+**denselben** Store-Pfad wie die Zeilen-Switches (kein toter Toggle); ein
+deaktivierter Toggle (Quelle nicht verfügbar) ist aus Master-Zustand + Bulk-Aktion
+ausgeschlossen. **Verbindliche Regel (ADR 0031):** neues Layer-Chrome kommt als
+Zeile in eine Gruppe, nie als loser Schalter. **Verifikation:** 669 Frontend-Tests
+grün (neu: `layerGroups.test.js`, `layerGrouping.test.js`), `go build`/`vet` grün,
+Dist neu eingebettet; optische Abnahme durch den Betreiber. **Offen (spätere
+E-Stufen):** Accordion, Presets (#294), Persistenz im View-Profil (#295), dann die
+BKG-Element-Schalter selbst (E2/#293, braucht E0/#291-Bucketing).
+
+---
+
 ## 🎨 Stand 2026-07-19 (Gruppierte Rail, Orange/Blau-Farbcode, Zoom auf die Karte — ASD-019, ADR 0030, FR-UI-040)
 
 **In normaler Sprache:** Die schmale Werkzeug-Leiste links am Lagebild war eine

@@ -2,9 +2,9 @@
   <!-- ASD-013 / #116: sidebar panel content, split into three sections the
        NavigationRail opens individually (Layer / Filter / Nutzer-Account).
        section='all' (mobile drawer) renders everything in order, account last.
-       Visual hierarchy: subtle uppercase section headers, generous spacing
-       between logic blocks, MD3-styled switches with per-group accent colours,
-       outlined text fields for the FL range inputs. -->
+       ASD-020 (ADR 0031): the Layer section is organised into collapsible GROUPS
+       (Aeronautik / Karte / Radar & Reichweite / Wetter), each a LayerGroup with
+       a tri-state master — the flat switch list is gone. -->
   <div class="filter-panel">
 
     <!-- ── Layer (#116) ── -->
@@ -14,266 +14,304 @@
       <!-- Issue #106 (cosmetic feature gate): showLayer(key) hides a layer the
            tenant is not entitled to. Fail-open while the identity is still loading or
            for an admin viewer (gateReady false → show all). The server enforces
-           access independently; this is a pure UX gate. -->
-      <!-- #274 (W1=b/W2=aus): the official BKG base map is a grantable
-           nice-to-have, not the foundation — the scope runs synthetic by
-           default and an entitled user opts into the map here. First in the
-           list because it is the visual floor everything else sits on. -->
-      <div v-if="showLayer('basemap')" class="filter-row">
-        <v-switch
-          v-model="store.layerVisibility.basemap"
-          label="Basiskarte (BKG)"
-          color="primary"
-          density="compact"
-          hide-details
-          inset
-          @update:model-value="onLayerToggle('basemap', $event)"
-        />
-      </div>
-      <!-- ASD-011 / #176: the four airspace groups are first-class toggles (the
-           parent "Lufträume" toggle was removed). The airspace layer is visible
-           iff at least one group is on, derived in the store (setAirspaceGroup).
-           Uniform primary colour; per-group map colours stay in AIRSPACE_GROUPS. -->
-      <template v-if="showLayer('airspaces')">
-        <div
-          v-for="group in AIRSPACE_GROUPS"
-          :key="group.id"
-          class="filter-row"
-        >
+           access independently; this is a pure UX gate. A GROUP hides entirely
+           (v-if) only when it has no visible member at all. -->
+
+      <!-- ── Aeronautik: airspaces + AoR + navaids + waypoints + airport/runways ── -->
+      <LayerGroup
+        v-if="showAero"
+        title="Aeronautik"
+        :master="aeroState"
+        @toggle-master="onGroupMaster(aeroMembers, aeroState)"
+      >
+        <!-- ASD-011 / #176: the four airspace groups are first-class toggles (the
+             parent "Lufträume" toggle was removed). The airspace layer is visible
+             iff at least one group is on, derived in the store (setAirspaceGroup). -->
+        <template v-if="showLayer('airspaces')">
+          <div
+            v-for="group in AIRSPACE_GROUPS"
+            :key="group.id"
+            class="filter-row"
+          >
+            <v-switch
+              :model-value="store.airspaceGroupVisibility[group.id]"
+              :label="group.label"
+              color="primary"
+              density="compact"
+              hide-details
+              inset
+              @update:model-value="onAirspaceGroup(group.id, $event)"
+            />
+          </div>
+          <!-- ASD-014: highlight the tenant's Area of Responsibility (CTR/TMA) with a
+               bright outline, distinct from context airspace. Only visible when an AoR
+               is configured (whoami.aor_airspace_ids); the toggle simply hides it. -->
+          <div class="filter-row">
+            <v-switch
+              :model-value="store.layerVisibility.aor"
+              color="primary"
+              density="compact"
+              hide-details
+              inset
+              @update:model-value="onLayerToggle('aor', $event)"
+            >
+              <template #label>
+                <span class="aor-legend">
+                  <span class="aor-swatch" :style="{ background: AIRSPACE_AOR_COLOR }"></span>
+                  Verantwortungsbereich (AoR)
+                </span>
+              </template>
+            </v-switch>
+          </div>
+        </template>
+
+        <div v-if="showLayer('vor_ndb')" class="filter-row">
           <v-switch
-            :model-value="store.airspaceGroupVisibility[group.id]"
-            :label="group.label"
+            v-model="store.layerVisibility.navaids"
+            label="VOR / NDB"
             color="primary"
             density="compact"
             hide-details
             inset
-            @update:model-value="onAirspaceGroup(group.id, $event)"
+            @update:model-value="onLayerToggle('navaids', $event)"
           />
         </div>
-        <!-- ASD-014: highlight the tenant's Area of Responsibility (CTR/TMA) with a
-             bright outline, distinct from context airspace. Only visible when an AoR
-             is configured (whoami.aor_airspace_ids); the toggle simply hides it. -->
+
+        <div v-if="showLayer('waypoints')" class="filter-row">
+          <v-switch
+            v-model="store.layerVisibility.waypoints"
+            label="Waypoints"
+            color="primary"
+            density="compact"
+            hide-details
+            inset
+            @update:model-value="onLayerToggle('waypoints', $event)"
+          />
+        </div>
+
+        <!-- #192: airport reference-point markers, feature-gated (airport). -->
+        <div v-if="showLayer('airport')" class="filter-row">
+          <v-switch
+            v-model="store.layerVisibility.airport"
+            label="Flughäfen"
+            color="primary"
+            density="compact"
+            hide-details
+            inset
+            @update:model-value="onLayerToggle('airport', $event)"
+          />
+        </div>
+
+        <!-- #192: runway centrelines, feature-gated (runways). -->
+        <div v-if="showLayer('runways')" class="filter-row">
+          <v-switch
+            v-model="store.layerVisibility.runways"
+            label="Runways"
+            color="primary"
+            density="compact"
+            hide-details
+            inset
+            @update:model-value="onLayerToggle('runways', $event)"
+          />
+        </div>
+      </LayerGroup>
+
+      <!-- ── Karte: the official BKG base map (the visual floor). #274: a
+           grantable nice-to-have; the scope runs synthetic by default and an
+           entitled user opts in here. Future BKG element sub-layers (#290) join
+           this group. ── -->
+      <LayerGroup
+        v-if="showKarte"
+        title="Karte"
+        :master="karteState"
+        @toggle-master="onGroupMaster(karteMembers, karteState)"
+      >
+        <div v-if="showLayer('basemap')" class="filter-row">
+          <v-switch
+            v-model="store.layerVisibility.basemap"
+            label="Basiskarte (BKG)"
+            color="primary"
+            density="compact"
+            hide-details
+            inset
+            @update:model-value="onLayerToggle('basemap', $event)"
+          />
+        </div>
+      </LayerGroup>
+
+      <!-- ── Radar & Reichweite: coverage, history dots, range rings ── -->
+      <LayerGroup
+        v-if="showRadar"
+        title="Radar & Reichweite"
+        :master="radarState"
+        @toggle-master="onGroupMaster(radarMembers, radarState)"
+      >
+        <!-- #114: the coverage overlay only has data when coverage sensors are
+             configured server-side. Without data the toggle is disabled with an
+             explanatory hint instead of silently doing nothing. -->
         <div class="filter-row">
           <v-switch
-            :model-value="store.layerVisibility.aor"
+            v-model="store.layerVisibility.coverageRings"
+            label="Radarabdeckung"
             color="primary"
             density="compact"
             hide-details
             inset
-            @update:model-value="onLayerToggle('aor', $event)"
-          >
-            <template #label>
-              <span class="aor-legend">
-                <span class="aor-swatch" :style="{ background: AIRSPACE_AOR_COLOR }"></span>
-                Verantwortungsbereich (AoR)
-              </span>
-            </template>
-          </v-switch>
-        </div>
-      </template>
-
-      <div v-if="showLayer('vor_ndb')" class="filter-row">
-        <v-switch
-          v-model="store.layerVisibility.navaids"
-          label="VOR / NDB"
-          color="primary"
-          density="compact"
-          hide-details
-          inset
-          @update:model-value="onLayerToggle('navaids', $event)"
-        />
-      </div>
-
-      <div v-if="showLayer('waypoints')" class="filter-row">
-        <v-switch
-          v-model="store.layerVisibility.waypoints"
-          label="Waypoints"
-          color="primary"
-          density="compact"
-          hide-details
-          inset
-          @update:model-value="onLayerToggle('waypoints', $event)"
-        />
-      </div>
-
-      <!-- #192: airport reference-point markers, feature-gated (airport). -->
-      <div v-if="showLayer('airport')" class="filter-row">
-        <v-switch
-          v-model="store.layerVisibility.airport"
-          label="Flughäfen"
-          color="primary"
-          density="compact"
-          hide-details
-          inset
-          @update:model-value="onLayerToggle('airport', $event)"
-        />
-      </div>
-
-      <!-- #192: runway centrelines, feature-gated (runways). -->
-      <div v-if="showLayer('runways')" class="filter-row">
-        <v-switch
-          v-model="store.layerVisibility.runways"
-          label="Runways"
-          color="primary"
-          density="compact"
-          hide-details
-          inset
-          @update:model-value="onLayerToggle('runways', $event)"
-        />
-      </div>
-
-      <!-- #114: the coverage overlay only has data when coverage sensors are
-           configured server-side. Without data the toggle is disabled with an
-           explanatory hint instead of silently doing nothing. -->
-      <div class="filter-row">
-        <v-switch
-          v-model="store.layerVisibility.coverageRings"
-          label="Radarabdeckung"
-          color="primary"
-          density="compact"
-          hide-details
-          inset
-          :disabled="!store.coverageAvailable"
-          @update:model-value="onLayerToggle('coverageRings', $event)"
-        />
-      </div>
-      <div v-if="!store.coverageAvailable" class="filter-hint">
-        Keine Radarabdeckung konfiguriert — nur bei Radar-Sensoren verfügbar.
-      </div>
-
-      <!-- WX-A (ADR 0016): DWD weather-radar overlay. Feature-gated per tenant
-           (weather_radar) and disabled when no DWD source is configured
-           server-side, with a hint instead of a dead switch. -->
-      <div v-if="showLayer('weather_radar')" class="filter-row">
-        <v-switch
-          v-model="store.layerVisibility.weatherRadar"
-          label="DWD-Regenradar"
-          color="primary"
-          density="compact"
-          hide-details
-          inset
-          :disabled="!store.weatherRadarAvailable"
-          @update:model-value="onLayerToggle('weatherRadar', $event)"
-        />
-      </div>
-      <div v-if="showLayer('weather_radar') && !store.weatherRadarAvailable" class="filter-hint">
-        Keine DWD-Radarquelle konfiguriert (WAYFINDER_DWD_WMS_URL).
-      </div>
-      <!-- #190: radar intensity legend, shown only while the layer is on. -->
-      <div
-        v-if="showLayer('weather_radar') && store.weatherRadarAvailable && store.layerVisibility.weatherRadar"
-        class="wx-legend"
-      >
-        <span class="wx-legend-caption">Niederschlag</span>
-        <div class="wx-legend-items">
-          <span v-for="s in WEATHER_RADAR_LEGEND" :key="s.label" class="wx-legend-item">
-            <span class="wx-swatch" :style="{ background: s.color }" />{{ s.label }}
-          </span>
-        </div>
-      </div>
-
-      <!-- WX-C (ADR 0016): DWD weather-warnings overlay. Feature-gated per tenant
-           (weather_warnings) and disabled when no DWD WFS is configured. -->
-      <div v-if="showLayer('weather_warnings')" class="filter-row">
-        <v-switch
-          v-model="store.layerVisibility.weatherWarnings"
-          label="DWD-Wetterwarnungen"
-          color="primary"
-          density="compact"
-          hide-details
-          inset
-          :disabled="!store.weatherWarningsAvailable"
-          @update:model-value="onLayerToggle('weatherWarnings', $event)"
-        />
-      </div>
-      <div v-if="showLayer('weather_warnings') && !store.weatherWarningsAvailable" class="filter-hint">
-        Keine DWD-Warnquelle konfiguriert (WAYFINDER_DWD_WARN_URL).
-      </div>
-      <!-- #190: warnings severity legend, shown only while the layer is on. -->
-      <div
-        v-if="showLayer('weather_warnings') && store.weatherWarningsAvailable && store.layerVisibility.weatherWarnings"
-        class="wx-legend"
-      >
-        <span class="wx-legend-caption">Warnstufe</span>
-        <div class="wx-legend-items">
-          <span v-for="s in WEATHER_WARNINGS_LEGEND" :key="s.label" class="wx-legend-item">
-            <span class="wx-swatch" :style="{ background: s.color }" />{{ s.label }}
-          </span>
-        </div>
-      </div>
-
-      <div v-if="showLayer('history_dots')" class="filter-row">
-        <v-switch
-          v-model="store.layerVisibility.historyDots"
-          label="History Dots"
-          color="primary"
-          density="compact"
-          hide-details
-          inset
-          @update:model-value="onLayerToggle('historyDots', $event)"
-        />
-      </div>
-
-      <!-- #191: history retention window, shown only while the layer is active.
-           Older dots fade out toward the end of the trail (engine-side). -->
-      <template v-if="showLayer('history_dots') && store.layerVisibility.historyDots">
-        <div class="filter-row filter-row--sub">
-          <v-select
-            v-model.number="historyDurationS"
-            :items="HISTORY_DURATION_OPTIONS_S"
-            label="Dauer (s)"
-            variant="outlined"
-            density="compact"
-            hide-details
-            class="ring-input"
-            @update:model-value="onHistoryChange"
+            :disabled="!store.coverageAvailable"
+            @update:model-value="onLayerToggle('coverageRings', $event)"
           />
         </div>
-      </template>
-
-      <div v-if="showLayer('range_rings')" class="filter-row">
-        <v-switch
-          v-model="store.layerVisibility.rangeRings"
-          label="Range-Rings"
-          color="primary"
-          density="compact"
-          hide-details
-          inset
-          @update:model-value="onLayerToggle('rangeRings', $event)"
-        />
-      </div>
-
-      <!-- ASD-012: range-ring spacing + count, shown only while the layer is active -->
-      <template v-if="(showLayer('range_rings')) && store.layerVisibility.rangeRings">
-        <div class="filter-row filter-row--sub">
-          <v-select
-            v-model.number="ringSpacing"
-            :items="RANGE_RING_SPACING_OPTIONS_NM"
-            label="Abstand (NM)"
-            variant="outlined"
-            density="compact"
-            hide-details
-            class="ring-input"
-            @update:model-value="onRangeRingChange"
-          />
+        <div v-if="!store.coverageAvailable" class="filter-hint">
+          Keine Radarabdeckung konfiguriert — nur bei Radar-Sensoren verfügbar.
         </div>
-        <div class="filter-row filter-row--sub ring-count-row">
-          <span class="ring-count-label">Ringe: {{ ringCount }}</span>
-          <v-slider
-            v-model="ringCount"
-            :min="1"
-            :max="MAX_RANGE_RING_COUNT"
-            :step="1"
+
+        <div v-if="showLayer('history_dots')" class="filter-row">
+          <v-switch
+            v-model="store.layerVisibility.historyDots"
+            label="History Dots"
             color="primary"
             density="compact"
             hide-details
-            class="ring-slider"
-            @update:model-value="onRangeRingChange"
+            inset
+            @update:model-value="onLayerToggle('historyDots', $event)"
           />
         </div>
-      </template>
 
-      <!-- ── Spurherkunft (WF2-40/#119): symbol-glyph legend ── -->
+        <!-- #191: history retention window, shown only while the layer is active.
+             Older dots fade out toward the end of the trail (engine-side). -->
+        <template v-if="showLayer('history_dots') && store.layerVisibility.historyDots">
+          <div class="filter-row filter-row--sub">
+            <v-select
+              v-model.number="historyDurationS"
+              :items="HISTORY_DURATION_OPTIONS_S"
+              label="Dauer (s)"
+              variant="outlined"
+              density="compact"
+              hide-details
+              class="ring-input"
+              @update:model-value="onHistoryChange"
+            />
+          </div>
+        </template>
+
+        <div v-if="showLayer('range_rings')" class="filter-row">
+          <v-switch
+            v-model="store.layerVisibility.rangeRings"
+            label="Range-Rings"
+            color="primary"
+            density="compact"
+            hide-details
+            inset
+            @update:model-value="onLayerToggle('rangeRings', $event)"
+          />
+        </div>
+
+        <!-- ASD-012: range-ring spacing + count, shown only while the layer is active -->
+        <template v-if="(showLayer('range_rings')) && store.layerVisibility.rangeRings">
+          <div class="filter-row filter-row--sub">
+            <v-select
+              v-model.number="ringSpacing"
+              :items="RANGE_RING_SPACING_OPTIONS_NM"
+              label="Abstand (NM)"
+              variant="outlined"
+              density="compact"
+              hide-details
+              class="ring-input"
+              @update:model-value="onRangeRingChange"
+            />
+          </div>
+          <div class="filter-row filter-row--sub ring-count-row">
+            <span class="ring-count-label">Ringe: {{ ringCount }}</span>
+            <v-slider
+              v-model="ringCount"
+              :min="1"
+              :max="MAX_RANGE_RING_COUNT"
+              :step="1"
+              color="primary"
+              density="compact"
+              hide-details
+              class="ring-slider"
+              @update:model-value="onRangeRingChange"
+            />
+          </div>
+        </template>
+      </LayerGroup>
+
+      <!-- ── Wetter: DWD radar + warnings (each feature-gated + availability-gated) ── -->
+      <LayerGroup
+        v-if="showWetter"
+        title="Wetter"
+        :master="wetterState"
+        @toggle-master="onGroupMaster(wetterMembers, wetterState)"
+      >
+        <!-- WX-A (ADR 0016): DWD weather-radar overlay. Feature-gated per tenant
+             (weather_radar) and disabled when no DWD source is configured
+             server-side, with a hint instead of a dead switch. -->
+        <template v-if="showLayer('weather_radar')">
+          <div class="filter-row">
+            <v-switch
+              v-model="store.layerVisibility.weatherRadar"
+              label="DWD-Regenradar"
+              color="primary"
+              density="compact"
+              hide-details
+              inset
+              :disabled="!store.weatherRadarAvailable"
+              @update:model-value="onLayerToggle('weatherRadar', $event)"
+            />
+          </div>
+          <div v-if="!store.weatherRadarAvailable" class="filter-hint">
+            Keine DWD-Radarquelle konfiguriert (WAYFINDER_DWD_WMS_URL).
+          </div>
+          <!-- #190: radar intensity legend, shown only while the layer is on. -->
+          <div
+            v-if="store.weatherRadarAvailable && store.layerVisibility.weatherRadar"
+            class="wx-legend"
+          >
+            <span class="wx-legend-caption">Niederschlag</span>
+            <div class="wx-legend-items">
+              <span v-for="s in WEATHER_RADAR_LEGEND" :key="s.label" class="wx-legend-item">
+                <span class="wx-swatch" :style="{ background: s.color }" />{{ s.label }}
+              </span>
+            </div>
+          </div>
+        </template>
+
+        <!-- WX-C (ADR 0016): DWD weather-warnings overlay. Feature-gated per tenant
+             (weather_warnings) and disabled when no DWD WFS is configured. -->
+        <template v-if="showLayer('weather_warnings')">
+          <div class="filter-row">
+            <v-switch
+              v-model="store.layerVisibility.weatherWarnings"
+              label="DWD-Wetterwarnungen"
+              color="primary"
+              density="compact"
+              hide-details
+              inset
+              :disabled="!store.weatherWarningsAvailable"
+              @update:model-value="onLayerToggle('weatherWarnings', $event)"
+            />
+          </div>
+          <div v-if="!store.weatherWarningsAvailable" class="filter-hint">
+            Keine DWD-Warnquelle konfiguriert (WAYFINDER_DWD_WARN_URL).
+          </div>
+          <!-- #190: warnings severity legend, shown only while the layer is on. -->
+          <div
+            v-if="store.weatherWarningsAvailable && store.layerVisibility.weatherWarnings"
+            class="wx-legend"
+          >
+            <span class="wx-legend-caption">Warnstufe</span>
+            <div class="wx-legend-items">
+              <span v-for="s in WEATHER_WARNINGS_LEGEND" :key="s.label" class="wx-legend-item">
+                <span class="wx-swatch" :style="{ background: s.color }" />{{ s.label }}
+              </span>
+            </div>
+          </div>
+        </template>
+      </LayerGroup>
+
+      <!-- ── Spurherkunft (WF2-40/#119): symbol-glyph legend — a reference block,
+           not a layer toggle, so it stays outside the groups at the section foot. ── -->
       <div class="filter-section-header filter-section-header--spaced">Spurherkunft</div>
       <div class="legend-caption">Symbol = Herkunft · Farbe = Status</div>
       <div
@@ -376,6 +414,8 @@ import { useAsdStore } from '@/stores/asd.js'
 import { useSessionStore } from '@/stores/session.js'
 import { AIRSPACE_GROUPS, AIRSPACE_AOR_COLOR, RANGE_RING_SPACING_OPTIONS_NM, MAX_RANGE_RING_COUNT, HISTORY_DURATION_OPTIONS_S, WEATHER_RADAR_LEGEND, WEATHER_WARNINGS_LEGEND } from '@/map/constants.js'
 import { filterProvenanceLegend } from '@/map/provenance.js'
+import { masterState, nextMaster } from '@/map/layerGroups.js'
+import LayerGroup from './LayerGroup.vue'
 
 // #116: the NavigationRail opens one section at a time on desktop; the mobile
 // drawer renders all of them ('all'), with the account block last.
@@ -399,6 +439,77 @@ const session = useSessionStore()
 const gateReady = computed(() => session.status === 'authed' && !session.isAdmin)
 function showLayer(featureKey) {
   return !gateReady.value || session.hasFeature(featureKey)
+}
+
+// ── ASD-020 (ADR 0031): Layer-group model ──────────────────────────────────
+// Each group's MEMBERSHIP lives here, next to the rows it renders. A member is
+// { on, set, enabled }: `on` is its current visibility, `set(v)` applies a new
+// one through the SAME store path the row's own switch uses (so a master click
+// is indistinguishable from clicking each row), and `enabled` (default true)
+// marks whether the operator can change it — a disabled toggle (unavailable
+// source) is excluded from the master state and from the bulk action.
+function layerMember(key) {
+  return { on: store.layerVisibility[key], set: (v) => onLayerToggle(key, v) }
+}
+
+const aeroMembers = () => {
+  const list = []
+  if (showLayer('airspaces')) {
+    for (const g of AIRSPACE_GROUPS) {
+      list.push({ on: store.airspaceGroupVisibility[g.id], set: (v) => onAirspaceGroup(g.id, v) })
+    }
+    list.push({ on: store.layerVisibility.aor, set: (v) => onLayerToggle('aor', v) })
+  }
+  if (showLayer('vor_ndb')) list.push(layerMember('navaids'))
+  if (showLayer('waypoints')) list.push(layerMember('waypoints'))
+  if (showLayer('airport')) list.push(layerMember('airport'))
+  if (showLayer('runways')) list.push(layerMember('runways'))
+  return list
+}
+
+const karteMembers = () => {
+  const list = []
+  if (showLayer('basemap')) list.push(layerMember('basemap'))
+  return list
+}
+
+const radarMembers = () => {
+  const list = []
+  list.push({ on: store.layerVisibility.coverageRings, set: (v) => onLayerToggle('coverageRings', v), enabled: store.coverageAvailable })
+  if (showLayer('range_rings')) list.push(layerMember('rangeRings'))
+  if (showLayer('history_dots')) list.push(layerMember('historyDots'))
+  return list
+}
+
+const wetterMembers = () => {
+  const list = []
+  if (showLayer('weather_radar')) list.push({ on: store.layerVisibility.weatherRadar, set: (v) => onLayerToggle('weatherRadar', v), enabled: store.weatherRadarAvailable })
+  if (showLayer('weather_warnings')) list.push({ on: store.layerVisibility.weatherWarnings, set: (v) => onLayerToggle('weatherWarnings', v), enabled: store.weatherWarningsAvailable })
+  return list
+}
+
+// A group's master reflects only its ENABLED members; it is hidden when a group
+// has no visible member at all (v-if on the group).
+function groupMaster(members) {
+  return masterState(members().filter((m) => m.enabled !== false).map((m) => m.on))
+}
+const aeroState = computed(() => groupMaster(aeroMembers))
+const karteState = computed(() => groupMaster(karteMembers))
+const radarState = computed(() => groupMaster(radarMembers))
+const wetterState = computed(() => groupMaster(wetterMembers))
+
+const showAero = computed(() => aeroMembers().length > 0)
+const showKarte = computed(() => karteMembers().length > 0)
+const showRadar = computed(() => radarMembers().length > 0)
+const showWetter = computed(() => wetterMembers().length > 0)
+
+// Master click: select-all/none over the group's ENABLED members (a disabled
+// toggle is left as-is — the operator cannot turn on a layer with no data).
+function onGroupMaster(members, state) {
+  const target = nextMaster(state)
+  for (const m of members()) {
+    if (m.enabled !== false && m.on !== target) m.set(target)
+  }
 }
 
 const minFL = ref(store.flFilter.minFL)
