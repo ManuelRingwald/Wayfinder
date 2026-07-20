@@ -23,6 +23,21 @@ export const BASEMAP_GROUPS = [
   'other',
 ]
 
+// E2 (#293): the element groups the sidebar exposes as individual switches, with
+// German labels. 'other' is deliberately NOT here — it is the unclassified
+// catch-all and simply follows the base-map master (a switch over unknown layers
+// would be unpredictable). The rest map 1:1 to BASEMAP_GROUPS.
+export const BASEMAP_ELEMENTS = [
+  { id: 'water', label: 'Gewässer' },
+  { id: 'traffic', label: 'Verkehr' },
+  { id: 'vegetation', label: 'Vegetation' },
+  { id: 'settlement', label: 'Siedlung' },
+  { id: 'building', label: 'Gebäude' },
+  { id: 'boundary', label: 'Grenzen' },
+  { id: 'label', label: 'Beschriftung' },
+  { id: 'background', label: 'Hintergrund' },
+]
+
 // Priority-ordered classification rules: FIRST match wins. More specific groups
 // precede more generic ones so an overlapping name is classified by its
 // strongest signal — e.g. a forest/park "…landuse…" hits `vegetation` before the

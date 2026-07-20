@@ -5,7 +5,7 @@
 // cannot be fetched here. The point is robustness: known stems land in the right
 // group, and nothing is ever silently dropped.
 import { describe, it, expect } from 'vitest'
-import { classifyBasemapLayer, bucketBasemapLayers, BASEMAP_GROUPS } from '../basemapGroups.js'
+import { classifyBasemapLayer, bucketBasemapLayers, BASEMAP_GROUPS, BASEMAP_ELEMENTS } from '../basemapGroups.js'
 
 // basemap.de (German source-layer stems) — the primary target.
 const bmDe = [
@@ -104,5 +104,19 @@ describe('bucketBasemapLayers', () => {
   it('is safe on empty/undefined input', () => {
     expect(bucketBasemapLayers(undefined).water).toEqual([])
     expect(bucketBasemapLayers([]).other).toEqual([])
+  })
+})
+
+describe('BASEMAP_ELEMENTS (E2 exposed sidebar switches)', () => {
+  it('exposes the meaningful groups with labels, but NOT the "other" catch-all', () => {
+    const ids = BASEMAP_ELEMENTS.map((e) => e.id)
+    expect(ids).not.toContain('other') // unclassified layers follow the master
+    for (const e of BASEMAP_ELEMENTS) {
+      expect(BASEMAP_GROUPS).toContain(e.id) // every element is a real group
+      expect(typeof e.label).toBe('string')
+      expect(e.label.length).toBeGreaterThan(0)
+    }
+    expect(ids).toContain('water')
+    expect(ids).toContain('traffic')
   })
 })
