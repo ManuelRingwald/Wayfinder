@@ -79,32 +79,67 @@
         </v-card>
       </v-window-item>
 
-      <!-- ── Wetter ── -->
+      <!-- ── Wetter (K3 #311: live editierbar) ── -->
       <v-window-item value="weather">
         <v-card variant="tonal">
           <v-card-title class="text-subtitle-1">Wetter (DWD / QNH)</v-card-title>
           <v-card-text>
-            <div class="mapdata-row">
-              <span class="mapdata-label">DWD-Regenradar</span>
-              <v-chip size="small" variant="tonal" :color="statusColor(cfg.weather_radar_available)">
-                {{ statusText(cfg.weather_radar_available) }}
-              </v-chip>
+            <v-alert type="info" variant="tonal" density="compact" class="mb-4">
+              An/Aus wirkt <strong>sofort</strong> (der Lotse sieht die Quelle nach
+              einem Neuladen der Karte). Geänderte URLs/Layer greifen erst beim
+              <strong>nächsten Neustart</strong> des Servers — ein laufender
+              Abruf-Dienst wird nicht im Betrieb umkonfiguriert.
+            </v-alert>
+
+            <!-- DWD-Regenradar -->
+            <div class="mapdata-src">
+              <div class="d-flex align-center ga-2 mb-2">
+                <v-switch v-model="weather.radarEnabled" label="DWD-Regenradar" color="primary" density="compact" hide-details inset />
+                <v-chip size="small" variant="tonal" :color="statusColor(cfg.weather_radar_available)">
+                  {{ statusText(cfg.weather_radar_available) }}
+                </v-chip>
+              </div>
+              <div class="d-flex flex-wrap ga-3">
+                <v-text-field v-model="weather.radarURL" label="WMS-URL" :placeholder="weather.radarDefault" persistent-placeholder variant="outlined" density="compact" hide-details style="min-width: 320px; flex: 2" />
+                <v-text-field v-model="weather.radarLayer" label="Layer" variant="outlined" density="compact" hide-details style="min-width: 160px; flex: 1" />
+              </div>
             </div>
-            <div class="mapdata-row">
-              <span class="mapdata-label">DWD-Wetterwarnungen</span>
-              <v-chip size="small" variant="tonal" :color="statusColor(cfg.weather_warnings_available)">
-                {{ statusText(cfg.weather_warnings_available) }}
-              </v-chip>
+
+            <!-- DWD-Wetterwarnungen -->
+            <div class="mapdata-src">
+              <div class="d-flex align-center ga-2 mb-2">
+                <v-switch v-model="weather.warnEnabled" label="DWD-Wetterwarnungen" color="primary" density="compact" hide-details inset />
+                <v-chip size="small" variant="tonal" :color="statusColor(cfg.weather_warnings_available)">
+                  {{ statusText(cfg.weather_warnings_available) }}
+                </v-chip>
+              </div>
+              <div class="d-flex flex-wrap ga-3">
+                <v-text-field v-model="weather.warnURL" label="WFS/WMS-URL" :placeholder="weather.warnDefault" persistent-placeholder variant="outlined" density="compact" hide-details style="min-width: 320px; flex: 2" />
+                <v-text-field v-model="weather.warnLayer" label="Layer" variant="outlined" density="compact" hide-details style="min-width: 160px; flex: 1" />
+              </div>
             </div>
-            <div class="mapdata-row">
-              <span class="mapdata-label">QNH (METAR)</span>
-              <v-chip size="small" variant="tonal" :color="statusColor(cfg.qnh_available)">
-                {{ statusText(cfg.qnh_available) }}
-              </v-chip>
+
+            <!-- QNH (METAR) -->
+            <div class="mapdata-src">
+              <div class="d-flex align-center ga-2">
+                <v-switch v-model="weather.qnhEnabled" label="QNH (METAR)" color="primary" density="compact" hide-details inset />
+                <v-chip size="small" variant="tonal" :color="statusColor(cfg.qnh_available)">
+                  {{ statusText(cfg.qnh_available) }}
+                </v-chip>
+              </div>
             </div>
+
+            <div class="d-flex ga-3 align-center mt-4">
+              <v-spacer />
+              <v-btn color="primary" :loading="busy" @click="saveWeather">Speichern</v-btn>
+            </div>
+
+            <v-alert v-if="weather.error" type="warning" variant="tonal" density="compact" class="mt-3">
+              {{ weather.error }}
+            </v-alert>
             <div class="mapdata-hint">
-              „Verfügbar" = Quelle konfiguriert und aktiv. Pro Mandant zusätzlich:
-              Freigaben + AOI-Zuschnitt.
+              „Verfügbar" = Quelle aktiviert und URL konfiguriert. Pro Mandant
+              zusätzlich: Freigaben + AOI-Zuschnitt.
             </div>
           </v-card-text>
         </v-card>
@@ -190,7 +225,7 @@ onMounted(async () => {
   } catch (e) {
     loadError.value = e?.message || 'Netzwerkfehler'
   }
-  await Promise.all([loadBasemap(), loadCoverage()])
+  await Promise.all([loadBasemap(), loadCoverage(), loadWeather()])
 })
 
 async function loadBasemap() {
@@ -269,6 +304,65 @@ async function resetCoverage() {
 
 const sensorCount = computed(() => Number(cfg.value.coverage_sensor_count ?? 0))
 
+// K3 (#311): weather live editing. Enable/disable + availability are LIVE; the
+// URL/layer overrides are stored now and applied at the next server restart
+// (honest note in the UI). Each field is its own K0 mapconfig endpoint.
+const weather = ref({
+  radarEnabled: false, radarURL: '', radarLayer: '', radarDefault: '',
+  warnEnabled: false, warnURL: '', warnLayer: '', warnDefault: '',
+  qnhEnabled: false,
+  error: '',
+})
+
+const wBase = '/api/admin/mapdata/weather'
+const asBool = (v) => String(v).toLowerCase() === 'true'
+
+async function loadWeather() {
+  const paths = ['radar-enabled', 'radar-url', 'radar-layer', 'warn-enabled', 'warn-url', 'warn-layer', 'qnh-enabled']
+  const [rEn, rUrl, rLayer, wEn, wUrl, wLayer, qEn] = await Promise.all(
+    paths.map((p) => apiFetch(`${wBase}/${p}`)),
+  )
+  const val = (r) => (r?.ok && r.data ? r.data.value ?? '' : '')
+  const def = (r) => (r?.ok && r.data ? r.data.default ?? '' : '')
+  weather.value.radarEnabled = asBool(val(rEn))
+  weather.value.radarURL = val(rUrl)
+  weather.value.radarDefault = def(rUrl)
+  weather.value.radarLayer = val(rLayer)
+  weather.value.warnEnabled = asBool(val(wEn))
+  weather.value.warnURL = val(wUrl)
+  weather.value.warnDefault = def(wUrl)
+  weather.value.warnLayer = val(wLayer)
+  weather.value.qnhEnabled = asBool(val(qEn))
+}
+
+async function saveWeather() {
+  busy.value = true
+  weather.value.error = ''
+  const put = (p, value) => apiFetch(`${wBase}/${p}`, { method: 'PUT', body: JSON.stringify({ value }) })
+  try {
+    const results = await Promise.all([
+      put('radar-enabled', boolStr(weather.value.radarEnabled)),
+      put('radar-url', weather.value.radarURL),
+      put('radar-layer', weather.value.radarLayer),
+      put('warn-enabled', boolStr(weather.value.warnEnabled)),
+      put('warn-url', weather.value.warnURL),
+      put('warn-layer', weather.value.warnLayer),
+      put('qnh-enabled', boolStr(weather.value.qnhEnabled)),
+    ])
+    if (results.some((r) => !r?.ok)) {
+      weather.value.error = 'Nicht alle Werte konnten gespeichert werden (URL-Format prüfen).'
+    }
+    // Refresh availability (LIVE) + the stored values.
+    const r = await apiFetch('/api/map-config')
+    if (r?.ok && r.data) cfg.value = r.data
+    await loadWeather()
+  } finally {
+    busy.value = false
+  }
+}
+
+const boolStr = (b) => (b ? 'true' : 'false')
+
 function statusColor(ok) { return ok ? 'success' : 'default' }
 function statusText(ok) { return ok ? 'verfügbar' : 'nicht konfiguriert' }
 </script>
@@ -302,6 +396,10 @@ function statusText(ok) { return ok ? 'verfügbar' : 'nicht konfiguriert' }
   align-items: center;
   gap: 8px;
   padding: 6px 0;
+  border-bottom: 1px solid rgba(var(--v-border-color), 0.12);
+}
+.mapdata-src {
+  padding: 12px 0;
   border-bottom: 1px solid rgba(var(--v-border-color), 0.12);
 }
 .mapdata-hint {

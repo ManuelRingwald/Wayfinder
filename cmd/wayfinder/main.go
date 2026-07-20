@@ -345,6 +345,38 @@ func main() {
 		bootApply, cancelApply := context.WithTimeout(ctx, 10*time.Second)
 		defer cancelApply()
 		mapData.applyAtBoot(bootApply)
+
+		// K3 (#311): rebuild the DWD radar + warnings services from the EFFECTIVE
+		// (admin-override ?? env) config before their poll loops start, so a
+		// restart honours admin URL/layer/enable overrides. Enable/disable +
+		// availability are live via /api/map-config; the upstream URL/layer change
+		// applies here at (re)start — no live goroutine reconfiguration, keeping a
+		// running feed safe. Identical to the env build when nothing is overridden.
+		if rEnabled, rURL, rLayer := mapData.effectiveRadar(bootApply); rURL != cfg.DWDWMSURL || rLayer != cfg.DWDRadarLayer || rEnabled != (cfg.DWDRadarEnabled && cfg.DWDWMSURL != "") {
+			weatherRadar = weathertiles.NewService(
+				weathertiles.NewClient(&http.Client{Timeout: 15 * time.Second}, rURL, rLayer).WithStyle(cfg.DWDRadarStyle),
+				weathertiles.Config{Enabled: rEnabled, TTL: cfg.DWDRefresh},
+				logger,
+			)
+		}
+		if wEnabled, wURL, wLayer := mapData.effectiveWarn(bootApply); wURL != cfg.DWDWarnURL || wLayer != cfg.DWDWarnLayer || wEnabled != (cfg.DWDWarnEnabled && cfg.DWDWarnURL != "") {
+			weatherWarn = weatherwarnings.NewService(
+				weatherwarnings.NewClient(&http.Client{Timeout: 15 * time.Second}, wURL, wLayer),
+				weatherwarnings.Config{Enabled: wEnabled, Refresh: cfg.DWDWarnRefresh},
+				logger,
+			)
+		}
+		// QNH: only the enable flag is override-able (no upstream URL setting).
+		// Rebuild the poller from the effective flag so an admin enable/disable
+		// actually starts/stops the METAR poll at restart — otherwise the
+		// availability chip (live) and the poller (env-only) could disagree.
+		if qEnabled := mapData.qnhAvailable(bootApply); qEnabled != cfg.QNHEnabled {
+			weatherQNH = weather.NewService(
+				weather.NewClient(&http.Client{Timeout: 15 * time.Second}, cfg.MetarURL, cfg.MetarUserAgent),
+				weather.Config{Enabled: qEnabled, Stations: cfg.MetarStations, StationsProvider: qnhStations, Refresh: cfg.QNHRefresh},
+				logger,
+			)
+		}
 	}()
 
 	sigChan := make(chan os.Signal, 1)
@@ -1690,10 +1722,17 @@ func mapConfigHandler(cfg Config, md *mapDataConfig) http.HandlerFunc {
 		effTheme := theme
 		coverageColor := cfg.CoverageRingColor
 		coverageCount := len(cfg.CoverageSensors)
+		radarAvail := cfg.DWDRadarEnabled && cfg.DWDWMSURL != ""
+		warnAvail := cfg.DWDWarnEnabled && cfg.DWDWarnURL != ""
+		qnhAvail := cfg.QNHEnabled
 		if md != nil {
-			effTheme = md.effectiveTheme(r.Context())
-			coverageColor = md.effectiveRingColor(r.Context())
-			coverageCount = len(md.effectiveSensors(r.Context()))
+			ctx := r.Context()
+			effTheme = md.effectiveTheme(ctx)
+			coverageColor = md.effectiveRingColor(ctx)
+			coverageCount = len(md.effectiveSensors(ctx))
+			radarAvail = md.radarAvailable(ctx)
+			warnAvail = md.warningsAvailable(ctx)
+			qnhAvail = md.qnhAvailable(ctx)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
@@ -1704,15 +1743,16 @@ func mapConfigHandler(cfg Config, md *mapDataConfig) http.HandlerFunc {
 			"theme":                 effTheme,
 			"coverage_ring_color":   coverageColor,
 			"coverage_sensor_count": coverageCount,
-			// WX-A / ADR 0017: whether the DWD radar overlay is active (connected-by-
-			// default; off only when explicitly disabled). Gates the sidebar switch.
-			"weather_radar_available": cfg.DWDRadarEnabled && cfg.DWDWMSURL != "",
-			// WX-C / ADR 0017: same for the DWD warnings overlay.
-			"weather_warnings_available": cfg.DWDWarnEnabled && cfg.DWDWarnURL != "",
-			// WX-B / CBD-3 / ADR 0017: whether the QNH (NOAA) source is on. The header
-			// infobox additionally needs the tenant's qnh entitlement and a configured
-			// aerodrome (view_configs.qnh_icao); this flag only reports the source.
-			"qnh_available": cfg.QNHEnabled,
+			// WX-A / ADR 0017 (+K3 #311): whether the DWD radar overlay is active.
+			// Now the EFFECTIVE (admin-override ?? env) enable+URL — enable/disable is
+			// live; a URL change applies at the next restart.
+			"weather_radar_available": radarAvail,
+			// WX-C / ADR 0017 (+K3): same for the DWD warnings overlay.
+			"weather_warnings_available": warnAvail,
+			// WX-B / CBD-3 / ADR 0017 (+K3): whether the QNH (NOAA) source is on. The
+			// header infobox additionally needs the tenant's qnh entitlement and a
+			// configured aerodrome (view_configs.qnh_icao); this flag only reports the source.
+			"qnh_available": qnhAvail,
 			// #245 Teil B / ADR 0024: whether manual flight-plan correlation is enabled
 			// (a command token is configured). Gates the correlation controls in the
 			// detail panel; the server enforces the feature edge independently (503

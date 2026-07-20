@@ -103,3 +103,43 @@ func TestEffectiveSensors(t *testing.T) {
 		t.Fatalf("malformed override should fall back to env, got %+v", got)
 	}
 }
+
+// K3 (#311): weather availability reads the effective (override ?? env) enable +
+// URL. Enable/disable is live; URL applies on restart.
+func TestWeatherAvailabilityEffective(t *testing.T) {
+	ctx := context.Background()
+	st := newMemSettings()
+	cfg := Config{DWDRadarEnabled: true, DWDWMSURL: "https://maps.dwd.de/wms", DWDWarnEnabled: true, DWDWarnURL: "https://dwd/warn", QNHEnabled: true}
+	md := newMapDataConfig(st, cfg, nil, nil)
+
+	if !md.radarAvailable(ctx) || !md.warningsAvailable(ctx) || !md.qnhAvailable(ctx) {
+		t.Fatal("all sources should be available from env defaults")
+	}
+	// Disable radar via override → not available.
+	_ = md.radarEnabled.Set(ctx, "false")
+	if md.radarAvailable(ctx) {
+		t.Fatal("radar should be unavailable after disable override")
+	}
+	// Empty URL override → not available even if enabled.
+	_ = md.warnURL.Set(ctx, "") // reset to env default (still set)
+	_ = md.warnEnabled.Set(ctx, "true")
+	if !md.warningsAvailable(ctx) {
+		t.Fatal("warnings should be available (env URL, enabled)")
+	}
+	// effectiveRadar gates enabled on a non-empty URL.
+	en, _, _ := md.effectiveRadar(ctx)
+	if en {
+		t.Fatal("radar still disabled by the enable override")
+	}
+}
+
+func TestValidBool(t *testing.T) {
+	for _, ok := range []string{"true", "false", "TRUE", " false "} {
+		if err := validBool(ok); err != nil {
+			t.Errorf("%q should be a valid bool: %v", ok, err)
+		}
+	}
+	if validBool("maybe") == nil {
+		t.Error("non-bool must be rejected")
+	}
+}

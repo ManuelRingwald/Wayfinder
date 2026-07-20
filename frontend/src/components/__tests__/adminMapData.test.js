@@ -66,6 +66,28 @@ describe('AdminMapData: Basiskarte live editing (K2 #310)', () => {
   })
 })
 
+describe('AdminMapData: Wetter live editing (K3 #311)', () => {
+  it('loads + saves the seven weather settings via the mapconfig endpoints', () => {
+    expect(mapData).toContain("'/api/admin/mapdata/weather'")
+    expect(mapData).toContain('loadWeather')
+    expect(mapData).toContain('saveWeather')
+    for (const p of ['radar-enabled', 'radar-url', 'radar-layer', 'warn-enabled', 'warn-url', 'warn-layer', 'qnh-enabled']) {
+      expect(mapData).toContain(`'${p}'`)
+    }
+  })
+
+  it('exposes enable switches bound to the weather form', () => {
+    expect(mapData).toContain('v-model="weather.radarEnabled"')
+    expect(mapData).toContain('v-model="weather.warnEnabled"')
+    expect(mapData).toContain('v-model="weather.qnhEnabled"')
+    expect(mapData).toContain('v-model="weather.radarURL"')
+  })
+
+  it('states honestly that URL/layer changes apply only at the next restart', () => {
+    expect(mapData).toContain('nächsten Neustart')
+  })
+})
+
 describe('AdminMapData: Radar-Abdeckung sensor CRUD (K4 #312)', () => {
   it('loads, edits and saves the sensor list + ring colour', () => {
     expect(mapData).toContain("apiFetch('/api/admin/mapdata/coverage')")

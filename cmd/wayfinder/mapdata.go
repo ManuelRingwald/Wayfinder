@@ -36,6 +36,19 @@ type mapDataConfig struct {
 	coverageSensors *mapconfig.Setting
 	coverageColor   *mapconfig.Setting
 	envSensors      []coverage.SensorConfig // start-up env default
+
+	// Wetter (K3): DWD radar / warnings / QNH. Enable flags are stored as
+	// "true"/"false" strings. Enable/disable + availability are LIVE (read by
+	// /api/map-config); URL/layer overrides are applied at the next restart (the
+	// weather services are rebuilt from these effective values before their poll
+	// loops start — no live goroutine reconfiguration, keeping a running feed safe).
+	radarEnabled *mapconfig.Setting
+	radarURL     *mapconfig.Setting
+	radarLayer   *mapconfig.Setting
+	warnEnabled  *mapconfig.Setting
+	warnURL      *mapconfig.Setting
+	warnLayer    *mapconfig.Setting
+	qnhEnabled   *mapconfig.Setting
 }
 
 // platform_settings keys for the map-data plane. Namespaced so they never clash
@@ -45,12 +58,52 @@ const (
 	msBasemapTheme    = "mapdata.basemap.theme"
 	msCoverageSensors = "mapdata.coverage.sensors"
 	msCoverageColor   = "mapdata.coverage.ring_color"
+	msRadarEnabled    = "mapdata.weather.radar_enabled"
+	msRadarURL        = "mapdata.weather.radar_wms_url"
+	msRadarLayer      = "mapdata.weather.radar_layer"
+	msWarnEnabled     = "mapdata.weather.warn_enabled"
+	msWarnURL         = "mapdata.weather.warn_url"
+	msWarnLayer       = "mapdata.weather.warn_layer"
+	msQNHEnabled      = "mapdata.weather.qnh_enabled"
 
 	domainBasemap = "basemap"
 
 	defaultCoverageColor = "#5B8DEF"
 	maxCoverageSensors   = 20
 )
+
+// boolStr renders a Go bool as the "true"/"false" string stored in settings.
+func boolStr(b bool) string {
+	if b {
+		return "true"
+	}
+	return "false"
+}
+
+// effBool reads a boolean setting (stored as "true"/"false"); anything other
+// than "true" is false.
+func effBool(ctx context.Context, s *mapconfig.Setting) bool {
+	v, err := s.Effective(ctx)
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(v), "true")
+}
+
+// effStr reads a string setting, returning "" on error.
+func effStr(ctx context.Context, s *mapconfig.Setting) string {
+	v, _ := s.Effective(ctx)
+	return v
+}
+
+// validBool validates a boolean-string admin PUT value.
+func validBool(v string) error {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "true", "false":
+		return nil
+	}
+	return fmt.Errorf("value must be true or false")
+}
 
 // newMapDataConfig seeds each setting with the process start-up env default and
 // registers the per-subsystem reloads. basemapSvc may be nil.
@@ -75,9 +128,43 @@ func newMapDataConfig(st mapconfig.Store, cfg Config, basemapSvc *basemap.Servic
 		coverageSensors: mapconfig.NewSetting(st, msCoverageSensors, ""),
 		coverageColor:   mapconfig.NewSetting(st, msCoverageColor, colorDefault),
 		envSensors:      cfg.CoverageSensors,
+
+		radarEnabled: mapconfig.NewSetting(st, msRadarEnabled, boolStr(cfg.DWDRadarEnabled)),
+		radarURL:     mapconfig.NewSetting(st, msRadarURL, cfg.DWDWMSURL),
+		radarLayer:   mapconfig.NewSetting(st, msRadarLayer, cfg.DWDRadarLayer),
+		warnEnabled:  mapconfig.NewSetting(st, msWarnEnabled, boolStr(cfg.DWDWarnEnabled)),
+		warnURL:      mapconfig.NewSetting(st, msWarnURL, cfg.DWDWarnURL),
+		warnLayer:    mapconfig.NewSetting(st, msWarnLayer, cfg.DWDWarnLayer),
+		qnhEnabled:   mapconfig.NewSetting(st, msQNHEnabled, boolStr(cfg.QNHEnabled)),
 	}
 	m.registry.Register(domainBasemap, m.reloadBasemap)
 	return m
+}
+
+// Weather availability — LIVE (read by /api/map-config): a source is available
+// when it is enabled AND has an upstream URL configured. Mirrors the original
+// env-based computation, now over the effective (override ?? env) values.
+func (m *mapDataConfig) radarAvailable(ctx context.Context) bool {
+	return effBool(ctx, m.radarEnabled) && strings.TrimSpace(effStr(ctx, m.radarURL)) != ""
+}
+func (m *mapDataConfig) warningsAvailable(ctx context.Context) bool {
+	return effBool(ctx, m.warnEnabled) && strings.TrimSpace(effStr(ctx, m.warnURL)) != ""
+}
+func (m *mapDataConfig) qnhAvailable(ctx context.Context) bool {
+	return effBool(ctx, m.qnhEnabled)
+}
+
+// effectiveRadar / effectiveWarn return the effective (override ?? env) weather
+// source config, used at boot to (re)build the DWD services so a restart honours
+// admin overrides. enabled is also gated on a non-empty URL (a source without a
+// URL cannot fetch).
+func (m *mapDataConfig) effectiveRadar(ctx context.Context) (enabled bool, url, layer string) {
+	url = strings.TrimSpace(effStr(ctx, m.radarURL))
+	return effBool(ctx, m.radarEnabled) && url != "", url, effStr(ctx, m.radarLayer)
+}
+func (m *mapDataConfig) effectiveWarn(ctx context.Context) (enabled bool, url, layer string) {
+	url = strings.TrimSpace(effStr(ctx, m.warnURL))
+	return effBool(ctx, m.warnEnabled) && url != "", url, effStr(ctx, m.warnLayer)
 }
 
 // effectiveSensors returns the live coverage sensor list: the stored JSON
@@ -170,6 +257,19 @@ func (m *mapDataConfig) mountAdminRoutes(mux *http.ServeMux, wrap func(http.Hand
 	mux.Handle("/api/admin/mapdata/basemap/style-url", wrap(styleRes.Handler()))
 	mux.Handle("/api/admin/mapdata/basemap/theme", wrap(themeRes.Handler()))
 	mux.Handle("/api/admin/mapdata/coverage", wrap(m.coverageHandler()))
+
+	// Wetter (K3): enable flags (bool), upstream URLs (SSRF-checked), layers.
+	res := func(s *mapconfig.Setting, validate func(string) error) *mapconfig.Resource {
+		return &mapconfig.Resource{Setting: s, Validate: validate} // no reload domain: applied at restart
+	}
+	urlV := func(v string) error { return mapconfig.ValidateFetchURL(v, nil) }
+	mux.Handle("/api/admin/mapdata/weather/radar-enabled", wrap(res(m.radarEnabled, validBool).Handler()))
+	mux.Handle("/api/admin/mapdata/weather/radar-url", wrap(res(m.radarURL, urlV).Handler()))
+	mux.Handle("/api/admin/mapdata/weather/radar-layer", wrap(res(m.radarLayer, nil).Handler()))
+	mux.Handle("/api/admin/mapdata/weather/warn-enabled", wrap(res(m.warnEnabled, validBool).Handler()))
+	mux.Handle("/api/admin/mapdata/weather/warn-url", wrap(res(m.warnURL, urlV).Handler()))
+	mux.Handle("/api/admin/mapdata/weather/warn-layer", wrap(res(m.warnLayer, nil).Handler()))
+	mux.Handle("/api/admin/mapdata/weather/qnh-enabled", wrap(res(m.qnhEnabled, validBool).Handler()))
 }
 
 // coverageRequest / coverageResponse are the admin coverage payloads.
