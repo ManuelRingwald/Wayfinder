@@ -114,9 +114,9 @@ describe('iPad / tablet-landscape rail (#194 Häppchen 2)', () => {
     expect(navigationRail).toContain('width: 44px')
     expect(navigationRail).toContain('tabletLandscape.value ? 24 : 20')
   })
-  it('NavigationRail widths: 76px rail / 304px panel on tablet, 56/248 desktop', () => {
+  it('NavigationRail widths: 76px rail / 304px panel on tablet, 56/288 desktop', () => {
     expect(navigationRail).toContain('const rail = tabletLandscape.value ? 76 : 56')
-    expect(navigationRail).toContain('const panel = tabletLandscape.value ? 304 : 248')
+    expect(navigationRail).toContain('const panel = tabletLandscape.value ? 304 : 288')
   })
   it('the scope legend derives its left offset from the rail-width token', () => {
     // So a wider iPad rail shifts the legend in lockstep (no hardcoded 68px that

@@ -1,20 +1,26 @@
 <template>
-  <!-- ONB-2 (ADR 0011): self-management panel. Password change and account
-       deletion are available at any time from the dashboard header — not only
-       during the forced-change flow. Backend endpoints are from ONB-1. -->
-  <v-dialog :model-value="modelValue" max-width="min(480px, 94vw)" @update:model-value="$emit('update:modelValue', $event)">
+  <!-- #319: account self-service for the ASD operator (a plain tenant user).
+       Opened from the sidebar "Konto" section. It talks to the role-agnostic
+       /api/account/* endpoints through the session store, so a lotse can set
+       their own email + password without an admin — the admin-gated
+       /api/admin/me/* was reachable only by admins. Account DELETION stays in
+       the admin dashboard on purpose (a heavier, admin-side action). -->
+  <v-dialog
+    :model-value="modelValue"
+    max-width="min(460px, 94vw)"
+    @update:model-value="$emit('update:modelValue', $event)"
+  >
     <v-card>
       <v-card-title class="pa-4 pb-2">Mein Konto</v-card-title>
-      <v-card-subtitle class="px-4 pb-0">{{ identity?.subject }}</v-card-subtitle>
+      <v-card-subtitle class="px-4 pb-0">{{ session.subject }}</v-card-subtitle>
 
       <v-divider class="mt-3" />
 
-      <!-- Email change section (#319): set/update the account's contact email.
-           For a tenant user this is what the admin sees in the access table. -->
+      <!-- Email -->
       <v-card-text class="pb-0">
         <div class="text-subtitle-2 mb-1">E-Mail-Adresse</div>
         <div class="text-caption text-medium-emphasis mb-3">
-          Aktuell: {{ identity?.email || '— keine hinterlegt —' }}
+          Aktuell: {{ session.email || '— keine hinterlegt —' }}
         </div>
         <v-alert
           v-if="emailError"
@@ -34,7 +40,7 @@
           closable
           @click:close="emailSuccess = null"
         >{{ emailSuccess }}</v-alert>
-        <v-form @submit.prevent="submitEmailChange">
+        <v-form @submit.prevent="submitEmail">
           <v-text-field
             v-model="emailNew"
             label="Neue E-Mail-Adresse"
@@ -57,8 +63,8 @@
 
       <v-divider class="mt-4 mb-2" />
 
-      <!-- Password change section -->
-      <v-card-text class="pb-0">
+      <!-- Password -->
+      <v-card-text class="pb-4">
         <div class="text-subtitle-2 mb-3">Passwort ändern</div>
         <v-alert
           v-if="pwError"
@@ -78,7 +84,7 @@
           closable
           @click:close="pwSuccess = null"
         >{{ pwSuccess }}</v-alert>
-        <v-form @submit.prevent="submitPasswordChange">
+        <v-form @submit.prevent="submitPassword">
           <v-text-field
             v-model="pwCurrent"
             label="Aktuelles Passwort"
@@ -119,46 +125,6 @@
         </v-form>
       </v-card-text>
 
-      <v-divider class="mt-4 mb-2" />
-
-      <!-- Account deletion section -->
-      <v-card-text class="pb-4">
-        <div class="text-subtitle-2 mb-2">Konto löschen</div>
-        <p class="text-body-2 text-medium-emphasis mb-3">
-          Das Konto wird dauerhaft gelöscht. Als letzter aktiver Administrator
-          ist das nicht möglich.
-        </p>
-        <template v-if="!confirmDelete">
-          <v-btn
-            color="error"
-            variant="tonal"
-            @click="confirmDelete = true"
-          >Konto löschen …</v-btn>
-        </template>
-        <template v-else>
-          <v-alert type="warning" variant="tonal" density="compact" class="mb-3">
-            Wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.
-          </v-alert>
-          <div class="d-flex ga-2">
-            <v-btn
-              color="error"
-              :loading="deleteLoading"
-              @click="submitDeleteAccount"
-            >Ja, löschen</v-btn>
-            <v-btn variant="text" @click="confirmDelete = false">Abbrechen</v-btn>
-          </div>
-        </template>
-        <v-alert
-          v-if="deleteError"
-          type="error"
-          variant="tonal"
-          density="compact"
-          class="mt-3"
-          closable
-          @click:close="deleteError = null"
-        >{{ deleteError }}</v-alert>
-      </v-card-text>
-
       <v-card-actions class="px-4 pb-4 pt-0">
         <v-spacer />
         <v-btn variant="text" @click="$emit('update:modelValue', false)">Schließen</v-btn>
@@ -168,26 +134,24 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
-import { useAdminStore } from '@/stores/admin.js'
+import { ref } from 'vue'
+import { useSessionStore } from '@/stores/session.js'
 
 defineProps({ modelValue: Boolean })
 defineEmits(['update:modelValue'])
 
-const admin = useAdminStore()
-const identity = computed(() => admin.identity)
+const session = useSessionStore()
 
-// --- email change (#319) ------------------------------------------------------
-// Basic client-side shape check (the server validates authoritatively with the
-// same conservative pattern). A change reloads the identity so the "Aktuell:"
-// line and the admin access table reflect it.
+// --- email change -------------------------------------------------------------
+// Basic client-side shape check; the server validates authoritatively with the
+// same conservative pattern (min-length/format live server-side, ADR 0033).
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const emailNew = ref('')
 const emailLoading = ref(false)
 const emailError = ref(null)
 const emailSuccess = ref(null)
 
-async function submitEmailChange() {
+async function submitEmail() {
   emailError.value = null
   emailSuccess.value = null
   const e = emailNew.value.trim()
@@ -196,7 +160,7 @@ async function submitEmailChange() {
     return
   }
   emailLoading.value = true
-  const r = await admin.changeOwnEmail(e)
+  const r = await session.changeOwnEmail(e)
   emailLoading.value = false
   if (r.ok) {
     emailNew.value = ''
@@ -207,6 +171,8 @@ async function submitEmailChange() {
 }
 
 // --- password change ----------------------------------------------------------
+// Min length 8 mirrors the server-side minPasswordLen (the same standard the
+// admin applies when creating/resetting a user); the server is authoritative.
 const pwCurrent = ref('')
 const pwNew = ref('')
 const pwConfirm = ref('')
@@ -214,7 +180,7 @@ const pwLoading = ref(false)
 const pwError = ref(null)
 const pwSuccess = ref(null)
 
-async function submitPasswordChange() {
+async function submitPassword() {
   pwError.value = null
   pwSuccess.value = null
   if (pwNew.value.length < 8) {
@@ -226,7 +192,7 @@ async function submitPasswordChange() {
     return
   }
   pwLoading.value = true
-  const r = await admin.changeOwnPassword(pwCurrent.value, pwNew.value)
+  const r = await session.changeOwnPassword(pwCurrent.value, pwNew.value)
   pwLoading.value = false
   if (r.ok) {
     pwCurrent.value = pwNew.value = pwConfirm.value = ''
@@ -236,24 +202,5 @@ async function submitPasswordChange() {
       ? 'Das aktuelle Passwort ist falsch.'
       : (r.error || 'Passwortänderung fehlgeschlagen.')
   }
-}
-
-// --- account deletion ---------------------------------------------------------
-const confirmDelete = ref(false)
-const deleteLoading = ref(false)
-const deleteError = ref(null)
-
-async function submitDeleteAccount() {
-  deleteError.value = null
-  deleteLoading.value = true
-  const r = await admin.deleteOwnAccount()
-  deleteLoading.value = false
-  if (!r.ok) {
-    confirmDelete.value = false
-    deleteError.value = r.status === 409
-      ? 'Löschen nicht möglich: Sie sind der letzte aktive Administrator.'
-      : (r.error || 'Konto konnte nicht gelöscht werden.')
-  }
-  // on success: store cleared identity → AdminView re-renders to login form automatically
 }
 </script>

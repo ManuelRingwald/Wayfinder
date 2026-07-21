@@ -25,6 +25,7 @@ type UserStore interface {
 	SetStatus(ctx context.Context, id int64, status store.Status) error
 	SetMustChangePassword(ctx context.Context, id int64, must bool) error
 	SetSessionLimit(ctx context.Context, id int64, limit *int) error
+	SetEmail(ctx context.Context, id int64, email *string) error
 	CountActiveAdmins(ctx context.Context) (int, error)
 	Delete(ctx context.Context, id int64) error
 }

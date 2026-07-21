@@ -20,7 +20,7 @@
   --wf-row-min-height: 36px;       /* standard filter/list row */
   --wf-row-min-height-dense: 32px; /* indented sub-row */
   --wf-nav-rail-width: 56px;       /* permanent icon rail */
-  --wf-nav-panel-width: 244px;     /* secondary panel beside rail */
+  --wf-nav-panel-width: 288px;     /* secondary panel beside rail (#316) */
   --wf-panel-pad: 8px 0 16px;      /* filter panel padding */
   --wf-card-pad: 16px;             /* pa-4 card interior */
   --wf-overlay-gap: 12px;          /* floating overlay inset from map edge */

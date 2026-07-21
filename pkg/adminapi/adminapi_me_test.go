@@ -182,3 +182,103 @@ func TestDeleteMeNonLastAdminSucceeds(t *testing.T) {
 		t.Errorf("account should be deleted when another admin remains")
 	}
 }
+
+// --- #319: account self-service (role-agnostic /api/account/*) ---------------
+
+// TestAccountPasswordChangeRoleAgnostic proves a plain tenant USER (not admin)
+// can change its own password through the AccountHandler surface — the whole
+// point of #319 (the admin-gated /api/admin/me/* was reachable only by admins).
+func TestAccountPasswordChangeRoleAgnostic(t *testing.T) {
+	hash, _ := auth.HashPassword("oldpass12")
+	us := &fakeUserStore{}
+	cs := &fakeCredStore{getHash: map[int64]string{1: hash}}
+	h := handlerForMe(us, cs)
+
+	rec := httptest.NewRecorder()
+	h.AccountHandler().ServeHTTP(rec, meReq(http.MethodPut, "/api/account/password",
+		`{"current_password":"oldpass12","new_password":"newsecret123"}`, store.RoleUser, false))
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204; body=%s", rec.Code, rec.Body.String())
+	}
+	if _, ok := cs.set[1]; !ok {
+		t.Errorf("new password hash not stored for a tenant user")
+	}
+}
+
+func TestPutMeEmailSuccess(t *testing.T) {
+	us := &fakeUserStore{}
+	h := handlerForMe(us, &fakeCredStore{})
+	rec := httptest.NewRecorder()
+	h.AccountHandler().ServeHTTP(rec, meReq(http.MethodPut, "/api/account/email",
+		`{"email":"lotse@example.com"}`, store.RoleUser, false))
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204; body=%s", rec.Code, rec.Body.String())
+	}
+	got, ok := us.emailSet[1]
+	if !ok || got == nil || *got != "lotse@example.com" {
+		t.Errorf("email not stored: set=%v called=%v", us.emailSet, us.emailCalled)
+	}
+}
+
+func TestPutMeEmailInvalidRejected(t *testing.T) {
+	for _, bad := range []string{
+		`{"email":"not-an-email"}`, // no @
+		`{"email":"no@domain"}`,    // no dot in domain
+		`{"email":"a b@c.de"}`,     // space in local part
+	} {
+		us := &fakeUserStore{}
+		h := handlerForMe(us, &fakeCredStore{})
+		rec := httptest.NewRecorder()
+		h.AccountHandler().ServeHTTP(rec, meReq(http.MethodPut, "/api/account/email", bad, store.RoleUser, false))
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("body %s: status = %d, want 400", bad, rec.Code)
+		}
+		if us.emailCalled[1] {
+			t.Errorf("body %s: the store must not be written on invalid input", bad)
+		}
+	}
+}
+
+// TestPutMeEmailClears — an empty value clears the email (store NULL), matching
+// the admin create path's "empty = no email".
+func TestPutMeEmailClears(t *testing.T) {
+	us := &fakeUserStore{}
+	h := handlerForMe(us, &fakeCredStore{})
+	rec := httptest.NewRecorder()
+	h.AccountHandler().ServeHTTP(rec, meReq(http.MethodPut, "/api/account/email",
+		`{"email":"   "}`, store.RoleUser, false))
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204; body=%s", rec.Code, rec.Body.String())
+	}
+	got, ok := us.emailSet[1]
+	if !ok || got != nil {
+		t.Errorf("empty email should clear to nil, got %v (called=%v)", got, us.emailCalled)
+	}
+}
+
+// TestWhoamiIncludesOwnEmail — the identity probe carries the caller's own email
+// (#319) so the "Konto" panel can display and prefill it.
+func TestWhoamiIncludesOwnEmail(t *testing.T) {
+	email := "lotse@example.com"
+	us := &fakeUserStore{byID: map[int64]store.User{
+		1: {ID: 1, TenantID: 7, Subject: "admin", Email: &email, Role: store.RoleAdmin},
+	}}
+	h := handlerForMe(us, &fakeCredStore{})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, meReq(http.MethodGet, "/api/admin/whoami", "", store.RoleAdmin, false))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	var got struct {
+		Email *string `json:"email"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.Email == nil || *got.Email != email {
+		t.Errorf("whoami email = %v, want %q", got.Email, email)
+	}
+}

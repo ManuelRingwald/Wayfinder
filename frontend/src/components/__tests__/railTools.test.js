@@ -100,3 +100,22 @@ describe('#296: measurement tools carry an explaining tooltip', () => {
     expect(rail).toContain(':text="t.description"')
   })
 })
+
+describe('#318: a MAP rail icon glows blue when its section has active elements', () => {
+  it('derives an "engaged" state per section from the ASD store', () => {
+    expect(rail).toContain("import { useAsdStore } from '@/stores/asd.js'")
+    expect(rail).toContain('hasActiveLayers')
+    expect(rail).toContain('hasActiveFilter')
+    expect(rail).toContain('function sectionEngaged(')
+  })
+
+  it('binds the engaged glow class on the panel buttons, independent of the open state', () => {
+    // Both classes coexist: --active (panel open) and --engaged (section active).
+    expect(rail).toContain("'nav-rail__btn--engaged': sectionEngaged(s.id)")
+  })
+
+  it('the engaged glow reuses the cyan selected-glow (blue), not the amber armed glow', () => {
+    expect(rail).toContain('.nav-rail__btn--engaged .nav-rail__pill')
+    expect(rail).toMatch(/nav-rail__btn--engaged[\s\S]*?var\(--wf-glow-selected\)/)
+  })
+})

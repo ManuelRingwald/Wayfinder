@@ -26,13 +26,19 @@ describe('masterState (tri-state group master)', () => {
   })
 })
 
-describe('nextMaster (select-all / none on click)', () => {
-  it('turns everything ON only from the all-off state', () => {
+describe('nextMaster (fill-then-clear on click, #315)', () => {
+  it('turns everything ON from the all-off state', () => {
     expect(nextMaster('off')).toBe(true)
   })
 
-  it('turns everything OFF from on or mixed (any-on collapses to none)', () => {
+  it('turns everything ON from the mixed state — a click selects/completes the group', () => {
+    // #315: the previous rule collapsed a partially-active group to all-off,
+    // so clicking Aeronautik (which starts partially on) deselected every
+    // sub-layer instead of selecting them. Fill-then-clear turns it fully on.
+    expect(nextMaster('mixed')).toBe(true)
+  })
+
+  it('turns everything OFF only from the already-fully-on state', () => {
     expect(nextMaster('on')).toBe(false)
-    expect(nextMaster('mixed')).toBe(false)
   })
 })

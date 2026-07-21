@@ -10,6 +10,37 @@
 
 ---
 
+## 🎯 Stand 2026-07-21 (UI-/Konto-Bestandsaufnahme #315–#319 — ADR 0034, FR-UI-050 + FR-ADMIN-011)
+
+**In normaler Sprache:** Fünf vom Betreiber gemeldete Bedien-Themen umgesetzt.
+Vier am Layer-/Filter-Menü: (#315) ein Klick auf eine Gruppe wie „Aeronautik"
+**schaltet ihre Layer an**, statt sie zu de-selektieren; (#316) das Menü-Panel ist
+breiter, sodass die Beschriftungen („Minimal/Standard/Detailliert") passen; (#317)
+es ist immer nur **eine** Gruppe aufgeklappt (kein Scrollen in der 2. Ebene);
+(#318) die Menü-Icons **leuchten blau**, sobald ein Layer/Filter aktiv ist. Und
+(#319): Jeder Nutzer kann jetzt **unter „Konto" E-Mail und Passwort selbst setzen**
+— auch ein Lotse, nicht nur der Admin; die E-Mail wird im Admin-Panel sichtbar.
+
+**Technisch:** #315 `nextMaster` „fill-then-clear" (`state !== 'on'`); #316 Panel
+248→288 px + flexible Preset-Buttons; #317 `LayerGroup` kontrolliert
+(`:expanded`/`@toggle`) + `openGroup`-Akkordeon in `LayerFilterContent`; #318
+`hasActiveLayers`/`hasActiveFilter` + `nav-rail__btn--engaged`-Glow (Cyan). #319
+(**ADR 0034**): neue **rollen-agnostische**, self-scoped Routen
+`PUT /api/account/{password,email}` hinter `tenantMW`+`pwGate` (User-ID aus der
+Session, nie aus dem Request) — der Admin-gegatete Zwangswechsel-Pfad
+`/api/admin/me/password` bleibt unangetastet; `GET /api/whoami` trägt jetzt
+`email`; UI: neuer `AccountSelfServiceDialog.vue` (ASD-Sidebar „Konto") +
+E-Mail-Feld im Admin-„Mein Konto".
+
+**Verifikation:** 736 Frontend-Tests grün (58 Dateien), volle Go-Suite grün,
+`go vet` + `gofmt` + `golangci-lint` (0 issues) sauber, Dist neu gebaut/eingebettet.
+Register: FR-UI-050, FR-ADMIN-011; Endpunkte in `TECHNICAL.md` ergänzt.
+
+**Nächster Schritt:** Review durch den Betreiber; danach PR-Merge (schließt
+#315–#319).
+
+---
+
 ## 🗺️ Stand 2026-07-20 (Kartendaten live editierbar — K2–K6, Epic #307 abgeschlossen)
 
 **In normaler Sprache:** Der „Kartendaten"-Bereich im Admin ist jetzt **voll
