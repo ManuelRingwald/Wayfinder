@@ -27,6 +27,9 @@ export const useSessionStore = defineStore('session', () => {
   const subject = computed(() => identity.value?.subject ?? null)
   const role = computed(() => identity.value?.role ?? null)
   const isAdmin = computed(() => role.value === 'admin')
+  // email mirrors the caller's own contact email (whoami, #319) so the "Konto"
+  // self-service panel can show and prefill it. Null when the user has none.
+  const email = computed(() => identity.value?.email ?? null)
 
   // mustChangePassword mirrors the whoami flag (ONB-1, ADR 0011): the principal is
   // still on the well-known seed credential and the server refuses every data path
@@ -159,9 +162,35 @@ export const useSessionStore = defineStore('session', () => {
     expired.value = false
   }
 
+  // changeOwnPassword changes the logged-in principal's OWN password (#319) via
+  // the role-agnostic self-service endpoint, so a plain tenant user can do it
+  // from the ASD "Konto" panel (the admin-gated /api/admin/me/* was admin-only).
+  // The current password is required (a stolen live session cannot silently
+  // rotate the credential). Returns the raw apiFetch result.
+  async function changeOwnPassword(currentPassword, newPassword) {
+    return apiFetch('/api/account/password', {
+      method: 'PUT',
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    })
+  }
+
+  // changeOwnEmail sets the principal's OWN contact email (#319). On success it
+  // re-probes so the displayed/prefilled email updates (whoami carries it); the
+  // change also surfaces in the admin access table on its next load. Returns the
+  // raw apiFetch result.
+  async function changeOwnEmail(newEmail) {
+    const r = await apiFetch('/api/account/email', {
+      method: 'PUT',
+      body: JSON.stringify({ email: newEmail }),
+    })
+    if (r.ok) await probe()
+    return r
+  }
+
   return {
-    identity, status, error, expired, subject, role, isAdmin, mustChangePassword,
+    identity, status, error, expired, subject, role, isAdmin, email, mustChangePassword,
     features, hasFeature, sensorClasses, flMin, flMax, icao, viewCenter, aoi, aorAirspaceIds,
     probe, login, renewNow, startRenew, stopRenew, logout,
+    changeOwnPassword, changeOwnEmail,
   }
 })

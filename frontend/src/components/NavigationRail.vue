@@ -67,7 +67,7 @@
             v-for="s in sections"
             :key="s.id"
             class="nav-rail__btn nav-rail__btn--panel"
-            :class="{ 'nav-rail__btn--active': activePanel === s.id }"
+            :class="{ 'nav-rail__btn--active': activePanel === s.id, 'nav-rail__btn--engaged': sectionEngaged(s.id) }"
             role="button"
             :aria-label="s.label"
             :aria-pressed="activePanel === s.id"
@@ -177,6 +177,7 @@ import { useDisplay } from 'vuetify'
 import { useRouter } from 'vue-router'
 import { useAdminStore } from '@/stores/admin.js'
 import { useToolsStore } from '@/stores/tools.js'
+import { useAsdStore } from '@/stores/asd.js'
 import LayerFilterContent from './LayerFilterContent.vue'
 
 const props = defineProps({
@@ -231,6 +232,25 @@ const sections = [
   { id: 'filters', icon: 'mdi-tune-variant', label: 'Filter' },
 ]
 
+// #318: light a MAP-section rail icon (cyan, mirroring the amber armed-tool glow
+// of the MEASURE family) when its section has at least one ACTIVE element — so
+// the operator sees that layers/filters are engaged without opening the panel.
+// Layer = any layer visible or any airspace category on; Filter = an FL bound
+// set or the out-of-band "Ausblenden" switch on. Derived live from the ASD store.
+const asd = useAsdStore()
+const hasActiveLayers = computed(() =>
+  Object.values(asd.layerVisibility).some(Boolean)
+  || Object.values(asd.airspaceGroupVisibility).some(Boolean),
+)
+const hasActiveFilter = computed(() =>
+  asd.flFilter.minFL != null || asd.flFilter.maxFL != null || asd.flFilter.hide === true,
+)
+function sectionEngaged(id) {
+  if (id === 'layers') return hasActiveLayers.value
+  if (id === 'filters') return hasActiveFilter.value
+  return false
+}
+
 // #115: the panel starts COLLAPSED — only the rail (sidecar) is visible, so the
 // map gets the full width until the operator opens a section.
 const activePanel = ref(null)
@@ -243,10 +263,11 @@ const drawerOpen = computed({
 const drawerWidth = computed(() => {
   if (!mdAndUp.value) return 280
   // iPad/tablet-landscape band: touch-sized 76px rail, 304px open panel (design
-  // mockup). Desktop keeps the compact 56px rail / 248px panel. These match the
-  // token-driven CSS widths in base.css so the drawer chrome and the rail agree.
+  // mockup). Desktop keeps the compact 56px rail; the open panel is 288px (#316:
+  // widened from 248 so the layer labels — e.g. the Minimal/Standard/Detailliert
+  // map presets — are no longer clipped). These match the .nav-panel CSS widths.
   const rail = tabletLandscape.value ? 76 : 56
-  const panel = tabletLandscape.value ? 304 : 248
+  const panel = tabletLandscape.value ? 304 : 288
   return activePanel.value ? panel : rail
 })
 
@@ -451,6 +472,24 @@ function onFlFilterChange(payload) { emit('fl-filter-change', payload) }
   filter: drop-shadow(0 0 5px rgba(255, 176, 46, 0.65));
 }
 
+/* #318: an ENGAGED MAP button — its section has active layers/filters — lights
+   the same cyan halo as an OPEN panel (pill fill + soft glow + icon drop-shadow
+   + lit accent bar), independent of whether the panel is open. Mirrors the amber
+   armed-tool glow of the MEASURE family, in the MAP family's cyan, so "layers/
+   filters are on" reads at a glance. The label stays un-tinted, so an OPEN panel
+   (full primary colour) still reads distinctly from a merely-engaged one. */
+.nav-rail__btn--engaged .nav-rail__pill {
+  background: var(--wf-state-selected);
+  box-shadow: var(--wf-glow-selected);
+}
+.nav-rail__btn--engaged .nav-rail__pill :deep(.v-icon) {
+  filter: drop-shadow(0 0 5px rgba(35, 211, 230, 0.6));
+}
+.nav-rail__btn--engaged::before {
+  opacity: 1;
+  box-shadow: var(--wf-glow-selected);
+}
+
 /* Label below icon (Design System v1 token: nav-rail item label) */
 .nav-rail__label {
   font-size: var(--wf-nav-label-size);
@@ -467,9 +506,9 @@ function onFlFilterChange(payload) { emit('fl-filter-change', payload) }
    overhang, so the panel is revealed as a clean left-to-right wipe instead of a
    re-layout. A stable width also removes the transient vertical scrollbar that
    flashed as the text briefly wrapped taller in the momentarily-narrow panel.
-   Width = open drawer width (drawerWidth in JS: 248 desktop) minus the rail. */
+   Width = open drawer width (drawerWidth in JS: 288 desktop, #316) minus the rail. */
 .nav-panel {
-  width: calc(248px - var(--wf-nav-rail-width, 56px));
+  width: calc(288px - var(--wf-nav-rail-width, 56px));
   flex-shrink: 0;
   display: flex;
   flex-direction: row;

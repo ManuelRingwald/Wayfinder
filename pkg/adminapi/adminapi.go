@@ -427,7 +427,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // so the SPA can hide entitlement-gated UI. Both the role and the feature gating
 // in the UI are cosmetic — the server enforces them independently.
 type whoamiDTO struct {
-	Subject            string          `json:"subject"`
+	Subject string `json:"subject"`
+	// Email is the caller's OWN contact email (#319) so the "Konto" self-service
+	// panel can display and prefill it. Omitted when the user has none. Always the
+	// caller's own — NOT switched to the impersonation target (an identity field).
+	Email              *string         `json:"email,omitempty"`
 	TenantID           int64           `json:"tenant_id"`
 	UserID             int64           `json:"user_id"`
 	Role               store.Role      `json:"role"`
@@ -487,6 +491,22 @@ type whoamiDTO struct {
 // admin-gated GET /api/admin/whoami; both share the same handler/DTO.
 func (h *Handler) WhoamiHandler() http.HandlerFunc { return h.whoami }
 
+// AccountHandler exposes the caller's OWN account self-service (#319) for
+// mounting OUTSIDE the admin gate — at /api/account/*, behind the tenant
+// middleware (and the operational password-change gate) only. Like the whoami
+// probe and the view-profiles routes, these are strictly self-scoped: each
+// handler reads the user id from the session Identity, never the request, so any
+// authenticated principal may manage its OWN password and email. The forced-
+// password-change flow keeps using the admin-gated, allowlisted
+// /api/admin/me/password; this surface serves normal, non-pending self-service
+// (a pending principal is redirected to the forced-change mask anyway).
+func (h *Handler) AccountHandler() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("PUT /api/account/password", h.putMePassword)
+	mux.HandleFunc("PUT /api/account/email", h.putMeEmail)
+	return mux
+}
+
 func (h *Handler) whoami(w http.ResponseWriter, r *http.Request) {
 	id, ok := tenant.FromContext(r.Context())
 	if !ok {
@@ -521,8 +541,17 @@ func (h *Handler) whoami(w http.ResponseWriter, r *http.Request) {
 			aorIDs = vc.AoRAirspaceIDs // ASD-014: airspaces to highlight as the AoR
 		}
 	}
+	// #319: the caller's own contact email so the "Konto" panel can display and
+	// prefill it. Fail-soft — a lookup miss/error simply omits it (the email is
+	// display sugar, never a gate). Always the caller's own id (id.UserID), never
+	// the impersonation target.
+	var email *string
+	if u, uerr := h.users.GetByID(r.Context(), id.UserID); uerr == nil {
+		email = u.Email
+	}
 	writeJSON(w, http.StatusOK, whoamiDTO{
 		Subject:              id.Subject,
+		Email:                email,
 		TenantID:             id.TenantID,
 		UserID:               id.UserID,
 		Role:                 id.Role,

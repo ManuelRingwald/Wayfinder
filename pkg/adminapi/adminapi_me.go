@@ -4,11 +4,22 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"regexp"
+	"strings"
 
 	"github.com/manuelringwald/wayfinder/pkg/auth"
 	"github.com/manuelringwald/wayfinder/pkg/store"
 	"github.com/manuelringwald/wayfinder/pkg/tenant"
 )
+
+// emailPattern is a conservative, practical email shape (non-space/non-@ local
+// part, an @, a dotted domain). It rejects obvious garbage while accepting
+// normal addresses; it is deliberately NOT a full RFC-5322 parser (which would
+// be both huge and permissive). maxEmailLen bounds the stored value (RFC 5321
+// caps a forward path at 254 octets).
+var emailPattern = regexp.MustCompile(`^[^\s@]+@[^\s@]+\.[^\s@]+$`)
+
+const maxEmailLen = 254
 
 // meDTO is the logged-in principal's own account (ONB-1, ADR 0011). It is a
 // read-only projection of the Identity plus the forced-change flag, so the SPA can
@@ -92,6 +103,47 @@ func (h *Handler) putMePassword(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := h.users.SetMustChangePassword(r.Context(), id.UserID, false); err != nil {
 		h.internalError(w, "clear must_change_password", err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// putMeEmail sets or clears the caller's own contact email (#319, self-service
+// under "Konto"). Self-scoped: the user id comes from the session Identity,
+// never the request, so it is safe for any authenticated principal. Unlike a
+// password change, an email change needs no local credential — so OIDC/proxy
+// accounts may use it too. An empty value clears the email (store NULL); a
+// non-empty value must be a plausible address. The stored value is exactly what
+// an admin sees in the tenant's access table (userDTO.Email), so a self-service
+// change is reflected there on the next load (the issue's "im Admin-Panel
+// sichtbar/aktualisiert").
+func (h *Handler) putMeEmail(w http.ResponseWriter, r *http.Request) {
+	id, ok := tenant.FromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	var body struct {
+		Email string `json:"email"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	var email *string
+	if e := strings.TrimSpace(body.Email); e != "" {
+		if len(e) > maxEmailLen || !emailPattern.MatchString(e) {
+			writeError(w, http.StatusBadRequest, "invalid email address")
+			return
+		}
+		email = &e
+	}
+	if err := h.users.SetEmail(r.Context(), id.UserID, email); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "user not found")
+			return
+		}
+		h.internalError(w, "set own email", err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

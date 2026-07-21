@@ -43,8 +43,8 @@ describe('sidebar cleanup (#176)', () => {
 // content is laid out at final width and the drawer just clips/reveals it.
 describe('sidebar open/close does not reflow the panel (2026-07-08)', () => {
   it('gives the nav panel a fixed width instead of flex:1', () => {
-    // Fixed width = open drawer width (248 desktop) minus the rail token.
-    expect(rail).toMatch(/\.nav-panel\s*\{[\s\S]*?width:\s*calc\(248px - var\(--wf-nav-rail-width/)
+    // Fixed width = open drawer width (288 desktop, #316) minus the rail token.
+    expect(rail).toMatch(/\.nav-panel\s*\{[\s\S]*?width:\s*calc\(288px - var\(--wf-nav-rail-width/)
     expect(rail).toMatch(/\.nav-panel\s*\{[\s\S]*?flex-shrink:\s*0/)
     // The tablet-landscape band uses the wider 304px open drawer.
     expect(rail).toMatch(/width:\s*calc\(304px - var\(--wf-nav-rail-width, 76px\)\)/)

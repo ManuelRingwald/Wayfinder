@@ -537,6 +537,27 @@ export const useAdminStore = defineStore('admin', () => {
     return r
   }
 
+  // changeOwnEmail sets the logged-in principal's own contact email (#319) via
+  // the role-agnostic self-service endpoint (reachable by admins too — they pass
+  // the tenant middleware). On success it reloads the identity so the displayed
+  // and prefilled email updates (whoami now carries it); for a tenant user the
+  // change also surfaces in the admin access table on its next load.
+  async function changeOwnEmail(newEmail) {
+    error.value = null
+    notice.value = null
+    const r = await apiFetch('/api/account/email', {
+      method: 'PUT',
+      body: JSON.stringify({ email: newEmail }),
+    })
+    if (r.ok) {
+      await loadIdentity()
+      notice.value = 'E-Mail-Adresse aktualisiert.'
+    } else {
+      error.value = r.error
+    }
+    return r
+  }
+
   // deleteOwnAccount deletes the logged-in principal's own account (ONB-2,
   // ADR 0011). The server refuses with 409 if this is the last active admin.
   // On success the session is effectively terminated — identity is cleared so
@@ -632,7 +653,7 @@ export const useAdminStore = defineStore('admin', () => {
     loadTenantOpenAIP, setTenantOpenAIPKey,
     refreshTenantOpenAIP, loadGlobalOpenAIP, setGlobalOpenAIPKey, refreshAllOpenAIP,
     loadAirac, loadTenantOpenAIPChanges,
-    changeOwnPassword, deleteOwnAccount,
+    changeOwnPassword, changeOwnEmail, deleteOwnAccount,
     loadAdmins, createAdmin, setAdminStatus, deleteAdmin, setAdminPassword,
     clearBanners,
   }

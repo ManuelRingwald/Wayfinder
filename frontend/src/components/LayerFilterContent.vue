@@ -22,6 +22,8 @@
         v-if="showAero"
         title="Aeronautik"
         :master="aeroState"
+        :expanded="openGroup === 'aero'"
+        @toggle="toggleGroup('aero')"
         @toggle-master="onGroupMaster(aeroMembers, aeroState)"
       >
         <!-- ASD-011 / #176: the four airspace groups are first-class toggles (the
@@ -124,6 +126,8 @@
         v-if="showKarte"
         title="Karte"
         :master="karteState"
+        :expanded="openGroup === 'karte'"
+        @toggle="toggleGroup('karte')"
         @toggle-master="onGroupMaster(karteMembers, karteState)"
       >
         <div v-if="showLayer('basemap')" class="filter-row">
@@ -186,6 +190,8 @@
         v-if="showRadar"
         title="Radar & Reichweite"
         :master="radarState"
+        :expanded="openGroup === 'radar'"
+        @toggle="toggleGroup('radar')"
         @toggle-master="onGroupMaster(radarMembers, radarState)"
       >
         <!-- #114: the coverage overlay only has data when coverage sensors are
@@ -284,6 +290,8 @@
         v-if="showWetter"
         title="Wetter"
         :master="wetterState"
+        :expanded="openGroup === 'wetter'"
+        @toggle="toggleGroup('wetter')"
         @toggle-master="onGroupMaster(wetterMembers, wetterState)"
       >
         <!-- WX-A (ADR 0016): DWD weather-radar overlay. Feature-gated per tenant
@@ -433,11 +441,27 @@
         <v-icon size="18" class="account-icon">mdi-account</v-icon>
         <span class="account-subject">{{ session.subject }}</span>
       </div>
+      <div v-if="session.email" class="filter-row account-email-row">
+        <span class="account-email">{{ session.email }}</span>
+      </div>
+      <!-- #319: self-service — set own e-mail + password (role-agnostic
+           /api/account/*). Opens the dialog reused by admins in the dashboard. -->
       <div class="filter-row">
         <v-btn
           size="small"
           variant="tonal"
           color="primary"
+          prepend-icon="mdi-account-cog"
+          block
+          @click="accountDialog = true"
+        >
+          Konto verwalten
+        </v-btn>
+      </div>
+      <div class="filter-row">
+        <v-btn
+          size="small"
+          variant="text"
           prepend-icon="mdi-logout"
           block
           @click="onLogout"
@@ -445,6 +469,7 @@
           Abmelden
         </v-btn>
       </div>
+      <AccountSelfServiceDialog v-model="accountDialog" />
     </template>
 
   </div>
@@ -459,6 +484,7 @@ import { filterProvenanceLegend } from '@/map/provenance.js'
 import { masterState, nextMaster } from '@/map/layerGroups.js'
 import { BASEMAP_ELEMENTS, BASEMAP_PRESETS, matchPreset } from '@/map/basemapGroups.js'
 import LayerGroup from './LayerGroup.vue'
+import AccountSelfServiceDialog from './AccountSelfServiceDialog.vue'
 
 // #116: the NavigationRail opens one section at a time on desktop; the mobile
 // drawer renders all of them ('all'), with the account block last.
@@ -550,6 +576,18 @@ const showKarte = computed(() => karteMembers().length > 0)
 const showRadar = computed(() => radarMembers().length > 0)
 const showWetter = computed(() => wetterMembers().length > 0)
 
+// #317: accordion — only ONE Layer group is expanded at a time, so the second
+// sidebar level never grows tall enough to scroll. openGroup holds the single
+// open group's id (null = all collapsed); toggleGroup opens the clicked group
+// and, by replacing the id, collapses whichever was open before (e.g. opening
+// "Wetter" folds Aeronautik/Karte/Radar shut). Starts on 'aero' (the airspace
+// group, present for virtually every tenant); a second click on the open group
+// collapses it to null.
+const openGroup = ref('aero')
+function toggleGroup(id) {
+  openGroup.value = openGroup.value === id ? null : id
+}
+
 // Master click: select-all/none over the group's ENABLED members (a disabled
 // toggle is left as-is — the operator cannot turn on a layer with no data).
 function onGroupMaster(members, state) {
@@ -621,6 +659,10 @@ function onFlFilterChange() {
   store.setFlFilter(update)
   emit('fl-filter-change', update)
 }
+
+// #319: the account self-service dialog (own e-mail + password), opened from the
+// "Konto" section. Lets a plain tenant user manage its account from the ASD.
+const accountDialog = ref(false)
 
 // #116: logout from the account section. The session store flips to 'anon' and
 // AsdView swaps the scope for the login screen.
@@ -796,12 +838,22 @@ async function onLogout() {
 .basemap-presets {
   padding-top: 4px;
   padding-bottom: 2px;
+  /* #316: the segmented preset control spans the panel width — it is a control,
+     not an indented child row, so it drops the .filter-row--sub 20px indent and
+     uses the normal row inset. Combined with the wider panel this gives the
+     three labels ("Minimal/Standard/Detailliert") room to render in full. */
+  padding-left: 10px;
+  padding-right: 10px;
 }
 .basemap-presets__group {
   width: 100%;
 }
 .basemap-presets__group :deep(.v-btn) {
-  flex: 1;
+  /* Equal thirds with min-width:0 so a long label ("Detailliert") shrinks the
+     button to its share of the row instead of overflowing it (#316). */
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 0 6px;
   font-size: 0.68rem;
   letter-spacing: 0;
 }
@@ -829,5 +881,16 @@ async function onLogout() {
 .account-subject {
   font-size: 0.85rem;
   opacity: 0.9;
+}
+/* #319: the caller's own e-mail, shown under the subject in the account section. */
+.account-email-row {
+  min-height: unset;
+  padding-top: 0;
+  padding-bottom: 2px;
+}
+.account-email {
+  font-size: 0.78rem;
+  opacity: 0.6;
+  word-break: break-all;
 }
 </style>

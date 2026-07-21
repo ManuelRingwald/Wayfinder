@@ -26,13 +26,18 @@ export function masterState(values) {
 }
 
 /**
- * nextMaster returns the visibility to apply when the master is clicked: the
- * conventional select-all/none — any-on (or mixed) collapses to all-off, only
- * all-off expands to all-on. 'empty' never reaches here (the master is hidden).
+ * nextMaster returns the visibility to apply when the master is clicked. The
+ * convention is FILL-then-clear: a group that is off OR only partially on
+ * (mixed) turns fully ON — one click "selects the group" and completes it — and
+ * only an already-fully-on group turns OFF. This matches the operator's mental
+ * model that clicking a group header selects its layers (#315). The previous
+ * rule (mixed → off) made a click on a partially-active group CLEAR it, which
+ * read as "selecting Aeronautik deselects everything". 'empty' never reaches
+ * here (the master is hidden when the group has nothing controllable).
  *
  * @param {'on'|'off'|'mixed'|'empty'} state current master state
  * @returns {boolean} the visibility to set on every enabled member
  */
 export function nextMaster(state) {
-  return state === 'off'
+  return state !== 'on'
 }

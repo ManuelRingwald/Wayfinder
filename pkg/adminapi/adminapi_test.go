@@ -224,8 +224,10 @@ type fakeUserStore struct {
 	createErr    error
 	statusSet    map[int64]store.Status
 	mustChgSet   map[int64]bool
-	limitSet     map[int64]*int // records SetSessionLimit values (AP7)
-	limitCalled  map[int64]bool // distinguishes "cleared to nil" from "never called"
+	limitSet     map[int64]*int    // records SetSessionLimit values (AP7)
+	limitCalled  map[int64]bool    // distinguishes "cleared to nil" from "never called"
+	emailSet     map[int64]*string // records SetEmail values (#319)
+	emailCalled  map[int64]bool    // distinguishes "cleared to nil" from "never called"
 	activeAdmins int
 	deleted      map[int64]bool
 	nextID       int64
@@ -300,6 +302,16 @@ func (f *fakeUserStore) SetSessionLimit(_ context.Context, id int64, limit *int)
 	}
 	f.limitSet[id] = limit
 	f.limitCalled[id] = true
+	return nil
+}
+
+func (f *fakeUserStore) SetEmail(_ context.Context, id int64, email *string) error {
+	if f.emailSet == nil {
+		f.emailSet = map[int64]*string{}
+		f.emailCalled = map[int64]bool{}
+	}
+	f.emailSet[id] = email
+	f.emailCalled[id] = true
 	return nil
 }
 

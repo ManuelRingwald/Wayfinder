@@ -167,6 +167,22 @@ func (r *UserRepo) SetSessionLimit(ctx context.Context, id int64, limit *int) er
 	return nil
 }
 
+// SetEmail sets or clears a user's contact email (#319, self-service under
+// "Konto"). A nil email stores SQL NULL (cleared); a non-empty value is stored
+// verbatim — the caller validates the format. A missing user yields ErrNotFound
+// so callers can return 404.
+func (r *UserRepo) SetEmail(ctx context.Context, id int64, email *string) error {
+	const q = `UPDATE users SET email = $2 WHERE id = $1`
+	tag, err := r.db.Exec(ctx, q, id, email)
+	if err != nil {
+		return wrap("set user email", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // CountActiveAdmins returns the number of users with role 'admin' and status
 // 'active'. It backs two invariants (ONB-1, ADR 0011): the boot auto-seed only
 // provisions the default admin when this is zero, and the "last active admin"

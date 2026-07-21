@@ -10,7 +10,7 @@
       class="layer-group__header"
       role="button"
       :aria-expanded="expanded"
-      @click="expanded = !expanded"
+      @click="$emit('toggle')"
     >
       <v-icon size="18" class="layer-group__chevron">
         {{ expanded ? 'mdi-chevron-down' : 'mdi-chevron-right' }}
@@ -42,20 +42,20 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
-
-const props = defineProps({
+// #317: the collapse state is CONTROLLED by the parent (accordion — only one
+// group open at a time, so the second sidebar level never scrolls). The group
+// no longer owns its expanded flag; it renders `expanded` and asks the parent
+// to toggle it. LayerFilterContent holds the single open-group id and closes the
+// others when one opens.
+defineProps({
   title: { type: String, required: true },
   // 'on' | 'off' | 'mixed' | 'empty' — from map/layerGroups.js masterState().
   master: { type: String, default: 'empty' },
-  // Groups start expanded so E1 hides nothing that was visible before; the
-  // operator can collapse a group they do not need.
-  defaultExpanded: { type: Boolean, default: true },
+  // Whether this group is currently open (owned by the parent accordion).
+  expanded: { type: Boolean, default: false },
 })
 
-defineEmits(['toggle-master'])
-
-const expanded = ref(props.defaultExpanded)
+defineEmits(['toggle-master', 'toggle'])
 </script>
 
 <style scoped>

@@ -774,6 +774,16 @@ func main() {
 	mux.Handle("/api/view-profiles", viewProfiles)
 	mux.Handle("/api/view-profiles/", viewProfiles)
 
+	// #319: account self-service (own password + email) for ANY authenticated
+	// principal, not just admins — a plain tenant user manages its "Konto" from
+	// the ASD sidebar. Behind tenantMW (authenticated) + pwGate (locked while a
+	// password change is pending, exactly like view-profiles), NOT the admin gate:
+	// every account route is strictly the caller's OWN (the handler reads the user
+	// id from the session, never the request). A changed email surfaces in the
+	// admin access table, which reads the same store field. The forced-change flow
+	// keeps using the admin-gated, allowlisted /api/admin/me/password.
+	mux.Handle("/api/account/", tenantMW(pwGate(adminAPI.AccountHandler())))
+
 	// Manual flight-plan correlation (ADR 0024, #245 Teil B): the FIRST tenant-user
 	// feed-WRITE action. Behind tenantMW (authenticated) + pwGate; the handler's own
 	// gate enforces "subscribed to this feed, not under read-only impersonation"
