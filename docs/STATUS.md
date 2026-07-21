@@ -10,6 +10,29 @@
 
 ---
 
+## 🌧️ Stand 2026-07-21 (Wetter an der AOI-Kante beschnitten — Bugfix #324, FR-UI-051)
+
+**In normaler Sprache:** Die amtliche Basiskarte endet exakt am Kundengebiet
+(AOI), das Wetter (v. a. das DWD-Regenradar) ragte aber darüber hinaus — es passte
+nicht zur Kartenkante. Jetzt werden **alle** Kartendaten (Basiskarte + Radar +
+Warnungen) an **derselben** scharfen AOI-Kante abgeschnitten; Tracks, Labels,
+Coverage-Ringe und Aeronautik (ohnehin serverseitig aufs Gebiet zugeschnitten)
+bleiben wie gewohnt sichtbar.
+
+**Fachlich/technisch:** Ursache war die Z-Ordnung — die AOI-Maske (#289) lag
+**unter** dem Wetter (bewusst: „begrenzt nur die Karte"), und das Radar-Raster
+wird nur über kachel-granulare `bounds` beschnitten → „Bleed" über die Kante.
+Fix (rein Frontend): Maske **über** Radar+Warnungen einhängen
+(`engine.js`), Radar-Re-Add bei AOI-Wechsel stabil unter die Warnungen setzen
+(`layers.js`, `beforeId`). `bounds`/Warnungs-Clip bleiben (weniger Overdraw). Doku:
+ADR 0032 (Nachtrag), ASD-025-Milestone, FR-UI-051. **Verifikation:** 756
+Frontend-Tests grün, `vite build` + Dist neu. **Nächste Schritte** (abgestimmt,
+Hybrid-Scope): ADR + Pro-Mandant-Override-Modell für die „Kartendaten"-Konfig
+(nur Basiskarte-Theme/Style echt pro Mandant) + Isolations-Negativtest, dann
+Mandanten-Detail auf Tabs umbauen.
+
+---
+
 ## 🛰️ Stand 2026-07-21 (CAT065-NOGO sichtbar — „Dienst degradiert", #261, FR-OPS-009)
 
 **In normaler Sprache:** Wenn Fireflys Tracker hängt, sendet er weiter „Herzschlag",

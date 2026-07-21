@@ -167,10 +167,21 @@ describe('base-map AOI mask (#289)', () => {
   const engine = src('../../map/engine.js')
   const layers = src('../../map/layers.js')
 
-  it('adds the mask directly above the base map, before the overlays', () => {
-    // The mask is registered right after applyBasemap() and BEFORE the weather
-    // radar (the first overlay), so it hides the map but not tracks/weather.
-    expect(engine).toMatch(/applyBasemap\(\)[\s\S]*addBasemapMaskLayer\(map, weatherAOI\)[\s\S]*addWeatherRadarLayer/)
+  it('adds the mask ABOVE the weather overlays so weather is clipped to the AOI too (#324)', () => {
+    // The mask is registered AFTER the weather radar + warnings, so the backdrop
+    // covers everything outside the AOI including the weather (which the radar
+    // raster would otherwise bleed past via tile-granular bounds). It still sits
+    // below the aeronautical overlay, added afterwards.
+    expect(engine).toMatch(/addWeatherRadarLayer\(map, weatherAOI\)[\s\S]*addWeatherWarningsLayer\(map\)[\s\S]*addBasemapMaskLayer\(map, weatherAOI\)[\s\S]*addAeronauticalIcons/)
+    // Guard against a regression to the old order (mask before the radar).
+    expect(engine).not.toMatch(/addBasemapMaskLayer\(map, weatherAOI\)[\s\S]*addWeatherRadarLayer/)
+  })
+
+  it('keeps the radar below the warnings (hence below the mask) on every (re-)add (#324)', () => {
+    // addWeatherRadarLayer inserts with beforeId = warnings fill when it exists,
+    // so setWeatherRadarAOI's remove+re-add never lifts the radar above the mask.
+    expect(layers).toMatch(/map\.getLayer\(WEATHER_WARNINGS_FILL_LAYER_ID\) \? WEATHER_WARNINGS_FILL_LAYER_ID : undefined/)
+    expect(layers).toMatch(/paint: \{ 'raster-opacity': WEATHER_RADAR_OPACITY \},\s*\}, beforeId\)/)
   })
 
   it('re-cuts the mask when the AOI resolves/changes (the AOI hook)', () => {
