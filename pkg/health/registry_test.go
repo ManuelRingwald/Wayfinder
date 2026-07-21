@@ -50,7 +50,7 @@ func TestRegistryRecordSensorsStoresDetail(t *testing.T) {
 
 func TestRegistryHeartbeatMakesFeedGreen(t *testing.T) {
 	r := NewRegistry(3 * time.Second)
-	r.RecordHeartbeat(1, t0)
+	r.RecordHeartbeat(1, t0, true)
 	r.RecordTracks(1, 5)
 
 	s := r.Snapshot(1, t0.Add(1*time.Second))
@@ -69,7 +69,7 @@ func TestRegistryHeartbeatNoTracksIsGreen(t *testing.T) {
 	// An empty sky (heartbeat healthy, no tracks) is green, not yellow.
 	// Yellow is reserved for degraded sensor fusion (CAT063, Firefly issue #32).
 	r := NewRegistry(3 * time.Second)
-	r.RecordHeartbeat(1, t0)
+	r.RecordHeartbeat(1, t0, true)
 	// no RecordTracks call → block=0
 
 	s := r.Snapshot(1, t0.Add(1*time.Second))
@@ -81,7 +81,7 @@ func TestRegistryHeartbeatNoTracksIsGreen(t *testing.T) {
 func TestRegistryDegradedSensorsIsYellow(t *testing.T) {
 	// Yellow = heartbeat healthy but at least one sensor silent.
 	r := NewRegistry(3 * time.Second)
-	r.RecordHeartbeat(1, t0)
+	r.RecordHeartbeat(1, t0, true)
 
 	s := r.Snapshot(1, t0.Add(1*time.Second))
 	s.SensorsTotal = 3
@@ -93,7 +93,7 @@ func TestRegistryDegradedSensorsIsYellow(t *testing.T) {
 
 func TestRegistryAllSensorsActiveIsGreen(t *testing.T) {
 	r := NewRegistry(3 * time.Second)
-	r.RecordHeartbeat(1, t0)
+	r.RecordHeartbeat(1, t0, true)
 
 	s := r.Snapshot(1, t0.Add(1*time.Second))
 	s.SensorsTotal = 3
@@ -106,7 +106,7 @@ func TestRegistryAllSensorsActiveIsGreen(t *testing.T) {
 func TestRegistryUnknownSensorCountIsGreen(t *testing.T) {
 	// SensorsTotal=0 means unknown (no CAT063 yet) — must not trigger yellow.
 	r := NewRegistry(3 * time.Second)
-	r.RecordHeartbeat(1, t0)
+	r.RecordHeartbeat(1, t0, true)
 
 	s := r.Snapshot(1, t0.Add(1*time.Second))
 	// SensorsTotal and SensorsActive default to zero
@@ -115,9 +115,39 @@ func TestRegistryUnknownSensorCountIsGreen(t *testing.T) {
 	}
 }
 
+func TestRegistrySdpsNogoIsYellowButNotStale(t *testing.T) {
+	// #261: a CAT065 NOGO heartbeat (operational=false) means the SDPS reports
+	// itself degraded even though it still heartbeats (Firefly SAFE.4). It must
+	// (a) drive the feed colour to "yellow" via SdpsDegraded, and (b) still reset
+	// the staleness clock — the feed is alive, just degraded.
+	r := NewRegistry(3 * time.Second)
+	r.RecordHeartbeat(1, t0, false) // NOGO
+
+	s := r.Snapshot(1, t0.Add(1*time.Second))
+	if !s.SdpsDegraded {
+		t.Errorf("NOGO heartbeat: want SdpsDegraded=true")
+	}
+	if s.Stale {
+		t.Errorf("NOGO heartbeat: want not Stale (the feed is alive)")
+	}
+	if got := s.Color(); got != "yellow" {
+		t.Errorf("color (SDPS NOGO): got %q, want %q", got, "yellow")
+	}
+
+	// A subsequent operational heartbeat clears the degraded flag → back to green.
+	r.RecordHeartbeat(1, t0.Add(1*time.Second), true)
+	s = r.Snapshot(1, t0.Add(2*time.Second))
+	if s.SdpsDegraded {
+		t.Errorf("operational heartbeat: want SdpsDegraded=false")
+	}
+	if got := s.Color(); got != "green" {
+		t.Errorf("color (recovered): got %q, want %q", got, "green")
+	}
+}
+
 func TestRegistryStaleIsRed(t *testing.T) {
 	r := NewRegistry(3 * time.Second)
-	r.RecordHeartbeat(1, t0)
+	r.RecordHeartbeat(1, t0, true)
 	r.RecordTracks(1, 2)
 
 	s := r.Snapshot(1, t0.Add(4*time.Second))
@@ -131,7 +161,7 @@ func TestRegistryStaleIsRed(t *testing.T) {
 
 func TestRegistryLastHeartbeatAgoS(t *testing.T) {
 	r := NewRegistry(3 * time.Second)
-	r.RecordHeartbeat(1, t0)
+	r.RecordHeartbeat(1, t0, true)
 
 	s := r.Snapshot(1, t0.Add(2*time.Second))
 	if s.LastHeartbeatAgoS < 1.9 || s.LastHeartbeatAgoS > 2.1 {
@@ -152,7 +182,7 @@ func TestRegistryLastHeartbeatAgoNegativeIfNeverSeen(t *testing.T) {
 
 func TestRegistryPerFeedIsolation(t *testing.T) {
 	r := NewRegistry(3 * time.Second)
-	r.RecordHeartbeat(1, t0)
+	r.RecordHeartbeat(1, t0, true)
 	r.RecordTracks(1, 4)
 	// Feed 2 never receives a heartbeat.
 
@@ -169,7 +199,7 @@ func TestRegistryPerFeedIsolation(t *testing.T) {
 
 func TestRegistryAggregateStatusReflectsAnyFeed(t *testing.T) {
 	r := NewRegistry(3 * time.Second)
-	r.RecordHeartbeat(1, t0)
+	r.RecordHeartbeat(1, t0, true)
 
 	st := r.Status(t0.Add(1 * time.Second))
 	if !st.EverSeen || st.Stale {
@@ -189,7 +219,7 @@ func TestRegistryAggregateObserveReportsTransition(t *testing.T) {
 		t.Errorf("second identical observe: want changed=false")
 	}
 	// Heartbeat → EverSeen transition.
-	r.RecordHeartbeat(1, t0.Add(1*time.Second))
+	r.RecordHeartbeat(1, t0.Add(1*time.Second), true)
 	if _, changed := r.Observe(t0.Add(1 * time.Second)); !changed {
 		t.Errorf("after heartbeat: want changed=true")
 	}

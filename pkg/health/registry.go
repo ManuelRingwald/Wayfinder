@@ -47,6 +47,12 @@ type FeedSnapshot struct {
 	SensorsTotal  int
 	SensorsActive int
 
+	// SdpsDegraded is true when the most recent CAT065 heartbeat carried NOGO
+	// (I065/040 != operational) — the SDPS/tracker reports itself degraded even
+	// though it is still alive (Firefly SAFE.4, #261). Drives Color() "yellow".
+	// False before the first heartbeat and for an operational SDPS.
+	SdpsDegraded bool
+
 	// DegradedReason is the per-source failure reason for a degraded feed
 	// ("unreachable" / "auth" / "rate_limited"), decoded from the CAT063 I063/RE
 	// SRC-REASON sub-field (Firefly ADR 0033). "" when the feed is healthy or the
@@ -63,14 +69,20 @@ type FeedSnapshot struct {
 
 // Color returns the display colour for this feed:
 //   - "red":    no heartbeat (stale or never seen)
-//   - "yellow": heartbeat healthy but degraded fusion — at least one configured
-//     sensor is silent (0 < SensorsActive < SensorsTotal, requires CAT063)
-//   - "green":  heartbeat healthy (empty sky counts as green, not yellow)
+//   - "yellow": heartbeat fresh but degraded — either the SDPS itself reports
+//     NOGO (CAT065 I065/040, Firefly SAFE.4: a stalled tracker still heartbeats
+//     but flags itself degraded, #261) or the sensor fusion is degraded (at least
+//     one configured sensor silent, 0 < SensorsActive < SensorsTotal, CAT063)
+//   - "green":  heartbeat fresh and operational (empty sky counts as green)
+//
+// A NOGO heartbeat therefore drives "yellow" instead of "green": it still resets
+// the staleness clock (the feed is alive), but it is no longer mistaken for a
+// healthy one — it surfaces as a degraded feed rather than silently vanishing.
 func (s FeedSnapshot) Color() string {
 	if !s.EverSeen || s.Stale {
 		return "red"
 	}
-	if s.SensorsTotal > 0 && s.SensorsActive < s.SensorsTotal {
+	if s.SdpsDegraded || (s.SensorsTotal > 0 && s.SensorsActive < s.SensorsTotal) {
 		return "yellow"
 	}
 	return "green"
@@ -86,6 +98,7 @@ type feedEntry struct {
 	sensorsTotal   int            // total sensors from last CAT063 block
 	degradedReason string         // per-source failure reason from last CAT063 block (ADR 0033)
 	sensors        []SensorDetail // per-sensor breakdown from last CAT063 block (#237)
+	sdpsDegraded   bool           // SDPS NOGO from the last CAT065 heartbeat (#261)
 }
 
 // Registry tracks health and recent track activity per feed ID. Feeds are
@@ -134,8 +147,17 @@ func (r *Registry) Forget(feedID int64) {
 }
 
 // RecordHeartbeat records a CAT065 heartbeat for feedID at wall-clock time now.
-func (r *Registry) RecordHeartbeat(feedID int64, now time.Time) {
-	r.getOrCreate(feedID).fh.RecordHeartbeat(now)
+// operational is the SDPS status carried by the heartbeat (I065/040 NOGO, #261):
+// false means the SDPS reports itself degraded even though it still heartbeats
+// (Firefly SAFE.4). The heartbeat always resets the staleness clock (the feed is
+// alive); the degraded flag drives the feed colour to "yellow" so a NOGO is not
+// mistaken for a healthy feed.
+func (r *Registry) RecordHeartbeat(feedID int64, now time.Time, operational bool) {
+	e := r.getOrCreate(feedID)
+	e.fh.RecordHeartbeat(now)
+	e.mu.Lock()
+	e.sdpsDegraded = !operational
+	e.mu.Unlock()
 	r.global.RecordHeartbeat(now)
 }
 
@@ -186,6 +208,7 @@ func (r *Registry) Snapshot(feedID int64, now time.Time) FeedSnapshot {
 	sensorsTotal := e.sensorsTotal
 	degradedReason := e.degradedReason
 	sensors := e.sensors
+	sdpsDegraded := e.sdpsDegraded
 	e.mu.Unlock()
 	return FeedSnapshot{
 		EverSeen:          st.EverSeen,
@@ -196,6 +219,7 @@ func (r *Registry) Snapshot(feedID int64, now time.Time) FeedSnapshot {
 		SensorsTotal:      sensorsTotal,
 		DegradedReason:    degradedReason,
 		Sensors:           sensors,
+		SdpsDegraded:      sdpsDegraded,
 	}
 }
 

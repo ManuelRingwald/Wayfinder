@@ -286,7 +286,13 @@ der Chip den **per-Quelle-Fehlergrund** an (CAT063 I063/RE `SRC-REASON`, Firefly
 ADR 0033 / Wayfinder ADR 0020): `· NICHT ERREICHBAR` / `· AUTH-FEHLER` /
 `· RATENLIMIT` (aus `feed_status.degraded_reason`, dominanter Grund via
 `cat063.DominantReason`, Priorität `auth`>`rate_limited`>`unreachable`) — so sieht
-der Betreiber **warum** eine Quelle still ist. Bei WS-(Re)Connect wird der
+der Betreiber **warum** eine Quelle still ist. **SDPS-NOGO (#261):** Meldet sich
+der SDPS/Tracker **selbst** degradiert (CAT065 I065/040 NOGO, Fireflys SAFE.4 — ein
+hängender Tracker sendet weiter Heartbeats, flaggt sich aber NOGO), setzt
+`feed_status.sdps_degraded=true` die Ampel auf **`yellow`** und der Chip liest
+**`DIENST DEGRADIERT`** (dienst- statt sensor-bezogen). Der Heartbeat setzt weiter
+die Staleness-Uhr zurück (der Feed **lebt**), zählt aber nicht mehr als gesund.
+Bei WS-(Re)Connect wird der
 Per-Feed-Zustand zurückgesetzt (`resetFeedHealth`), damit ein alter Scope nicht
 nachhängt. (Zuvor las das Frontend fälschlich ein nicht existentes `state`-Feld →
 dauerhaft „FEED ?", #117.)

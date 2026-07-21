@@ -42,6 +42,11 @@ type FeedStatusMessage struct {
 	// SRC-REASON sub-field (Firefly ADR 0033). Omitted when empty (healthy feed
 	// or no known reason) so the healthy path stays byte-for-byte unchanged.
 	DegradedReason string `json:"degraded_reason,omitempty"`
+	// SdpsDegraded is true when the SDPS itself reports NOGO in its CAT065
+	// heartbeat (I065/040, Firefly SAFE.4, #261) — the feed is alive but the
+	// tracker flags itself degraded. Drives the "yellow" chip with a service-level
+	// (not sensor-level) label. Omitted when false so the healthy path is unchanged.
+	SdpsDegraded bool `json:"sdps_degraded,omitempty"`
 	// Sensors is the per-sensor breakdown from the last CAT063 block (#237):
 	// identity, state and applied registration bias per sensor. Omitted until
 	// CAT063 arrives, so a feed without sensor status stays byte-for-byte

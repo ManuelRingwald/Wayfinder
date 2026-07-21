@@ -45,6 +45,10 @@ export const useAsdStore = defineStore('asd', () => {
   // { sac, sic, operational, degraded_reason?, range_bias_m?, azimuth_bias_deg? }.
   // Drives the feed-health chip's expandable per-sensor bias view.
   const feedSensors = ref(new Map())
+  // feedId → SDPS-degraded flag (CAT065 NOGO / I065/040, Firefly SAFE.4, #261).
+  // Parallel to feedHealth so a SERVICE-level degradation (the tracker flags
+  // itself NOGO but still heartbeats) is distinguishable from a sensor-fusion one.
+  const feedSdps = ref(new Map())
   const feedStatus = computed(() => {
     let worst = null
     for (const state of feedHealth.value.values()) {
@@ -64,6 +68,14 @@ export const useAsdStore = defineStore('asd', () => {
       if ((FEED_REASON_RANK[reason] || 0) > (FEED_REASON_RANK[best] || 0)) best = reason
     }
     return best
+  })
+  // #261: whether the aggregate degraded state includes a SERVICE-level (SDPS
+  // NOGO / CAT065 I065/040) degradation on any feed — the feed chip then reads
+  // "DIENST DEGRADIERT" instead of the sensor-fusion wording. Any feed flagged
+  // NOGO counts (a degraded-but-alive tracker, Firefly SAFE.4).
+  const feedSdpsDegraded = computed(() => {
+    for (const v of feedSdps.value.values()) if (v) return true
+    return false
   })
 
   // #114: whether server-side coverage sensors are configured at all. The
@@ -201,7 +213,7 @@ export const useAsdStore = defineStore('asd', () => {
   // unknown color is ignored (fail-safe: never corrupt the chip on a newer
   // server vocabulary). resetFeedHealth clears all entries — called on WS
   // (re)connect so statuses from a previous scope never linger.
-  function setFeedHealth(feedId, color, reason = '', sensors = []) {
+  function setFeedHealth(feedId, color, reason = '', sensors = [], sdpsDegraded = false) {
     const state = FEED_COLOR_TO_STATE[color]
     if (!state) return
     const id = feedId ?? 0
@@ -214,11 +226,15 @@ export const useAsdStore = defineStore('asd', () => {
     const sm = new Map(feedSensors.value)
     sm.set(id, Array.isArray(sensors) ? sensors : [])
     feedSensors.value = sm
+    const dm = new Map(feedSdps.value)
+    dm.set(id, sdpsDegraded === true)
+    feedSdps.value = dm
   }
   function resetFeedHealth() {
     feedHealth.value = new Map()
     feedReasons.value = new Map()
     feedSensors.value = new Map()
+    feedSdps.value = new Map()
   }
 
   // sensorDetails flattens the per-feed sensor breakdown (#237) into a single
@@ -306,7 +322,7 @@ export const useAsdStore = defineStore('asd', () => {
   }
 
   return {
-    mapLoaded, palette, feedStatus, feedHealth, feedDegradedReason, feedSensors, sensorDetails, layerVisibility, flFilter,
+    mapLoaded, palette, feedStatus, feedHealth, feedDegradedReason, feedSdpsDegraded, feedSensors, sensorDetails, layerVisibility, flFilter,
     coverageAvailable, setCoverageAvailable,
     weatherRadarAvailable, setWeatherRadarAvailable,
     weatherWarningsAvailable, setWeatherWarningsAvailable,

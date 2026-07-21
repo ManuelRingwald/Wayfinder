@@ -10,6 +10,30 @@
 
 ---
 
+## 🛰️ Stand 2026-07-21 (CAT065-NOGO sichtbar — „Dienst degradiert", #261, FR-OPS-009)
+
+**In normaler Sprache:** Wenn Fireflys Tracker hängt, sendet er weiter „Herzschlag",
+markiert sich darin aber als **degradiert** (NOGO). Bisher sah der Lotse das nicht —
+der Feed blieb grün. Jetzt wird ein solcher Feed **gelb** angezeigt und der
+Status-Chip liest **„DIENST DEGRADIERT"**: das Lagebild dahinter kann eingefroren
+sein, und das ist sofort erkennbar (nicht erst, wenn der Feed ganz verstummt).
+
+**Technisch:** #261 (Konsumenten-Seite zu Fireflys SAFE.4). Der CAT065-NOGO-Zustand
+(`ServiceStatus.Operational`, I065/040) wurde bereits dekodiert, aber im Konsumenten
+verworfen. Jetzt: `health.Registry.RecordHeartbeat(feedID, now, operational)` →
+`FeedSnapshot.SdpsDegraded` → `Color()` gelb; WS-Feld `feed_status.sdps_degraded`;
+Frontend `asd.js` (`feedSdpsDegraded`) + `FeedStatusChip` („DIENST DEGRADIERT",
+Vorrang vor „SENSOR AUSFALL"). Der Heartbeat setzt weiter die Staleness-Uhr zurück
+(der Feed **lebt**), zählt aber nicht mehr als gesund. Kein Wire-Bruch (NOGO seit
+ICD 2.3.0; kein ADR — Verwertung bestehender Semantik). **Verifikation:** volle
+`go test ./...` + `vet`/`gofmt`/`golangci-lint` (0 issues) grün, 755 Frontend-Tests
+grün, Dist neu gebaut/eingebettet. Register FR-OPS-009, Meilenstein-Doku, TECHNICAL
+ergänzt.
+
+**Nächster Schritt:** Review + Merge (schließt #261).
+
+---
+
 ## 🎯 Stand 2026-07-21 (UI-/Konto-Bestandsaufnahme #315–#319 — ADR 0034, FR-UI-050 + FR-ADMIN-011)
 
 **In normaler Sprache:** Fünf vom Betreiber gemeldete Bedien-Themen umgesetzt.

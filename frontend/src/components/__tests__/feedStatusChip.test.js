@@ -24,3 +24,18 @@ describe('FeedStatusChip degraded reason (#197)', () => {
     expect(chip).toContain(':title="chipTitle"')
   })
 })
+
+describe('FeedStatusChip SDPS (service-level) degradation (#261)', () => {
+  it('reads the SDPS-degraded flag from the store', () => {
+    expect(chip).toContain('store.feedSdpsDegraded')
+  })
+  it('shows a distinct service-level label, not the sensor-fusion one', () => {
+    expect(chip).toContain('DIENST DEGRADIERT')
+  })
+  it('checks the SDPS branch before composing the sensor label (precedence)', () => {
+    const sdpsIdx = chip.indexOf('feedSdpsDegraded')
+    const sensorLabelIdx = chip.indexOf("'SENSOR AUSFALL'")
+    expect(sdpsIdx).toBeGreaterThan(-1)
+    expect(sensorLabelIdx).toBeGreaterThan(sdpsIdx)
+  })
+})
