@@ -146,6 +146,22 @@ describe('asd store — per-feed health aggregation (#117)', () => {
     s.resetFeedHealth()
     expect(s.feedDegradedReason).toBe('')
   })
+
+  it('carries the SDPS-degraded flag (CAT065 NOGO) and clears it on reset (#261)', () => {
+    const s = useAsdStore()
+    // A NOGO heartbeat arrives as a yellow feed with the SDPS flag set.
+    s.setFeedHealth(1, 'yellow', '', [], true)
+    expect(s.feedStatus).toBe('degraded')
+    expect(s.feedSdpsDegraded).toBe(true)
+    // A later operational (green) heartbeat clears the flag.
+    s.setFeedHealth(1, 'green', '', [], false)
+    expect(s.feedSdpsDegraded).toBe(false)
+    // Any degraded-NOGO feed raises the aggregate flag; reset clears it.
+    s.setFeedHealth(2, 'yellow', '', [], true)
+    expect(s.feedSdpsDegraded).toBe(true)
+    s.resetFeedHealth()
+    expect(s.feedSdpsDegraded).toBe(false)
+  })
 })
 
 // WX-A: DWD weather-radar overlay is off by default and gated by an

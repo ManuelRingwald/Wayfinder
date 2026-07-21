@@ -177,6 +177,7 @@ func main() {
 				SensorsActive:  snap.SensorsActive,
 				SensorsTotal:   snap.SensorsTotal,
 				DegradedReason: snap.DegradedReason,
+				SdpsDegraded:   snap.SdpsDegraded,
 				Sensors:        sensors,
 			},
 		})
@@ -202,7 +203,10 @@ func main() {
 	// this with a per-feed closure so feedID is the catalogue ID of the receiver.
 	statusHandler := func(feedID int64, status cat065.ServiceStatus) error {
 		heartbeatCount.Add(1)
-		feedRegistry.RecordHeartbeat(feedID, time.Now())
+		// #261: pass the SDPS operational flag (I065/040 NOGO) so a degraded-but-
+		// alive tracker (Firefly SAFE.4) surfaces as a "yellow" feed instead of
+		// being mistaken for healthy. The heartbeat still resets the staleness clock.
+		feedRegistry.RecordHeartbeat(feedID, time.Now(), status.Operational)
 		broadcastFeedSnapshot(feedID, feedRegistry.Snapshot(feedID, time.Now()))
 		return nil
 	}

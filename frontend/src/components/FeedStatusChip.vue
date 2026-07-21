@@ -83,6 +83,13 @@ const REASON_TITLE = {
 }
 
 const chipLabel = computed(() => {
+  // #261: a SERVICE-level degradation (the SDPS/tracker reports itself NOGO but
+  // still heartbeats, CAT065 I065/040) reads "DIENST DEGRADIERT" — distinct from
+  // the sensor-fusion wording ("SENSOR AUSFALL"). It takes precedence: a degraded
+  // tracker is the more fundamental problem than a single silent sensor.
+  if (store.feedStatus === 'degraded' && store.feedSdpsDegraded) {
+    return 'DIENST DEGRADIERT'
+  }
   const base = {
     ok: 'FEED OK',
     degraded: 'SENSOR AUSFALL',
@@ -96,6 +103,9 @@ const chipLabel = computed(() => {
 })
 
 const chipTitle = computed(() => {
+  if (store.feedStatus === 'degraded' && store.feedSdpsDegraded) {
+    return 'Der Tracker (SDPS) meldet sich degradiert (CAT065 NOGO) — das Lagebild kann eingefroren oder unvollständig sein.'
+  }
   if (store.feedStatus === 'degraded') {
     return REASON_TITLE[store.feedDegradedReason]
       ?? 'Sensor-Teilausfall — mindestens eine Quelle liefert keine Daten.'
