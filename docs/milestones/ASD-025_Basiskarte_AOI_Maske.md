@@ -49,3 +49,13 @@ derselben Kante).
 - `components/__tests__/basemapLayer.test.js` (#289-Block): Maske über der
   Basiskarte vor den Overlays; `setBasemapMaskAOI` im AOI-Hook; Fill in der
   Scope-Farbe, leer bei null-AOI.
+
+## Nachtrag #324 — Wetter mit beschneiden
+
+Die Maske lag anfangs **unter** den Wetter-Overlays und begrenzte nur die Karte;
+das Regenradar (Raster, nur kachel-granulare `bounds`) ragte über die scharfe
+AOI-Kante hinaus. Seit #324 wird die Maske **über** Radar + Warnungen eingehängt
+(Reihenfolge Basiskarte → Radar → Warnungen → Maske → Aeronautik/Coverage/Tracks),
+sodass alle georeferenzierten Kartendaten dieselbe scharfe Kante teilen. Der
+Radar-Re-Add (`setWeatherRadarAOI`) fügt den Layer stabil unter den Warnungen ein
+(`beforeId`). Details: ADR 0032 (Nachtrag), FR-UI-051.

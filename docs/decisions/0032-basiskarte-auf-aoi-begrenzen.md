@@ -76,3 +76,22 @@ Element-Gruppen aus #290) und robust bleibt.
 - **Ehrliche Grenzen:** harte rechteckige Kante (Kreis/Radius + weicher Rand sind
   dokumentierte Folge-Optionen, #289); kein WebGL-/Mount-Harness → Wiring per
   Source-Guards, optische Abnahme durch den Betreiber.
+
+## Nachtrag / Korrektur (#324, 2026-07-21)
+
+Die ursprüngliche Z-Ordnung — Maske **direkt über der Basiskarte, unter allen
+Overlays** — hatte einen sichtbaren Nebeneffekt: Die Wetter-Overlays lagen über
+der Maske und wurden **nicht** an der AOI-Kante beschnitten. Besonders das
+DWD-**Regenradar** (ein Raster, nur über kachel-granulare `bounds` begrenzt)
+„blutete" über die scharfe Kartenkante hinaus. Der Betreiber meldete: „Wetter
+matcht nicht mit der BKG-Bbox."
+
+**Korrektur:** Die Maske wird jetzt **über die Wetter-Overlays** (Radar +
+Warnungen) eingehängt — Reihenfolge Basiskarte → Radar → Warnungen → **Maske** →
+Aeronautik/Coverage/Tracks. Damit teilen **alle** georeferenzierten Kartendaten
+dieselbe scharfe AOI-Kante; die operativen Overlays (Tracks/Labels/Coverage/
+Aeronautik, ohnehin serverseitig AOI-gescopt) bleiben oben sichtbar. Der
+Radar-Re-Add bei AOI-Wechsel (`setWeatherRadarAOI`) fügt den Layer stabil unter
+den Warnungen ein (`beforeId`), damit er nicht wieder über die Maske springt.
+Die ursprüngliche Formulierung „begrenzt nur die Karte, nie Wetter" ist damit
+bewusst abgelöst. Siehe FR-UI-051.

@@ -339,21 +339,31 @@ export function addWeatherRadarLayer(map, aoi = null) {
     attribution: DWD_ATTRIBUTION,
     ...(bounds ? { bounds } : {}),
   })
+  // Keep the radar directly above the base map and BELOW the warnings — which in
+  // turn sit below the AOI mask (#324), so the mask clips the radar to the sector.
+  // On the initial add the warnings layer does not exist yet (radar is added
+  // first) → append. On a later re-add via setWeatherRadarAOI the warnings (and
+  // mask) already exist → insert below them so the radar never jumps on top of the
+  // mask and bleeds outside the AOI.
+  const beforeId = map.getLayer(WEATHER_WARNINGS_FILL_LAYER_ID) ? WEATHER_WARNINGS_FILL_LAYER_ID : undefined
   map.addLayer({
     id: WEATHER_RADAR_LAYER_ID,
     type: 'raster',
     source: WEATHER_RADAR_SOURCE_ID,
     layout: { visibility: 'none' },
     paint: { 'raster-opacity': WEATHER_RADAR_OPACITY },
-  })
+  }, beforeId)
 }
 
 // addBasemapMaskLayer (#289) registers the base-map AOI mask: a fill in the
 // scope backdrop colour covering everything OUTSIDE the tenant AOI, so the
-// official BKG base map is limited to the sector. Added directly above the base
-// map (before the operational overlays, which are registered afterwards), so it
-// hides the map outside the AOI but never the tracks/weather/aeronautical layers
-// (those clip to the AOI on their own). Empty when no AOI is configured → no clip.
+// official BKG base map is limited to the sector. Since #324 it is added ABOVE
+// the weather overlays (radar + warnings) too — the caller registers it right
+// after those — so ALL georeferenced map data shares the exact same sector edge
+// (the radar raster is only tile-granular via `bounds` and would otherwise bleed
+// past the crisp edge). It stays BELOW the operational overlays
+// (aeronautical/coverage/tracks), which are AOI-scoped by the backend and must
+// stay visible. Empty when no AOI is configured → no clip.
 export function addBasemapMaskLayer(map, aoi) {
   map.addSource(BASEMAP_MASK_SOURCE_ID, {
     type: 'geojson',

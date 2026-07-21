@@ -429,21 +429,23 @@ export async function initMap(container, store, onTrackClick, onConnectionChange
     // store (a view profile, or an earlier toggle) says otherwise.
     applyBasemap()
 
-    // #289: the base-map AOI mask — covers the map OUTSIDE the tenant AOI with the
-    // scope backdrop colour, so the official BKG base map is limited to the
-    // sector. Added here (directly above the base map, before every operational
-    // overlay below) so it hides only the map, never the tracks/weather/
-    // aeronautical layers. Empty when no AOI is configured (full map, no clip).
-    addBasemapMaskLayer(map, weatherAOI)
-
     // WX-A: DWD weather-radar overlay first of all, so it sits directly above the
-    // base map and beneath every operational overlay. Starts hidden; toggled via
-    // the sidebar (gated by the weather_radar entitlement + availability).
+    // base map. Starts hidden; toggled via the sidebar (gated by the weather_radar
+    // entitlement + availability).
     addWeatherRadarLayer(map, weatherAOI)
-    // WX-C: DWD weather-warnings polygons above the radar raster but below the
-    // aeronautical/track layers. Starts hidden; toggled via the sidebar
-    // (weather_warnings entitlement + availability).
+    // WX-C: DWD weather-warnings polygons above the radar raster. Starts hidden;
+    // toggled via the sidebar (weather_warnings entitlement + availability).
     addWeatherWarningsLayer(map)
+
+    // #289 (fixed #324): the base-map AOI mask — covers everything OUTSIDE the
+    // tenant AOI with the scope backdrop colour. Added ABOVE the base map AND the
+    // weather overlays (radar + warnings), so ALL georeferenced map data is
+    // clipped to the exact same sector edge. Previously the mask sat directly
+    // above the base map (below the weather), which let the radar RASTER — clipped
+    // only to tile-granular `bounds` — bleed past the crisp base-map edge. Stays
+    // BELOW the operational overlays (aeronautical/coverage/tracks), which are
+    // AOI-scoped by the backend and must stay visible. Empty AOI → no clip.
+    addBasemapMaskLayer(map, weatherAOI)
     // Aeronautical overlays next, so they sit beneath the track layers.
     addAeronauticalIcons(map)
     addAirspaceLayers(map, palette)
