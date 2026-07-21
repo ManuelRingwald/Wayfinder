@@ -10,6 +10,32 @@
 
 ---
 
+## 🧱 Stand 2026-07-21 (Pro-Mandant-Kartendaten — Fundament, T1; Entscheidung offen)
+
+**In normaler Sprache:** Vorarbeit, damit die Basiskarte (Theme/Style) später
+**pro Mandant** einstellbar wird. Dieser Schritt baut nur das **Fundament**: eine
+neue DB-Tabelle für Pro-Mandant-Overrides und die Logik, die den effektiven Wert
+in der Rangfolge **Mandant → global → Env** auflöst — **isoliert** (Mandant A
+ändert nie Mandant B, per Test bewiesen). Noch **keine** UI und noch **keine**
+sichtbare Wirkung.
+
+**Fachlich/technisch:** T1 zum Hybrid-Scope (Epic #307): neue Tabelle
+`tenant_map_settings` (Migration 00023, getrennt von der globalen
+`platform_settings` → globale Werte/versiegelter OpenAIP-Key unberührt),
+`store.TenantMapSettingsRepo`, `mapconfig.TenantSetting` (Rangfolge Mandant ??
+global ?? Env; Store-Fehler degradiert auf global). Tests:
+`pkg/mapconfig/tenant_test.go` (Rangfolge, **Isolation** A≠B, Reset, tenantID 0 /
+nil-Store, Degradation). Rein Library (wie K0), noch nicht in den Binärpfad
+verdrahtet — kein CAT062-Bezug.
+
+**Offene Entscheidung (Betreiber):** „Basiskarte pro Mandant" braucht einen
+mandanten-fähigen Style-Proxy (die Karten-Bytes hell/dunkel + Style entstehen
+heute **einmal global**). Optionen **A** (voller Pro-Mandant-Proxy, S4),
+**B** (nur Vordergrund-Palette pro Mandant, S2–S3) oder **C** (global lassen, nur
+Tabs-UI). Das Fundament passt zu A und B. **Nächster Schritt** hängt an der Wahl.
+
+---
+
 ## 🌧️ Stand 2026-07-21 (Wetter an der AOI-Kante beschnitten — Bugfix #324, FR-UI-051)
 
 **In normaler Sprache:** Die amtliche Basiskarte endet exakt am Kundengebiet
