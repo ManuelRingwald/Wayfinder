@@ -2,7 +2,7 @@
 
 > **Kurz:** Fünf vom Betreiber gemeldete Bedien-Themen der ASD-Oberfläche. Vier am
 > Layer-/Filter-Menü, eines zur Konto-Selbstverwaltung. Die architektonische
-> Weichenstellung (rollen-agnostische Konto-API) ist in **ADR 0033** festgehalten;
+> Weichenstellung (rollen-agnostische Konto-API) ist in **ADR 0034** festgehalten;
 > Rückverfolgbarkeit über **FR-UI-050** und **FR-ADMIN-011** im Anforderungs-Register.
 
 ## Fachlich — welches Problem löst es für den Lotsen?
@@ -43,7 +43,7 @@
   `hasActiveFilter` + `nav-rail__btn--engaged`-Glow (Cyan).
 - `frontend/src/design/tokens/spacing.css` — Panel-Breiten-Token nachgezogen.
 
-### Konto-Selbstverwaltung (#319, Backend + Frontend) — siehe ADR 0033
+### Konto-Selbstverwaltung (#319, Backend + Frontend) — siehe ADR 0034
 - **Backend:** `pkg/store/users.go` (`SetEmail`); `pkg/adminapi/adminapi_me.go`
   (`putMeEmail` + E-Mail-Validierung); `pkg/adminapi/adminapi.go`
   (`AccountHandler()`, `email` in `whoamiDTO`); `cmd/wayfinder/main.go` (Mount

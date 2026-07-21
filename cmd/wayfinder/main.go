@@ -300,6 +300,25 @@ func main() {
 	// This global Service is the fallback cache (tenant_id NULL) behind the per-tenant
 	// registry.
 	aeroCache := newAeroCacheStore(store.NewAeroCacheRepo(dbPool))
+
+	// Map-data config plane (Epic #307, K1–K5): runtime-overridable settings for
+	// the base map / weather / coverage / aeronautics on top of platform_settings.
+	// Built here (before the OpenAIP services) so the effective OpenAIP fetch
+	// radius + base-URL overrides are folded into cfg and honoured at (re)start —
+	// mapData still owns the true env values as its reset defaults. Live overrides
+	// (basemap/weather-enable/coverage) are applied further down once ctx exists.
+	mapData := newMapDataConfig(store.NewSettingsRepo(dbPool), cfg, basemapSvc, logger)
+	func() {
+		aeroBoot, cancelAeroBoot := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancelAeroBoot()
+		if radiusKM, baseURL := mapData.effectiveOpenAIP(aeroBoot); radiusKM != cfg.OpenAIPRadiusKM || baseURL != cfg.OpenAIPBaseURL {
+			cfg.OpenAIPRadiusKM = radiusKM
+			cfg.OpenAIPBaseURL = baseURL
+			logger.Info("openaip: applied admin override at boot",
+				slog.Float64("radius_km", radiusKM), slog.String("base_url", baseURL))
+		}
+	}()
+
 	aeroService := aeronautical.NewService(
 		aeronautical.NewClient(&http.Client{Timeout: 15 * time.Second}, cfg.OpenAIPBaseURL, cfg.OpenAIPAPIKey),
 		aeronautical.Config{
@@ -336,6 +355,47 @@ func main() {
 	// receiver is a child of this context (cancel → all feeds leave their groups).
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	// Apply the live map-data overrides (basemap style/theme, weather enable +
+	// service rebuild) now that ctx exists. The OpenAIP overrides were already
+	// folded into cfg above (before the OpenAIP services were built).
+	func() {
+		bootApply, cancelApply := context.WithTimeout(ctx, 10*time.Second)
+		defer cancelApply()
+		mapData.applyAtBoot(bootApply)
+
+		// K3 (#311): rebuild the DWD radar + warnings services from the EFFECTIVE
+		// (admin-override ?? env) config before their poll loops start, so a
+		// restart honours admin URL/layer/enable overrides. Enable/disable +
+		// availability are live via /api/map-config; the upstream URL/layer change
+		// applies here at (re)start — no live goroutine reconfiguration, keeping a
+		// running feed safe. Identical to the env build when nothing is overridden.
+		if rEnabled, rURL, rLayer := mapData.effectiveRadar(bootApply); rURL != cfg.DWDWMSURL || rLayer != cfg.DWDRadarLayer || rEnabled != (cfg.DWDRadarEnabled && cfg.DWDWMSURL != "") {
+			weatherRadar = weathertiles.NewService(
+				weathertiles.NewClient(&http.Client{Timeout: 15 * time.Second}, rURL, rLayer).WithStyle(cfg.DWDRadarStyle),
+				weathertiles.Config{Enabled: rEnabled, TTL: cfg.DWDRefresh},
+				logger,
+			)
+		}
+		if wEnabled, wURL, wLayer := mapData.effectiveWarn(bootApply); wURL != cfg.DWDWarnURL || wLayer != cfg.DWDWarnLayer || wEnabled != (cfg.DWDWarnEnabled && cfg.DWDWarnURL != "") {
+			weatherWarn = weatherwarnings.NewService(
+				weatherwarnings.NewClient(&http.Client{Timeout: 15 * time.Second}, wURL, wLayer),
+				weatherwarnings.Config{Enabled: wEnabled, Refresh: cfg.DWDWarnRefresh},
+				logger,
+			)
+		}
+		// QNH: only the enable flag is override-able (no upstream URL setting).
+		// Rebuild the poller from the effective flag so an admin enable/disable
+		// actually starts/stops the METAR poll at restart — otherwise the
+		// availability chip (live) and the poller (env-only) could disagree.
+		if qEnabled := mapData.qnhAvailable(bootApply); qEnabled != cfg.QNHEnabled {
+			weatherQNH = weather.NewService(
+				weather.NewClient(&http.Client{Timeout: 15 * time.Second}, cfg.MetarURL, cfg.MetarUserAgent),
+				weather.Config{Enabled: qEnabled, Stations: cfg.MetarStations, StationsProvider: qnhStations, Refresh: cfg.QNHRefresh},
+				logger,
+			)
+		}
+	}()
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
@@ -556,7 +616,7 @@ func main() {
 	} else {
 		mux.Handle("/glyphs/", glyphs)
 	}
-	mux.HandleFunc("/api/map-config", mapConfigHandler(cfg))
+	mux.HandleFunc("/api/map-config", mapConfigHandler(cfg, mapData))
 
 	// Aeronautical GeoJSON endpoints (/api/airspace, /api/navaids,
 	// /api/waypoints), served from the OpenAIP cache (ADR 0004). They are
@@ -581,7 +641,7 @@ func main() {
 	// Coverage rings: static GeoJSON computed once from config, served to the
 	// browser on demand. An empty FeatureCollection is returned when no sensors
 	// are configured so the frontend can always fetch unconditionally.
-	mux.HandleFunc("/api/coverage/rings", coverageRingsHandler(cfg))
+	mux.HandleFunc("/api/coverage/rings", coverageRingsHandler(cfg, mapData))
 
 	// Weather-radar tile proxy (WX-A, ADR 0016): MapLibre requests XYZ tiles from
 	// Wayfinder; the backend translates each into a DWD WMS GetMap. Behind the
@@ -754,6 +814,11 @@ func main() {
 		adminAPI = adminAPI.WithSessionRevoker(countingRevoker{repo: sessionRepo})
 	}
 	mux.Handle("/api/admin/", tenantMW(requireAdmin(adminAPI)))
+
+	// Epic #307 (K2–K5): map-data configuration endpoints under
+	// /api/admin/mapdata/* — more specific patterns than the /api/admin/ subtree
+	// above, so ServeMux routes them here. Same admin auth wrap.
+	mapData.mountAdminRoutes(mux, func(h http.Handler) http.Handler { return tenantMW(requireAdmin(h)) })
 
 	// Role-agnostic identity probe for the ASD map (any authenticated principal,
 	// not just admins): the map reads it to decide between its login screen and
@@ -1665,7 +1730,7 @@ func parseLogLevel(v string) (slog.Level, error) {
 // official base map is served through Wayfinder's own /basemap/style.json
 // (fetched, rewritten, cached — dark-transformed for bkg-dark; ADR 0026). The
 // reported `theme` lets the frontend pick a matching foreground palette.
-func mapConfigHandler(cfg Config) http.HandlerFunc {
+func mapConfigHandler(cfg Config, md *mapDataConfig) http.HandlerFunc {
 	var styleValue any
 	theme := cfg.MapTheme
 	if theme == "" {
@@ -1680,24 +1745,42 @@ func mapConfigHandler(cfg Config) http.HandlerFunc {
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
+		// K2 (#310): the theme is runtime-overridable via the admin plane; read the
+		// effective value per request so /api/map-config reflects a live override.
+		effTheme := theme
+		coverageColor := cfg.CoverageRingColor
+		coverageCount := len(cfg.CoverageSensors)
+		radarAvail := cfg.DWDRadarEnabled && cfg.DWDWMSURL != ""
+		warnAvail := cfg.DWDWarnEnabled && cfg.DWDWarnURL != ""
+		qnhAvail := cfg.QNHEnabled
+		if md != nil {
+			ctx := r.Context()
+			effTheme = md.effectiveTheme(ctx)
+			coverageColor = md.effectiveRingColor(ctx)
+			coverageCount = len(md.effectiveSensors(ctx))
+			radarAvail = md.radarAvailable(ctx)
+			warnAvail = md.warningsAvailable(ctx)
+			qnhAvail = md.qnhAvailable(ctx)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"center_lat":            cfg.MapCenterLat,
 			"center_lon":            cfg.MapCenterLon,
 			"zoom":                  cfg.MapZoom,
 			"style":                 styleValue,
-			"theme":                 theme,
-			"coverage_ring_color":   cfg.CoverageRingColor,
-			"coverage_sensor_count": len(cfg.CoverageSensors),
-			// WX-A / ADR 0017: whether the DWD radar overlay is active (connected-by-
-			// default; off only when explicitly disabled). Gates the sidebar switch.
-			"weather_radar_available": cfg.DWDRadarEnabled && cfg.DWDWMSURL != "",
-			// WX-C / ADR 0017: same for the DWD warnings overlay.
-			"weather_warnings_available": cfg.DWDWarnEnabled && cfg.DWDWarnURL != "",
-			// WX-B / CBD-3 / ADR 0017: whether the QNH (NOAA) source is on. The header
-			// infobox additionally needs the tenant's qnh entitlement and a configured
-			// aerodrome (view_configs.qnh_icao); this flag only reports the source.
-			"qnh_available": cfg.QNHEnabled,
+			"theme":                 effTheme,
+			"coverage_ring_color":   coverageColor,
+			"coverage_sensor_count": coverageCount,
+			// WX-A / ADR 0017 (+K3 #311): whether the DWD radar overlay is active.
+			// Now the EFFECTIVE (admin-override ?? env) enable+URL — enable/disable is
+			// live; a URL change applies at the next restart.
+			"weather_radar_available": radarAvail,
+			// WX-C / ADR 0017 (+K3): same for the DWD warnings overlay.
+			"weather_warnings_available": warnAvail,
+			// WX-B / CBD-3 / ADR 0017 (+K3): whether the QNH (NOAA) source is on. The
+			// header infobox additionally needs the tenant's qnh entitlement and a
+			// configured aerodrome (view_configs.qnh_icao); this flag only reports the source.
+			"qnh_available": qnhAvail,
 			// #245 Teil B / ADR 0024: whether manual flight-plan correlation is enabled
 			// (a command token is configured). Gates the correlation controls in the
 			// detail panel; the server enforces the feature edge independently (503
@@ -1711,14 +1794,21 @@ func mapConfigHandler(cfg Config) http.HandlerFunc {
 // FeatureCollection. The GeoJSON is computed once at startup from the
 // configured sensors; an empty FeatureCollection is returned when no sensors
 // are configured so the frontend can always fetch unconditionally.
-func coverageRingsHandler(cfg Config) http.HandlerFunc {
-	body, err := coverage.RingsGeoJSON(cfg.CoverageSensors, cfg.CoverageRingColor)
-	if err != nil {
-		// RingsGeoJSON only fails when json.Marshal fails — effectively never.
-		// Fall back to a minimal empty collection rather than crashing.
-		body = []byte(`{"type":"FeatureCollection","features":[]}`)
-	}
+func coverageRingsHandler(cfg Config, md *mapDataConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// K4 (#312): recompute from the EFFECTIVE sensor list + colour so an admin
+		// edit takes effect without a restart (≤20 sensors → cheap per request).
+		sensors := cfg.CoverageSensors
+		color := cfg.CoverageRingColor
+		if md != nil {
+			sensors = md.effectiveSensors(r.Context())
+			color = md.effectiveRingColor(r.Context())
+		}
+		body, err := coverage.RingsGeoJSON(sensors, color)
+		if err != nil {
+			// RingsGeoJSON only fails when json.Marshal fails — effectively never.
+			body = []byte(`{"type":"FeatureCollection","features":[]}`)
+		}
 		w.Header().Set("Content-Type", "application/geo+json")
 		w.Header().Set("Cache-Control", "no-cache")
 		_, _ = w.Write(body)

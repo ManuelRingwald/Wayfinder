@@ -1,4 +1,4 @@
-# ADR 0033 — Rollen-agnostische Konto-Selbstverwaltung (`/api/account`) + Layer-Menü-Bedienbarkeit
+# ADR 0034 — Rollen-agnostische Konto-Selbstverwaltung (`/api/account`) + Layer-Menü-Bedienbarkeit
 
 - **Status:** akzeptiert (2026-07-21)
 - **Kontext-Issues:** #315, #316, #317, #318, #319 (Betreiber-Meldung, UI-/Konto-Bestandsaufnahme)

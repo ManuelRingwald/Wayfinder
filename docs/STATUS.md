@@ -10,7 +10,7 @@
 
 ---
 
-## 🎯 Stand 2026-07-21 (UI-/Konto-Bestandsaufnahme #315–#319 — ADR 0033, FR-UI-050 + FR-ADMIN-011)
+## 🎯 Stand 2026-07-21 (UI-/Konto-Bestandsaufnahme #315–#319 — ADR 0034, FR-UI-050 + FR-ADMIN-011)
 
 **In normaler Sprache:** Fünf vom Betreiber gemeldete Bedien-Themen umgesetzt.
 Vier am Layer-/Filter-Menü: (#315) ein Klick auf eine Gruppe wie „Aeronautik"
@@ -25,7 +25,7 @@ es ist immer nur **eine** Gruppe aufgeklappt (kein Scrollen in der 2. Ebene);
 248→288 px + flexible Preset-Buttons; #317 `LayerGroup` kontrolliert
 (`:expanded`/`@toggle`) + `openGroup`-Akkordeon in `LayerFilterContent`; #318
 `hasActiveLayers`/`hasActiveFilter` + `nav-rail__btn--engaged`-Glow (Cyan). #319
-(**ADR 0033**): neue **rollen-agnostische**, self-scoped Routen
+(**ADR 0034**): neue **rollen-agnostische**, self-scoped Routen
 `PUT /api/account/{password,email}` hinter `tenantMW`+`pwGate` (User-ID aus der
 Session, nie aus dem Request) — der Admin-gegatete Zwangswechsel-Pfad
 `/api/admin/me/password` bleibt unangetastet; `GET /api/whoami` trägt jetzt
@@ -38,6 +38,83 @@ Register: FR-UI-050, FR-ADMIN-011; Endpunkte in `TECHNICAL.md` ergänzt.
 
 **Nächster Schritt:** Review durch den Betreiber; danach PR-Merge (schließt
 #315–#319).
+
+---
+
+## 🗺️ Stand 2026-07-20 (Kartendaten live editierbar — K2–K6, Epic #307 abgeschlossen)
+
+**In normaler Sprache:** Der „Kartendaten"-Bereich im Admin ist jetzt **voll
+bedienbar** statt nur Anzeige. Der Betreiber stellt alle vier Quellen direkt in
+der Oberfläche ein — **ohne Deployment, ohne Env-Datei**: die **Basiskarte**
+(Style + hell/dunkel, wirkt sofort), das **Wetter** (DWD-Radar/-Warnungen/QNH
+an/aus + Server-URLs), die **Radar-Abdeckung** (Sensor-Standorte + Ringfarbe,
+wirkt sofort) und die **Aeronautik** (OpenAIP Fetch-Radius + Server-URL; der
+Schlüssel bleibt sicher versiegelt). Wo ein Wert erst beim nächsten Neustart
+greift, sagt die UI das **ehrlich** dazu. Die Umgebungsvariablen bleiben als
+**Standardwerte** gültig — ein Override in der UI gewinnt, „Auf Standard" fällt
+zurück.
+
+**Fachlich/technisch:** K2–K5 des Epics **#307** auf der K0-`mapconfig`-Plane
+(ADR 0033), plus K6 (Doku-Abschluss). Neue Plane `cmd/wayfinder/mapdata.go`
+(Settings = DB-Override ?? Env-Default; `/api/map-config` + Coverage-GeoJSON
+lesen effektiv pro Request); Admin-Endpunkte `/api/admin/mapdata/*` hinter
+`RequireRole(admin)`. **Live:** Basiskarte (`basemap.Service.Reload`, letzte gute
+Konfig bei Fehler, ehrlicher `reload_error`), Wetter-An/Aus + Verfügbarkeit,
+Abdeckung. **Beim Neustart:** Wetter-URLs/Layer + OpenAIP-Radius/Base-URL (die
+sperrfreien Poll-Dienste werden aus den effektiven Werten neu gebaut, ein
+laufender Feed wird nicht im Betrieb umkonfiguriert). SSRF-Leitplanken für
+gefetchte URLs; OpenAIP-Key bleibt versiegelt (`pkg/secret`). **K6-Doku:**
+INSTALLATION (Env = Default, überschreibbar-Marker + Callout), TECHNICAL §6.7
+(Precedence DB > Env, Hot-Reload vs. Restart, `platform_settings`-Schlüssel-
+Tabelle, SSRF, Verfügbarkeits-Signale), Glossar-Eintrag, Milestone
+`K2-K5_Kartendaten_live_editierbar.md`, Register FR-CFG-009…012. **Verifikation:**
+`go test/vet/gofmt` grün, 737 Frontend-Tests grün, `vite build` + Dist neu
+eingebettet. **Nächster Schritt:** Epic #307 nach dem Merge abschließen
+(#308–#314 schließen).
+
+---
+
+## 🗂️ Stand 2026-07-20 (Admin-Bereich „Kartendaten": Rahmen + Status — K1, FR-CFG-008)
+
+**In normaler Sprache:** Im Admin gibt es jetzt einen neuen Bereich **„Kartendaten"**
+mit vier Reitern — **Basiskarte, Wetter, Radar-Abdeckung, Aeronautik**. Er zeigt
+auf einen Blick, **was konfiguriert und verfügbar** ist (z. B. „DWD-Regenradar
+verfügbar", „3 Sensoren konfiguriert", Theme/Style der Karte). Der bisherige
+„OpenAIP"-Bereich ist als Reiter **Aeronautik** hier eingezogen. In diesem Schritt
+ist alles **nur Anzeige** — das direkte Bearbeiten der Werte folgt je Quelle.
+
+**Fachlich/technisch:** K1 des Epics **#307** (Issue #309), auf K0 (`pkg/mapconfig`)
+aufbauend. Neue `AdminMapData.vue` (vier `v-tabs`), Status aus **demselben**
+`/api/map-config`, das das ASD beim Start liest (Single Source of Truth); Reiter
+Aeronautik bettet das bestehende `AdminGlobalOpenAIP.vue` ein (keine Doppelung).
+Read-only. **Verifikation:** 731 Frontend-Tests grün, `go build` grün, Dist neu
+eingebettet. **Nächster Schritt:** K2 (#310) — Basiskarte live editierbar
+(Style-URL/Theme), dann K3 Wetter · K4 Abdeckung · K5 Aeronautik-Felder · K6 Doku.
+
+---
+
+## 🛠️ Stand 2026-07-20 (Config-Plane für Kartendaten — K0, ADR 0033, FR-CFG-007)
+
+**In normaler Sprache:** Fundament für ein neues Admin-Vorhaben (#307): Wetter,
+Basiskarte, Radar-Abdeckung und Aeronautik sollen sich später **im Admin live
+einstellen** lassen (heute meist nur über Env + Neustart). K0 baut noch **keine
+Oberfläche**, sondern die wiederverwendbaren Bausteine darunter: eine Einstellung
+kann in der Datenbank überschrieben werden (mit dem Env-Wert als Rückfall), eine
+Änderung lädt den betroffenen Dienst **ohne Neustart** neu (und behält bei Fehler
+die letzte gute Konfig), und vom Admin gesetzte URLs werden vor dem Speichern
+**auf Sicherheit geprüft** (kein Zugriff auf interne Adressen — SSRF-Schutz).
+
+**Fachlich/technisch:** K0 des Epics **#307** (Issue #308), ADR 0033. Neues Paket
+`pkg/mapconfig` (rein, unit-getestet): `Setting` (DB-Override ?? Env-Default,
+Reset, Store-Fehler → Default), `Registry`+`ReloadFunc` (defensives Hot-Reload je
+Domain), `ValidateFetchURL` (SSRF-Leitplanken), `Resource.Handler` (generischer
+GET/PUT-Admin-Endpunkt, Reload-Fehler ehrlich als `reload_error`). **12-Factor
+bleibt gültig** (frisches Deployment ohne DB-Config = wie bisher). Secrets bleiben
+versiegelt (nicht in dieser Plane). **Verifikation:** `go test ./pkg/mapconfig`
+grün, `go vet`/`gofmt` sauber, `go build ./...` grün. **Ehrliche Grenze:**
+DNS-Rebinding-SSRF nicht abgedeckt (Trusted-Admin-Modell, dokumentiert).
+**Nächster Schritt:** K1 (#309) — Admin-Abschnitt „Kartendaten" + Status-Anzeige,
+dann K2–K5 (Subsysteme live) → K6 (Doku).
 
 ---
 

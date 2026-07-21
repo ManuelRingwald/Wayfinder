@@ -214,6 +214,23 @@ func (s *Service) ensureStyle(ctx context.Context) ([]byte, error) {
 	return nil, err
 }
 
+// Reload updates the upstream style URL and dark flag at runtime (#310, K2) and
+// forces a refetch on the next request. Defensive: the cached last-good style is
+// KEPT (styleFetchedAt reset, not the cache), so ensureStyle serves the previous
+// style if the refetch with the new settings fails — a bad new URL never blanks a
+// running scope. An empty styleURL falls back to DefaultStyleURL.
+func (s *Service) Reload(styleURL string, dark bool) {
+	styleURL = strings.TrimSpace(styleURL)
+	if styleURL == "" {
+		styleURL = DefaultStyleURL
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.styleURL = styleURL
+	s.dark = dark
+	s.styleFetchedAt = time.Time{} // TTL expired → next ensureStyle refetches; last-good kept
+}
+
 // StyleJSON returns the rewritten (URL-absolutised) style — the same bytes
 // StyleHandler serves. Consumed by pkg/basemapsearch (#277), whose sector
 // index must read the SAME tile source the map renders (online or mirror).

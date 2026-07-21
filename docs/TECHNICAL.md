@@ -796,6 +796,66 @@ Rein **client-seitige** Anzeigehilfen (keine Env-Variablen, keine Backend-Wirkun
 - **Nord-Kompass:** MapLibre `NavigationControl` (oben-links) zeigt das aktuelle
   Bearing und setzt per Klick auf Nord; freie Kartendrehung bleibt aktiv.
 
+### 6.7 Live-konfigurierbare Kartendaten (Admin-Override, Epic #307, ADR 0033)
+
+Seit dem „Kartendaten"-Ausbau (K0–K5) sind die Karten-Datenquellen (Basiskarte,
+Wetter, Radar-Abdeckung, Aeronautik) **zur Laufzeit** über die Admin-UI
+(**Admin → Kartendaten**) konfigurierbar. Das Fundament ist das Paket
+`pkg/mapconfig` (K0): jede Einstellung ist ein `platform_settings`-Schlüssel mit
+einem **Start-up-Env-Default**.
+
+**Rangfolge (Precedence):** `DB-Override (platform_settings) > Env-Default`. Ein
+fehlender/geleerter Override fällt auf die Env-Variable zurück — eine frische
+Instanz ohne DB-Overrides verhält sich exakt wie zuvor (12-Factor bleibt
+gültig). „Auf Standard" in der UI löscht die `platform_settings`-Zeile.
+
+**Hot-Reload vs. Restart-Apply:**
+- **Live (sofort):** Basiskarte (Style-URL/Theme → `basemap.Service.Reload`
+  forciert Re-Fetch, behält letzte gute Konfig bei Fehler; ein Reload-Fehler
+  wird ehrlich als `reload_error` mit HTTP 200 gemeldet = gespeichert, aber nicht
+  angewandt), Wetter-**Verfügbarkeit** (`/api/map-config`), Radar-Abdeckung
+  (`/coverage`-GeoJSON + `coverage_sensor_count` rechnen pro Request neu).
+- **Beim Neustart:** Wetter-Upstream-**URLs/Layer** und OpenAIP
+  **Radius/Base-URL**. Die DWD/QNH-Abruf-Dienste sind sperrfreie Poll-Schleifen;
+  sie werden beim Start aus den **effektiven** Werten neu gebaut, statt einen
+  laufenden Feed im Betrieb umzukonfigurieren (Sicherheit vor Bequemlichkeit).
+
+**SSRF-Leitplanken:** Admin-gesetzte, server-seitig gefetchte URLs (Style-URL,
+DWD-URLs, OpenAIP-Base-URL) durchlaufen `mapconfig.ValidateFetchURL` vor dem
+Speichern: nur `http`/`https`, Host-Pflicht, Ablehnung von privaten/Loopback/
+Link-Local/ULA-Adressen, internen Namen und der Cloud-Metadaten-Adresse
+`169.254.169.254`. **Rest-Risiko:** DNS-Rebinding (öffentlicher Name → private
+IP) ist nicht abgedeckt (Trusted-Admin-Modell).
+
+**Secrets bleiben versiegelt:** Der OpenAIP-API-Key ist **nicht** Teil dieser
+Plane — er wird weiter über `pkg/secret` (AES-256-GCM, `WAYFINDER_SECRET_KEY`)
+in `platform_settings` versiegelt (`PUT /api/admin/openaip`).
+
+**`platform_settings`-Schlüssel** (Form + Env-Default-Quelle):
+
+| Schlüssel | Form | Env-Default | Wirkung | Admin-Endpunkt (`RequireRole(admin)`) |
+|-----------|------|-------------|---------|----------------------------------------|
+| `mapdata.basemap.style_url` | URL (SSRF-geprüft) | `WAYFINDER_BKG_STYLE_URL` | live | `GET/PUT /api/admin/mapdata/basemap/style-url` |
+| `mapdata.basemap.theme` | `bkg`\|`bkg-dark` | `WAYFINDER_MAP_THEME` | live | `GET/PUT /api/admin/mapdata/basemap/theme` |
+| `mapdata.weather.radar_enabled` | `true`\|`false` | `WAYFINDER_DWD_RADAR_ENABLED` | live (Verfügbarkeit) | `GET/PUT /api/admin/mapdata/weather/radar-enabled` |
+| `mapdata.weather.radar_wms_url` | URL (SSRF-geprüft) | `WAYFINDER_DWD_WMS_URL` | Neustart | `GET/PUT /api/admin/mapdata/weather/radar-url` |
+| `mapdata.weather.radar_layer` | string | `WAYFINDER_DWD_RADAR_LAYER` | Neustart | `GET/PUT /api/admin/mapdata/weather/radar-layer` |
+| `mapdata.weather.warn_enabled` | `true`\|`false` | `WAYFINDER_DWD_WARN_ENABLED` | live (Verfügbarkeit) | `GET/PUT /api/admin/mapdata/weather/warn-enabled` |
+| `mapdata.weather.warn_url` | URL (SSRF-geprüft) | `WAYFINDER_DWD_WARN_URL` | Neustart | `GET/PUT /api/admin/mapdata/weather/warn-url` |
+| `mapdata.weather.warn_layer` | string | `WAYFINDER_DWD_WARN_LAYER` | Neustart | `GET/PUT /api/admin/mapdata/weather/warn-layer` |
+| `mapdata.weather.qnh_enabled` | `true`\|`false` | `WAYFINDER_QNH_ENABLED` | live (Verfügbarkeit) + Neustart (Poller) | `GET/PUT /api/admin/mapdata/weather/qnh-enabled` |
+| `mapdata.coverage.sensors` | JSON-Liste (≤ 20) | `WAYFINDER_COVERAGE_SENSOR_*` | live | `GET/PUT/DELETE /api/admin/mapdata/coverage` |
+| `mapdata.coverage.ring_color` | CSS-Hex | `WAYFINDER_COVERAGE_RING_COLOR` | live | (dito, im selben Payload) |
+| `mapdata.aero.radius_km` | Zahl (> 0, ≤ 5000) | `WAYFINDER_OPENAIP_RADIUS_KM` | Neustart | `GET/PUT /api/admin/mapdata/aero/radius-km` |
+| `mapdata.aero.base_url` | URL (SSRF-geprüft) | `WAYFINDER_OPENAIP_BASE_URL` | Neustart | `GET/PUT /api/admin/mapdata/aero/base-url` |
+
+Ein `PUT` mit leerem `value` ist ein **Reset** (Zeile gelöscht → Env-Default);
+`/coverage` nutzt zusätzlich `DELETE` als expliziten Reset (verschieden von einem
+`PUT` mit leerer Liste = „null Sensoren"-Override). Die **Verfügbarkeits-Signale**
+in `/api/map-config` (`weather_radar_available`, `weather_warnings_available`,
+`qnh_available`, `coverage_sensor_count`) spiegeln die **effektiven** Werte pro
+Request.
+
 ### 6.4 Sicherheit
 
 | Variable | Default | Typ | Beschreibung |
