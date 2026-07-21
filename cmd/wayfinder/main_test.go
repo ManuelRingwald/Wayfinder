@@ -27,7 +27,7 @@ func TestMapConfigHandlerDefaultStyle(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/map-config", nil)
 	rec := httptest.NewRecorder()
 
-	mapConfigHandler(cfg)(rec, req)
+	mapConfigHandler(cfg, nil)(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", rec.Code)
@@ -66,7 +66,7 @@ func TestMapConfigHandlerCustomStyleURL(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/map-config", nil)
 	rec := httptest.NewRecorder()
 
-	mapConfigHandler(cfg)(rec, req)
+	mapConfigHandler(cfg, nil)(rec, req)
 
 	var body struct {
 		Style string `json:"style"`
@@ -96,7 +96,7 @@ func TestMapConfigHandlerCorrelationAvailable(t *testing.T) {
 			cfg := Config{FireflyCommandToken: tc.token}
 			req := httptest.NewRequest(http.MethodGet, "/api/map-config", nil)
 			rec := httptest.NewRecorder()
-			mapConfigHandler(cfg)(rec, req)
+			mapConfigHandler(cfg, nil)(rec, req)
 
 			var body struct {
 				CorrelationAvailable bool `json:"correlation_available"`
@@ -303,7 +303,7 @@ func TestMapConfigHandlerCustomStyleURLReportsTheme(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/map-config", nil)
 	rec := httptest.NewRecorder()
-	mapConfigHandler(cfg)(rec, req)
+	mapConfigHandler(cfg, nil)(rec, req)
 
 	var body struct {
 		Theme string `json:"theme"`
@@ -330,7 +330,7 @@ func TestMapConfigHandlerBKGTheme(t *testing.T) {
 
 		req := httptest.NewRequest(http.MethodGet, "/api/map-config", nil)
 		rec := httptest.NewRecorder()
-		mapConfigHandler(cfg)(rec, req)
+		mapConfigHandler(cfg, nil)(rec, req)
 
 		var body struct {
 			Theme string `json:"theme"`

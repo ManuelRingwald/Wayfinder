@@ -314,3 +314,21 @@ als CTR/TMA ist die ATZ vielerorts ein **echter Zylinder** (Radius um den
 Bezugspunkt der Piste) — der Sonderfall, in dem ein Radius tatsächlich die
 Geometrie definiert.
 
+
+## Kartendaten-Konfiguration / Platform-Settings-Override (ADR 0033)
+
+Die vier Karten-Datenquellen des ASD (**Basiskarte**, **Wetter** DWD/QNH,
+**Radar-Abdeckung** und **Aeronautik**/OpenAIP) sind zur Laufzeit über die
+Admin-UI (**Admin → Kartendaten**) konfigurierbar — statt nur beim Start über
+Umgebungsvariablen. Technisch (`pkg/mapconfig`, Epic #307): jede Einstellung ist
+ein Schlüssel in der DB-Tabelle **`platform_settings`** mit einem
+**Env-Default**. Der **effektive** Wert ist der DB-**Override**, falls gesetzt,
+sonst der Env-Default (**Precedence: DB > Env**); „Auf Standard" löscht die
+Zeile und fällt auf die Env zurück — so bleibt die 12-Factor-Konfiguration
+gültig (eine Instanz ohne Overrides verhält sich wie zuvor). Manche Overrides
+wirken **live** (Basiskarte, Verfügbarkeits-Schalter, Abdeckung), andere erst
+beim **Neustart** (Upstream-URLs/Layer, OpenAIP-Radius) — ein laufender
+Abruf-Dienst wird nicht im Betrieb umkonfiguriert. **Secrets** (OpenAIP-Key)
+bleiben davon getrennt und **versiegelt** (`pkg/secret`); admin-gesetzte,
+server-seitig gefetchte URLs durchlaufen **SSRF-Leitplanken**
+(`ValidateFetchURL`). Vollständige Schlüssel-Liste: `docs/TECHNICAL.md` §6.7.

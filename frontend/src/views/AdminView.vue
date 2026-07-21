@@ -24,7 +24,7 @@
       >
         <v-btn value="tenants" prepend-icon="mdi-domain">Mandanten</v-btn>
         <v-btn value="feeds" prepend-icon="mdi-access-point-network">Feeds</v-btn>
-        <v-btn value="openaip" prepend-icon="mdi-airplane-marker">OpenAIP</v-btn>
+        <v-btn value="mapdata" prepend-icon="mdi-map-outline">Kartendaten</v-btn>
         <v-btn value="admins" prepend-icon="mdi-shield-account">Plattform-Administratoren</v-btn>
       </v-btn-toggle>
       <v-select
@@ -221,9 +221,11 @@
              sources; the server joins/leaves their multicast groups live. -->
         <AdminFeeds v-else-if="section === 'feeds'" />
 
-        <!-- AERO-2 (ADR 0018): platform-wide OpenAIP — the global fallback key
-             (sealed) + a fetch-all button for AIRAC updates. -->
-        <AdminGlobalOpenAIP v-else-if="section === 'openaip'" />
+        <!-- K1 (#309, Epic #307): the "Kartendaten" area groups the four map-data
+             sources (Basiskarte / Wetter / Radar-Abdeckung / Aeronautik) with a
+             read-only status view; the Aeronautik tab embeds the platform-wide
+             OpenAIP panel (AERO-2, ADR 0018) that used to be its own section. -->
+        <AdminMapData v-else-if="section === 'mapdata'" />
 
         <!-- AP3 (ADR 0009): tenant-centric admin. The overview lists all tenants;
              selecting one opens its central configuration page. The old per-tab
@@ -250,17 +252,17 @@ import AdminTenants from '@/components/admin/AdminTenants.vue'
 import AdminTenantDetail from '@/components/admin/AdminTenantDetail.vue'
 import AdminPlatformAdmins from '@/components/admin/AdminPlatformAdmins.vue'
 import AdminFeeds from '@/components/admin/AdminFeeds.vue'
-import AdminGlobalOpenAIP from '@/components/admin/AdminGlobalOpenAIP.vue'
+import AdminMapData from '@/components/admin/AdminMapData.vue'
 import MyAccountPanel from '@/components/admin/MyAccountPanel.vue'
 
 const admin = useAdminStore()
 const { mdAndUp } = useDisplay()
-const section = ref('tenants') // 'tenants' | 'feeds' | 'openaip' | 'admins' — header navigation (ONB-3/5/AERO-2)
+const section = ref('tenants') // 'tenants' | 'feeds' | 'mapdata' | 'admins' — header navigation (ONB-3/5, K1 #309)
 // #194: same four sections as the desktop toggle, for the mobile select.
 const sectionItems = [
   { value: 'tenants', title: 'Mandanten' },
   { value: 'feeds', title: 'Feeds' },
-  { value: 'openaip', title: 'OpenAIP' },
+  { value: 'mapdata', title: 'Kartendaten' },
   { value: 'admins', title: 'Plattform-Administratoren' },
 ]
 const selectedTenant = ref(null) // null = overview; a tenant id = detail page
