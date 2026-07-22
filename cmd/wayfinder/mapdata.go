@@ -28,9 +28,13 @@ type mapDataConfig struct {
 	logger     *slog.Logger
 	basemapSvc *basemap.Service // may be nil (a custom MapStyleURL bypasses the service)
 
-	// Basiskarte (K2)
-	styleURL *mapconfig.Setting
-	theme    *mapconfig.Setting
+	// Basiskarte (K2 global; T2 per-tenant, ADR 0035). The global settings carry
+	// the platform default; the tenant layer (styleURLTenant/themeTenant) resolves
+	// tenant-override ?? global ?? env per request. The tenant store may be nil.
+	styleURL       *mapconfig.Setting
+	theme          *mapconfig.Setting
+	styleURLTenant *mapconfig.TenantSetting
+	themeTenant    *mapconfig.TenantSetting
 
 	// Radar-/Luftlageabdeckung (K4): the sensor list is a JSON blob; the ring
 	// colour a plain string. Both fall back to the env-configured start-up value.
@@ -120,7 +124,7 @@ func validBool(v string) error {
 
 // newMapDataConfig seeds each setting with the process start-up env default and
 // registers the per-subsystem reloads. basemapSvc may be nil.
-func newMapDataConfig(st mapconfig.Store, cfg Config, basemapSvc *basemap.Service, logger *slog.Logger) *mapDataConfig {
+func newMapDataConfig(st mapconfig.Store, cfg Config, basemapSvc *basemap.Service, logger *slog.Logger, tenantStore mapconfig.TenantStore) *mapDataConfig {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -154,8 +158,34 @@ func newMapDataConfig(st mapconfig.Store, cfg Config, basemapSvc *basemap.Servic
 		openaipBaseURL:   mapconfig.NewSetting(st, msOpenAIPBaseURL, cfg.OpenAIPBaseURL),
 		envOpenAIPRadius: cfg.OpenAIPRadiusKM,
 	}
+	// Per-tenant override layer (T2, ADR 0035): only the base map (theme + style
+	// URL) is tenant-scoped in the hybrid scope. Resolves tenant ?? global ?? env.
+	// tenantStore may be nil → behaves global-only.
+	m.themeTenant = mapconfig.NewTenantSetting(tenantStore, m.theme)
+	m.styleURLTenant = mapconfig.NewTenantSetting(tenantStore, m.styleURL)
+
 	m.registry.Register(domainBasemap, m.reloadBasemap)
 	return m
+}
+
+// effectiveThemeForTenant returns the base-map theme in force for a tenant:
+// tenant-override ?? global override ?? env default. tenantID 0 (platform admin,
+// no tenant) yields the global value. Falls back to the dark default on an
+// empty/failed read (mirrors effectiveTheme).
+func (m *mapDataConfig) effectiveThemeForTenant(ctx context.Context, tenantID int64) string {
+	v, err := m.themeTenant.Effective(ctx, tenantID)
+	if err != nil || v == "" {
+		return mapThemeBKGDark
+	}
+	return v
+}
+
+// effectiveStyleURLForTenant returns the base-map style URL in force for a tenant
+// (tenant ?? global ?? env). Used by the per-tenant /basemap/style.json handler so
+// the browser fetches the tenant's style. Empty only if the env default is empty.
+func (m *mapDataConfig) effectiveStyleURLForTenant(ctx context.Context, tenantID int64) string {
+	v, _ := m.styleURLTenant.Effective(ctx, tenantID)
+	return v
 }
 
 // effectiveOpenAIP returns the live (override ?? env) OpenAIP fetch radius and
@@ -317,6 +347,73 @@ func (m *mapDataConfig) mountAdminRoutes(mux *http.ServeMux, wrap func(http.Hand
 	// restart). An empty base-URL resets to the env default / provider default.
 	mux.Handle("/api/admin/mapdata/aero/radius-km", wrap(res(m.openaipRadiusKM, validRadiusKM).Handler()))
 	mux.Handle("/api/admin/mapdata/aero/base-url", wrap(res(m.openaipBaseURL, urlV).Handler()))
+
+	// Per-tenant base map (T2, ADR 0035): an admin sets a tenant's own theme +
+	// style URL. These override the global values for that tenant only (resolved
+	// tenant ?? global ?? env by the /basemap/style.json + /api/map-config path).
+	// More specific than the /api/admin/ catch-all, so they win over adminapi.
+	mux.Handle("/api/admin/tenants/{tenantID}/mapdata/basemap/theme", wrap(m.tenantBasemapHandler(m.themeTenant, validTheme)))
+	mux.Handle("/api/admin/tenants/{tenantID}/mapdata/basemap/style-url", wrap(m.tenantBasemapHandler(m.styleURLTenant, urlV)))
+}
+
+// tenantSettingResponse is the per-tenant admin payload: the tenant-effective
+// value, whether THIS tenant overrides it, and the global value it falls back to.
+type tenantSettingResponse struct {
+	Value      string `json:"value"`
+	Overridden bool   `json:"overridden"`
+	Default    string `json:"default"` // the global effective value (the fallback)
+}
+
+// tenantBasemapHandler serves GET/PUT for one per-tenant base-map setting. The
+// {tenantID} path segment scopes the override; PUT validates a non-empty value and
+// stores it (empty = reset to the global/env value). Mirrors mapconfig.Resource
+// but for a TenantSetting.
+func (m *mapDataConfig) tenantBasemapHandler(setting *mapconfig.TenantSetting, validate func(string) error) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		tid, err := strconv.ParseInt(r.PathValue("tenantID"), 10, 64)
+		if err != nil || tid <= 0 {
+			http.Error(w, "invalid tenant id", http.StatusBadRequest)
+			return
+		}
+		ctx := r.Context()
+		switch r.Method {
+		case http.MethodGet:
+			m.writeTenantSetting(w, ctx, setting, tid)
+		case http.MethodPut:
+			var body struct {
+				Value string `json:"value"`
+			}
+			if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&body); err != nil {
+				http.Error(w, "invalid JSON body", http.StatusBadRequest)
+				return
+			}
+			if body.Value != "" && validate != nil {
+				if err := validate(body.Value); err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+			}
+			if err := setting.Set(ctx, tid, body.Value); err != nil {
+				http.Error(w, "could not store setting", http.StatusInternalServerError)
+				return
+			}
+			m.writeTenantSetting(w, ctx, setting, tid)
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	}
+}
+
+func (m *mapDataConfig) writeTenantSetting(w http.ResponseWriter, ctx context.Context, setting *mapconfig.TenantSetting, tid int64) {
+	value, err := setting.Effective(ctx, tid)
+	if err != nil {
+		http.Error(w, "could not read setting", http.StatusInternalServerError)
+		return
+	}
+	overridden, _ := setting.Overridden(ctx, tid)
+	globalVal, _ := setting.Global().Effective(ctx)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(tenantSettingResponse{Value: value, Overridden: overridden, Default: globalVal})
 }
 
 // coverageRequest / coverageResponse are the admin coverage payloads.

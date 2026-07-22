@@ -311,7 +311,7 @@ func main() {
 	// radius + base-URL overrides are folded into cfg and honoured at (re)start —
 	// mapData still owns the true env values as its reset defaults. Live overrides
 	// (basemap/weather-enable/coverage) are applied further down once ctx exists.
-	mapData := newMapDataConfig(store.NewSettingsRepo(dbPool), cfg, basemapSvc, logger)
+	mapData := newMapDataConfig(store.NewSettingsRepo(dbPool), cfg, basemapSvc, logger, store.NewTenantMapSettingsRepo(dbPool))
 	func() {
 		aeroBoot, cancelAeroBoot := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancelAeroBoot()
@@ -606,7 +606,31 @@ func main() {
 	// the upstream recorded from the style. Otherwise /glyphs behaves exactly
 	// as before (embedded only).
 	if basemapSvc != nil {
-		mux.Handle("/basemap/style.json", basemapSvc.StyleHandler())
+		// Per-tenant base map (T2, ADR 0035): the style bytes (which BKG style +
+		// dark transform) are resolved per tenant. Behind the tenant middleware so
+		// the caller's tenant — or an admin's impersonation target — is known; a
+		// tenant with no override gets the global/env default style (StyleJSONFor
+		// delegates to the default cache with its last-good guarantee). Cache-Control
+		// is PRIVATE because the same URL yields different bytes per tenant.
+		tenantStyle := func(w http.ResponseWriter, r *http.Request) {
+			ctx := r.Context()
+			var tenantID int64
+			if id, ok := tenant.FromContext(ctx); ok {
+				tenantID = tenant.ReadTenant(ctx, id.TenantID)
+			}
+			styleURL := mapData.effectiveStyleURLForTenant(ctx, tenantID)
+			dark := mapData.effectiveThemeForTenant(ctx, tenantID) == mapThemeBKGDark
+			style, err := basemapSvc.StyleJSONFor(ctx, styleURL, dark)
+			if err != nil {
+				logger.Error("basemap style unavailable", slog.String("error", err.Error()))
+				http.Error(w, "basemap style unavailable", http.StatusBadGateway)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Cache-Control", "private, max-age=300")
+			_, _ = w.Write(style)
+		}
+		mux.Handle("/basemap/style.json", tenantMW(pwGate(impReadMW(http.HandlerFunc(tenantStyle)))))
 		localStacks, err := webui.GlyphFontstacks()
 		if err != nil {
 			logger.Error("list embedded glyph fontstacks", slog.String("error", err.Error()))
@@ -620,7 +644,10 @@ func main() {
 	} else {
 		mux.Handle("/glyphs/", glyphs)
 	}
-	mux.HandleFunc("/api/map-config", mapConfigHandler(cfg, mapData))
+	// /api/map-config is behind the tenant middleware (T2, ADR 0035) so the
+	// reported theme is the caller's tenant-effective one (tenant ?? global ?? env);
+	// the base map bytes follow via the tenant-aware /basemap/style.json above.
+	mux.Handle("/api/map-config", tenantMW(pwGate(impReadMW(mapConfigHandler(cfg, mapData)))))
 
 	// Aeronautical GeoJSON endpoints (/api/airspace, /api/navaids,
 	// /api/waypoints), served from the OpenAIP cache (ADR 0004). They are
@@ -1759,7 +1786,13 @@ func mapConfigHandler(cfg Config, md *mapDataConfig) http.HandlerFunc {
 		qnhAvail := cfg.QNHEnabled
 		if md != nil {
 			ctx := r.Context()
-			effTheme = md.effectiveTheme(ctx)
+			// T2 (ADR 0035): the theme is tenant-effective (tenant ?? global ?? env).
+			// tenantID 0 (no/admin tenant) → global, exactly as before this change.
+			var tenantID int64
+			if id, ok := tenant.FromContext(ctx); ok {
+				tenantID = tenant.ReadTenant(ctx, id.TenantID)
+			}
+			effTheme = md.effectiveThemeForTenant(ctx, tenantID)
 			coverageColor = md.effectiveRingColor(ctx)
 			coverageCount = len(md.effectiveSensors(ctx))
 			radarAvail = md.radarAvailable(ctx)

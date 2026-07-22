@@ -112,6 +112,12 @@ type Service struct {
 	styleFetchedAt time.Time
 	upstreamGlyphs string // absolutised upstream glyphs template ("" = none)
 
+	// variants is the per-(styleURL, dark) cache for TENANT overrides (T2, ADR
+	// 0035). Only variants that differ from the service default land here; a tenant
+	// with no override (or an override equal to the default) uses the default cache
+	// above, keeping its strong last-good guarantee. Guarded by mu.
+	variants map[variantKey]*styleVariant
+
 	glyphMu    sync.Mutex
 	glyphCache map[string][]byte
 
@@ -119,6 +125,25 @@ type Service struct {
 	fetchFailure    atomic.Int64
 	lastSuccessUnix atomic.Int64
 }
+
+// variantKey identifies a cached rewritten style by its upstream URL and dark flag.
+type variantKey struct {
+	url  string
+	dark bool
+}
+
+// styleVariant is one cached rewritten style (a per-tenant base-map variant).
+type styleVariant struct {
+	style          []byte
+	fetchedAt      time.Time
+	upstreamGlyphs string
+}
+
+// maxStyleVariants caps the per-(url, dark) variant cache. The realistic set is
+// tiny (a handful of BKG styles × light/dark); the cap is a safety bound against
+// unbounded growth from admin-set style URLs. Beyond it, variants are still served
+// but not cached (refetched each request) — a logged, graceful degradation.
+const maxStyleVariants = 32
 
 // NewService builds a basemap Service. A nil httpClient falls back to
 // http.DefaultClient (no timeout) — production always injects a timed client.
@@ -145,6 +170,7 @@ func NewService(httpClient *http.Client, cfg Config, logger *slog.Logger) *Servi
 		logger:     logger,
 		now:        time.Now,
 		glyphCache: make(map[string][]byte),
+		variants:   make(map[variantKey]*styleVariant),
 	}
 }
 
@@ -229,6 +255,62 @@ func (s *Service) Reload(styleURL string, dark bool) {
 	s.styleURL = styleURL
 	s.dark = dark
 	s.styleFetchedAt = time.Time{} // TTL expired → next ensureStyle refetches; last-good kept
+}
+
+// StyleJSONFor returns the rewritten style for a specific (styleURL, dark)
+// variant — the per-tenant base map (T2, ADR 0035). When the variant equals the
+// service default it delegates to the default cache (full last-good guarantee);
+// otherwise it uses the bounded per-variant cache (each variant keeps its own
+// last-good). An empty styleURL means the service default. Thread-safe.
+func (s *Service) StyleJSONFor(ctx context.Context, styleURL string, dark bool) ([]byte, error) {
+	styleURL = strings.TrimSpace(styleURL)
+	s.mu.Lock()
+	if styleURL == "" {
+		styleURL = s.styleURL // empty → the service's configured default style
+	}
+	isDefault := styleURL == s.styleURL && dark == s.dark
+	s.mu.Unlock()
+	if isDefault {
+		return s.ensureStyle(ctx) // reuse the default cache + its last-good path
+	}
+	return s.ensureStyleVariant(ctx, variantKey{url: styleURL, dark: dark})
+}
+
+// ensureStyleVariant returns the cached rewritten style for a non-default variant,
+// refetching when its TTL has expired. On refetch failure a stale variant is
+// served (never blank a scope). Beyond maxStyleVariants the result is served
+// uncached (logged) to bound memory. Mirrors ensureStyle for the default path.
+func (s *Service) ensureStyleVariant(ctx context.Context, key variantKey) ([]byte, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if v := s.variants[key]; v != nil && s.now().Sub(v.fetchedAt) < s.ttl {
+		return v.style, nil
+	}
+	raw, err := s.fetch(ctx, key.url, maxStyleBytes)
+	if err == nil {
+		var rewritten []byte
+		var upstreamGlyphs string
+		rewritten, upstreamGlyphs, err = rewriteStyle(raw, key.url, key.dark)
+		if err == nil {
+			// Best-effort shared glyph-proxy fallback: all supported BKG styles share
+			// the same upstream glyph host, so recording the latest is sufficient for
+			// the rarely-hit non-local fontstack proxy (self-hosted glyphs cover labels).
+			s.upstreamGlyphs = upstreamGlyphs
+			if _, exists := s.variants[key]; exists || len(s.variants) < maxStyleVariants {
+				s.variants[key] = &styleVariant{style: rewritten, fetchedAt: s.now(), upstreamGlyphs: upstreamGlyphs}
+			} else {
+				s.logger.Warn("basemap variant cache full; serving uncached",
+					slog.Int("cap", maxStyleVariants), slog.String("url", key.url), slog.Bool("dark", key.dark))
+			}
+			return rewritten, nil
+		}
+	}
+	if v := s.variants[key]; v != nil {
+		s.logger.Warn("basemap variant refresh failed; serving stale style",
+			slog.String("url", key.url), slog.Bool("dark", key.dark), slog.String("error", err.Error()))
+		return v.style, nil
+	}
+	return nil, err
 }
 
 // StyleJSON returns the rewritten (URL-absolutised) style — the same bytes
