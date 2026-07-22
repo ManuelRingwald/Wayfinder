@@ -10,6 +10,30 @@
 
 ---
 
+## ✅ Stand 2026-07-22 (Pro-Mandant-Basiskarte — Bedien-UI, T3; ADR 0035 komplett)
+
+**In normaler Sprache:** „Basiskarte pro Mandant" ist jetzt **end-to-end** fertig.
+Im Admin unter **Mandanten → [Mandant]** ist die Konfiguration in **Tabs**
+gegliedert (**Sicht · Freigaben · Kartendaten**). Im Reiter **Kartendaten** stellt
+der Betreiber die **eigene Basiskarte** des Mandanten ein (Theme hell/dunkel +
+Style-URL); „Auf Standard" setzt auf die globale Karte zurück. Der Lotse dieses
+Mandanten sieht daraufhin seine Karte (Serving-Pfad aus T2).
+
+**Fachlich/technisch:** T3 von ADR 0035 (rein Frontend). `AdminTenantDetail.vue`
+in `v-tabs`/`v-window` umgebaut; neuer Kartendaten-Reiter mit Theme-Select +
+Style-URL-Feld, „überschrieben/Standard"-Chip und Reset — ruft die T2-Endpunkte
+`GET/PUT /api/admin/tenants/{id}/mapdata/basemap/{theme,style-url}`. Der bestehende
+globale Speichern-Knopf (Sicht + Freigaben) bleibt und ist auf dem Kartendaten-
+Reiter ausgeblendet (der speichert eigenständig). **Verifikation:** 760
+Frontend-Tests grün (neu `adminTenantBasemap.test.js`), `vite build` + Dist neu;
+Backend unverändert (T2). Doku: ADR 0035 (T3 ✅), FR-CFG-013.
+
+**Epic-Stand:** T1 (#326) + T2 (#327) + T3 = **Pro-Mandant-Basiskarte komplett**.
+Nächste mögliche Schritte (nicht begonnen): weitere Subsysteme pro Mandant nur bei
+Bedarf (Hybrid-Scope hält Wetter/Sensoren global).
+
+---
+
 ## 🗺️ Stand 2026-07-22 (Pro-Mandant-Basiskarte — Serving-Pfad, T2; ADR 0035)
 
 **In normaler Sprache:** Jeder Mandant kann jetzt eine **eigene Basiskarte**
