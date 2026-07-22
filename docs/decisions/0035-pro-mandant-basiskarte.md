@@ -84,4 +84,8 @@ Pro-Mandant-Basiskarte muss der **Style-Proxy mandanten-fähig** werden.
 - **T2** (dieses ADR): mandanten-fähiger Style-Proxy (`StyleJSONFor`,
   Varianten-Cache) + mandanten-effektive `/basemap/style.json` + `/api/map-config`
   + Admin-Schreibpfad + Tests.
-- **T3**: Mandanten-Detail als **Tabs** + Pro-Mandant-Basiskarte-Editor (Frontend).
+- **T3** ✅: Mandanten-Detail (`AdminTenantDetail.vue`) als **Tabs** (Sicht |
+  Freigaben | Kartendaten) + Pro-Mandant-Basiskarte-Editor im Kartendaten-Reiter
+  (Theme + Style-URL, „überschrieben/Standard"-Chip, „Auf Standard"-Reset), ruft
+  die T2-Admin-Endpunkte. Der bestehende globale Speichern-Knopf (Sicht +
+  Freigaben) bleibt; der Kartendaten-Reiter speichert eigenständig.

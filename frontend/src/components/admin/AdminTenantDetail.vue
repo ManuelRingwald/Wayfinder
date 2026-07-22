@@ -68,6 +68,17 @@
     </v-card>
   </v-dialog>
 
+  <!-- T3 (ADR 0035): the per-tenant config is grouped into tabs for clarity
+       (Betreiber-Wunsch). Sicht + Freigaben share the single global save below;
+       the Kartendaten tab (per-tenant base map) saves on its own. -->
+  <v-tabs v-model="tab" color="primary" class="mb-4">
+    <v-tab value="view" prepend-icon="mdi-crosshairs-gps">Sicht</v-tab>
+    <v-tab value="entitlements" prepend-icon="mdi-toggle-switch">Freigaben</v-tab>
+    <v-tab value="mapdata" prepend-icon="mdi-map">Kartendaten</v-tab>
+  </v-tabs>
+
+  <v-window v-model="tab">
+  <v-window-item value="view">
   <!-- Sicht (Center + Radius + FL-Band) -->
   <v-card variant="tonal" class="mb-4">
     <v-card-title class="text-subtitle-1">Standard-Ansicht</v-card-title>
@@ -250,6 +261,9 @@
     </v-card-text>
   </v-card>
 
+  </v-window-item>
+
+  <v-window-item value="entitlements">
   <!-- Features (entitlements) -->
   <v-card variant="tonal" class="mb-4">
     <v-card-title class="text-subtitle-1">Features</v-card-title>
@@ -281,9 +295,62 @@
     </v-card-text>
   </v-card>
 
+  </v-window-item>
+
+  <v-window-item value="mapdata">
+    <!-- T3 (ADR 0035): per-tenant base map — theme + style override the global
+         default for THIS tenant only (resolved tenant ?? global ?? env). -->
+    <v-card variant="tonal" class="mb-4">
+      <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
+        Basiskarte (BKG)
+        <v-chip size="x-small" :color="basemap.overridden ? 'primary' : 'default'" variant="tonal">
+          {{ basemap.overridden ? 'überschrieben' : 'Standard (global)' }}
+        </v-chip>
+      </v-card-title>
+      <v-card-text>
+        <p class="text-body-2 text-medium-emphasis mb-3">
+          Eigene Basiskarte für diesen Mandanten (Theme + Style-URL). „Auf Standard“
+          setzt auf die globale Karte zurück. Die Änderung greift, sobald ein Lotse
+          des Mandanten die Karte neu lädt.
+        </p>
+        <div class="d-flex flex-wrap ga-3 align-center mb-3">
+          <v-select
+            v-model="basemap.themeInput"
+            :items="['bkg', 'bkg-dark']"
+            label="Theme"
+            variant="outlined"
+            density="compact"
+            hide-details
+            style="max-width: 200px"
+          />
+          <v-btn color="primary" :loading="basemap.busy" @click="saveTenantTheme">Theme speichern</v-btn>
+        </div>
+        <div class="d-flex flex-wrap ga-3 align-center">
+          <v-text-field
+            v-model="basemap.styleInput"
+            label="Style-URL"
+            :placeholder="basemap.styleDefault"
+            persistent-placeholder
+            variant="outlined"
+            density="compact"
+            hide-details
+            style="min-width: 340px; flex: 1"
+          />
+          <v-btn color="primary" :loading="basemap.busy" :disabled="!basemap.styleInput" @click="saveTenantStyle">URL speichern</v-btn>
+          <v-btn v-if="basemap.overridden" color="error" variant="tonal" :loading="basemap.busy" @click="resetTenantBasemap">Auf Standard</v-btn>
+        </div>
+        <v-alert v-if="basemap.error" type="warning" variant="tonal" density="compact" class="mt-3">
+          {{ basemap.error }}
+        </v-alert>
+      </v-card-text>
+    </v-card>
+  </v-window-item>
+  </v-window>
+
   <!-- #211: one global save persists the default view AND the feature toggles at
-       once, then returns to the overview; cancel returns without persisting. -->
-  <div class="d-flex justify-end ga-3 mb-2">
+       once, then returns to the overview; cancel returns without persisting.
+       Hidden on the Kartendaten tab, which saves on its own. -->
+  <div v-if="tab !== 'mapdata'" class="d-flex justify-end ga-3 mb-2">
     <v-btn variant="text" :disabled="busy" @click="cancel">Abbrechen</v-btn>
     <v-btn color="primary" :loading="busy" @click="saveAll">Speichern</v-btn>
   </div>
@@ -292,6 +359,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted, nextTick } from 'vue'
 import { useAdminStore } from '@/stores/admin.js'
+import { apiFetch } from '@/api.js'
 import { radiusNmToBbox, bboxToRadius } from '@/admin/geo.js'
 
 const props = defineProps({
@@ -301,6 +369,7 @@ const emit = defineEmits(['back'])
 
 const admin = useAdminStore()
 const busy = ref(false)
+const tab = ref('view') // T3: active config tab (Sicht | Freigaben | Kartendaten)
 
 const entitlements = ref([])
 // #211: feature toggles are buffered here and only persisted on the global save —
@@ -493,6 +562,65 @@ function cancel() {
   emit('back')
 }
 
+// T3 (ADR 0035): per-tenant base map. Theme + style-url override the global
+// default for THIS tenant only (backend resolves tenant ?? global ?? env). Uses
+// the T2 admin endpoints; the Kartendaten tab saves independently of saveAll.
+const basemap = reactive({
+  themeInput: 'bkg-dark',
+  styleInput: '',
+  styleDefault: '',
+  overridden: false,
+  busy: false,
+  error: '',
+})
+
+const tenantBasemapBase = () => `/api/admin/tenants/${props.tenantId}/mapdata/basemap`
+
+async function loadTenantBasemap() {
+  const [theme, style] = await Promise.all([
+    apiFetch(`${tenantBasemapBase()}/theme`),
+    apiFetch(`${tenantBasemapBase()}/style-url`),
+  ])
+  if (theme?.ok && theme.data) {
+    basemap.themeInput = theme.data.value || 'bkg-dark'
+    basemap.overridden = !!theme.data.overridden
+  }
+  if (style?.ok && style.data) {
+    basemap.styleInput = style.data.overridden ? style.data.value : ''
+    basemap.styleDefault = style.data.default || ''
+    basemap.overridden = basemap.overridden || !!style.data.overridden
+  }
+}
+
+async function putTenantBasemap(path, value) {
+  basemap.busy = true
+  basemap.error = ''
+  try {
+    const r = await apiFetch(`${tenantBasemapBase()}/${path}`, { method: 'PUT', body: JSON.stringify({ value }) })
+    if (!r?.ok) basemap.error = r?.error || 'Speichern fehlgeschlagen (Wert prüfen).'
+    await loadTenantBasemap()
+  } finally {
+    basemap.busy = false
+  }
+}
+
+const saveTenantTheme = () => putTenantBasemap('theme', basemap.themeInput)
+const saveTenantStyle = () => putTenantBasemap('style-url', basemap.styleInput)
+
+async function resetTenantBasemap() {
+  // Empty value on both fields resets the tenant to the global/env base map.
+  basemap.busy = true
+  try {
+    await Promise.all([
+      apiFetch(`${tenantBasemapBase()}/theme`, { method: 'PUT', body: JSON.stringify({ value: '' }) }),
+      apiFetch(`${tenantBasemapBase()}/style-url`, { method: 'PUT', body: JSON.stringify({ value: '' }) }),
+    ])
+    await loadTenantBasemap()
+  } finally {
+    basemap.busy = false
+  }
+}
+
 async function toggleStatus() {
   if (!tenant.value) return
   busy.value = true
@@ -521,6 +649,6 @@ function round(n) {
 }
 
 onMounted(async () => {
-  await Promise.all([loadView(), loadEntitlements(), loadAirspaces()])
+  await Promise.all([loadView(), loadEntitlements(), loadAirspaces(), loadTenantBasemap()])
 })
 </script>
