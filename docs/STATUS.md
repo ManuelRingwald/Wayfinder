@@ -10,6 +10,27 @@
 
 ---
 
+## 🛬 Stand 2026-07-22 (AMAN-Vorhaben gestartet — Marktanalyse, Recherche-Schritt)
+
+**In normaler Sprache:** Der Betreiber hat entschieden, die Wayfinder-Suite um
+einen **AMAN** (Arrival Manager — Planungswerkzeug für die Anflug-Sequenz)
+zu erweitern. Als erster Schritt wurde eine **Markt- und Funktionsanalyse**
+der führenden AMAN-Produkte erstellt (Thales MAESTRO, Leidos/FAA TBFM+TSAS,
+OSYRIS/Orthogon-Linie, NATS/Leidos Intelligent Approach, DLR 4D-CARMA sowie
+EUROCONTROL-/SESAR-Grundlagen inkl. E-AMAN/CP1-Pflicht): Funktionskanon
+(F1–F12), HMI-/Handling-Muster (Timeline/Ladder, time-to-lose/gain,
+Slot-Marker), Kern-Algorithmik (FCFS + Constrained Position Shifting,
+Zwei-Horizont-Modell) und Architektur-Baukasten. **Kein Code** — reines
+Recherche-Dokument mit ausgewiesener Belegqualität je Aussage:
+`docs/research/AMAN-Marktanalyse.md`.
+
+**Nächster Schritt:** Abstimmung mit dem Betreiber, wie der AMAN in die
+Suite integriert wird (eigener Dienst vs. Backend-Modul, Datenbedarf ggü.
+Firefly, Mandanten-Zuschnitt, v1-Umfang) → mündet in einen ADR. Erst nach
+Freigabe wird gebaut.
+
+---
+
 ## ✅ Stand 2026-07-22 (Pro-Mandant-Basiskarte — Bedien-UI, T3; ADR 0035 komplett)
 
 **In normaler Sprache:** „Basiskarte pro Mandant" ist jetzt **end-to-end** fertig.
