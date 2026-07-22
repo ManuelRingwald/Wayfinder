@@ -24,6 +24,17 @@ Zwei-Horizont-Modell) und Architektur-Baukasten. **Kein Code** — reines
 Recherche-Dokument mit ausgewiesener Belegqualität je Aussage:
 `docs/research/AMAN-Marktanalyse.md`.
 
+**Nachtrag (gleicher Tag, Betreiber-Auftrag):** Die im ersten
+Recherche-Lauf einem Sitzungs-Limit zum Opfer gefallenen Gegenprüfungen
+wurden in einer **zweiten Runde nachgeholt** (Workflow-Wiederaufnahme +
+Direkt-Nachprüfung an den Primärquellen). Ergebnis: 10 weitere Aussagen
+adversarial verifiziert (u.a. Intelligent Approach seit 2015 operativ,
+E-AMAN validiert bis 200 NM + CP1-Pflicht, AMAN/DMAN = SESAR Solution #54
+V3/TRL6), die übrigen Kernaussagen per Primärquellen-Korroboration
+bestätigt (TBFM-Freeze-Mechanik, TTL/TTG-„L2"-Label-Muster, CPS,
+SINOPTICA-Kern); eine Kennzahl („30 kg Fuel je Flug" für E-AMAN) war
+nicht belegbar und wurde verworfen. Beleg-Marker im Dokument nachgezogen.
+
 **Nächster Schritt:** Abstimmung mit dem Betreiber, wie der AMAN in die
 Suite integriert wird (eigener Dienst vs. Backend-Modul, Datenbedarf ggü.
 Firefly, Mandanten-Zuschnitt, v1-Umfang) → mündet in einen ADR. Erst nach
