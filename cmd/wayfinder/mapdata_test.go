@@ -13,7 +13,7 @@ func TestMapDataEffectiveTheme(t *testing.T) {
 	ctx := context.Background()
 	st := newMemSettings()
 	cfg := Config{MapTheme: mapThemeBKGDark, BKGStyleURL: "https://default.example/style.json"}
-	md := newMapDataConfig(st, cfg, nil, nil)
+	md := newMapDataConfig(st, cfg, nil, nil, nil)
 
 	if got := md.effectiveTheme(ctx); got != mapThemeBKGDark {
 		t.Fatalf("default theme = %q, want %q", got, mapThemeBKGDark)
@@ -50,7 +50,7 @@ func TestValidTheme(t *testing.T) {
 // reloadBasemap with a nil service (custom style bypasses the base-map service)
 // is a safe no-op, not a crash.
 func TestReloadBasemapNilServiceNoop(t *testing.T) {
-	md := newMapDataConfig(newMemSettings(), Config{MapTheme: mapThemeBKGDark}, nil, nil)
+	md := newMapDataConfig(newMemSettings(), Config{MapTheme: mapThemeBKGDark}, nil, nil, nil)
 	if err := md.reloadBasemap(context.Background()); err != nil {
 		t.Fatalf("nil-service reload should be a no-op, got %v", err)
 	}
@@ -81,7 +81,7 @@ func TestEffectiveSensors(t *testing.T) {
 	ctx := context.Background()
 	st := newMemSettings()
 	env := []coverage.SensorConfig{{Lat: 50, Lon: 8, MaxRangeM: 120000, Label: "env"}}
-	md := newMapDataConfig(st, Config{CoverageSensors: env, CoverageRingColor: "#abcdef"}, nil, nil)
+	md := newMapDataConfig(st, Config{CoverageSensors: env, CoverageRingColor: "#abcdef"}, nil, nil, nil)
 
 	// No override → env sensors + env colour.
 	if got := md.effectiveSensors(ctx); len(got) != 1 || got[0].Label != "env" {
@@ -110,7 +110,7 @@ func TestWeatherAvailabilityEffective(t *testing.T) {
 	ctx := context.Background()
 	st := newMemSettings()
 	cfg := Config{DWDRadarEnabled: true, DWDWMSURL: "https://maps.dwd.de/wms", DWDWarnEnabled: true, DWDWarnURL: "https://dwd/warn", QNHEnabled: true}
-	md := newMapDataConfig(st, cfg, nil, nil)
+	md := newMapDataConfig(st, cfg, nil, nil, nil)
 
 	if !md.radarAvailable(ctx) || !md.warningsAvailable(ctx) || !md.qnhAvailable(ctx) {
 		t.Fatal("all sources should be available from env defaults")
@@ -138,7 +138,7 @@ func TestEffectiveOpenAIP(t *testing.T) {
 	ctx := context.Background()
 	st := newMemSettings()
 	cfg := Config{OpenAIPRadiusKM: 250, OpenAIPBaseURL: "https://api.core.openaip.net"}
-	md := newMapDataConfig(st, cfg, nil, nil)
+	md := newMapDataConfig(st, cfg, nil, nil, nil)
 
 	// Env defaults.
 	if km, url := md.effectiveOpenAIP(ctx); km != 250 || url != "https://api.core.openaip.net" {

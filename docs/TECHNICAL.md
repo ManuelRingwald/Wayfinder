@@ -862,6 +862,25 @@ in `/api/map-config` (`weather_radar_available`, `weather_warnings_available`,
 `qnh_available`, `coverage_sensor_count`) spiegeln die **effektiven** Werte pro
 Request.
 
+#### Pro-Mandant-Basiskarte (ADR 0035)
+
+Die **Basiskarte** (Theme + Style-URL) ist zusätzlich **pro Mandant**
+überschreibbar. Eine zweite, mandanten-gescopte Tabelle **`tenant_map_settings`**
+`(tenant_id, key, value)` liegt **neben** der globalen `platform_settings`; die
+effektive Auflösung ist dreistufig: **Mandant-Override ?? globaler Override
+(`platform_settings`) ?? Env-Default** (`mapconfig.TenantSetting`). `tenant_id 0`
+(mandantenloser Plattform-Admin) → global. Keys: `mapdata.basemap.style_url` /
+`mapdata.basemap.theme`. Admin-Schreibpfad: `GET/PUT
+/api/admin/tenants/{tenantID}/mapdata/basemap/{style-url,theme}`.
+
+`/api/map-config` und der Style-Proxy **`/basemap/style.json`** laufen hinter der
+Tenant-Middleware (`tenantMW ∘ pwGate ∘ impReadMW`) und liefern das
+**mandanten-effektive** Theme + die passenden Karten-Bytes. Der `basemap.Service`
+hält dazu einen **gekeyten Varianten-Cache** je `(styleURL, dark)` (Default-Variante
+mit voller Last-Good-Garantie, Abweicher bounded auf 32); `/basemap/style.json` ist
+`Cache-Control: private` (gleiche URL, andere Bytes je Mandant). Ohne Override
+verhält sich alles wie global. Isolation (Mandant A ändert nie B) ist getestet.
+
 ### 6.4 Sicherheit
 
 | Variable | Default | Typ | Beschreibung |

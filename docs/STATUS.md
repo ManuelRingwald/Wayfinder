@@ -10,6 +10,34 @@
 
 ---
 
+## 🗺️ Stand 2026-07-22 (Pro-Mandant-Basiskarte — Serving-Pfad, T2; ADR 0035)
+
+**In normaler Sprache:** Jeder Mandant kann jetzt eine **eigene Basiskarte**
+bekommen — eigenes Theme (hell/dunkel) und eigenen BKG-Style — passend zu seinem
+Gebiet. Der Betreiber wählte Variante **A** (echte Pro-Mandant-Karte). T2 baut den
+**Serving-Pfad**: der Karten-Style-Proxy liefert je Mandant die passenden
+Karten-Bytes; ohne eigene Einstellung sieht ein Mandant unverändert die globale
+Karte.
+
+**Fachlich/technisch:** ADR 0035, Hybrid-Scope (nur Basiskarte pro Mandant; Wetter/
+Sensoren bleiben global, Overlays bleiben Entitlement). Der `basemap.Service`
+bekam einen **gekeyten Varianten-Cache** je (Style-URL, dark) — die Default-Variante
+behält ihre Last-Good-Garantie, nur Abweicher landen im (auf 32) begrenzten Cache
+(`StyleJSONFor`). `/basemap/style.json` + `/api/map-config` laufen jetzt hinter der
+Tenant-Middleware und liefern das mandanten-effektive Theme + Style
+(`Cache-Control: private`). Rangfolge **Mandant ?? global ?? Env**
+(`tenant_map_settings` neben `platform_settings`, T1). Admin-Schreibpfad
+`GET/PUT /api/admin/tenants/{id}/mapdata/basemap/{theme,style-url}` (SSRF-geprüft).
+Der Frontend holt den Style same-origin (Session-Cookie); bei Ausfall greift der
+synthetische Fallback. **Isolation getestet** (Mandant A ändert nie B).
+**Verifikation:** `go test ./...` + `vet`/`gofmt` + `golangci-lint` (0 issues) grün;
+neue Tests in `pkg/basemap/variant_test.go`, `pkg/mapconfig/tenant_test.go`,
+`cmd/wayfinder/mapdata_tenant_test.go`. FR-CFG-013, ADR 0035, TECHNICAL §6.7.
+**Nächster Schritt:** **T3** — Mandanten-Detail (`AdminTenantDetail.vue`) auf
+**Tabs** umbauen + Pro-Mandant-Basiskarte-Editor (ruft den Admin-Schreibpfad).
+
+---
+
 ## 🧱 Stand 2026-07-21 (Pro-Mandant-Kartendaten — Fundament, T1; Entscheidung offen)
 
 **In normaler Sprache:** Vorarbeit, damit die Basiskarte (Theme/Style) später
